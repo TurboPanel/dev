@@ -1,0 +1,24 @@
+# Caddy HTTPS entrypoint for Tilt dev (Docker — published for IDE port forwarding).
+# Upstreams run on the host (wrangler + Expo); reach them via host.docker.internal.
+services:
+  caddy:
+    image: caddy:2.10.2-alpine
+    container_name: turbopanel-caddy
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${CADDY_PORT:-8443}:8443"
+    environment:
+      CADDY_PORT: "8443"
+      INSTANCE_DEV_PORT: ${INSTANCE_DEV_PORT:-18787}
+      EXPO_PORT: ${EXPO_PORT:-8081}
+      TURBOPANEL_UI_MODE: ${TURBOPANEL_UI_MODE:-dev}
+      UPSTREAM_HOST: host.docker.internal
+      CADDY_TLS_CERT: /certs/self-signed.crt
+      CADDY_TLS_KEY: /certs/self-signed.key
+      TURBOPANEL_UI_ROOT: /ui/dist
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ../../instance/certs:/certs:ro
+      - ../../ui/dist:/ui/dist:ro

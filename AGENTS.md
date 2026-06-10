@@ -17,7 +17,8 @@ turbopanel/
 │   │   └── sync-env.sh    # dev/.env → sibling repo env files
 │   └── docker/
 │       ├── postgres.compose.yml  # local Postgres for Hyperdrive
-│       └── Caddyfile             # HTTPS proxy → wrangler + Expo
+│       ├── caddy.compose.yml     # Caddy in Docker (127.0.0.1:8443 publish)
+│       └── Caddyfile             # HTTPS proxy → host wrangler + Expo
 │   └── src/
 │       ├── develop/
 │       │   └── idempotent.sh   # bootstrap script (also served by the Worker)
@@ -45,9 +46,10 @@ The `dev/` repo is also a Cloudflare Worker (`turbopanel-dev`) deployed at **htt
 - **`scripts/sync-env.sh`** — run by the `env-sync` Tilt resource; writes `instance/.dev.vars`, `instance/.env`, and `docker/.env` from `dev/.env`.
 - **`src/Tiltfile`** — Workers local dev behind Caddy: Postgres (Docker) + `pnpm dev` (wrangler) + Expo web + Caddy HTTPS proxy. Uses native host tools only (`pnpm`, `node`, `docker`) — **no Deno, no systemd, no daemon**.
 - **`docker/postgres.compose.yml`** — dev Postgres on `127.0.0.1:5432`; credentials come from `docker/.env` (synced from `dev/.env`). Must stay aligned with `instance/wrangler.jsonc` Hyperdrive `localConnectionString`.
-- **`docker/Caddyfile`** — Tilt-specific reverse proxy: `/api/*` and `/ws/*` → wrangler TCP port; everything else → Expo web when `TURBOPANEL_UI_MODE=dev`. Differs from `instance/Caddyfile` (Deno Unix socket) — do not conflate the two.
+- **`docker/caddy.compose.yml`** — Caddy **in Docker** with `127.0.0.1:${CADDY_PORT}` published (same pattern as Postgres — IDEs like Cursor auto-forward docker-proxy ports). Proxies to wrangler/Expo on the host via `host.docker.internal`.
+- **`docker/Caddyfile`** — used by the Docker Caddy service; `/api/*` and `/ws/*` → host wrangler port; UI → host Expo when `TURBOPANEL_UI_MODE=dev`. Differs from `instance/Caddyfile` (Deno Unix socket).
 - **First run:** `cp .env.example .env` in the `dev/` checkout.
-- **Resources:** `env-sync` → `postgres` → `instance-deps` / `ui-deps` / `caddy-install` / `instance-certs` → `instance-db` → `instance` + `ui` → `caddy` (https://localhost:8443).
+- **Resources:** `env-sync` → `postgres` + `caddy` (Docker) / `instance-deps` / `ui-deps` / `instance-certs` → `instance-db` → `instance` + `ui` (caddy waits for certs + upstreams).
 
 ## Purpose of each sibling repo
 

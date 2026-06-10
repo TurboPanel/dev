@@ -30,10 +30,13 @@ set +a
 : "${TURBOPANEL_TLS_EXTRA_SANS:=}"
 
 instance_dir="${install_root}/instance"
+ui_dir="${install_root}/ui"
 if [[ ! -d "${instance_dir}" ]]; then
   echo "sync-env: instance checkout not found at ${instance_dir}" >&2
   exit 1
 fi
+
+mkdir -p "${ui_dir}/dist"
 
 database_url="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}"
 
@@ -54,7 +57,11 @@ write_file "${dev_root}/docker/.env" \
   "POSTGRES_USER=${POSTGRES_USER}" \
   "POSTGRES_PASSWORD=${POSTGRES_PASSWORD}" \
   "POSTGRES_DB=${POSTGRES_DB}" \
-  "POSTGRES_PORT=${POSTGRES_PORT}"
+  "POSTGRES_PORT=${POSTGRES_PORT}" \
+  "CADDY_PORT=${CADDY_PORT}" \
+  "INSTANCE_DEV_PORT=${INSTANCE_DEV_PORT}" \
+  "EXPO_PORT=${EXPO_PORT}" \
+  "TURBOPANEL_UI_MODE=${TURBOPANEL_UI_MODE}"
 
 echo "sync-env: wrote instance/.dev.vars, instance/.env, docker/.env"
 echo "sync-env: DATABASE_URL=${database_url}"

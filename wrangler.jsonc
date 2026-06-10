@@ -13,7 +13,7 @@
     }
   },
   "rules": [
-    { "type": "Text", "globs": ["**/*.sh"] }
+    { "type": "Text", "globs": ["**/*.sh"], "fallthrough": false }
   ],
   "routes": [
     {

@@ -57,11 +57,7 @@ curl -k https://localhost:8443/api/client/v1/install/status
 
 ### Cursor / VS Code Ports panel
 
-Cursor auto-forwards some ports (Docker **5432**, Tilt **10350**) but **does not reliably detect** Caddy, wrangler, or Expo — they are child processes of Tilt, not Docker publishes. That is normal.
-
-**You do not need the Ports panel on a local machine** — open **https://localhost:8443** in your browser directly. Use the **app** link on the `caddy` resource in the Tilt UI (http://localhost:10350) as an alternative.
-
-To add Caddy to the Ports panel anyway: **Ports → Forward a Port → 8443** (once per workspace). Avoid workspace `onAutoForward: "ignore"` rules for dev ports; that suppresses forwarding entirely.
+Caddy runs **in Docker** with `127.0.0.1:8443` published (same as Postgres on 5432), so Cursor should auto-forward **8443** via `docker-proxy`. Wrangler and Expo stay on the host and do not need to appear in Ports — use **https://localhost:8443** for the app.
 
 When run from an existing `turbopanel-dev` checkout, the script uses the checkout’s parent directory as the install root automatically (for example, if your checkout is at `~/turbopanel/dev`, sibling repos are created under `~/turbopanel/`). It does not prompt in that mode.
 

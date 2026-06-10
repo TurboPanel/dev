@@ -33,19 +33,8 @@ _pg_host = env('POSTGRES_HOST', '127.0.0.1')
 _pg_port = env('POSTGRES_PORT', '5432')
 _dev_pg_url = 'postgresql://%s:%s@%s:%s/%s' % (_pg_user, _pg_pass, _pg_host, _pg_port, _pg_db)
 
-_instance_port = env('INSTANCE_DEV_PORT', '18787')
 _caddy_port = env('CADDY_PORT', '8443')
 _expo_port = env('EXPO_PORT', '8081')
-_ui_mode = env('TURBOPANEL_UI_MODE', 'dev')
-
-_caddy_env = {
-  'CADDY_PORT': _caddy_port,
-  'INSTANCE_DEV_PORT': _instance_port,
-  'TURBOPANEL_UI_MODE': _ui_mode,
-  'EXPO_PORT': _expo_port,
-  'CADDY_TLS_CERT': './certs/self-signed.crt',
-  'CADDY_TLS_KEY': './certs/self-signed.key',
-}
 
 local_resource(
   'env-sync',
@@ -54,8 +43,20 @@ local_resource(
   labels=['config'],
 )
 
-docker_compose('../docker/postgres.compose.yml')
+docker_compose([
+  '../docker/postgres.compose.yml',
+  '../docker/caddy.compose.yml',
+])
 dc_resource('postgres', resource_deps=['env-sync'])
+dc_resource(
+  'caddy',
+  resource_deps=['env-sync', 'instance-certs', 'instance', 'ui'],
+  links=[
+    link('https://localhost:%s' % _caddy_port, 'app'),
+    link('https://localhost:%s/api/health' % _caddy_port, 'health'),
+  ],
+  labels=['proxy'],
+)
 
 local_resource(
   'instance-deps',
@@ -67,14 +68,6 @@ local_resource(
     os.path.join(instance_dir, 'pnpm-lock.yaml'),
   ],
   labels=['instance'],
-)
-
-local_resource(
-  'caddy-install',
-  cmd='pnpm caddy:install',
-  dir=instance_dir,
-  resource_deps=['instance-deps'],
-  labels=['proxy'],
 )
 
 local_resource(
@@ -131,18 +124,4 @@ local_resource(
   resource_deps=['ui-deps'],
   deps=[os.path.join(ui_dir, 'src')],
   labels=['ui'],
-)
-
-local_resource(
-  'caddy',
-  serve_cmd='bash %s %s' % (os.path.join(dev_root, 'scripts', 'caddy-serve.sh'), caddyfile),
-  serve_dir=instance_dir,
-  resource_deps=['caddy-install', 'instance-certs', 'instance', 'ui'],
-  deps=[caddyfile, env_file],
-  env=_caddy_env,
-  links=[
-    link('https://localhost:%s' % _caddy_port, 'app'),
-    link('https://localhost:%s/api/health' % _caddy_port, 'health'),
-  ],
-  labels=['proxy'],
 )
