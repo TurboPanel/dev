@@ -93,7 +93,8 @@ else
     origin_url="$(git -C "$SCRIPT_DIR" remote get-url origin 2>/dev/null || true)"
     if [[ "$origin_url" == *turbopanel/turbopanel-dev* ]]; then
       RUNNING_FROM_CHECKOUT=true
-      DEFAULT_ROOT="$(dirname "$SCRIPT_DIR")"
+      DEV_REPO_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel)"
+      DEFAULT_ROOT="$(dirname "$DEV_REPO_ROOT")"
     fi
   fi
 fi

@@ -6,7 +6,7 @@ TurboPanel is a self-hosted server management panel. This `dev` repository is th
 
 ## Prerequisites
 
-**You are responsible for installing these runtimes on your machine before running `develop.sh`.** The setup script checks that each tool is present and meets the minimum version, but it does not install them for you.
+**You are responsible for installing these runtimes on your machine before running the bootstrap script.** The setup script checks that each tool is present and meets the minimum version, but it does not install them for you.
 
 | Tool | Minimum version | Install |
 |------|-----------------|---------|
@@ -20,13 +20,19 @@ TurboPanel is a self-hosted server management panel. This `dev` repository is th
 **One-liner (fresh machine):**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/turbopanel/turbopanel-dev/trunk/develop.sh | bash
+curl -fsSL https://develop.trbp.nl | bash
 ```
 
 **If you have already cloned this repo:**
 
 ```bash
-bash develop.sh
+bash src/develop/idempotent.sh
+```
+
+After sibling repos are present, start local dev orchestration from the `dev/` checkout:
+
+```bash
+tilt up
 ```
 
 When run from an existing `turbopanel-dev` checkout, the script uses the checkout’s parent directory as the install root automatically (for example, if your checkout is at `~/turbopanel/dev`, sibling repos are created under `~/turbopanel/`). It does not prompt in that mode.
@@ -51,7 +57,7 @@ All repositories use **`trunk`** as the default and integration branch. Do not u
 
 ## Updating
 
-Re-running `develop.sh` is safe. For each repo it will:
+Re-running `src/develop/idempotent.sh` is safe. For each repo it will:
 
 - **Skip** the repo if there are any uncommitted changes, printing a warning.
 - **Pull** the latest `trunk` with `--ff-only` if the working tree is clean.
