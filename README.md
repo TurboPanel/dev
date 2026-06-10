@@ -4,7 +4,7 @@
 
 TurboPanel is a self-hosted server management panel. This `dev` repository is the starting point for contributors — it bootstraps all sibling repositories and provides the tooling needed to run the full stack locally.
 
-Local dev replicates the **Cloudflare Workers** deployment path: the instance runs via **`pnpm dev`** (`wrangler dev`) in `instance/`, the UI via Expo, and **Caddy** terminates TLS and routes traffic — same surface as production Workers, without Deno or systemd.
+[develop.trbp.nl](https://develop.trbp.nl) redirects to this repository on GitHub. Local dev replicates the **Cloudflare Workers** deployment path: the instance runs via **`pnpm dev`** (`wrangler dev`) in `instance/`, the UI via Expo, and **Caddy** terminates TLS and routes traffic — same surface as production Workers, without Deno or systemd.
 
 ## Prerequisites
 
@@ -22,14 +22,20 @@ Local dev replicates the **Cloudflare Workers** deployment path: the instance ru
 **One-liner (fresh machine):**
 
 ```bash
-curl -fsSL https://develop.trbp.nl | bash
+curl -fsSL https://raw.githubusercontent.com/turbopanel/turbopanel-dev/trunk/src/develop.sh | sh
 ```
 
 **If you have already cloned this repo:**
 
 ```bash
-bash src/develop/idempotent.sh
+sh src/develop.sh
 ```
+
+When run from an existing `turbopanel-dev` checkout, the script uses the checkout’s parent directory as the install root automatically (for example, if your checkout is at `~/turbopanel/dev`, sibling repos are created under `~/turbopanel/`). It does not prompt in that mode.
+
+For piped or standalone runs (such as the one-liner above), the script may prompt for an install directory (default: `~/turbopanel`) when a terminal is available, or fall back to `~/turbopanel` when there is no controlling terminal.
+
+In all cases, the script clones or updates the sibling repos under the chosen install root.
 
 After sibling repos are present, configure local dev env and start orchestration from the `dev/` checkout:
 
@@ -55,20 +61,6 @@ curl -k https://localhost:8443/api/health
 curl -k https://localhost:8443/api/client/v1/install/status
 ```
 
-### Cursor / VS Code Ports panel
-
-Cursor **only auto-forwards Tilt (10350)** in this setup — it does **not** reliably pick up Docker-published ports (8443, 5432), even though they are listening on the host.
-
-**Option A — Dev Container (recommended for Cursor):** Command Palette → **Dev Containers: Reopen in Container**. The `.devcontainer/devcontainer.json` declares `forwardPorts: [8443, 5432, 10350]` so **8443** appears in Ports. Then run `tilt up` inside the container (host Docker via docker-outside-of-docker).
-
-**Option B — Native Tilt (no container):** In the **Ports** panel → **Forward a Port** → enter **8443**. With `remote.restoreForwardedPorts` enabled in `.vscode/settings.json`, it is remembered for this workspace. Open **https://localhost:8443** in your browser.
-
-When run from an existing `turbopanel-dev` checkout, the script uses the checkout’s parent directory as the install root automatically (for example, if your checkout is at `~/turbopanel/dev`, sibling repos are created under `~/turbopanel/`). It does not prompt in that mode.
-
-For piped or standalone runs (such as the one-liner above), the script may prompt for an install directory (default: `~/turbopanel`) when a terminal is available, or fall back to `~/turbopanel` when there is no controlling terminal.
-
-In all cases, the script clones or updates the sibling repos under the chosen install root.
-
 ## Repository layout
 
 ```
@@ -85,7 +77,7 @@ All repositories use **`trunk`** as the default and integration branch. Do not u
 
 ## Updating
 
-Re-running `src/develop/idempotent.sh` is safe. For each repo it will:
+Re-running `src/develop.sh` is safe. For each repo it will:
 
 - **Skip** the repo if there are any uncommitted changes, printing a warning.
 - **Pull** the latest `trunk` with `--ff-only` if the working tree is clean.

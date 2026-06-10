@@ -13,10 +13,10 @@ sync_env = os.path.join(dev_root, 'scripts', 'sync-env.sh')
 caddyfile = os.path.join(dev_root, 'docker', 'Caddyfile')
 
 if not os.path.exists(instance_dir):
-  fail('instance checkout not found at %s — run src/develop/idempotent.sh first' % instance_dir)
+  fail('instance checkout not found at %s — run src/develop.sh first' % instance_dir)
 
 if not os.path.exists(ui_dir):
-  fail('ui checkout not found at %s — run src/develop/idempotent.sh first' % ui_dir)
+  fail('ui checkout not found at %s — run src/develop.sh first' % ui_dir)
 
 if not os.path.exists(env_file):
   fail('.env missing — copy %s to %s and edit as needed' % (env_example, env_file))

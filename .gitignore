@@ -1,9 +1,3 @@
-# dependencies
-node_modules/
-
-# wrangler local dev / deploy cache
-.wrangler/
-
 # build output
 dist/
 
