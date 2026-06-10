@@ -30,7 +30,7 @@ turbopanel/
 - **`develop.sh` is the single entry point** for setting up the dev environment. Do not bypass it.
 - **Never commit directly to `trunk`** — always use a feature branch and open a PR.
 - **`develop.sh` is idempotent** — it skips repos with uncommitted changes rather than overwriting them.
-- Prerequisites are Node.js ≥ 24, Deno ≥ 2.x, and Docker (daemon running).
+- Prerequisites are Node.js ≥ 24, Deno ≥ 2.x, Docker (daemon running), and Tilt.
 
 ## What agents must NOT do
 

@@ -11,6 +11,7 @@ TurboPanel is a self-hosted server management panel. This `dev` repository is th
 | Node.js | 24.x |
 | Deno | 2.x |
 | Docker | latest stable (daemon must be running) |
+| Tilt | latest stable |
 
 ## Getting started
 

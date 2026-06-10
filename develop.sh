@@ -76,6 +76,12 @@ if ! docker info >/dev/null 2>&1; then
   exit 1
 fi
 
+if ! command -v tilt >/dev/null 2>&1; then
+  error "Tilt is not installed."
+  echo "Install from https://docs.tilt.dev/install.html"
+  exit 1
+fi
+
 # Self-detection
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 
