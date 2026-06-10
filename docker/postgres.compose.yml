@@ -1,0 +1,23 @@
+# Local Postgres for Workers dev (Hyperdrive via wrangler dev).
+# Credentials are synced from dev/.env into docker/.env by scripts/sync-env.sh.
+services:
+  postgres:
+    image: postgres:18
+    container_name: turbopanel-postgres
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5432:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - turbopanel-postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+
+volumes:
+  turbopanel-postgres-data:

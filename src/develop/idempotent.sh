@@ -50,17 +50,16 @@ if (( node_major < 24 )); then
   exit 1
 fi
 
-if ! command -v deno >/dev/null 2>&1; then
-  error "Deno is not installed."
-  echo "Install from https://deno.land/#installation"
+if ! command -v pnpm >/dev/null 2>&1; then
+  error "pnpm is not installed."
+  echo "Install from https://pnpm.io/installation"
   exit 1
 fi
 
-deno_version_line="$(deno --version | head -n1)"
-deno_major="$(echo "$deno_version_line" | sed -n 's/^deno \([0-9]*\)\..*/\1/p')"
-if [[ -z "$deno_major" ]] || (( deno_major < 2 )); then
-  error "Deno v2.x or later is required (found ${deno_version_line})."
-  echo "Install from https://deno.land/#installation"
+pnpm_major="$(pnpm --version | cut -d. -f1)"
+if [[ -z "$pnpm_major" ]] || (( pnpm_major < 11 )); then
+  error "pnpm v11.x or later is required (found $(pnpm --version))."
+  echo "Install from https://pnpm.io/installation"
   exit 1
 fi
 
@@ -193,3 +192,9 @@ if ((${#SKIPPED_REPOS[@]} > 0)); then
   done
   echo
 fi
+
+info "Start local dev (Workers via pnpm/wrangler, proxied by Caddy):"
+echo "  cd ${INSTALL_ROOT}/dev"
+echo "  cp .env.example .env   # once"
+echo "  tilt up"
+echo

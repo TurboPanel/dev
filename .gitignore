@@ -10,7 +10,9 @@ dist/
 # secrets & local env
 .env
 .env.*
+!.env.example
 .dev.vars
+docker/.env
 
 # logs
 logs/

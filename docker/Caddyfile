@@ -1,0 +1,47 @@
+# TurboPanel Tilt dev reverse proxy (Cloudflare Workers instance + Expo UI).
+#
+#   /api/*  and  /ws/*  -> wrangler dev (pnpm, TCP — not Deno / Unix socket)
+#   everything else      -> Expo web dev server when TURBOPANEL_UI_MODE=dev
+#
+# Env (from dev/.env, passed by Tilt):
+#   INSTANCE_DEV_PORT        wrangler dev port (default: 18787)
+#   TURBOPANEL_UI_MODE       "dev" | "static" (default: dev)
+#   EXPO_PORT                Expo web port when UI_MODE=dev (default: 8081)
+#   TURBOPANEL_UI_ROOT       static export directory when UI_MODE=static
+#   CADDY_PORT               HTTPS listen port (default: 8443)
+#   CADDY_TLS_CERT / CADDY_TLS_KEY   server leaf cert paths (relative to instance/)
+{
+	auto_https off
+	admin off
+}
+
+:{$CADDY_PORT:8443} {
+	tls {$CADDY_TLS_CERT:./certs/self-signed.crt} {$CADDY_TLS_KEY:./certs/self-signed.key}
+
+	@api path /api/*
+	handle @api {
+		reverse_proxy 127.0.0.1:{$INSTANCE_DEV_PORT:18787} {
+			header_up X-Real-IP {remote_host}
+		}
+	}
+
+	@ws path /ws/*
+	handle @ws {
+		reverse_proxy 127.0.0.1:{$INSTANCE_DEV_PORT:18787} {
+			header_up X-Real-IP {remote_host}
+		}
+	}
+
+	@ui_dev expression `"{$TURBOPANEL_UI_MODE:static}" == "dev"`
+	handle @ui_dev {
+		reverse_proxy 127.0.0.1:{$EXPO_PORT:8081} {
+			header_up Host 127.0.0.1:{$EXPO_PORT:8081}
+		}
+	}
+
+	handle {
+		root * {$TURBOPANEL_UI_ROOT:../ui/dist}
+		try_files {path} /index.html
+		file_server
+	}
+}

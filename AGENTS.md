@@ -4,21 +4,29 @@
 
 `turbopanel-dev` is the **developer environment orchestration repository** for the TurboPanel project. It contains the idempotent bootstrap script (`src/develop/idempotent.sh`), a Cloudflare Worker that serves it, Tilt orchestration, shared developer documentation, and is the single source of truth for bootstrapping a local development environment.
 
+**Local dev targets the Cloudflare Workers runtime only** — `pnpm dev` / wrangler in `instance/`, not Deno or systemd. Caddy proxies HTTPS to wrangler (TCP) and Expo the same way the production Workers stack is meant to be exercised locally.
+
 ## Repository layout
 
 ```
 turbopanel/
 ├── dev/      # this repo — scripts, docs, shared dev tooling
 │   ├── Tiltfile           # delegates to src/Tiltfile
+│   ├── .env.example       # local dev variable template
+│   ├── scripts/
+│   │   └── sync-env.sh    # dev/.env → sibling repo env files
+│   └── docker/
+│       ├── postgres.compose.yml  # local Postgres for Hyperdrive
+│       └── Caddyfile             # HTTPS proxy → wrangler + Expo
 │   └── src/
 │       ├── develop/
 │       │   └── idempotent.sh   # bootstrap script (also served by the Worker)
 │       ├── workers/
 │       │   └── index.ts        # Cloudflare Worker entry point
-│       └── Tiltfile            # Tilt dev orchestration entrypoint
-├── instance/ # turbopanel/turbopanel — core server
+│       └── Tiltfile            # Workers + Caddy Tilt orchestration
+├── instance/ # turbopanel/turbopanel — core server (Workers entry: src/workers.ts)
 ├── ui/       # turbopanel/turbopanel-ui — frontend
-└── daemon/   # turbopanel/turbopanel-daemon — host daemon
+└── daemon/   # turbopanel/turbopanel-daemon — host daemon (not started by Tilt)
 ```
 
 ## Cloudflare Worker
@@ -33,7 +41,13 @@ The `dev/` repo is also a Cloudflare Worker (`turbopanel-dev`) deployed at **htt
 ## Tilt
 
 - **Repo-root `Tiltfile`** — thin wrapper: `include('./src/Tiltfile')`. Run `tilt up` from the `dev/` checkout.
-- **`src/Tiltfile`** — canonical Tilt entrypoint for local dev orchestration across sibling repos.
+- **`dev/.env`** — single source of truth for local dev variables (copy from `.env.example`). Gitignored; never commit secrets.
+- **`scripts/sync-env.sh`** — run by the `env-sync` Tilt resource; writes `instance/.dev.vars`, `instance/.env`, and `docker/.env` from `dev/.env`.
+- **`src/Tiltfile`** — Workers local dev behind Caddy: Postgres (Docker) + `pnpm dev` (wrangler) + Expo web + Caddy HTTPS proxy. Uses native host tools only (`pnpm`, `node`, `docker`) — **no Deno, no systemd, no daemon**.
+- **`docker/postgres.compose.yml`** — dev Postgres on `127.0.0.1:5432`; credentials come from `docker/.env` (synced from `dev/.env`). Must stay aligned with `instance/wrangler.jsonc` Hyperdrive `localConnectionString`.
+- **`docker/Caddyfile`** — Tilt-specific reverse proxy: `/api/*` and `/ws/*` → wrangler TCP port; everything else → Expo web when `TURBOPANEL_UI_MODE=dev`. Differs from `instance/Caddyfile` (Deno Unix socket) — do not conflate the two.
+- **First run:** `cp .env.example .env` in the `dev/` checkout.
+- **Resources:** `env-sync` → `postgres` → `instance-deps` / `ui-deps` / `caddy-install` / `instance-certs` → `instance-db` → `instance` + `ui` → `caddy` (https://localhost:8443).
 
 ## Purpose of each sibling repo
 
@@ -51,7 +65,8 @@ The `dev/` repo is also a Cloudflare Worker (`turbopanel-dev`) deployed at **htt
 - **`src/develop/idempotent.sh` is the single entry point** for setting up the dev environment. Do not bypass it.
 - **Never commit directly to `trunk`** — always use a feature branch and open a PR.
 - **`src/develop/idempotent.sh` is idempotent** — it skips repos with uncommitted changes rather than overwriting them.
-- **Prerequisites are the developer's responsibility** — Node.js ≥ 24, Deno ≥ 2.x, Docker (daemon running), and Tilt must be installed on the host before running `src/develop/idempotent.sh`; the script only verifies presence and version, it does not install runtimes.
+- **Prerequisites are the developer's responsibility** — Node.js ≥ 24, pnpm ≥ 11, Docker (daemon running), and Tilt must be installed on the host before running `src/develop/idempotent.sh`; the script only verifies presence and version, it does not install runtimes.
+- **Tilt dev is Workers-only** — do not wire Deno, `develop.sh`, or systemd units into `src/Tiltfile`. The instance `Caddyfile` (Unix socket + Deno) is for self-hosted installs; `dev/docker/Caddyfile` is for wrangler TCP.
 
 ## What agents must NOT do
 
