@@ -57,7 +57,11 @@ curl -k https://localhost:8443/api/client/v1/install/status
 
 ### Cursor / VS Code Ports panel
 
-Caddy runs **in Docker** with `127.0.0.1:8443` published (same as Postgres on 5432), so Cursor should auto-forward **8443** via `docker-proxy`. Wrangler and Expo stay on the host and do not need to appear in Ports — use **https://localhost:8443** for the app.
+Cursor **only auto-forwards Tilt (10350)** in this setup — it does **not** reliably pick up Docker-published ports (8443, 5432), even though they are listening on the host.
+
+**Option A — Dev Container (recommended for Cursor):** Command Palette → **Dev Containers: Reopen in Container**. The `.devcontainer/devcontainer.json` declares `forwardPorts: [8443, 5432, 10350]` so **8443** appears in Ports. Then run `tilt up` inside the container (host Docker via docker-outside-of-docker).
+
+**Option B — Native Tilt (no container):** In the **Ports** panel → **Forward a Port** → enter **8443**. With `remote.restoreForwardedPorts` enabled in `.vscode/settings.json`, it is remembered for this workspace. Open **https://localhost:8443** in your browser.
 
 When run from an existing `turbopanel-dev` checkout, the script uses the checkout’s parent directory as the install root automatically (for example, if your checkout is at `~/turbopanel/dev`, sibling repos are created under `~/turbopanel/`). It does not prompt in that mode.
 

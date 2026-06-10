@@ -1,0 +1,4 @@
+{
+  "remote.autoForwardPorts": true,
+  "remote.restoreForwardedPorts": true
+}

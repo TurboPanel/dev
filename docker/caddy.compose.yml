@@ -6,7 +6,7 @@ services:
     container_name: turbopanel-caddy
     restart: unless-stopped
     ports:
-      - "127.0.0.1:${CADDY_PORT:-8443}:8443"
+      - "${CADDY_PORT:-8443}:8443"
     environment:
       CADDY_PORT: "8443"
       INSTANCE_DEV_PORT: ${INSTANCE_DEV_PORT:-18787}

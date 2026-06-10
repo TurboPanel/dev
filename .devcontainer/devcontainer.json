@@ -1,0 +1,35 @@
+{
+  "name": "TurboPanel Dev",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+  "forwardPorts": [8443, 5432, 10350],
+  "portsAttributes": {
+    "8443": {
+      "label": "TurboPanel App",
+      "protocol": "https"
+    },
+    "5432": {
+      "label": "Postgres"
+    },
+    "10350": {
+      "label": "Tilt UI"
+    }
+  },
+  "runArgs": ["--network=host"],
+  "workspaceFolder": "${localWorkspaceFolder}",
+  "workspaceMount": "source=${localWorkspaceFolder},target=${localWorkspaceFolder},type=bind,consistency=cached",
+  "mounts": [
+    "source=${localWorkspaceFolder}/..,target=${localWorkspaceFolder}/..,type=bind,consistency=cached"
+  ],
+  "features": {
+    "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {}
+  },
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "remote.autoForwardPorts": true,
+        "remote.restoreForwardedPorts": true
+      }
+    }
+  },
+  "postCreateCommand": "echo 'Dev container ready — run tilt up from the dev/ folder (uses host Docker + host ports).'"
+}

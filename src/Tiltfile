@@ -59,6 +59,13 @@ dc_resource(
 )
 
 local_resource(
+  'dev-urls',
+  cmd='echo "TurboPanel app:  https://127.0.0.1:%s" && echo "Postgres:          127.0.0.1:%s" && echo "Tilt UI:           http://127.0.0.1:10350"' % (_caddy_port, _pg_port),
+  resource_deps=['caddy', 'postgres'],
+  labels=['config'],
+)
+
+local_resource(
   'instance-deps',
   cmd='pnpm install',
   dir=instance_dir,

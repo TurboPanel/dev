@@ -29,5 +29,6 @@ Thumbs.db
 # editors (keep shared launch configs if added later)
 .vscode/*
 !.vscode/launch.json
+!.vscode/settings.json
 !.vscode/*.code-snippets
 .idea/
