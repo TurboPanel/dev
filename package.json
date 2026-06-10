@@ -5,7 +5,7 @@
   "private": true,
   "scripts": {
     "dev": "wrangler dev",
-    "deploy": "wrangler deploy --minify",
+    "deploy": "wrangler deploy",
     "cf-typegen": "wrangler types --include-runtime=false"
   },
   "devDependencies": {
