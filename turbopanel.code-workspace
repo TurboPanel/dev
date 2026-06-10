@@ -1,0 +1,17 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../instance"
+		},
+		{
+			"path": "../ui"
+		},
+		{
+			"path": "../daemon"
+		}
+	],
+	"settings": {}
+}
