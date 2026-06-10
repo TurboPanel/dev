@@ -15,7 +15,7 @@
 	admin off
 }
 
-:{$CADDY_PORT:8443} {
+127.0.0.1:{$CADDY_PORT:8443} {
 	tls {$CADDY_TLS_CERT:./certs/self-signed.crt} {$CADDY_TLS_KEY:./certs/self-signed.key}
 
 	@api path /api/*

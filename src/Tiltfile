@@ -135,7 +135,7 @@ local_resource(
 
 local_resource(
   'caddy',
-  serve_cmd='$HOME/runtimes/caddy/current/caddy run --config %s --adapter caddyfile' % caddyfile,
+  serve_cmd='bash %s %s' % (os.path.join(dev_root, 'scripts', 'caddy-serve.sh'), caddyfile),
   serve_dir=instance_dir,
   resource_deps=['caddy-install', 'instance-certs', 'instance', 'ui'],
   deps=[caddyfile, env_file],
