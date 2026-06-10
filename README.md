@@ -4,7 +4,7 @@
 
 TurboPanel is a self-hosted server management panel. This `dev` repository is the starting point for contributors — it bootstraps all sibling repositories and provides the tooling needed to run the full stack locally.
 
-[develop.trbp.nl](https://develop.trbp.nl) redirects to this repository on GitHub. Local dev replicates the **Cloudflare Workers** deployment path: the instance runs via **`pnpm dev`** (`wrangler dev`) in `instance/`, the UI via Expo, and **Caddy** terminates TLS and routes traffic — same surface as production Workers, without Deno or systemd.
+[develop.trbp.nl](https://develop.trbp.nl) is the canonical bootstrap URL. Local dev replicates the **Cloudflare Workers** deployment path: the instance runs via **`pnpm dev`** (`wrangler dev`) in `instance/`, the UI via Expo, and **Caddy** terminates TLS and routes traffic — same surface as production Workers, without Deno or systemd.
 
 ## Prerequisites
 
@@ -22,7 +22,7 @@ TurboPanel is a self-hosted server management panel. This `dev` repository is th
 **One-liner (fresh machine):**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/turbopanel/turbopanel-dev/trunk/src/develop.sh | sh
+curl -fsSL https://develop.trbp.nl | sh
 ```
 
 **If you have already cloned this repo:**
