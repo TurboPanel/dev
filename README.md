@@ -28,7 +28,7 @@ curl -fsSL https://develop.trbp.nl | sh
 **If you have already cloned this repo:**
 
 ```bash
-sh src/develop.sh
+sh pull.sh
 ```
 
 When run from an existing `turbopanel-dev` checkout, the script uses the checkout’s parent directory as the install root automatically (for example, if your checkout is at `~/turbopanel/dev`, sibling repos are created under `~/turbopanel/`). It does not prompt in that mode.
@@ -68,7 +68,8 @@ turbopanel/
 ├── dev/      # this repo — scripts, docs, shared dev tooling
 ├── instance/ # turbopanel/turbopanel — core server (Workers + wrangler)
 ├── ui/       # turbopanel/turbopanel-ui — frontend
-└── daemon/   # turbopanel/turbopanel-daemon — host daemon
+├── daemon/   # turbopanel/turbopanel-daemon — host daemon
+└── website/  # turbopanel/turbopanel-website — marketing site
 ```
 
 ## Branch conventions
@@ -77,7 +78,7 @@ All repositories use **`trunk`** as the default and integration branch. Do not u
 
 ## Updating
 
-Re-running `src/develop.sh` is safe. For each repo it will:
+Re-running `pull.sh` is safe. For each repo it will:
 
 - **Skip** the repo if there are any uncommitted changes, printing a warning.
 - **Pull** the latest `trunk` with `--ff-only` if the working tree is clean.

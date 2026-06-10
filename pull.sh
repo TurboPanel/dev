@@ -99,33 +99,59 @@ if ! command -v tilt >/dev/null 2>&1; then
   exit 1
 fi
 
-# Self-detection (piped runs use $0=sh; direct runs use a path ending in develop.sh)
+# Self-detection (piped runs use $0=sh; direct runs use a path ending in pull.sh)
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
 
-RUNNING_FROM_CHECKOUT=false
-case $0 in
-  */develop.sh | develop.sh)
-    if [ "$(git -C "$SCRIPT_DIR" rev-parse --is-inside-work-tree 2>/dev/null || echo false)" = "true" ]; then
-      origin_url=$(git -C "$SCRIPT_DIR" remote get-url origin 2>/dev/null || true)
-      case $origin_url in
-        *turbopanel/turbopanel-dev*)
-          RUNNING_FROM_CHECKOUT=true
-          DEV_REPO_ROOT=$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel)
-          DEFAULT_ROOT=$(dirname "$DEV_REPO_ROOT")
-          ;;
-      esac
+trim_whitespace() {
+  _tw=$1
+  while [ -n "$_tw" ]; do
+    case $_tw in
+      ' '*) _tw=${_tw#?} ;;
+      *' ') _tw=${_tw%?} ;;
+      *'	'*) _tw=${_tw%?} ;;
+      '	'*) _tw=${_tw#?} ;;
+      *) break ;;
+    esac
+  done
+  printf '%s' "$_tw"
+}
+
+is_turbopanel_dev_repo() {
+  _itdr_dir=$1
+  [ -d "$_itdr_dir" ] || return 1
+  [ "$(git -C "$_itdr_dir" rev-parse --is-inside-work-tree 2>/dev/null || echo false)" = "true" ] || return 1
+  _itdr_origin=$(git -C "$_itdr_dir" remote get-url origin 2>/dev/null || true)
+  case $_itdr_origin in
+    *turbopanel/turbopanel-dev*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+detect_install_root_from_dir() {
+  _dird_start=$1
+  _dird_dir=$_dird_start
+  while [ "$_dird_dir" != "/" ]; do
+    if is_turbopanel_dev_repo "$_dird_dir"; then
+      dirname "$_dird_dir"
+      return 0
     fi
-    ;;
-esac
+    if [ -d "$_dird_dir/dev" ] && is_turbopanel_dev_repo "$_dird_dir/dev"; then
+      printf '%s' "$_dird_dir"
+      return 0
+    fi
+    _dird_dir=$(dirname "$_dird_dir")
+  done
+  return 1
+}
 
 resolve_install_root() {
-  _rir_input=$1
+  _rir_input=$(trim_whitespace "$1")
   if [ -z "$_rir_input" ]; then
     _rir_input=~/turbopanel
   fi
   case $_rir_input in
     '~') _rir_input=$HOME ;;
-    '~/'*) _rir_input=$HOME/${_rir_input#~/} ;;
+    '~'/*) _rir_input=$HOME/${_rir_input#\~/} ;;
   esac
   if command -v realpath >/dev/null 2>&1; then
     realpath --canonicalize-missing "$_rir_input"
@@ -135,10 +161,28 @@ resolve_install_root() {
   fi
 }
 
+INSTALL_ROOT=
+DETECTED_EXISTING_CHECKOUT=false
+
+case $0 in
+  */pull.sh | pull.sh)
+    if is_turbopanel_dev_repo "$SCRIPT_DIR"; then
+      DETECTED_EXISTING_CHECKOUT=true
+      INSTALL_ROOT=$(dirname "$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel)")
+    fi
+    ;;
+esac
+
+if [ -z "$INSTALL_ROOT" ]; then
+  if detected_root=$(detect_install_root_from_dir "$(pwd)"); then
+    DETECTED_EXISTING_CHECKOUT=true
+    INSTALL_ROOT=$detected_root
+  fi
+fi
+
 # Prompt for install location
-if [ "$RUNNING_FROM_CHECKOUT" = true ]; then
-  INSTALL_ROOT=$DEFAULT_ROOT
-  info "Running from a turbopanel-dev checkout — using install root: ${INSTALL_ROOT}"
+if [ "$DETECTED_EXISTING_CHECKOUT" = true ]; then
+  info "Detected existing TurboPanel checkout — using install root: ${INSTALL_ROOT}"
 elif [ -n "${TURBOPANEL_INSTALL_ROOT:-}" ]; then
   INSTALL_ROOT=$(resolve_install_root "$TURBOPANEL_INSTALL_ROOT")
   info "Using install root from TURBOPANEL_INSTALL_ROOT: ${INSTALL_ROOT}"
@@ -188,13 +232,11 @@ BRANCH=trunk
 
 mkdir -p "$INSTALL_ROOT"
 
-if [ "$RUNNING_FROM_CHECKOUT" != true ]; then
-  clone_or_update "https://github.com/turbopanel/turbopanel-dev" "$INSTALL_ROOT/dev" "$BRANCH"
-fi
-
+clone_or_update "https://github.com/turbopanel/turbopanel-dev" "$INSTALL_ROOT/dev" "$BRANCH"
 clone_or_update "https://github.com/turbopanel/turbopanel" "$INSTALL_ROOT/instance" "$BRANCH"
 clone_or_update "https://github.com/turbopanel/turbopanel-ui" "$INSTALL_ROOT/ui" "$BRANCH"
 clone_or_update "https://github.com/turbopanel/turbopanel-daemon" "$INSTALL_ROOT/daemon" "$BRANCH"
+clone_or_update "https://github.com/turbopanel/turbopanel-website" "$INSTALL_ROOT/website" "$BRANCH"
 
 # Post-install summary
 echo
@@ -204,7 +246,8 @@ echo "  ${INSTALL_ROOT}/"
 echo "  ├── dev/      (turbopanel/turbopanel-dev)"
 echo "  ├── instance/ (turbopanel/turbopanel)"
 echo "  ├── ui/       (turbopanel/turbopanel-ui)"
-echo "  └── daemon/   (turbopanel/turbopanel-daemon)"
+echo "  ├── daemon/   (turbopanel/turbopanel-daemon)"
+echo "  └── website/  (turbopanel/turbopanel-website)"
 echo
 
 if [ -n "$SKIPPED_REPOS" ]; then

@@ -17,7 +17,10 @@ set -a
 source "${env_file}"
 set +a
 
-: "${SESSION_SECRET:?SESSION_SECRET is required in dev/.env}"
+if [[ -z "${SESSION_SECRET:-}" && -z "${SESSION_SECRETS:-}" ]]; then
+  echo "sync-env: SESSION_SECRET or SESSION_SECRETS is required in dev/.env" >&2
+  exit 1
+fi
 : "${INSTANCE_DEV_PORT:=18787}"
 : "${POSTGRES_USER:?POSTGRES_USER is required in dev/.env}"
 : "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required in dev/.env}"
@@ -48,7 +51,8 @@ write_file() {
 }
 
 write_file "${instance_dir}/.dev.vars" \
-  "SESSION_SECRET = \"${SESSION_SECRET}\""
+  "SESSION_SECRET = \"${SESSION_SECRET:-}\"" \
+  "SESSION_SECRETS = \"${SESSION_SECRETS:-}\""
 
 write_file "${instance_dir}/.env" \
   "TURBOPANEL_TLS_EXTRA_SANS=${TURBOPANEL_TLS_EXTRA_SANS}"

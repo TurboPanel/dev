@@ -12,6 +12,12 @@
     {
       "path": "../daemon",
     },
+    {
+      "path": "../website",
+    },
+    {
+      "path": "../turbopanel-old-trunk",
+    },
   ],
   "settings": {},
 }
