@@ -6,12 +6,14 @@ TurboPanel is a self-hosted server management panel. This `dev` repository is th
 
 ## Prerequisites
 
-| Tool | Minimum version |
-|------|----------------|
-| Node.js | 24.x |
-| Deno | 2.x |
-| Docker | latest stable (daemon must be running) |
-| Tilt | latest stable |
+**You are responsible for installing these runtimes on your machine before running `develop.sh`.** The setup script checks that each tool is present and meets the minimum version, but it does not install them for you.
+
+| Tool | Minimum version | Install |
+|------|-----------------|---------|
+| Node.js | 24.x | https://nodejs.org |
+| Deno | 2.x | https://deno.land/#installation |
+| Docker | latest stable (daemon must be running) | https://docs.docker.com/get-docker/ |
+| Tilt | latest stable | https://docs.tilt.dev/install.html |
 
 ## Getting started
 
