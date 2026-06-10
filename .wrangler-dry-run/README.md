@@ -1,1 +1,0 @@
-This folder contains the built output assets for the worker "turbopanel-dev" generated at 2026-06-10T15:33:26.597Z.

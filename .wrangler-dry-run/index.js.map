@@ -1,8 +1,0 @@
-{
-  "version": 3,
-  "sources": ["../src/workers/index.ts"],
-  "sourceRoot": ".wrangler-dry-run",
-  "sourcesContent": ["import script from '../develop/idempotent.sh'\n\nconst SCRIPT_PATHS = new Set(['/', '/develop', '/develop/idempotent.sh'])\n\nexport default {\n  fetch(request: Request) {\n    const { pathname } = new URL(request.url)\n\n    if (!SCRIPT_PATHS.has(pathname)) {\n      return new Response('Not Found', { status: 404 })\n    }\n\n    return new Response(script, {\n      headers: {\n        'Content-Type': 'text/plain; charset=utf-8',\n        'Cache-Control': 'no-cache',\n      },\n    })\n  },\n} satisfies ExportedHandler\n"],
-  "mappings": ";AAAA,OAAO,YAAY;AAEnB,IAAM,eAAe,oBAAI,IAAI,CAAC,KAAK,YAAY,wBAAwB,CAAC;AAExE,IAAO,gBAAQ;AAAA,EACb,MAAM,SAAkB;AACtB,UAAM,EAAE,SAAS,IAAI,IAAI,IAAI,QAAQ,GAAG;AAExC,QAAI,CAAC,aAAa,IAAI,QAAQ,GAAG;AAC/B,aAAO,IAAI,SAAS,aAAa,EAAE,QAAQ,IAAI,CAAC;AAAA,IAClD;AAEA,WAAO,IAAI,SAAS,QAAQ;AAAA,MAC1B,SAAS;AAAA,QACP,gBAAgB;AAAA,QAChB,iBAAiB;AAAA,MACnB;AAAA,IACF,CAAC;AAAA,EACH;AACF;",
-  "names": []
-}
