@@ -41,7 +41,14 @@ fi
 
 mkdir -p "${ui_dir}/dist"
 
-database_url="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}"
+default_database_url="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}"
+default_hyperdrive_url="postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}"
+
+# Migrations / Drizzle / sync.sh — may differ from the Hyperdrive runtime user in production.
+TURBOPANEL_DATABASE_URL="${TURBOPANEL_DATABASE_URL:-${default_database_url}}"
+
+# wrangler dev local Hyperdrive — see https://developers.cloudflare.com/hyperdrive/configuration/local-development/
+CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE="${CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE:-${default_hyperdrive_url}}"
 
 write_file() {
   local path="$1"
@@ -55,7 +62,9 @@ write_file "${instance_dir}/.dev.vars" \
   "SESSION_SECRETS = \"${SESSION_SECRETS:-}\""
 
 write_file "${instance_dir}/.env" \
-  "TURBOPANEL_TLS_EXTRA_SANS=${TURBOPANEL_TLS_EXTRA_SANS}"
+  "TURBOPANEL_TLS_EXTRA_SANS=${TURBOPANEL_TLS_EXTRA_SANS}" \
+  "TURBOPANEL_DATABASE_URL=${TURBOPANEL_DATABASE_URL}" \
+  "CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE=${CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE}"
 
 write_file "${dev_root}/docker/.env" \
   "POSTGRES_USER=${POSTGRES_USER}" \
@@ -68,4 +77,4 @@ write_file "${dev_root}/docker/.env" \
   "TURBOPANEL_UI_MODE=${TURBOPANEL_UI_MODE}"
 
 echo "sync-env: wrote instance/.dev.vars, instance/.env, docker/.env"
-echo "sync-env: DATABASE_URL=${database_url}"
+echo "sync-env: wrote TURBOPANEL_DATABASE_URL and CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE to instance/.env"

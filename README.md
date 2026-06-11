@@ -44,13 +44,24 @@ cp .env.example .env   # edit SESSION_SECRET and other values if needed
 tilt up
 ```
 
-Tilt loads `dev/.env`, syncs derived files into sibling repos (`instance/.dev.vars`, `instance/.env`, `docker/.env`), then starts **Postgres**, the **Workers instance** (`pnpm dev` / wrangler), **Expo web**, and **Caddy** as the HTTPS entrypoint.
+When you exit with Ctrl+C, Tilt stops `serve_cmd` resources (instance, UI, website) but leaves Docker Compose containers (Postgres, Caddy) running. Tear everything down with:
+
+```bash
+tilt down
+```
+
+Tilt loads `dev/.env`, syncs derived files into sibling repos (`instance/.dev.vars`, `instance/.env`, `docker/.env`), then starts **Postgres**, the **Workers instance** (`pnpm dev` / wrangler), **Expo web**, **Caddy** as the HTTPS entrypoint, and the **website** (Next.js marketing + docs).
 
 | Service | URL |
 |---------|-----|
 | App (Caddy → UI + API) | https://localhost:8443 |
 | API health | https://localhost:8443/api/health |
+| Website (docs + API reference) | http://localhost:19820 |
+| Website docs | http://localhost:19820/docs |
+| Website API reference | http://localhost:19820/docs/api |
 | Wrangler (direct, internal) | http://localhost:18787 |
+
+The website port defaults to **19820** and is configurable via `WEBSITE_PORT` in `dev/.env` (Tilt passes it to the Next.js dev server and updates links accordingly).
 
 Trust the generated platform CA at `instance/certs/ca.crt` in your browser to avoid TLS warnings (run `tilt up` once so `instance-certs` generates it).
 
@@ -69,7 +80,7 @@ turbopanel/
 ├── instance/ # turbopanel/turbopanel — core server (Workers + wrangler)
 ├── ui/       # turbopanel/turbopanel-ui — frontend
 ├── daemon/   # turbopanel/turbopanel-daemon — host daemon
-└── website/  # turbopanel/turbopanel-website — marketing site
+└── website/  # turbopanel/turbopanel-website — marketing + docs site (Tilt `website` resource, port 19820)
 ```
 
 ## Branch conventions

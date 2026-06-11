@@ -25,7 +25,7 @@ turbopanel/
 ├── instance/ # turbopanel/turbopanel — core server (Workers entry: src/workers.ts)
 ├── ui/       # turbopanel/turbopanel-ui — frontend
 ├── daemon/   # turbopanel/turbopanel-daemon — host daemon (not started by Tilt)
-└── website/  # turbopanel/turbopanel-website — marketing site (not started by Tilt)
+└── website/  # turbopanel/turbopanel-website — marketing + docs site (port 19820)
 ```
 
 ## Bootstrap script
@@ -35,14 +35,15 @@ turbopanel/
 
 ## Tilt
 
-- **`Tiltfile`** — Workers local dev behind Caddy: Postgres (Docker) + `pnpm dev` (wrangler) + Expo web + Caddy HTTPS proxy. Run `tilt up` from the `dev/` checkout. Uses native host tools only (`pnpm`, `node`, `docker`) — **no Deno, no systemd, no daemon**.
+- **`Tiltfile`** — Workers local dev behind Caddy: Postgres (Docker) + `pnpm dev` (wrangler) + Expo web + Caddy HTTPS proxy. Run `tilt up` from the `dev/` checkout; `tilt down` removes Docker Compose resources (Ctrl+C alone does not). Uses native host tools only (`pnpm`, `node`, `docker`) — **no Deno, no systemd, no daemon**.
 - **`dev/.env`** — single source of truth for local dev variables (copy from `.env.example`). Gitignored; never commit secrets.
 - **`scripts/sync-env.sh`** — run by the `env-sync` Tilt resource; writes `instance/.dev.vars`, `instance/.env`, and `docker/.env` from `dev/.env`.
-- **`docker/postgres.compose.yml`** — dev Postgres on `127.0.0.1:5432`; credentials come from `docker/.env` (synced from `dev/.env`). Must stay aligned with `instance/wrangler.jsonc` Hyperdrive `localConnectionString`.
+- **`docker/postgres.compose.yml`** — dev Postgres on `127.0.0.1:5432`; credentials come from `docker/.env` (synced from `dev/.env`). `sync-env.sh` writes `CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE` and `TURBOPANEL_DATABASE_URL` to `instance/.env` (derived from `POSTGRES_*` unless overridden) so `wrangler dev` connects locally per [Hyperdrive local dev docs](https://developers.cloudflare.com/hyperdrive/configuration/local-development/) — no credentials in `wrangler.jsonc`.
 - **`docker/caddy.compose.yml`** — Caddy in Docker (proxies to host wrangler/Expo via `host.docker.internal`). Published on host port **8443**.
 - **`docker/Caddyfile`** — used by the Docker Caddy service; `/api/*` and `/ws/*` → host wrangler port; UI → host Expo when `TURBOPANEL_UI_MODE=dev`. Differs from `instance/Caddyfile` (Deno Unix socket).
 - **First run:** `cp .env.example .env` in the `dev/` checkout.
-- **Resources:** `env-sync` → `postgres` + `caddy` (Docker) / `instance-deps` / `ui-deps` / `instance-certs` → `instance-db` → `instance` + `ui` (caddy waits for certs + upstreams).
+- **Resources:** `env-sync` → `postgres` + `caddy` (Docker) / `instance-deps` / `ui-deps` / `website-deps` / `instance-certs` → `instance-db` → `instance` + `ui` + `website` (caddy waits for certs + upstreams).
+- Website (`pnpm dev` / Next.js) runs on port **19820** (`WEBSITE_PORT` in `dev/.env`).
 
 ## Purpose of each sibling repo
 
@@ -52,7 +53,7 @@ turbopanel/
 
 **`daemon/`** — The host daemon (`turbopanel/turbopanel-daemon`). A low-level service that runs on the host machine and communicates with the panel instance to manage system-level operations.
 
-**`website/`** — The marketing site (`turbopanel/turbopanel-website`). Not wired into Tilt local dev.
+**`website/`** — The marketing and docs site (`turbopanel/turbopanel-website`). Runs via `pnpm dev` on port **19820**; started by Tilt as the `website` resource (depends on `website-deps` and `instance`). Exposes `/docs/api` (Scalar via the instance's `/api/openapi.json`) and `/api/reference` (direct Scalar on the instance).
 
 **`dev/`** — This repository. Contains `pull.sh`, Tilt orchestration, documentation, and any shared developer tooling that spans all sibling repos.
 

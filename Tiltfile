@@ -1,5 +1,5 @@
 # TurboPanel local dev — Cloudflare Workers (pnpm/wrangler) behind Caddy.
-# Run `tilt up` from the dev/ checkout.
+# Run `tilt up` from the dev/ checkout; `tilt down` tears down Docker resources.
 
 load('ext://dotenv', 'dotenv')
 
@@ -7,16 +7,24 @@ dev_root = config.main_dir
 install_root = os.path.dirname(dev_root)
 instance_dir = os.path.join(install_root, 'instance')
 ui_dir = os.path.join(install_root, 'ui')
+website_dir = os.path.join(install_root, 'website')
 env_file = os.path.join(dev_root, '.env')
 env_example = os.path.join(dev_root, '.env.example')
 sync_env = os.path.join(dev_root, 'scripts', 'sync-env.sh')
 caddyfile = os.path.join(dev_root, 'docker', 'Caddyfile')
+
+_PACKAGE_JSON = 'package.json'
+_PNPM_LOCK = 'pnpm-lock.yaml'
+_PNPM_INSTALL = 'pnpm install'
 
 if not os.path.exists(instance_dir):
   fail('instance checkout not found at %s — run pull.sh first' % instance_dir)
 
 if not os.path.exists(ui_dir):
   fail('ui checkout not found at %s — run pull.sh first' % ui_dir)
+
+if not os.path.exists(website_dir):
+  fail('website checkout not found at %s — run pull.sh first' % website_dir)
 
 if not os.path.exists(env_file):
   fail('.env missing — copy %s to %s and edit as needed' % (env_example, env_file))
@@ -35,6 +43,7 @@ _dev_pg_url = 'postgresql://%s:%s@%s:%s/%s' % (_pg_user, _pg_pass, _pg_host, _pg
 
 _caddy_port = env('CADDY_PORT', '8443')
 _expo_port = env('EXPO_PORT', '8081')
+_website_port = env('WEBSITE_PORT', '19820')
 
 local_resource(
   'env-sync',
@@ -60,7 +69,7 @@ dc_resource(
 
 local_resource(
   'dev-urls',
-  cmd='echo "TurboPanel app:  https://127.0.0.1:%s" && echo "Postgres:          127.0.0.1:%s" && echo "Tilt UI:           http://127.0.0.1:10350"' % (_caddy_port, _pg_port),
+  cmd='echo "TurboPanel app:  https://127.0.0.1:%s" && echo "Website:           http://127.0.0.1:%s" && echo "Postgres:          127.0.0.1:%s" && echo "Tilt UI:           http://127.0.0.1:10350"' % (_caddy_port, _website_port, _pg_port),
   resource_deps=['caddy', 'postgres'],
   labels=['config'],
 )
@@ -79,10 +88,13 @@ local_resource(
 
 local_resource(
   'instance-db',
-  cmd='DATABASE_URL=%s ./sync.sh --force' % _dev_pg_url,
+  cmd='set -a && . ./.env && set +a && ./sync.sh --force',
   dir=instance_dir,
   resource_deps=['postgres', 'instance-deps', 'env-sync'],
-  deps=[os.path.join(instance_dir, 'src/db/schema.ts')],
+  deps=[
+    os.path.join(instance_dir, 'src/db/schema.ts'),
+    os.path.join(instance_dir, '.env'),
+  ],
   labels=['instance'],
 )
 
@@ -94,8 +106,9 @@ local_resource(
   deps=[
     os.path.join(instance_dir, 'src'),
     os.path.join(instance_dir, 'wrangler.jsonc'),
-    os.path.join(instance_dir, 'package.json'),
+    os.path.join(instance_dir, _PACKAGE_JSON),
     os.path.join(instance_dir, '.dev.vars'),
+    os.path.join(instance_dir, '.env'),
   ],
   labels=['instance'],
 )
@@ -111,24 +124,55 @@ local_resource(
 
 local_resource(
   'instance-deps',
-  cmd='pnpm install',
+  cmd=_PNPM_INSTALL,
   dir=instance_dir,
   resource_deps=['env-sync'],
   deps=[
-    os.path.join(instance_dir, 'package.json'),
-    os.path.join(instance_dir, 'pnpm-lock.yaml'),
+    os.path.join(instance_dir, _PACKAGE_JSON),
+    os.path.join(instance_dir, _PNPM_LOCK),
   ],
   labels=['install'],
 )
 
 local_resource(
   'ui-deps',
-  cmd='pnpm install',
+  cmd=_PNPM_INSTALL,
   dir=ui_dir,
   resource_deps=['env-sync'],
   deps=[
-    os.path.join(ui_dir, 'package.json'),
-    os.path.join(ui_dir, 'pnpm-lock.yaml'),
+    os.path.join(ui_dir, _PACKAGE_JSON),
+    os.path.join(ui_dir, _PNPM_LOCK),
   ],
   labels=['install'],
+)
+
+local_resource(
+  'website-deps',
+  cmd=_PNPM_INSTALL,
+  dir=website_dir,
+  resource_deps=['env-sync'],
+  deps=[
+    os.path.join(website_dir, _PACKAGE_JSON),
+    os.path.join(website_dir, _PNPM_LOCK),
+  ],
+  labels=['install'],
+)
+
+local_resource(
+  'website',
+  serve_cmd='NEXT_PUBLIC_WEBSITE_PORT=%s pnpm dev --port %s' % (_website_port, _website_port),
+  serve_dir=website_dir,
+  resource_deps=['website-deps', 'instance'],
+  deps=[
+    os.path.join(website_dir, 'src'),
+    os.path.join(website_dir, 'docs'),
+    os.path.join(website_dir, _PACKAGE_JSON),
+  ],
+  links=[
+    link('http://localhost:%s' % _website_port, 'website'),
+    link('http://localhost:%s/docs' % _website_port, 'docs'),
+    link('http://localhost:%s/docs/api' % _website_port, 'api reference'),
+    link('http://localhost:%s/api/reference' % _website_port, 'scalar (direct)'),
+  ],
+  labels=['website'],
 )

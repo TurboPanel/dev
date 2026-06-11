@@ -19,5 +19,11 @@
       "path": "../turbopanel-old-trunk",
     },
   ],
-  "settings": {},
+  "settings": {
+    "deno.enable": false,
+    "deno.enablePaths": ["../instance", "../daemon"]
+  },
+  "extensions": {
+    "recommendations": ["denoland.vscode-deno"]
+  }
 }
