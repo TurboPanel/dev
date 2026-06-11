@@ -17,8 +17,8 @@ set -a
 source "${env_file}"
 set +a
 
-if [[ -z "${SESSION_SECRET:-}" && -z "${SESSION_SECRETS:-}" ]]; then
-  echo "sync-env: SESSION_SECRET or SESSION_SECRETS is required in dev/.env" >&2
+if [[ -z "${TURBOPANEL_SECRET:-}" && -z "${TURBOPANEL_SECRETS:-}" ]]; then
+  echo "sync-env: TURBOPANEL_SECRET or TURBOPANEL_SECRETS is required in dev/.env" >&2
   exit 1
 fi
 : "${INSTANCE_DEV_PORT:=18787}"
@@ -30,7 +30,10 @@ fi
 : "${CADDY_PORT:=8443}"
 : "${TURBOPANEL_UI_MODE:=dev}"
 : "${EXPO_PORT:=8081}"
+: "${WEBSITE_PORT:=19820}"
 : "${TURBOPANEL_TLS_EXTRA_SANS:=}"
+
+TURBOPANEL_CORS_ORIGINS="${TURBOPANEL_CORS_ORIGINS:-http://localhost:${WEBSITE_PORT},http://127.0.0.1:${WEBSITE_PORT}}"
 
 instance_dir="${install_root}/instance"
 ui_dir="${install_root}/ui"
@@ -58,8 +61,9 @@ write_file() {
 }
 
 write_file "${instance_dir}/.dev.vars" \
-  "SESSION_SECRET = \"${SESSION_SECRET:-}\"" \
-  "SESSION_SECRETS = \"${SESSION_SECRETS:-}\""
+  "TURBOPANEL_SECRET = \"${TURBOPANEL_SECRET:-}\"" \
+  "TURBOPANEL_SECRETS = \"${TURBOPANEL_SECRETS:-}\"" \
+  "TURBOPANEL_CORS_ORIGINS = \"${TURBOPANEL_CORS_ORIGINS}\""
 
 write_file "${instance_dir}/.env" \
   "TURBOPANEL_TLS_EXTRA_SANS=${TURBOPANEL_TLS_EXTRA_SANS}" \

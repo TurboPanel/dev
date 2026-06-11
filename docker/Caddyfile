@@ -9,6 +9,10 @@
 {
 	auto_https off
 	admin off
+	# HTTP/3/QUIC fails with the dev self-signed cert on many browsers; keep h1/h2 only.
+	servers :8443 {
+		protocols h1 h2
+	}
 }
 
 :{$CADDY_PORT:8443} {

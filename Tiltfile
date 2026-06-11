@@ -42,6 +42,7 @@ _pg_port = env('POSTGRES_PORT', '5432')
 _dev_pg_url = 'postgresql://%s:%s@%s:%s/%s' % (_pg_user, _pg_pass, _pg_host, _pg_port, _pg_db)
 
 _caddy_port = env('CADDY_PORT', '8443')
+_instance_port = env('INSTANCE_DEV_PORT', '18787')
 _expo_port = env('EXPO_PORT', '8081')
 _website_port = env('WEBSITE_PORT', '19820')
 
@@ -69,7 +70,16 @@ dc_resource(
 
 local_resource(
   'dev-urls',
-  cmd='echo "TurboPanel app:  https://127.0.0.1:%s" && echo "Website:           http://127.0.0.1:%s" && echo "Postgres:          127.0.0.1:%s" && echo "Tilt UI:           http://127.0.0.1:10350"' % (_caddy_port, _website_port, _pg_port),
+  cmd='''cat <<EOF
+TurboPanel dev URLs
+
+  App         https://127.0.0.1:%s
+  Website     http://127.0.0.1:%s
+  Docs        http://127.0.0.1:%s/docs
+  API health  https://127.0.0.1:%s/api/health
+  Postgres    127.0.0.1:%s
+  Tilt UI     http://127.0.0.1:10350
+EOF''' % (_caddy_port, _website_port, _website_port, _caddy_port, _pg_port),
   resource_deps=['caddy', 'postgres'],
   labels=['config'],
 )
@@ -160,7 +170,7 @@ local_resource(
 
 local_resource(
   'website',
-  serve_cmd='NEXT_PUBLIC_WEBSITE_PORT=%s pnpm dev --port %s' % (_website_port, _website_port),
+  serve_cmd='NEXT_PUBLIC_WEBSITE_PORT=%s NEXT_PUBLIC_CADDY_PORT=%s pnpm dev --port %s' % (_website_port, _caddy_port, _website_port),
   serve_dir=website_dir,
   resource_deps=['website-deps', 'instance'],
   deps=[

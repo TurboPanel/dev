@@ -40,7 +40,7 @@ In all cases, the script clones or updates the sibling repos under the chosen in
 After sibling repos are present, configure local dev env and start orchestration from the `dev/` checkout:
 
 ```bash
-cp .env.example .env   # edit SESSION_SECRET and other values if needed
+cp .env.example .env   # edit TURBOPANEL_SECRET and other values if needed
 tilt up
 ```
 
