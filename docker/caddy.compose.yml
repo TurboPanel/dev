@@ -12,6 +12,8 @@ services:
       INSTANCE_DEV_PORT: ${INSTANCE_DEV_PORT:-18787}
       EXPO_PORT: ${EXPO_PORT:-8081}
       TURBOPANEL_UI_MODE: ${TURBOPANEL_UI_MODE:-dev}
+      TURBOPANEL_INSTANCE_RUNTIME: ${TURBOPANEL_INSTANCE_RUNTIME:-workers}
+      TURBOPANEL_SOCKET_DIAL: ${TURBOPANEL_SOCKET_DIAL:-run/turbopanel-dev/instance.sock}
       UPSTREAM_HOST: host.docker.internal
       CADDY_TLS_CERT: /certs/self-signed.crt
       CADDY_TLS_KEY: /certs/self-signed.key
@@ -21,4 +23,6 @@ services:
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - ../../instance/certs:/certs:ro
+      - ../../instance/expo-loading.html:/caddy-static/expo-loading.html:ro
       - ../../ui/dist:/ui/dist:ro
+      - ../.run/turbopanel:/run/turbopanel-dev

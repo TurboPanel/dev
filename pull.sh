@@ -34,6 +34,9 @@ error() {
   printf '%b✗%b %s\n' "$RED" "$RESET" "$*" >&2
 }
 
+# Self-detection (piped runs use $0=sh; direct runs use a path ending in pull.sh)
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
+
 # Prerequisite checks
 if ! command -v node >/dev/null 2>&1; then
   error "Node.js is not installed."
@@ -60,26 +63,39 @@ case $node_major in
 esac
 
 if ! command -v pnpm >/dev/null 2>&1; then
-  error "pnpm is not installed."
-  echo "Install from https://pnpm.io/installation"
-  exit 1
+  if command -v bash >/dev/null 2>&1 && [ -f "$SCRIPT_DIR/scripts/ensure-pnpm.sh" ]; then
+    info "pnpm not found — activating via corepack or npm exec"
+    bash "$SCRIPT_DIR/scripts/ensure-pnpm.sh" || {
+      error "pnpm is not installed."
+      echo "Enable corepack (corepack enable) or install from https://pnpm.io/installation"
+      exit 1
+    }
+  else
+    error "pnpm is not installed."
+    echo "Enable corepack (corepack enable) or install from https://pnpm.io/installation"
+    exit 1
+  fi
 fi
 
-pnpm_major=$(pnpm --version | cut -d. -f1)
-case $pnpm_major in
-  '' | *[!0-9]*)
-    error "pnpm v11.x or later is required (found $(pnpm --version))."
-    echo "Install from https://pnpm.io/installation"
-    exit 1
-    ;;
-  *)
-    if [ "$pnpm_major" -lt 11 ]; then
+if ! command -v pnpm >/dev/null 2>&1; then
+  success "pnpm available via npm exec ($(bash "$SCRIPT_DIR/scripts/ensure-pnpm.sh" --version))"
+else
+  pnpm_major=$(pnpm --version | cut -d. -f1)
+  case $pnpm_major in
+    '' | *[!0-9]*)
       error "pnpm v11.x or later is required (found $(pnpm --version))."
-      echo "Install from https://pnpm.io/installation"
+      echo "Enable corepack (corepack enable) or install from https://pnpm.io/installation"
       exit 1
-    fi
-    ;;
-esac
+      ;;
+    *)
+      if [ "$pnpm_major" -lt 11 ]; then
+        error "pnpm v11.x or later is required (found $(pnpm --version))."
+        echo "Enable corepack (corepack enable) or install from https://pnpm.io/installation"
+        exit 1
+      fi
+      ;;
+  esac
+fi
 
 if ! command -v docker >/dev/null 2>&1; then
   error "Docker is not installed."
@@ -99,8 +115,18 @@ if ! command -v tilt >/dev/null 2>&1; then
   exit 1
 fi
 
-# Self-detection (piped runs use $0=sh; direct runs use a path ending in pull.sh)
-SCRIPT_DIR=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
+if ! command -v deno >/dev/null 2>&1; then
+  error "Deno is not installed."
+  echo "Install from https://docs.deno.com/runtime/getting_started/installation/"
+  exit 1
+fi
+
+if ! command -v openssl >/dev/null 2>&1; then
+  error "openssl is not installed."
+  echo "macOS: brew install openssl"
+  echo "Debian/Ubuntu: apt install openssl"
+  exit 1
+fi
 
 trim_whitespace() {
   _tw=$1

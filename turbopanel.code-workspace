@@ -21,9 +21,13 @@
   ],
   "settings": {
     "deno.enable": false,
-    "deno.enablePaths": ["../instance", "../daemon"]
+    "deno.enablePaths": ["../instance", "../daemon"],
   },
   "extensions": {
-    "recommendations": ["denoland.vscode-deno"]
-  }
+    "recommendations": [
+      "denoland.vscode-deno",
+      "esbenp.prettier-vscode",
+      "tchoupinax.tilt",
+    ],
+  },
 }

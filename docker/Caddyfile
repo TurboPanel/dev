@@ -1,11 +1,11 @@
-# TurboPanel Tilt dev reverse proxy (Docker → host wrangler + Expo).
+# TurboPanel Tilt dev reverse proxy (Docker → host wrangler or Deno Unix socket + Expo).
 #
-#   /api/*  and  /ws/*  -> host wrangler (INSTANCE_DEV_PORT, default 18787)
+#   /api/*  and  /ws/*  -> wrangler TCP (workers) or Deno Unix socket (deno)
 #   everything else      -> host Expo web when TURBOPANEL_UI_MODE=dev
 #
 # Env (from docker/.env via compose):
-#   UPSTREAM_HOST            host.docker.internal in Docker
-#   INSTANCE_DEV_PORT / EXPO_PORT / TURBOPANEL_UI_MODE / CADDY_TLS_* / TURBOPANEL_UI_ROOT
+#   UPSTREAM_HOST / INSTANCE_DEV_PORT / TURBOPANEL_INSTANCE_RUNTIME / TURBOPANEL_SOCKET_DIAL
+#   EXPO_PORT / TURBOPANEL_UI_MODE / CADDY_TLS_* / TURBOPANEL_UI_ROOT
 {
 	auto_https off
 	admin off
@@ -20,22 +20,53 @@
 
 	@api path /api/*
 	handle @api {
-		reverse_proxy {$UPSTREAM_HOST:host.docker.internal}:{$INSTANCE_DEV_PORT:18787} {
-			header_up X-Real-IP {remote_host}
+		@workers_mode expression `"{$TURBOPANEL_INSTANCE_RUNTIME:workers}" == "workers"`
+		handle @workers_mode {
+			reverse_proxy {$UPSTREAM_HOST:host.docker.internal}:{$INSTANCE_DEV_PORT:18787} {
+				header_up X-Real-IP {remote_host}
+			}
+		}
+		handle {
+			reverse_proxy unix//{$TURBOPANEL_SOCKET_DIAL:run/turbopanel-dev/instance.sock} {
+				header_up X-Real-IP {remote_host}
+			}
 		}
 	}
 
 	@ws path /ws/*
 	handle @ws {
-		reverse_proxy {$UPSTREAM_HOST:host.docker.internal}:{$INSTANCE_DEV_PORT:18787} {
-			header_up X-Real-IP {remote_host}
+		@workers_mode expression `"{$TURBOPANEL_INSTANCE_RUNTIME:workers}" == "workers"`
+		handle @workers_mode {
+			reverse_proxy {$UPSTREAM_HOST:host.docker.internal}:{$INSTANCE_DEV_PORT:18787} {
+				header_up X-Real-IP {remote_host}
+			}
+		}
+		handle {
+			reverse_proxy unix//{$TURBOPANEL_SOCKET_DIAL:run/turbopanel-dev/instance.sock} {
+				header_up X-Real-IP {remote_host}
+			}
 		}
 	}
 
 	@ui_dev expression `"{$TURBOPANEL_UI_MODE:static}" == "dev"`
 	handle @ui_dev {
-		reverse_proxy {$UPSTREAM_HOST:host.docker.internal}:{$EXPO_PORT:8081} {
-			header_up Host {$UPSTREAM_HOST:host.docker.internal}:{$EXPO_PORT:8081}
+		route {
+			vars expoUpstream true
+			reverse_proxy {$UPSTREAM_HOST:host.docker.internal}:{$EXPO_PORT:8081} {
+				header_up Host {$UPSTREAM_HOST:host.docker.internal}:{$EXPO_PORT:8081}
+			}
+		}
+	}
+
+	# Expo is often still binding when Caddy starts — show a spinner instead of a bare 502.
+	handle_errors 502 503 {
+		@expoUpstream vars expoUpstream true
+		handle @expoUpstream {
+			root * /caddy-static
+			rewrite * /expo-loading.html
+			file_server {
+				status 200
+			}
 		}
 	}
 

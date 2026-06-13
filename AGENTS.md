@@ -6,7 +6,7 @@
 
 **https://develop.trbp.nl** redirects to the GitHub repository; the bootstrap script is fetched from GitHub raw (`trunk` branch).
 
-**Local dev targets the Cloudflare Workers runtime only** — `pnpm dev` / wrangler in `instance/`, not Deno or systemd. Caddy proxies HTTPS to wrangler (TCP) and Expo the same way the production Workers stack is meant to be exercised locally.
+**Local dev defaults to Cloudflare Workers** — `pnpm dev` / wrangler in `instance/`. Set `TURBOPANEL_INSTANCE_RUNTIME=deno` in `dev/.env` (or use the **Switch to Deno Mode** button in the Tilt UI nav) to run the self-hosted Deno instance on a Unix socket instead. Caddy proxies HTTPS to wrangler (TCP) or the Deno socket depending on runtime.
 
 ## Repository layout
 
@@ -16,6 +16,7 @@ turbopanel/
 │   ├── pull.sh            # clone/update sibling repos
 │   ├── Tiltfile           # Workers + Caddy Tilt orchestration
 │   ├── .env.example       # local dev variable template
+│   ├── .postgresql/       # local Postgres data (gitignored; created by sync-env.sh)
 │   ├── scripts/
 │   │   └── sync-env.sh    # dev/.env → sibling repo env files
 │   └── docker/
@@ -24,7 +25,7 @@ turbopanel/
 │       └── Caddyfile             # HTTPS proxy → host wrangler + Expo
 ├── instance/ # turbopanel/turbopanel — core server (Workers entry: src/workers.ts)
 ├── ui/       # turbopanel/turbopanel-ui — frontend
-├── daemon/   # turbopanel/turbopanel-daemon — host daemon (not started by Tilt)
+├── daemon/   # turbopanel/turbopanel-daemon — co-located agent (Tilt `daemon` resource) (not started by Tilt)
 └── website/  # turbopanel/turbopanel-website — marketing + docs site (port 19820)
 ```
 
@@ -35,14 +36,14 @@ turbopanel/
 
 ## Tilt
 
-- **`Tiltfile`** — Workers local dev behind Caddy: Postgres (Docker) + `pnpm dev` (wrangler) + Expo web + Caddy HTTPS proxy. Run `tilt up` from the `dev/` checkout; `tilt down` removes Docker Compose resources (Ctrl+C alone does not). Uses native host tools only (`pnpm`, `node`, `docker`) — **no Deno, no systemd, no daemon**.
+- **`Tiltfile`** — Workers or Deno local dev behind Caddy: Postgres (Docker) + instance (`pnpm dev` / wrangler **or** `deno run`) + co-located **daemon** + Expo web + Caddy HTTPS proxy. Run `tilt up` from the `dev/` checkout; `tilt down` removes Docker Compose resources (Ctrl+C alone does not). Uses native host tools (`pnpm`, `node`, `openssl`, `docker`, `deno`) — **no systemd** in Tilt. The daemon always runs: **Workers** mode dials Caddy over WSS (`TURBOPANEL_INSTANCE_URL`); **Deno** mode dials the instance Unix socket in `dev/.run/turbopanel/`. `scripts/daemon-serve.sh` sets `TURBOPANEL_SKIP_ORCHESTRATION=1` so Tilt dev does not run Ansible installs. The Tilt nav bar includes **Switch to Deno Mode** / **Switch to Workers Mode** buttons (`ext://uibutton`) that update `TURBOPANEL_INSTANCE_RUNTIME` in `dev/.env`, re-sync env, recreate Caddy, and restart the instance and daemon resources. `scripts/instance-serve.sh` checks for Deno before starting the Deno instance and exports `TURBOPANEL_DEV_HOST_AUTH=group-only` so the install wizard verifies sudo/admin group membership without calling pamtester.
 - **`dev/.env`** — single source of truth for local dev variables (copy from `.env.example`). Gitignored; never commit secrets.
 - **`scripts/sync-env.sh`** — run by the `env-sync` Tilt resource; writes `instance/.dev.vars`, `instance/.env`, and `docker/.env` from `dev/.env`.
-- **`docker/postgres.compose.yml`** — dev Postgres on `127.0.0.1:5432`; credentials come from `docker/.env` (synced from `dev/.env`). `sync-env.sh` writes `CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE` and `TURBOPANEL_DATABASE_URL` to `instance/.env` (derived from `POSTGRES_*` unless overridden) so `wrangler dev` connects locally per [Hyperdrive local dev docs](https://developers.cloudflare.com/hyperdrive/configuration/local-development/) — no credentials in `wrangler.jsonc`.
+- **`docker/postgres.compose.yml`** — dev Postgres on `127.0.0.1:5432`; data directory is `dev/.postgresql/` (bind mount, not a Docker volume). Credentials come from `docker/.env` (synced from `dev/.env`). `sync-env.sh` creates `.postgresql/` and writes `CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE` and `TURBOPANEL_DATABASE_URL` to `instance/.env` (derived from `POSTGRES_*` unless overridden) so `wrangler dev` connects locally per [Hyperdrive local dev docs](https://developers.cloudflare.com/hyperdrive/configuration/local-development/) — no credentials in `wrangler.jsonc`.
 - **`docker/caddy.compose.yml`** — Caddy in Docker (proxies to host wrangler/Expo via `host.docker.internal`). Published on host port **8443**.
-- **`docker/Caddyfile`** — used by the Docker Caddy service; `/api/*` and `/ws/*` → host wrangler port; UI → host Expo when `TURBOPANEL_UI_MODE=dev`. Differs from `instance/Caddyfile` (Deno Unix socket).
-- **First run:** `cp .env.example .env` in the `dev/` checkout.
-- **Resources:** `env-sync` → `postgres` + `caddy` (Docker) / `instance-deps` / `ui-deps` / `website-deps` / `instance-certs` → `instance-db` → `instance` + `ui` + `website` (caddy waits for certs + upstreams).
+- **`docker/Caddyfile`** — used by the Docker Caddy service; `/api/*` and `/ws/*` → host wrangler port (workers) or mounted Unix socket (deno); UI → host Expo when `TURBOPANEL_UI_MODE=dev`. Differs from `instance/Caddyfile` (Deno Unix socket on managed hosts).
+- **First run:** `tilt up` runs `scripts/init-env.mjs` to create `dev/.env` from `.env.example` and auto-fill missing secrets/defaults (same pattern as old monorepo `scripts/init-env.mjs`).
+- **Resources:** `env-sync` → `postgres` + `caddy` (Docker) / `instance-deps` / `ui-deps` / `website-deps` / `instance-certs` → `instance-db` → `instance` + `ui` + `website` (caddy waits for certs + upstreams). **`instance`**, **`ui`**, **`website`**, and **`daemon`** use the **`1_platform`** Tilt label (core product services at the top of the UI).
 - Website (`pnpm dev` / Next.js) runs on port **19820** (`WEBSITE_PORT` in `dev/.env`).
 
 ## Purpose of each sibling repo
@@ -63,8 +64,8 @@ turbopanel/
 - **`pull.sh` is the single entry point** for setting up the dev environment. Do not bypass it.
 - **Never commit directly to `trunk`** — always use a feature branch and open a PR.
 - **`pull.sh` is idempotent** — it skips repos with uncommitted changes rather than overwriting them.
-- **Prerequisites are the developer's responsibility** — Node.js ≥ 24, pnpm ≥ 11, Docker (daemon running), and Tilt must be installed on the host before running `pull.sh`; the script only verifies presence and version, it does not install runtimes.
-- **Tilt dev is Workers-only** — do not wire Deno, `pull.sh`, or systemd units into the `Tiltfile`. The instance `Caddyfile` (Unix socket + Deno) is for self-hosted installs; `dev/docker/Caddyfile` is for wrangler TCP.
+- **Prerequisites are the developer's responsibility** — Node.js ≥ 24, pnpm ≥ 11, openssl, Docker (daemon running), Deno, and Tilt must be installed on the host before running `pull.sh`; the script only verifies presence and version, it does not install runtimes.
+- **Tilt dev is Workers by default** — optional Deno runtime via `TURBOPANEL_INSTANCE_RUNTIME=deno` and the Tilt UI switch button; the co-located daemon always runs in Tilt (socket in Deno mode, WSS via Caddy in Workers mode). Do not wire systemd units into the `Tiltfile`. The instance `Caddyfile` (Unix socket + Deno on managed hosts) differs from `dev/docker/Caddyfile` (wrangler TCP or dev socket mount).
 
 ## What agents must NOT do
 

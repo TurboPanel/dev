@@ -13,9 +13,11 @@ TurboPanel is a self-hosted server management panel. This `dev` repository is th
 | Tool | Minimum version | Install |
 |------|-----------------|---------|
 | Node.js | 24.x | https://nodejs.org |
-| pnpm | 11.x | https://pnpm.io/installation |
+| pnpm | 11.x | `corepack enable` (uses each repo's `packageManager` field) or https://pnpm.io/installation |
 | Docker | latest stable (daemon must be running) | https://docs.docker.com/get-docker/ |
 | Tilt | latest stable | https://docs.tilt.dev/install.html |
+| Deno | latest stable | https://docs.deno.com/runtime/getting_started/installation/ |
+| openssl | any modern | macOS: `brew install openssl`; Debian/Ubuntu: `apt install openssl` |
 
 ## Getting started
 
@@ -40,8 +42,7 @@ In all cases, the script clones or updates the sibling repos under the chosen in
 After sibling repos are present, configure local dev env and start orchestration from the `dev/` checkout:
 
 ```bash
-cp .env.example .env   # edit TURBOPANEL_SECRET and other values if needed
-tilt up
+tilt up   # creates dev/.env from .env.example and fills missing secrets/defaults
 ```
 
 When you exit with Ctrl+C, Tilt stops `serve_cmd` resources (instance, UI, website) but leaves Docker Compose containers (Postgres, Caddy) running. Tear everything down with:
@@ -50,7 +51,7 @@ When you exit with Ctrl+C, Tilt stops `serve_cmd` resources (instance, UI, websi
 tilt down
 ```
 
-Tilt loads `dev/.env`, syncs derived files into sibling repos (`instance/.dev.vars`, `instance/.env`, `docker/.env`), then starts **Postgres**, the **Workers instance** (`pnpm dev` / wrangler), **Expo web**, **Caddy** as the HTTPS entrypoint, and the **website** (Next.js marketing + docs).
+Tilt loads `dev/.env`, syncs derived files into sibling repos (`instance/.dev.vars`, `instance/.env`, `docker/.env`), then starts **Postgres**, the **Workers instance** (`pnpm dev` / wrangler), **Expo web**, the **daemon** (co-located agent), **Caddy** as the HTTPS entrypoint, and the **website** (Next.js marketing + docs).
 
 | Service | URL |
 |---------|-----|

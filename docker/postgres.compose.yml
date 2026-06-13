@@ -12,12 +12,12 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
-      - turbopanel-postgres-data:/var/lib/postgresql
+      - ../.postgresql:/var/lib/postgresql
+      # Expose the postgres Unix socket to the host so the Deno instance can connect
+      # without going through Docker TCP NAT (avoids intermittent TCP hang on reconnect).
+      - ../.run/turbopanel/postgres:/var/run/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
       interval: 2s
       timeout: 5s
       retries: 15
-
-volumes:
-  turbopanel-postgres-data:
