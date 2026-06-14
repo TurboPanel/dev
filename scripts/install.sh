@@ -20,9 +20,10 @@ success() {
 resolve_repo_dir() {
   case $0 in
     */install.sh)
-      _rrd=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
-      if [ -f "$_rrd/deno.json" ]; then
-        printf '%s' "$_rrd"
+      _script_dir=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
+      _repo_dir=$(CDPATH= cd -- "$_script_dir/.." && pwd)
+      if [ -f "$_repo_dir/deno.json" ]; then
+        printf '%s' "$_repo_dir"
         return 0
       fi
       ;;

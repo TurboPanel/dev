@@ -8,14 +8,14 @@ This replaces the old Tilt-based workflow in `old/`.
 
 **Target host:** Debian 13 (Vagrant support planned).
 
-**Bootstrap URL:** https://develop.trbp.nl → `install.sh` on the `trunk` branch.
+**Bootstrap URL:** https://develop.trbp.nl → `scripts/install.sh` on the `trunk` branch.
 
 ## Filesystem layout
 
 ```
-~/…/turbopanel-dev/       # ./turbopanel-dev from install.sh (user's cwd)
-├── install.sh            # clone/update this repo only
+~/…/turbopanel-dev/       # ./turbopanel-dev from scripts/install.sh (user's cwd)
 ├── console               # runtime install + launch console
+├── scripts/install.sh    # clone/update this repo only
 ├── deno.json
 └── src/
 /opt/turbopanel/
@@ -31,7 +31,7 @@ This replaces the old Tilt-based workflow in `old/`.
 | Script | Purpose |
 |--------|---------|
 | `curl -fsSL https://develop.trbp.nl \| sh` | Clone/update `./turbopanel-dev` via SSH. |
-| `sh install.sh` | Same when run from outside the repo, or re-run from inside to update the checkout. |
+| `sh scripts/install.sh` | Same when run from inside the repo to update the checkout. |
 | `./console` | Install Deno runtime if missing (sudo), cache deps, launch Ink console (`deno task dev`). |
 
 **Typical flow:**
@@ -44,7 +44,7 @@ cd turbopanel-dev
 
 ## Responsibilities
 
-- **`install.sh`** — clones/updates **only** `turbopanel-dev` via `git@github.com:turbopanel/turbopanel-dev.git`. No sudo, no Deno, no platform repos.
+- **`scripts/install.sh`** — clones/updates **only** `turbopanel-dev` via `git@github.com:turbopanel/turbopanel-dev.git`. No sudo, no Deno, no platform repos.
 - **`console`** — ensures Deno is installed under `/opt/turbopanel/runtime` (sudo on first run), caches dependencies, starts the console.
 - **Ink console** — installs platform repos via SSH (`git@github.com:turbopanel/...`), prompts for sudo when `/opt/turbopanel/platform` is not writable.
 
@@ -68,7 +68,7 @@ Keep the CLI **simple**. Platform repo install, service monitoring, and updates 
 - Default git branch is **`trunk`** everywhere.
 - Shell scripts are **POSIX `sh`** — no bashisms.
 - Git clones use **SSH** (`git@github.com:turbopanel/...`), not HTTPS.
-- **`install.sh` only installs this repo** — no runtime, no platform repos.
+- **`scripts/install.sh` only installs this repo** — no runtime, no platform repos.
 - **`console` owns the Deno runtime** and starting the console.
 - **`turbopanel-dev` installs to `./turbopanel-dev`** in the user's cwd.
 - Do not commit secrets or environment-specific config.
@@ -76,7 +76,7 @@ Keep the CLI **simple**. Platform repo install, service monitoring, and updates 
 
 ## What agents must NOT do
 
-- Do not add Deno install, dependency caching, or sudo to `install.sh`.
+- Do not add Deno install, dependency caching, or sudo to `scripts/install.sh`.
 - Do not add platform repo cloning to shell scripts — that belongs in the console.
 - Do not reintroduce `pull.sh`.
 - Do not clone `turbopanel-dev` into `/opt/turbopanel/platform`.

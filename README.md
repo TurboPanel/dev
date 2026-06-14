@@ -10,11 +10,11 @@ cd turbopanel-dev
 ./console
 ```
 
-`install.sh` clones this repo into `./turbopanel-dev` (relative to where you run the command). `./console` installs the Deno runtime on first run (sudo) and starts the developer console.
+`scripts/install.sh` clones this repo into `./turbopanel-dev` (relative to where you run the command). `./console` installs the Deno runtime on first run (sudo) and starts the developer console.
 
 ## Prerequisites
 
-**For `install.sh`**
+**For `scripts/install.sh`**
 
 - `git`
 - SSH access to GitHub (`git@github.com:turbopanel/...`)
@@ -26,9 +26,9 @@ cd turbopanel-dev
 ## Layout
 
 ```
-~/turbopanel-dev/                    # install.sh
-├── install.sh                       # clone/update this repo only
+~/turbopanel-dev/                    # scripts/install.sh
 ├── console                          # runtime + console
+├── scripts/install.sh               # clone/update this repo only
 └── src/
 /opt/turbopanel/
 ├── platform/                        # platform repos (from console)
@@ -44,7 +44,7 @@ curl -fsSL https://develop.trbp.nl | sh
 Or from inside the repo:
 
 ```bash
-sh install.sh
+sh scripts/install.sh
 ```
 
 Re-run `./console` to refresh dependencies or the runtime.
