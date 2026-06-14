@@ -4,6 +4,8 @@
 TURBOPANEL_ROOT=/opt/turbopanel
 TURBOPANEL_PLATFORM=$TURBOPANEL_ROOT/platform
 TURBOPANEL_RUNTIME=$TURBOPANEL_ROOT/runtimes
+# Pre-3f24600 layout used singular "runtime"; removed on next ./console run.
+LEGACY_RUNTIME_ROOT=$TURBOPANEL_ROOT/runtime
 
 DENO_VERSION=2.8.3
 DENO_RUNTIME_ROOT=$TURBOPANEL_RUNTIME/deno

@@ -1,6 +1,7 @@
-# Install the pinned Deno runtime under /opt/turbopanel/runtime.
+# Install the pinned Deno runtime under /opt/turbopanel/runtimes.
 # Bump DENO_VERSION in paths.sh (and src/paths.ts); ./console installs or
-# upgrades on the next run and removes older version directories.
+# upgrades on the next run, removes older version directories, and drops the
+# legacy singular /opt/turbopanel/runtime tree if present.
 # Source after privileges.sh, paths.sh, and packages.sh.
 
 tp_deno_runtime_usable() {
@@ -62,6 +63,14 @@ tp_remove_path() {
     return 1
   fi
   sudo rm -rf "$_rp_path"
+}
+
+tp_cleanup_legacy_runtime_root() {
+  if [ ! -d "$LEGACY_RUNTIME_ROOT" ] || [ "$LEGACY_RUNTIME_ROOT" = "$TURBOPANEL_RUNTIME" ]; then
+    return 0
+  fi
+  tp_info "Removing legacy runtime directory at ${LEGACY_RUNTIME_ROOT}"
+  tp_remove_path "$LEGACY_RUNTIME_ROOT" || tp_warn "Could not remove ${LEGACY_RUNTIME_ROOT}"
 }
 
 tp_cleanup_old_deno_runtimes() {
@@ -148,5 +157,6 @@ tp_install_deno_runtime() {
 }
 
 tp_ensure_deno_runtime() {
+  tp_cleanup_legacy_runtime_root
   tp_install_deno_runtime
 }
