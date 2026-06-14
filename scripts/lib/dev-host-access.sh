@@ -42,7 +42,7 @@ ${_ids_user} ALL=(root) NOPASSWD: /usr/bin/setfacl, /bin/chmod, /usr/bin/chmod
 ${_ids_user} ALL=(root) NOPASSWD: /usr/sbin/usermod
 ${_ids_user} ALL=(root) NOPASSWD: /usr/bin/tee, /usr/bin/cp, /usr/bin/cat, /usr/bin/test
 ${_ids_user} ALL=(root) NOPASSWD: /usr/bin/mkdir, /bin/mkdir
-${_ids_user} ALL=(root) NOPASSWD: /opt/turbopanel/runtime/deno/v*/bin/deno
+${_ids_user} ALL=(root) NOPASSWD: /opt/turbopanel/runtimes/deno/v*/bin/deno
 ${_ids_user} ALL=(root) NOPASSWD: /usr/bin/systemctl, /bin/systemctl
 EOF
 

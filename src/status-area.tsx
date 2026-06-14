@@ -32,7 +32,7 @@ export function StatusArea({
         label="Deno runtime"
         ok={runtimeReady}
         detail={runtimeReady
-          ? `v${DENO_VERSION} at /opt/turbopanel/runtime`
+          ? `v${DENO_VERSION} at /opt/turbopanel/runtimes`
           : "run ./console"}
       />
 

@@ -2,7 +2,7 @@ export const TURBOPANEL_ROOT = "/opt/turbopanel";
 export const TURBOPANEL_PLATFORM = `${TURBOPANEL_ROOT}/platform`;
 export const DENO_VERSION = "2.8.3";
 export const DENO_BIN =
-  `${TURBOPANEL_ROOT}/runtime/deno/v${DENO_VERSION}/bin/deno`;
+  `${TURBOPANEL_ROOT}/runtimes/deno/v${DENO_VERSION}/bin/deno`;
 
 export const DAEMON_REPO = {
   dir: "daemon",

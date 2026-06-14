@@ -8,6 +8,8 @@ import {
   startDevStack,
   switchBuildMode,
 } from "@turbopanel/daemon-lifecycle";
+import { InstanceArea } from "@turbopanel/instance-area";
+import { switchInstanceRuntime } from "@turbopanel/instance-runtime";
 import { installDaemon } from "@turbopanel/platform-install";
 import {
   checkPlatformRepos,
@@ -36,6 +38,8 @@ function areaHelp(areaId: string, panelFocused: boolean): string {
   switch (areaId) {
     case "status":
       return "← → areas · q quit";
+    case "instance":
+      return "← → areas · ↑↓ actions · Enter · q quit";
     case "developer":
       return panelFocused
         ? "← → areas · Esc back · q quit"
@@ -78,6 +82,7 @@ export function App() {
 
   const areas = useMemo(() => {
     const list: AreaTab[] = [{ id: "status", label: "Status" }];
+    list.push({ id: "instance", label: "Instance" });
     if (instanceReady) {
       list.push({ id: "developer", label: "Developer" });
     }
@@ -217,6 +222,17 @@ export function App() {
           stackUnits={stackUnits}
           instanceReady={instanceReady}
           stackHealthy={stackHealthy}
+        />
+      ) : null}
+
+      {activeArea.id === "instance" ? (
+        <InstanceArea
+          onSwitch={(target) => {
+            exit();
+            queueMicrotask(() =>
+              runAfterExit(() => switchInstanceRuntime(target))
+            );
+          }}
         />
       ) : null}
 

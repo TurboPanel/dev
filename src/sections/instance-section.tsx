@@ -1,0 +1,136 @@
+import React, { useCallback, useMemo, useState } from "react";
+import { Box, SelectInput, Text } from "@deno-ink/core";
+import { readInstanceRuntime } from "@turbopanel/instance-runtime";
+import { StatusLine } from "@turbopanel/status-line";
+
+function systemctlIsActive(unit: string): { active: boolean | null; detail: string } {
+  const proc = new Deno.Command("systemctl", {
+    args: ["is-active", unit],
+    stdout: "piped",
+    stderr: "null",
+  }).outputSync();
+
+  const text = new TextDecoder().decode(proc.stdout).trim();
+  if (proc.success && text === "active") {
+    return { active: true, detail: "active" };
+  }
+  if (text === "inactive" || text === "failed") {
+    return { active: false, detail: text };
+  }
+  if (text === "unknown" || proc.code === 4) {
+    return { active: null, detail: "not installed" };
+  }
+  return { active: null, detail: text || `exit ${proc.code}` };
+}
+
+export function InstanceSection({
+  onSwitch,
+}: {
+  onSwitch: (target: "deno" | "workers") => void;
+}) {
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  const runtime = useMemo(() => readInstanceRuntime(), [refreshKey]);
+  const instanceUnit = useMemo(() => {
+    void refreshKey;
+    return systemctlIsActive("turbopanel-instance");
+  }, [refreshKey]);
+
+  const menuItems = useMemo(() => {
+    const items: Array<{ label: string; value: string }> = [];
+
+    if (runtime === "deno") {
+      items.push({
+        label: "Switch to Workers runtime",
+        value: "switch-workers",
+      });
+    } else {
+      items.push({
+        label: "Switch to Deno runtime",
+        value: "switch-deno",
+      });
+    }
+
+    items.push({ label: "Refresh", value: "refresh" });
+    return items;
+  }, [runtime]);
+
+  const refresh = useCallback(() => {
+    setRefreshKey((count) => count + 1);
+  }, []);
+
+  const handleSelect = (item: { label: string; value: string }) => {
+    if (item.value === "refresh") {
+      refresh();
+      return;
+    }
+
+    if (item.value === "switch-workers") {
+      onSwitch("workers");
+      return;
+    }
+
+    if (item.value === "switch-deno") {
+      onSwitch("deno");
+    }
+  };
+
+  return (
+    <Box flexDirection="column">
+      <Text bold>Instance Runtime</Text>
+      <Box flexDirection="column" marginTop={1}>
+        <StatusLine
+          label="runtime"
+          ok={runtime === "deno" ? instanceUnit.active === true : true}
+          detail={
+            runtime === "workers"
+              ? "Workers — wrangler dev not managed by console"
+              : "Deno (systemd)"
+          }
+        />
+        {runtime === "workers" ? (
+          <StatusLine
+            label="wrangler dev"
+            ok={true}
+            detail="not managed by console — run pnpm dev in platform/instance"
+          />
+        ) : null}
+        <StatusLine
+          label="turbopanel-instance"
+          ok={runtime === "workers" ? true : instanceUnit.active === true}
+          detail={
+            runtime === "workers"
+              ? `${instanceUnit.detail} (expected — use wrangler dev)`
+              : instanceUnit.detail
+          }
+        />
+      </Box>
+      {runtime === "workers" ? (
+        <Box flexDirection="column" marginTop={1}>
+          <Text color="cyan">
+            Run pnpm dev in platform/instance — no Redis, TCP postgres on :5432
+          </Text>
+          <Text color="cyan">
+            Stop that terminal before switching back to Deno runtime.
+          </Text>
+          <Text dimColor>
+            Update instance/.dev.vars:
+            {" "}
+            CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE=postgresql://turbopanel:
+            {"<pass>"}
+            @127.0.0.1:5432/turbopanel
+          </Text>
+        </Box>
+      ) : (
+        <Box flexDirection="column" marginTop={1}>
+          <Text dimColor>
+            Workers mode runs wrangler dev in a separate terminal (not managed by this console).
+          </Text>
+        </Box>
+      )}
+      <Box flexDirection="column" marginTop={1}>
+        <SelectInput items={menuItems} onSelect={handleSelect} />
+      </Box>
+    </Box>
+  );
+}

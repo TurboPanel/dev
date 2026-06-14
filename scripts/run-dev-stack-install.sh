@@ -71,6 +71,12 @@ DEV_UID=$(read_env_var TURBOPANEL_DEV_UID "$(id -u)")
 DEV_GID=$(read_env_var TURBOPANEL_DEV_GID "$(id -g)")
 UI_MODE=$(read_env_var TURBOPANEL_UI_MODE dev)
 INSTANCE_RUN_MODE=$(read_env_var TURBOPANEL_INSTANCE_RUN_MODE source)
+INSTANCE_RUNTIME=$(read_env_var TURBOPANEL_INSTANCE_RUNTIME deno)
+if [ "$INSTANCE_RUNTIME" = "workers" ]; then
+  POSTGRES_EXPOSE=true
+else
+  POSTGRES_EXPOSE=false
+fi
 
 EXTRA_VARS="
 -e turbopanel_dev_user=${DEV_USER}
@@ -78,10 +84,12 @@ EXTRA_VARS="
 -e turbopanel_dev_gid=${DEV_GID}
 -e turbopanel_ui_mode=${UI_MODE}
 -e turbopanel_instance_run_mode=${INSTANCE_RUN_MODE}
+-e turbopanel_instance_runtime=${INSTANCE_RUNTIME}
+-e postgres_expose_port=${POSTGRES_EXPOSE}
 "
 
 # shellcheck disable=SC2086
-run_playbook "$DOCKER_PLAYBOOK"
+run_playbook "$DOCKER_PLAYBOOK" -e turbopanel_dev_user="${DEV_USER}"
 # shellcheck disable=SC2086
 run_playbook "$INSTANCE_PLAYBOOK" $EXTRA_VARS
 

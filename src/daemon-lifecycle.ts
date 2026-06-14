@@ -50,7 +50,7 @@ function pathDirectlyAccessible(path: string): boolean {
   }
 }
 
-async function runSudo(args: string[]): Promise<number> {
+export async function runSudo(args: string[]): Promise<number> {
   const quiet = await runInherit(["sudo", "-n", ...args]);
   if (quiet === 0) {
     return 0;
@@ -58,7 +58,7 @@ async function runSudo(args: string[]): Promise<number> {
   return runInherit(["sudo", ...args]);
 }
 
-async function runPrivilegedDaemonBash(script: string): Promise<number> {
+export async function runPrivilegedDaemonBash(script: string): Promise<number> {
   const command = daemonScriptCommand(script);
 
   // Always run as turbopanel when the user exists so orchestration/runtime
@@ -184,6 +184,11 @@ export function readBuildMode(): BuildMode {
   return { uiMode, instanceRunMode };
 }
 
+export function readInstanceRuntime(): "deno" | "workers" {
+  const env = parseEnvFile(DAEMON_ENV_PATH);
+  return env.get("TURBOPANEL_INSTANCE_RUNTIME") === "workers" ? "workers" : "deno";
+}
+
 export function writeDaemonEnv(extra?: Record<string, string>): void {
   const entries: Record<string, string> = {
     TURBOPANEL_DEV_INSTANCE: "1",
@@ -288,12 +293,15 @@ export async function installDaemonSystemd(): Promise<void> {
 }
 
 async function restartDevStackServices(): Promise<void> {
+  const runtime = readInstanceRuntime();
   await runSudo(["systemctl", "daemon-reload"]);
-  const required = [
-    "turbopanel-instance",
-    "turbopanel-caddy",
-    "turbopanel-daemon",
-  ] as const;
+  const required = runtime === "workers"
+    ? (["turbopanel-caddy", "turbopanel-daemon"] as const)
+    : ([
+      "turbopanel-instance",
+      "turbopanel-caddy",
+      "turbopanel-daemon",
+    ] as const);
   for (const unit of required) {
     const code = await runSudo(["systemctl", "restart", unit]);
     if (code !== 0) {
@@ -305,30 +313,47 @@ async function restartDevStackServices(): Promise<void> {
 }
 
 function stackIsReady(): boolean {
+  const runtime = readInstanceRuntime();
   const units = fetchStackStatus();
-  const instance = units.find((unit) => unit.unit === "turbopanel-instance");
   const caddy = units.find((unit) => unit.unit === "turbopanel-caddy");
+  if (runtime === "workers") {
+    return caddy?.active === true;
+  }
+  const instance = units.find((unit) => unit.unit === "turbopanel-instance");
   return instance?.active === true &&
     caddy?.active === true &&
     instanceSocketPresent();
 }
 
 async function waitForDevStack(): Promise<void> {
+  const runtime = readInstanceRuntime();
   const deadline = Date.now() + STACK_WAIT_MS;
-  console.log("→ Waiting for instance and Caddy to become ready...");
+  if (runtime === "workers") {
+    console.log("→ Workers runtime: waiting for Caddy (run pnpm dev separately)...");
+  } else {
+    console.log("→ Waiting for instance and Caddy to become ready...");
+  }
   while (Date.now() < deadline) {
     if (stackIsReady()) {
-      console.log("✓ Dev stack is ready");
+      if (runtime === "workers") {
+        console.log("✓ Caddy is ready — run pnpm dev in platform/instance");
+      } else {
+        console.log("✓ Dev stack is ready");
+      }
       return;
     }
     const units = fetchStackStatus();
     const instance = units.find((unit) => unit.unit === "turbopanel-instance");
     const caddy = units.find((unit) => unit.unit === "turbopanel-caddy");
-    console.log(
-      `  … instance: ${instance?.detail ?? "?"}, caddy: ${caddy?.detail ?? "?"}, socket: ${
-        instanceSocketPresent() ? "ready" : "waiting"
-      }`,
-    );
+    if (runtime === "workers") {
+      console.log(`  … caddy: ${caddy?.detail ?? "?"}`);
+    } else {
+      console.log(
+        `  … instance: ${instance?.detail ?? "?"}, caddy: ${caddy?.detail ?? "?"}, socket: ${
+          instanceSocketPresent() ? "ready" : "waiting"
+        }`,
+      );
+    }
     await new Promise((resolve) => setTimeout(resolve, STACK_POLL_MS));
   }
   console.log(
@@ -384,6 +409,24 @@ export async function followLogs(): Promise<void> {
 }
 
 function printStartupBanner(): void {
+  const runtime = readInstanceRuntime();
+  if (runtime === "workers") {
+    console.log(`
+-----------------------------------------
+TurboPanel dev stack (Workers runtime):
+  Caddy        @ https://localhost:${CADDY_PORT}  (user: instance)
+  Instance     @ run pnpm dev in platform/instance (not managed by console)
+  UI (Expo)    @ http://127.0.0.1:8081  (user: instance)
+  Daemon       @ (no port, user: turbopanel)
+  Postgres     @ 127.0.0.1:5432 (TCP, for wrangler Hyperdrive)
+
+The daemon installs/updates everything via Ansible. Use the admin "Upgrade
+System" button (or sync-dev) to update; nothing auto-updates.
+=========================================
+`);
+    return;
+  }
+
   console.log(`
 -----------------------------------------
 TurboPanel dev stack (systemd-managed):
@@ -399,21 +442,31 @@ System" button (or sync-dev) to update; nothing auto-updates.
 }
 
 function printStackStatus(): void {
+  const runtime = readInstanceRuntime();
   const units = fetchStackStatus();
   console.log("Dev stack status:", stackSummary(units));
   for (const unit of units) {
-    const mark = unit.active === true
+    const expectedStoppedInWorkers = runtime === "workers" &&
+      unit.unit === "turbopanel-instance" &&
+      unit.active === false;
+    const mark = unit.active === true || expectedStoppedInWorkers
       ? "✓"
       : unit.active === false
       ? "○"
       : "?";
-    console.log(`  ${mark} ${unit.label}: ${unit.detail}`);
+    console.log(`  ${mark} ${unit.label}: ${unit.detail}${
+      expectedStoppedInWorkers ? " (expected in Workers mode)" : ""
+    }`);
   }
-  console.log(
-    instanceSocketPresent()
-      ? "  ✓ instance.sock ready"
-      : "  ○ instance.sock not ready",
-  );
+  if (runtime === "workers") {
+    console.log("  ○ instance.sock not used — run pnpm dev in platform/instance");
+  } else {
+    console.log(
+      instanceSocketPresent()
+        ? "  ✓ instance.sock ready"
+        : "  ○ instance.sock not ready",
+    );
+  }
   console.log("");
   console.log(
     "Follow logs: journalctl -fu turbopanel-daemon -u turbopanel-instance -u turbopanel-caddy -u turbopanel-ui",
