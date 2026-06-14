@@ -17,11 +17,19 @@ export type RepoStatus = {
   present: boolean;
 };
 
+export function sshRepoUrl(repo: string): string {
+  return `git@github.com:${repo}.git`;
+}
+
+export function platformRepoPath(dir: string): string {
+  return `${TURBOPANEL_PLATFORM}/${dir}`;
+}
+
 export function checkPlatformRepos(): RepoStatus[] {
   return PLATFORM_REPOS.map(({ dir, repo }) => {
     let present = false;
     try {
-      Deno.statSync(`${TURBOPANEL_PLATFORM}/${dir}`);
+      Deno.statSync(platformRepoPath(dir));
       present = true;
     } catch {
       present = false;

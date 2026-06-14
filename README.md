@@ -31,7 +31,7 @@ cd turbopanel-dev
 ├── dev.sh                           # runtime + console
 └── src/
 /opt/turbopanel/
-├── platform/                        # platform repos (from console, later)
+├── platform/                        # platform repos (from console)
 └── runtime/deno/v2.8.2/bin/deno     # dev.sh (first run)
 ```
 
@@ -48,6 +48,13 @@ sh install.sh
 ```
 
 Re-run `./dev.sh` to refresh dependencies or the runtime.
+
+Deno is not on your PATH by design. To run it manually:
+
+```bash
+./scripts/deno.sh --version
+./scripts/deno.sh task console:watch   # when editing the console UI
+```
 
 ## Branch conventions
 

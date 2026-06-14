@@ -46,7 +46,7 @@ cd turbopanel-dev
 
 - **`install.sh`** — clones/updates **only** `turbopanel-dev` via `git@github.com:turbopanel/turbopanel-dev.git`. No sudo, no Deno, no platform repos.
 - **`dev.sh`** — ensures Deno is installed under `/opt/turbopanel/runtime` (sudo on first run), caches dependencies, starts the console.
-- **Ink console** — will clone platform repos later (out of scope for shell scripts).
+- **Ink console** — installs platform repos via SSH (`git@github.com:turbopanel/...`), prompts for sudo when `/opt/turbopanel/platform` is not writable.
 
 ## Deno app
 
