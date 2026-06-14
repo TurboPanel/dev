@@ -1,20 +1,27 @@
 {
-	"folders": [
-		{
-			"path": "."
-		},
-		{
-			"path": "/opt/turbopanel/platform/daemon"
-		},
-		{
-			"path": "/opt/turbopanel/platform/instance"
-		},
-		{
-			"path": "/opt/turbopanel/platform/ui"
-		},
-		{
-			"path": "/opt/turbopanel/platform/website"
-		}
-	],
-	"settings": {}
+  "folders": [
+    {
+      "path": ".",
+    },
+    {
+      "path": "/opt/turbopanel/platform/daemon",
+    },
+    {
+      "path": "/opt/turbopanel/platform/instance",
+    },
+    {
+      "path": "/opt/turbopanel/platform/ui",
+    },
+    {
+      "path": "/opt/turbopanel/platform/website",
+    },
+  ],
+  "settings": {},
+  "extensions": {
+    "recommendations": [
+      "sonarsource.sonarlint-vscode",
+      "denoland.vscode-deno",
+      "esbenp.prettier-vscode",
+    ],
+  },
 }

@@ -6,6 +6,8 @@ import {
 } from "@turbopanel/paths";
 
 const BRANCH = "trunk";
+const TURBOPANEL_USER = "turbopanel";
+const TURBOPANEL_GROUP = "turbopanel";
 
 async function commandExists(name: string): Promise<boolean> {
   const proc = new Deno.Command("/bin/sh", {
@@ -26,14 +28,20 @@ export async function runInherit(cmd: string[]): Promise<number> {
   return (await proc.output()).code ?? 1;
 }
 
-function canWritePlatformDir(): boolean {
+function canWritePath(path: string): boolean {
   try {
-    Deno.mkdirSync(TURBOPANEL_PLATFORM, { recursive: true });
-    Deno.accessSync(TURBOPANEL_PLATFORM, { write: true });
+    Deno.mkdirSync(path, { recursive: true });
+    const probe = `${path}/.write-probe-${Deno.pid}`;
+    Deno.writeTextFileSync(probe, "");
+    Deno.removeSync(probe);
     return true;
   } catch {
     return false;
   }
+}
+
+function canWritePlatformDir(): boolean {
+  return canWritePath(TURBOPANEL_PLATFORM);
 }
 
 async function ensurePlatformDir(): Promise<void> {
@@ -55,6 +63,62 @@ async function ensurePlatformDir(): Promise<void> {
   }
 }
 
+function daemonCheckoutExists(target: string): boolean {
+  try {
+    Deno.statSync(target);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function canManageDaemonCheckout(target: string): boolean {
+  if (!daemonCheckoutExists(target)) {
+    return canWritePath(TURBOPANEL_PLATFORM);
+  }
+
+  return canWritePath(target);
+}
+
+async function ensureTurbopanelOwnership(target: string): Promise<void> {
+  const code = await runInherit([
+    "sudo",
+    "sh",
+    "-c",
+    `chown -R '${TURBOPANEL_USER}:${TURBOPANEL_GROUP}' '${target}'`,
+  ]);
+
+  if (code !== 0) {
+    throw new Error(`Failed to set ownership on ${target}`);
+  }
+}
+
+async function privilegedClone(
+  url: string,
+  target: string,
+): Promise<number> {
+  const tmpDir = `/tmp/turbopanel-daemon-clone-${crypto.randomUUID()}`;
+
+  const cloneCode = await runInherit([
+    "git",
+    "clone",
+    "--branch",
+    BRANCH,
+    url,
+    tmpDir,
+  ]);
+  if (cloneCode !== 0) {
+    return cloneCode;
+  }
+
+  return await runInherit([
+    "sudo",
+    "sh",
+    "-c",
+    `mkdir -p '${TURBOPANEL_PLATFORM}' && rm -rf '${target}' && mv '${tmpDir}' '${target}' && chown -R '${TURBOPANEL_USER}:${TURBOPANEL_GROUP}' '${target}'`,
+  ]);
+}
+
 async function ensureGit(): Promise<void> {
   if (await commandExists("git")) {
     return;
@@ -74,8 +138,8 @@ async function ensureGit(): Promise<void> {
 }
 
 async function isGitRepo(path: string): Promise<boolean> {
-  const proc = new Deno.Command("git", {
-    args: ["-C", path, "rev-parse", "--git-dir"],
+  const proc = new Deno.Command("sudo", {
+    args: ["-u", TURBOPANEL_USER, "git", "-C", path, "rev-parse", "--git-dir"],
     stdout: "null",
     stderr: "null",
   });
@@ -83,8 +147,16 @@ async function isGitRepo(path: string): Promise<boolean> {
 }
 
 async function hasUncommittedChanges(path: string): Promise<boolean> {
-  const proc = new Deno.Command("git", {
-    args: ["-C", path, "status", "--porcelain"],
+  const proc = new Deno.Command("sudo", {
+    args: [
+      "-u",
+      TURBOPANEL_USER,
+      "git",
+      "-C",
+      path,
+      "status",
+      "--porcelain",
+    ],
     stdout: "piped",
     stderr: "null",
   });
@@ -96,8 +168,8 @@ async function hasUncommittedChanges(path: string): Promise<boolean> {
 }
 
 async function ensureOriginUrl(path: string, url: string): Promise<void> {
-  const proc = new Deno.Command("git", {
-    args: ["-C", path, "remote", "get-url", "origin"],
+  const proc = new Deno.Command("sudo", {
+    args: ["-u", TURBOPANEL_USER, "git", "-C", path, "remote", "get-url", "origin"],
     stdout: "piped",
     stderr: "null",
   });
@@ -111,7 +183,18 @@ async function ensureOriginUrl(path: string, url: string): Promise<void> {
     return;
   }
 
-  await runInherit(["git", "-C", path, "remote", "set-url", "origin", url]);
+  await runInherit([
+    "sudo",
+    "-u",
+    TURBOPANEL_USER,
+    "git",
+    "-C",
+    path,
+    "remote",
+    "set-url",
+    "origin",
+    url,
+  ]);
 }
 
 async function cloneOrUpdateRepo(
@@ -121,20 +204,23 @@ async function cloneOrUpdateRepo(
   const target = platformRepoPath(dir);
   const url = sshRepoUrl(repo);
 
-  try {
-    Deno.statSync(target);
-  } catch {
+  if (!daemonCheckoutExists(target)) {
     console.log(`→ Cloning ${dir}...`);
-    const code = await runInherit([
-      "git",
-      "clone",
-      "--branch",
-      BRANCH,
-      url,
-      target,
-    ]);
+    const code = canManageDaemonCheckout(target)
+      ? await runInherit([
+        "git",
+        "clone",
+        "--branch",
+        BRANCH,
+        url,
+        target,
+      ])
+      : await privilegedClone(url, target);
     if (code !== 0) {
       throw new Error(`Failed to clone ${dir}`);
+    }
+    if (canManageDaemonCheckout(target)) {
+      await ensureTurbopanelOwnership(target);
     }
     console.log(`✓ Cloned ${dir}`);
     return "cloned";
@@ -153,6 +239,9 @@ async function cloneOrUpdateRepo(
 
   console.log(`→ Updating ${dir}...`);
   const code = await runInherit([
+    "sudo",
+    "-u",
+    TURBOPANEL_USER,
     "git",
     "-C",
     target,

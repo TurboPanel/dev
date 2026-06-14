@@ -53,10 +53,43 @@ cd turbopanel-dev
 
 - **`deno.json`** — tasks, imports (`@deno-ink/core`, React 18).
 - **`src/main.tsx`** — entry; renders the Ink app.
-- **`src/app.tsx`** — developer console UI (runtime + platform status for now).
+- **`src/app.tsx`** — main menu (runtime + platform status, dev stack actions).
+- **`src/developer-console.tsx`** — Ink developer console shell (seven sections).
+- **`src/instance-client.ts`** — HTTP client for the instance API (Unix socket + HTTPS fallback).
+- **`src/use-developer-state.ts`** — shared 2 s polling hook for fleet/health/events/commands.
+- **`src/sections/`** — Ink section components (fleet, services, network, shell, connectivity, database, servers).
 - **`src/paths.ts`** — shared path constants and platform repo checks.
 
 Keep the CLI **simple**. Platform repo install, service monitoring, and updates belong in the Ink app — not new shell scripts.
+
+## Developer console
+
+The developer console is an Ink sub-view in `./console` (menu item **Developer console**, visible when the daemon checkout is present and `/run/turbopanel/instance.sock` exists).
+
+### Sections
+
+| Section | Purpose | Keys |
+|---------|---------|------|
+| Fleet | Health, connected nodes, upgrade/sync/tunnel actions | ↑↓ actions · Enter |
+| Services | systemd units, Postgres container, socket presence | (polls every 5 s) |
+| Network | Interface IP addresses | Enter fetch |
+| Shell | Remote commands on target | type command · Enter run |
+| Connectivity | WS event log + broadcast ping | b or Enter broadcast |
+| Database | Postgres test, Drizzle Studio, reset dev | ↑↓ actions · Enter · y/N confirm reset |
+| Servers | Register servers, assign orgs | a/e/o · ↑↓ select |
+
+Navigate sections with **↑↓** (Services, Network, Connectivity) or **[** / **]** (all sections). **t** cycles daemon target (`all servers` or per-host). **q** / **Esc** returns to the main menu.
+
+### API client (`src/instance-client.ts`)
+
+Single choke-point for `/api/developer/v1/*` and `/api/health`:
+
+1. **Primary:** raw HTTP/1.1 over Unix socket `/run/turbopanel/instance.sock`
+2. **Fallback:** `https://localhost:8443` with platform CA from `/opt/turbopanel/platform/turbopanel/certs/ca.crt` (or permissive TLS if CA missing)
+
+### Polling (`src/use-developer-state.ts`)
+
+Polls every 2 s (same endpoints as the retired Expo `DeveloperProvider`): `/api/health`, `/api/developer/v1/daemon/connections`, `…/events`, `…/commands`.
 
 ## Shell libraries
 

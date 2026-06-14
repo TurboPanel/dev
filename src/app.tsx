@@ -1,6 +1,12 @@
 import React, { useMemo, useState } from "react";
 import { Box, SelectInput, Text, useApp, useInput } from "@deno-ink/core";
-import { followLogs, startDevStack } from "@turbopanel/daemon-lifecycle";
+import { DeveloperConsole } from "@turbopanel/developer-console";
+import {
+  followLogs,
+  readBuildMode,
+  startDevStack,
+  switchBuildMode,
+} from "@turbopanel/daemon-lifecycle";
 import { installDaemon } from "@turbopanel/platform-install";
 import {
   checkPlatformRepos,
@@ -8,24 +14,7 @@ import {
   DENO_VERSION,
   TURBOPANEL_PLATFORM,
 } from "@turbopanel/paths";
-
-function StatusLine({
-  label,
-  ok,
-  detail,
-}: {
-  label: string;
-  ok: boolean;
-  detail: string;
-}) {
-  return (
-    <Box>
-      <Text color={ok ? "green" : "yellow"}>{ok ? "✓" : "○"} </Text>
-      <Text>{label}</Text>
-      <Text dimColor> — {detail}</Text>
-    </Box>
-  );
-}
+import { StatusLine } from "@turbopanel/status-line";
 
 async function runAfterExit(fn: () => Promise<void>): Promise<void> {
   try {
@@ -40,9 +29,17 @@ async function runAfterExit(fn: () => Promise<void>): Promise<void> {
 export function App() {
   const { exit } = useApp();
   const [refresh, setRefresh] = useState(0);
+  const [view, setView] = useState<"menu" | "developer">("menu");
   const daemonStatus = useMemo(() => checkPlatformRepos()[0], [refresh]);
   const runtimeReady = denoRuntimeInstalled();
   const daemonPresent = daemonStatus.present;
+  const developerAvailable = daemonPresent;
+  const buildMode = useMemo(
+    () => (daemonPresent ? readBuildMode() : null),
+    [daemonPresent, refresh],
+  );
+  const productionBuildActive = buildMode?.uiMode === "static" &&
+    buildMode?.instanceRunMode === "compiled";
 
   const menuItems = useMemo(() => {
     const items: Array<{ label: string; value: string }> = [
@@ -52,16 +49,31 @@ export function App() {
     if (daemonPresent) {
       items.push({ label: "Start dev stack", value: "start" });
       items.push({ label: "Follow logs", value: "logs" });
+
+      if (!productionBuildActive) {
+        items.push({
+          label: "Switch to production build",
+          value: "build-production",
+        });
+      }
+
+      if (productionBuildActive) {
+        items.push({ label: "Switch to dev build", value: "build-dev" });
+      }
+    }
+
+    if (developerAvailable) {
+      items.push({ label: "Developer console", value: "developer" });
     }
 
     items.push({ label: "Refresh status", value: "refresh" });
     items.push({ label: "Quit", value: "quit" });
 
     return items;
-  }, [daemonPresent]);
+  }, [daemonPresent, developerAvailable, productionBuildActive]);
 
   useInput((input, key) => {
-    if (input === "q" || key.escape) {
+    if (view === "menu" && (input === "q" || key.escape)) {
       exit();
     }
   });
@@ -74,6 +86,11 @@ export function App() {
 
     if (item.value === "refresh") {
       setRefresh((count) => count + 1);
+      return;
+    }
+
+    if (item.value === "developer") {
+      setView("developer");
       return;
     }
 
@@ -92,8 +109,24 @@ export function App() {
     if (item.value === "logs") {
       exit();
       queueMicrotask(() => runAfterExit(followLogs));
+      return;
+    }
+
+    if (item.value === "build-production") {
+      exit();
+      queueMicrotask(() => runAfterExit(() => switchBuildMode("production")));
+      return;
+    }
+
+    if (item.value === "build-dev") {
+      exit();
+      queueMicrotask(() => runAfterExit(() => switchBuildMode("dev")));
     }
   };
+
+  if (view === "developer") {
+    return <DeveloperConsole onExit={() => setView("menu")} />;
+  }
 
   return (
     <Box flexDirection="column" padding={1}>
