@@ -22,7 +22,7 @@ This replaces the old Tilt-based workflow in `old/`.
 ├── platform/             # instance, ui, daemon, website (future — from console)
 └── runtime/
     └── deno/
-        └── v2.8.2/
+        └── v2.8.3/
             └── bin/deno
 ```
 
@@ -80,6 +80,6 @@ Keep the CLI **simple**. Platform repo install, service monitoring, and updates 
 - Do not add platform repo cloning to shell scripts — that belongs in the console.
 - Do not reintroduce `pull.sh`.
 - Do not clone `turbopanel-dev` into `/opt/turbopanel/platform`.
-- Do not add PATH symlinks, `env.sh`, or profile hooks — `console` runs Deno from `/opt/turbopanel/runtime/deno/v2.8.2/bin/deno` directly.
-- Do not bump the pinned Deno version without updating `scripts/lib/paths.sh`, `src/paths.ts`, and docs.
+- Do not add PATH symlinks, `env.sh`, or profile hooks — `console` runs Deno from `/opt/turbopanel/runtime/deno/v2.8.3/bin/deno` directly.
+- Do not bump the pinned Deno version without updating `scripts/lib/paths.sh`, `src/paths.ts`, and docs. The next `./console` run installs the new version and removes older `v*` directories under `/opt/turbopanel/runtime/deno`.
 - Do not commit directly to `trunk` — use a feature branch and open a PR.

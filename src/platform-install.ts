@@ -8,8 +8,8 @@ import {
 const BRANCH = "trunk";
 
 async function commandExists(name: string): Promise<boolean> {
-  const proc = new Deno.Command("command", {
-    args: ["-v", name],
+  const proc = new Deno.Command("/bin/sh", {
+    args: ["-c", 'command -v "$1" >/dev/null 2>&1', "_", name],
     stdout: "null",
     stderr: "null",
   });

@@ -2,7 +2,7 @@
 # Start the TurboPanel developer console.
 #
 # 1. Load shared helpers (paths, sudo, apt packages, Deno install)
-# 2. Install Deno under /opt/turbopanel/runtime if missing
+# 2. Install or upgrade Deno under /opt/turbopanel/runtime when the pinned version changes
 # 3. Cache JS dependencies and launch src/main.tsx
 set -eu
 

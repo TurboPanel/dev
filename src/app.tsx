@@ -4,6 +4,7 @@ import { installPlatformRepos } from "@turbopanel/platform-install";
 import {
   checkPlatformRepos,
   denoRuntimeInstalled,
+  DENO_VERSION,
   TURBOPANEL_PLATFORM,
 } from "@turbopanel/paths";
 
@@ -93,7 +94,7 @@ export function App() {
           label="Deno runtime"
           ok={runtimeReady}
           detail={runtimeReady
-            ? "installed under /opt/turbopanel/runtime"
+            ? `v${DENO_VERSION} at /opt/turbopanel/runtime`
             : "run ./console"}
         />
       </Box>

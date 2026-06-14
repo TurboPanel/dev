@@ -32,7 +32,7 @@ cd turbopanel-dev
 └── src/
 /opt/turbopanel/
 ├── platform/                        # platform repos (from console)
-└── runtime/deno/v2.8.2/bin/deno     # console (first run)
+└── runtime/deno/v2.8.3/bin/deno     # console (first run)
 ```
 
 ## Updating the checkout
