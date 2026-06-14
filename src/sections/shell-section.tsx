@@ -17,9 +17,11 @@ function truncate(text: string, max = MAX_LINE): string {
 
 export function ShellSection({
   state,
+  interactable = false,
   onEditingChange,
 }: {
   state: DeveloperState;
+  interactable?: boolean;
   onEditingChange?: (editing: boolean) => void;
 }) {
   const { healthOk, connections, commands, fleet, target, targetLabel, refresh } =
@@ -57,7 +59,7 @@ export function ShellSection({
 
   useInput((input, key) => {
     if (!inputFocused) {
-      if (input === "i") {
+      if (interactable && input === "i") {
         setInputFocused(true);
       }
       return;
@@ -97,7 +99,7 @@ export function ShellSection({
       <Text dimColor>
         {inputFocused
           ? "Enter run · Esc blur command"
-          : "i focus command · [ ] navigate · q exit"}
+          : "i focus command · Tab/[ ] sections · q exit"}
       </Text>
       {error ? (
         <Box marginTop={1}>

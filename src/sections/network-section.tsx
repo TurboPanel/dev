@@ -29,7 +29,13 @@ function formatAddresses(addresses: ServerAddresses): string[] {
   return lines;
 }
 
-export function NetworkSection({ state }: { state: DeveloperState }) {
+export function NetworkSection({
+  state,
+  interactable = false,
+}: {
+  state: DeveloperState;
+  interactable?: boolean;
+}) {
   const { healthOk, connections, fleet, target } = state;
   const [fetching, setFetching] = useState(false);
   const [results, setResults] = useState<ServerAddressEntry[] | null>(null);
@@ -77,6 +83,7 @@ export function NetworkSection({ state }: { state: DeveloperState }) {
   };
 
   useInput((input, key) => {
+    if (!interactable) return;
     if (key.return && canFetch && !fetching) {
       void onFetch();
     }

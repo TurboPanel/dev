@@ -3,7 +3,13 @@ import { Box, Text, useInput } from "@deno-ink/core";
 import { broadcastToDaemon, formatEvent } from "@turbopanel/instance-client";
 import type { DeveloperState } from "@turbopanel/use-developer-state";
 
-export function ConnectivitySection({ state }: { state: DeveloperState }) {
+export function ConnectivitySection({
+  state,
+  interactable = false,
+}: {
+  state: DeveloperState;
+  interactable?: boolean;
+}) {
   const { healthOk, connections, events, refresh } = state;
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -22,6 +28,7 @@ export function ConnectivitySection({ state }: { state: DeveloperState }) {
   };
 
   useInput((input, key) => {
+    if (!interactable) return;
     if ((input === "b" || key.return) && healthOk && !sending) {
       void onBroadcast();
     }

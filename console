@@ -13,6 +13,7 @@ SCRIPT_DIR=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
 . "$SCRIPT_DIR/scripts/lib/paths.sh"       # DENO_BIN, /opt/turbopanel paths
 . "$SCRIPT_DIR/scripts/lib/packages.sh"    # apt install curl/unzip if needed
 . "$SCRIPT_DIR/scripts/lib/runtime.sh"      # tp_ensure_deno_runtime
+. "$SCRIPT_DIR/scripts/lib/dev-host-access.sh"  # tp_ensure_dev_host_access
 
 if [ ! -t 0 ] || [ ! -t 1 ]; then
   tp_error "The developer console needs an interactive terminal."
@@ -21,6 +22,7 @@ if [ ! -t 0 ] || [ ! -t 1 ]; then
 fi
 
 tp_ensure_deno_runtime
+tp_ensure_dev_host_access
 
 tp_info "Caching dependencies"
 "$DENO_BIN" cache "$SCRIPT_DIR/src/main.tsx"

@@ -4,8 +4,6 @@
 
 `turbopanel-dev` is the **TurboPanel development console** — a Deno CLI with an Ink-style terminal UI (`@deno-ink/core`). It is installed via a one-liner into `./turbopanel-dev` relative to the user's current directory. The console orchestrates development from that checkout.
 
-This replaces the old Tilt-based workflow in `old/`.
-
 **Target host:** Debian 13 (Vagrant support planned).
 
 **Bootstrap URL:** https://develop.trbp.nl → `scripts/install.sh` on the `trunk` branch.
@@ -53,8 +51,8 @@ cd turbopanel-dev
 
 - **`deno.json`** — tasks, imports (`@deno-ink/core`, React 18).
 - **`src/main.tsx`** — entry; renders the Ink app.
-- **`src/app.tsx`** — main menu (runtime + platform status, dev stack actions).
-- **`src/developer-console.tsx`** — Ink developer console shell (seven sections).
+- **`src/app.tsx`** — unified Ink console (runtime/platform status, dev stack actions, developer sections when instance.sock is present).
+- **`src/developer-console.tsx`** — developer section sidebar + panel renderer (`DeveloperPanels`), embedded by `app.tsx`.
 - **`src/instance-client.ts`** — HTTP client for the instance API (Unix socket + HTTPS fallback).
 - **`src/use-developer-state.ts`** — shared 2 s polling hook for fleet/health/events/commands.
 - **`src/sections/`** — Ink section components (fleet, services, network, shell, connectivity, database, servers).
@@ -64,7 +62,17 @@ Keep the CLI **simple**. Platform repo install, service monitoring, and updates 
 
 ## Developer console
 
-The developer console is an Ink sub-view in `./console` (menu item **Developer console**, visible when the daemon checkout is present and `/run/turbopanel/instance.sock` exists).
+The developer console is not a separate Ink view — it is part of `./console`. Use **←** / **→** to switch areas:
+
+| Area | Contents |
+|------|----------|
+| **Status** | Runtime, platform checkout, dev stack units |
+| **Developer** | Fleet, services, shell, database, … (when `instance.sock` is present) |
+| **Actions** | Install daemon, start stack, follow logs, build mode, refresh, quit |
+
+Only one area is visible at a time — no scrolling past status + sections + menu on one screen.
+
+In the **Developer** area: **↑↓** picks a section, **Enter** opens it, **Esc** returns to the section list. Section panels then own their own keys (↑↓ actions in Fleet, `i` to type in Shell, etc.).
 
 ### Sections
 
@@ -78,7 +86,7 @@ The developer console is an Ink sub-view in `./console` (menu item **Developer c
 | Database | Postgres test, Drizzle Studio, reset dev | ↑↓ actions · Enter · y/N confirm reset |
 | Servers | Register servers, assign orgs | a/e/o · ↑↓ select |
 
-Navigate sections with **↑↓** (Services, Network, Connectivity) or **[** / **]** (all sections). **t** cycles daemon target (`all servers` or per-host). **q** / **Esc** returns to the main menu.
+Navigate sections with **↑↓**, **Enter** to open, **Esc** to return to the list. **t** cycles daemon target (`all servers` or per-host). **← →** switches areas. **q** / **Esc** (when not inside a section) quits the console.
 
 ### API client (`src/instance-client.ts`)
 
@@ -108,7 +116,6 @@ Polls every 2 s (same endpoints as the retired Expo `DeveloperProvider`): `/api/
 - The console installs **only** the daemon repo. All other platform repos (instance, ui, website) are installed by the daemon via Ansible (`instance-dev-install.yml`).
 - Developer identity (`TURBOPANEL_DEV_USER`, `TURBOPANEL_DEV_UID`, `TURBOPANEL_DEV_GID`) is captured from the invoking user at runtime via `Deno.env.get('USER')` and `Deno.uid()`/`Deno.gid()` — never hardcoded.
 - Do not commit secrets or environment-specific config.
-- `old/` is reference only — do not extend unless explicitly asked.
 
 ## What agents must NOT do
 

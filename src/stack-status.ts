@@ -1,0 +1,66 @@
+export type StackUnitStatus = {
+  unit: string;
+  label: string;
+  active: boolean | null;
+  detail: string;
+};
+
+const STACK_UNITS: Array<{ unit: string; label: string }> = [
+  { unit: "turbopanel-daemon", label: "daemon" },
+  { unit: "turbopanel-instance", label: "instance" },
+  { unit: "turbopanel-caddy", label: "caddy" },
+  { unit: "turbopanel-ui", label: "ui (Expo)" },
+];
+
+const INSTANCE_SOCKET = "/run/turbopanel/instance.sock";
+
+function systemctlIsActive(unit: string): { active: boolean | null; detail: string } {
+  const proc = new Deno.Command("systemctl", {
+    args: ["is-active", unit],
+    stdout: "piped",
+    stderr: "null",
+  }).outputSync();
+
+  const text = new TextDecoder().decode(proc.stdout).trim();
+  if (proc.success && text === "active") {
+    return { active: true, detail: "active" };
+  }
+  if (text === "inactive" || text === "failed") {
+    return { active: false, detail: text };
+  }
+  if (text === "unknown" || proc.code === 4) {
+    return { active: null, detail: "not installed" };
+  }
+  return { active: null, detail: text || `exit ${proc.code}` };
+}
+
+export function instanceSocketPresent(): boolean {
+  try {
+    const stat = Deno.statSync(INSTANCE_SOCKET);
+    return stat.isSocket === true;
+  } catch {
+    return false;
+  }
+}
+
+export function fetchStackStatus(): StackUnitStatus[] {
+  return STACK_UNITS.map(({ unit, label }) => {
+    const { active, detail } = systemctlIsActive(unit);
+    return { unit, label, active, detail };
+  });
+}
+
+export function stackSummary(units: StackUnitStatus[]): string {
+  const activeCount = units.filter((unit) => unit.active === true).length;
+  const knownCount = units.filter((unit) => unit.active !== null).length;
+  if (knownCount === 0) {
+    return "no systemd units detected";
+  }
+  if (activeCount === 0) {
+    return "installed but not running — use Start dev stack";
+  }
+  if (activeCount === knownCount) {
+    return `${activeCount}/${knownCount} units active`;
+  }
+  return `${activeCount}/${knownCount} units active — partial stack`;
+}

@@ -1,6 +1,7 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Box, SelectInput, Text, useApp, useInput } from "@deno-ink/core";
-import { DeveloperConsole } from "@turbopanel/developer-console";
+import { AreaTabs, type AreaTab } from "@turbopanel/area-tabs";
+import { DeveloperPanels } from "@turbopanel/developer-console";
 import {
   followLogs,
   readBuildMode,
@@ -11,10 +12,15 @@ import { installDaemon } from "@turbopanel/platform-install";
 import {
   checkPlatformRepos,
   denoRuntimeInstalled,
-  DENO_VERSION,
-  TURBOPANEL_PLATFORM,
+  platformRepoPath,
 } from "@turbopanel/paths";
-import { StatusLine } from "@turbopanel/status-line";
+import {
+  fetchStackStatus,
+  instanceSocketPresent,
+  stackSummary,
+} from "@turbopanel/stack-status";
+import { StatusArea } from "@turbopanel/status-area";
+import { useDeveloperState } from "@turbopanel/use-developer-state";
 
 async function runAfterExit(fn: () => Promise<void>): Promise<void> {
   try {
@@ -26,20 +32,68 @@ async function runAfterExit(fn: () => Promise<void>): Promise<void> {
   }
 }
 
+function areaHelp(areaId: string, panelFocused: boolean): string {
+  switch (areaId) {
+    case "status":
+      return "← → areas · q quit";
+    case "developer":
+      return panelFocused
+        ? "← → areas · Esc back · q quit"
+        : "← → areas · ↑↓ sections · Enter open · t target · q quit";
+    default:
+      return "← → areas · ↑↓ menu · Enter · q quit";
+  }
+}
+
 export function App() {
   const { exit } = useApp();
   const [refresh, setRefresh] = useState(0);
-  const [view, setView] = useState<"menu" | "developer">("menu");
+  const [developerEditing, setDeveloperEditing] = useState(false);
+  const [developerPanelFocused, setDeveloperPanelFocused] = useState(false);
+  const [activeAreaId, setActiveAreaId] = useState("status");
   const daemonStatus = useMemo(() => checkPlatformRepos()[0], [refresh]);
   const runtimeReady = denoRuntimeInstalled();
   const daemonPresent = daemonStatus.present;
-  const developerAvailable = daemonPresent;
+  const stackUnits = useMemo(() => fetchStackStatus(), [refresh]);
+  const stackHealthy = useMemo(
+    () => stackUnits.some((unit) => unit.active === true),
+    [stackUnits],
+  );
+  const instanceReady = useMemo(() => instanceSocketPresent(), [refresh]);
+  const developerState = useDeveloperState(instanceReady);
   const buildMode = useMemo(
     () => (daemonPresent ? readBuildMode() : null),
     [daemonPresent, refresh],
   );
   const productionBuildActive = buildMode?.uiMode === "static" &&
     buildMode?.instanceRunMode === "compiled";
+  const platformDirectAccess = useMemo(() => {
+    try {
+      Deno.statSync(platformRepoPath("daemon"));
+      return true;
+    } catch {
+      return false;
+    }
+  }, [refresh]);
+
+  const areas = useMemo(() => {
+    const list: AreaTab[] = [{ id: "status", label: "Status" }];
+    if (instanceReady) {
+      list.push({ id: "developer", label: "Developer" });
+    }
+    list.push({ id: "actions", label: "Actions" });
+    return list;
+  }, [instanceReady]);
+
+  const activeAreaIndex = areas.findIndex((area) => area.id === activeAreaId);
+  const resolvedAreaIndex = activeAreaIndex === -1 ? 0 : activeAreaIndex;
+  const activeArea = areas[resolvedAreaIndex];
+
+  useEffect(() => {
+    if (!areas.some((area) => area.id === activeAreaId)) {
+      setActiveAreaId(areas[areas.length - 1].id);
+    }
+  }, [activeAreaId, areas]);
 
   const menuItems = useMemo(() => {
     const items: Array<{ label: string; value: string }> = [
@@ -62,19 +116,35 @@ export function App() {
       }
     }
 
-    if (developerAvailable) {
-      items.push({ label: "Developer console", value: "developer" });
-    }
-
     items.push({ label: "Refresh status", value: "refresh" });
     items.push({ label: "Quit", value: "quit" });
 
     return items;
-  }, [daemonPresent, developerAvailable, productionBuildActive]);
+  }, [daemonPresent, productionBuildActive]);
 
   useInput((input, key) => {
-    if (view === "menu" && (input === "q" || key.escape)) {
+    if (developerEditing) return;
+
+    if (key.escape && developerPanelFocused) return;
+
+    if (input === "q" || key.escape) {
       exit();
+      return;
+    }
+
+    if (key.leftArrow) {
+      const currentIndex = areas.findIndex((area) => area.id === activeAreaId);
+      const index = currentIndex === -1 ? 0 : currentIndex;
+      const next = index <= 0 ? areas.length - 1 : index - 1;
+      setActiveAreaId(areas[next].id);
+      return;
+    }
+
+    if (key.rightArrow) {
+      const currentIndex = areas.findIndex((area) => area.id === activeAreaId);
+      const index = currentIndex === -1 ? 0 : currentIndex;
+      const next = index >= areas.length - 1 ? 0 : index + 1;
+      setActiveAreaId(areas[next].id);
     }
   });
 
@@ -86,11 +156,6 @@ export function App() {
 
     if (item.value === "refresh") {
       setRefresh((count) => count + 1);
-      return;
-    }
-
-    if (item.value === "developer") {
-      setView("developer");
       return;
     }
 
@@ -124,45 +189,53 @@ export function App() {
     }
   };
 
-  if (view === "developer") {
-    return <DeveloperConsole onExit={() => setView("menu")} />;
-  }
+  const headerSummary = instanceReady
+    ? `${stackSummary(stackUnits)} · ${developerState.fleet.length} server${
+      developerState.fleet.length === 1 ? "" : "s"
+    }`
+    : daemonPresent
+    ? stackSummary(stackUnits)
+    : runtimeReady
+    ? "runtime ready"
+    : "getting started";
 
   return (
     <Box flexDirection="column" padding={1}>
       <Text bold color="cyan">
         TurboPanel Dev Console
       </Text>
-      <Text dimColor>Installer · monitor · developer shell</Text>
+      <Text dimColor>{headerSummary}</Text>
 
-      <Box flexDirection="column" marginTop={1}>
-        <Text bold>Runtime</Text>
-        <StatusLine
-          label="Deno runtime"
-          ok={runtimeReady}
-          detail={runtimeReady
-            ? `v${DENO_VERSION} at /opt/turbopanel/runtime`
-            : "run ./console"}
+      <AreaTabs areas={areas} activeIndex={resolvedAreaIndex} />
+
+      {activeArea.id === "status" ? (
+        <StatusArea
+          runtimeReady={runtimeReady}
+          daemonStatus={daemonStatus}
+          daemonPresent={daemonPresent}
+          platformDirectAccess={platformDirectAccess}
+          stackUnits={stackUnits}
+          instanceReady={instanceReady}
+          stackHealthy={stackHealthy}
         />
-      </Box>
+      ) : null}
 
-      <Box flexDirection="column" marginTop={1}>
-        <Text bold>Platform</Text>
-        <Text dimColor>{TURBOPANEL_PLATFORM}</Text>
-        <StatusLine
-          label="daemon"
-          ok={daemonStatus.present}
-          detail={daemonStatus.repo}
+      {activeArea.id === "developer" && instanceReady ? (
+        <DeveloperPanels
+          state={developerState}
+          onEditingChange={setDeveloperEditing}
+          onPanelFocusChange={setDeveloperPanelFocused}
         />
-      </Box>
+      ) : null}
 
-      <Box flexDirection="column" marginTop={1}>
-        <Text bold>Menu</Text>
-        <SelectInput items={menuItems} onSelect={handleSelect} />
-      </Box>
+      {activeArea.id === "actions" ? (
+        <Box flexDirection="column" marginTop={1}>
+          <SelectInput items={menuItems} onSelect={handleSelect} />
+        </Box>
+      ) : null}
 
       <Box marginTop={1}>
-        <Text dimColor>↑↓ navigate · Enter select · q quit</Text>
+        <Text dimColor>{areaHelp(activeArea.id, developerPanelFocused)}</Text>
       </Box>
     </Box>
   );

@@ -14,9 +14,11 @@ const ACTIONS = ["Upgrade System", "Sync Dev Build", "Save Tunnel Token"] as con
 
 export function FleetSection({
   state,
+  interactable = false,
   onEditingChange,
 }: {
   state: DeveloperState;
+  interactable?: boolean;
   onEditingChange?: (editing: boolean) => void;
 }) {
   const { healthOk, connections, fleet, staleCount } = state;
@@ -130,6 +132,8 @@ export function FleetSection({
       }
       return;
     }
+
+    if (!interactable) return;
 
     if (key.upArrow) {
       setActionIndex((i) => Math.max(0, i - 1));

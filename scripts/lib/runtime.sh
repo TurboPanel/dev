@@ -3,6 +3,48 @@
 # upgrades on the next run and removes older version directories.
 # Source after privileges.sh, paths.sh, and packages.sh.
 
+tp_deno_runtime_usable() {
+  [ -x "$DENO_BIN" ]
+}
+
+tp_deno_runtime_present() {
+  if tp_deno_runtime_usable; then
+    return 0
+  fi
+  if [ "$(id -u)" -eq 0 ]; then
+    [ -x "$DENO_BIN" ]
+    return $?
+  fi
+  command -v sudo >/dev/null 2>&1 && sudo test -x "$DENO_BIN" 2>/dev/null
+}
+
+# After Ansible creates turbopanel:turbopanel (750) under /opt/turbopanel, the
+# invoking developer still needs to execute the console-owned Deno binary.
+tp_fix_deno_runtime_access() {
+  _dev_user=${USER:-}
+  if [ -z "$_dev_user" ] || [ "$_dev_user" = "root" ]; then
+    return 0
+  fi
+  if ! command -v sudo >/dev/null 2>&1; then
+    return 1
+  fi
+  if ! sudo test -x "$DENO_BIN" 2>/dev/null; then
+    return 1
+  fi
+
+  # Traverse /opt/turbopanel without granting list access; open runtime for read+execute.
+  sudo chmod o+x "$TURBOPANEL_ROOT" 2>/dev/null || true
+  sudo chmod -R o+rx "$DENO_RUNTIME_ROOT" 2>/dev/null || true
+
+  if command -v setfacl >/dev/null 2>&1; then
+    sudo setfacl -m "u:${_dev_user}:rx" "$TURBOPANEL_ROOT" 2>/dev/null || true
+    sudo setfacl -R -m "u:${_dev_user}:rx" "$DENO_RUNTIME_ROOT" 2>/dev/null || true
+    sudo setfacl -R -d -m "u:${_dev_user}:rx" "$DENO_RUNTIME_ROOT" 2>/dev/null || true
+  fi
+
+  tp_deno_runtime_usable
+}
+
 tp_install_deno_runtime_body() {
   mkdir -p "$DENO_VERSION_DIR"
   DENO_INSTALL="$DENO_VERSION_DIR" \
@@ -50,7 +92,12 @@ tp_other_deno_versions_present() {
 }
 
 tp_install_deno_runtime() {
-  if [ -x "$DENO_BIN" ]; then
+  if tp_deno_runtime_usable; then
+    tp_cleanup_old_deno_runtimes
+    return 0
+  fi
+
+  if tp_deno_runtime_present && tp_fix_deno_runtime_access; then
     tp_cleanup_old_deno_runtimes
     return 0
   fi
@@ -79,9 +126,14 @@ tp_install_deno_runtime() {
     sudo mkdir -p "$DENO_VERSION_DIR"
     sudo env DENO_INSTALL="$DENO_VERSION_DIR" sh -c \
       "curl -fsSL https://deno.land/install.sh | sh -s v${DENO_VERSION} -- -y --no-modify-path"
+    tp_fix_deno_runtime_access || true
   fi
 
-  if [ ! -x "$DENO_BIN" ]; then
+  if ! tp_deno_runtime_usable; then
+    tp_fix_deno_runtime_access || true
+  fi
+
+  if ! tp_deno_runtime_usable; then
     tp_error "Deno install failed — expected ${DENO_BIN}"
     exit 1
   fi

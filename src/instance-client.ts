@@ -247,30 +247,20 @@ export type DrizzleStudioStatus = {
   port: number;
 };
 
-export const DRIZZLE_STUDIO_PROXY_PORT = 8444;
+export const DRIZZLE_STUDIO_PORT = 4983;
 
 export function drizzleStudioOpenUrl(opts?: {
   hostname?: string;
-  localPort?: number;
-  proxyPort?: number;
+  port?: number;
 }): string {
   const base = "https://local.drizzle.studio";
-  const hostname = opts?.hostname ?? "";
-  const proxyPort = opts?.proxyPort ?? DRIZZLE_STUDIO_PROXY_PORT;
-  const localPort = opts?.localPort ?? 4983;
-
-  if (hostname && hostname !== "localhost" && hostname !== "127.0.0.1") {
-    const params = new URLSearchParams({
-      host: hostname,
-      port: String(proxyPort),
-    });
-    return `${base}?${params.toString()}`;
-  }
-
-  if (localPort !== 4983) {
-    return `${base}?port=${localPort}`;
-  }
-  return base;
+  const hostname = opts?.hostname ?? "localhost";
+  const port = opts?.port ?? DRIZZLE_STUDIO_PORT;
+  const params = new URLSearchParams({
+    host: hostname,
+    port: String(port),
+  });
+  return `${base}?${params.toString()}`;
 }
 
 export async function fetchHealth(): Promise<{ ok: boolean }> {

@@ -4,24 +4,137 @@ import {
   getDevGid,
   getDevUid,
   getDevUser,
+  platformRepoPath,
   TURBOPANEL_PLATFORM,
+  TURBOPANEL_ROOT,
 } from "@turbopanel/paths";
+import { ensureDevHostAccess } from "@turbopanel/ensure-dev-host-access";
 import { runInherit } from "@turbopanel/platform-install";
+import {
+  fetchStackStatus,
+  instanceSocketPresent,
+  stackSummary,
+} from "@turbopanel/stack-status";
 
 const CADDY_PORT = 8443;
+const TURBOPANEL_USER = "turbopanel";
+const DAEMON_DIR = platformRepoPath("daemon");
+const DEV_STACK_INSTALL_SCRIPT = "scripts/run-dev-stack-install.sh";
+const ENSURE_ORCHESTRATION_RUNTIME_SCRIPT =
+  "scripts/ensure-orchestration-runtime.sh";
+const STACK_WAIT_MS = 120_000;
+const STACK_POLL_MS = 3_000;
+
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, "'\\''")}'`;
+}
+
+function daemonScriptCommand(script: string): string {
+  return `cd ${shellQuote(DAEMON_DIR)} && exec bash ${shellQuote(script)}`;
+}
+
+function turbopanelUserExists(): boolean {
+  return new Deno.Command("getent", {
+    args: ["passwd", TURBOPANEL_USER],
+    stdout: "null",
+    stderr: "null",
+  }).outputSync().success;
+}
+
+function pathDirectlyAccessible(path: string): boolean {
+  try {
+    Deno.statSync(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function runSudo(args: string[]): Promise<number> {
+  const quiet = await runInherit(["sudo", "-n", ...args]);
+  if (quiet === 0) {
+    return 0;
+  }
+  return runInherit(["sudo", ...args]);
+}
+
+async function runPrivilegedDaemonBash(script: string): Promise<number> {
+  const command = daemonScriptCommand(script);
+
+  // Always run as turbopanel when the user exists so orchestration/runtime
+  // cache (uv, ansible-tmp) stays owned by turbopanel — not the dev user.
+  if (turbopanelUserExists()) {
+    return runSudo([
+      "-u",
+      TURBOPANEL_USER,
+      "env",
+      `HOME=${TURBOPANEL_ROOT}`,
+      "bash",
+      "-c",
+      command,
+    ]);
+  }
+  if (pathDirectlyAccessible(script)) {
+    return runInherit(["bash", "-c", command]);
+  }
+  return runSudo(["bash", "-c", command]);
+}
+
+async function runRootDaemonBash(script: string): Promise<number> {
+  return runSudo(["bash", "-c", daemonScriptCommand(script)]);
+}
+
+async function runPrivilegedDaemonDeno(
+  script: string,
+  denoArgs: string[],
+  scriptArgs: string[] = [],
+): Promise<number> {
+  const denoInvocation = [
+    DENO_BIN,
+    "run",
+    ...denoArgs,
+    script,
+    ...scriptArgs,
+  ].map(shellQuote).join(" ");
+  const command = `cd ${shellQuote(DAEMON_DIR)} && exec ${denoInvocation}`;
+
+  if (pathDirectlyAccessible(script)) {
+    return runInherit(["bash", "-c", command]);
+  }
+  if (turbopanelUserExists()) {
+    return runSudo([
+      "-u",
+      TURBOPANEL_USER,
+      "env",
+      `HOME=${TURBOPANEL_ROOT}`,
+      "bash",
+      "-c",
+      command,
+    ]);
+  }
+  return runSudo(["bash", "-c", command]);
+}
 
 export type BuildMode = {
   uiMode: "dev" | "static";
   instanceRunMode: "source" | "compiled";
 };
 
-function parseEnvFile(path: string): Map<string, string> {
+function readEnvFile(path: string): Map<string, string> {
   const values = new Map<string, string>();
   let content = "";
   try {
     content = Deno.readTextFileSync(path);
   } catch {
-    return values;
+    const proc = new Deno.Command("sudo", {
+      args: ["cat", path],
+      stdout: "piped",
+      stderr: "null",
+    }).outputSync();
+    if (!proc.success) {
+      return values;
+    }
+    content = new TextDecoder().decode(proc.stdout);
   }
 
   for (const line of content.split("\n")) {
@@ -32,6 +145,34 @@ function parseEnvFile(path: string): Map<string, string> {
   }
 
   return values;
+}
+
+function writeEnvFile(path: string, content: string): void {
+  try {
+    Deno.writeTextFileSync(path, content);
+    return;
+  } catch {
+    // Fall through to sudo when the checkout is turbopanel-owned.
+  }
+
+  const tmp = Deno.makeTempFileSync({ prefix: "turbopanel-env-" });
+  try {
+    Deno.writeTextFileSync(tmp, content);
+    const proc = new Deno.Command("sudo", {
+      args: ["cp", tmp, path],
+      stdout: "null",
+      stderr: "inherit",
+    }).outputSync();
+    if (!proc.success) {
+      throw new Error(`Failed to write ${path}`);
+    }
+  } finally {
+    Deno.removeSync(tmp);
+  }
+}
+
+function parseEnvFile(path: string): Map<string, string> {
+  return readEnvFile(path);
 }
 
 export function readBuildMode(): BuildMode {
@@ -58,6 +199,17 @@ export function writeDaemonEnv(extra?: Record<string, string>): void {
     content = Deno.readTextFileSync(DAEMON_ENV_PATH);
   } catch {
     content = "";
+  }
+
+  if (!content) {
+    const proc = new Deno.Command("sudo", {
+      args: ["cat", DAEMON_ENV_PATH],
+      stdout: "piped",
+      stderr: "null",
+    }).outputSync();
+    if (proc.success) {
+      content = new TextDecoder().decode(proc.stdout);
+    }
   }
 
   const managedKeys = new Set(Object.keys(entries));
@@ -88,7 +240,7 @@ export function writeDaemonEnv(extra?: Record<string, string>): void {
     lines.pop();
   }
 
-  Deno.writeTextFileSync(DAEMON_ENV_PATH, lines.join("\n") + "\n");
+  writeEnvFile(DAEMON_ENV_PATH, lines.join("\n") + "\n");
 }
 
 export function writeBuildMode(
@@ -101,24 +253,87 @@ export function writeBuildMode(
   });
 }
 
+export async function ensureOrchestrationRuntime(): Promise<void> {
+  const script = `${Deno.cwd()}/${ENSURE_ORCHESTRATION_RUNTIME_SCRIPT}`;
+  const code = await runInherit(["sh", script]);
+  if (code !== 0) {
+    throw new Error("ensure-orchestration-runtime.sh failed");
+  }
+}
+
 export async function bootstrapOrchestration(): Promise<void> {
-  const code = await runInherit([
-    "bash",
-    `${TURBOPANEL_PLATFORM}/daemon/scripts/bootstrap-orchestration.sh`,
-  ]);
+  const script =
+    `${TURBOPANEL_PLATFORM}/daemon/scripts/bootstrap-orchestration.sh`;
+  const code = await runPrivilegedDaemonBash(script);
   if (code !== 0) {
     throw new Error("bootstrap-orchestration.sh failed");
   }
 }
 
+export async function runDevStackInstall(): Promise<void> {
+  const script = `${Deno.cwd()}/${DEV_STACK_INSTALL_SCRIPT}`;
+  const code = await runInherit(["sh", script]);
+  if (code !== 0) {
+    throw new Error("instance dev stack install failed");
+  }
+}
+
 export async function installDaemonSystemd(): Promise<void> {
-  const code = await runInherit([
-    "sudo",
-    `${TURBOPANEL_PLATFORM}/daemon/scripts/install-daemon-systemd.sh`,
-  ]);
+  const script =
+    `${TURBOPANEL_PLATFORM}/daemon/scripts/install-daemon-systemd.sh`;
+  const code = await runRootDaemonBash(script);
   if (code !== 0) {
     throw new Error("install-daemon-systemd.sh failed");
   }
+}
+
+async function restartDevStackServices(): Promise<void> {
+  await runSudo(["systemctl", "daemon-reload"]);
+  const required = [
+    "turbopanel-instance",
+    "turbopanel-caddy",
+    "turbopanel-daemon",
+  ] as const;
+  for (const unit of required) {
+    const code = await runSudo(["systemctl", "restart", unit]);
+    if (code !== 0) {
+      throw new Error(`failed to restart ${unit}`);
+    }
+  }
+  // UI unit is dev-only; ignore restart failure in static mode.
+  await runSudo(["systemctl", "restart", "turbopanel-ui"]);
+}
+
+function stackIsReady(): boolean {
+  const units = fetchStackStatus();
+  const instance = units.find((unit) => unit.unit === "turbopanel-instance");
+  const caddy = units.find((unit) => unit.unit === "turbopanel-caddy");
+  return instance?.active === true &&
+    caddy?.active === true &&
+    instanceSocketPresent();
+}
+
+async function waitForDevStack(): Promise<void> {
+  const deadline = Date.now() + STACK_WAIT_MS;
+  console.log("→ Waiting for instance and Caddy to become ready...");
+  while (Date.now() < deadline) {
+    if (stackIsReady()) {
+      console.log("✓ Dev stack is ready");
+      return;
+    }
+    const units = fetchStackStatus();
+    const instance = units.find((unit) => unit.unit === "turbopanel-instance");
+    const caddy = units.find((unit) => unit.unit === "turbopanel-caddy");
+    console.log(
+      `  … instance: ${instance?.detail ?? "?"}, caddy: ${caddy?.detail ?? "?"}, socket: ${
+        instanceSocketPresent() ? "ready" : "waiting"
+      }`,
+    );
+    await new Promise((resolve) => setTimeout(resolve, STACK_POLL_MS));
+  }
+  console.log(
+    "⚠ Stack services still starting — check status below or follow logs",
+  );
 }
 
 export async function switchBuildMode(
@@ -129,21 +344,25 @@ export async function switchBuildMode(
 
   writeBuildMode(uiMode, instanceRunMode);
 
+  await ensureOrchestrationRuntime();
   await bootstrapOrchestration();
 
-  const code = await runInherit([
-    "sudo",
-    DENO_BIN,
-    "run",
-    "--allow-env",
-    "--allow-read",
-    "--allow-write",
-    "--allow-run",
-    `${TURBOPANEL_PLATFORM}/daemon/scripts/run-build-toggle.ts`,
-    `--ui-mode=${uiMode}`,
-    `--instance-run-mode=${instanceRunMode}`,
-    "--force-build=true",
-  ]);
+  const toggleScript =
+    `${TURBOPANEL_PLATFORM}/daemon/scripts/run-build-toggle.ts`;
+  const code = await runPrivilegedDaemonDeno(
+    toggleScript,
+    [
+      "--allow-env",
+      "--allow-read",
+      "--allow-write",
+      "--allow-run",
+    ],
+    [
+      `--ui-mode=${uiMode}`,
+      `--instance-run-mode=${instanceRunMode}`,
+      "--force-build=true",
+    ],
+  );
   if (code !== 0) {
     throw new Error("run-build-toggle failed");
   }
@@ -179,10 +398,37 @@ System" button (or sync-dev) to update; nothing auto-updates.
 `);
 }
 
+function printStackStatus(): void {
+  const units = fetchStackStatus();
+  console.log("Dev stack status:", stackSummary(units));
+  for (const unit of units) {
+    const mark = unit.active === true
+      ? "✓"
+      : unit.active === false
+      ? "○"
+      : "?";
+    console.log(`  ${mark} ${unit.label}: ${unit.detail}`);
+  }
+  console.log(
+    instanceSocketPresent()
+      ? "  ✓ instance.sock ready"
+      : "  ○ instance.sock not ready",
+  );
+  console.log("");
+  console.log(
+    "Follow logs: journalctl -fu turbopanel-daemon -u turbopanel-instance -u turbopanel-caddy -u turbopanel-ui",
+  );
+}
+
 export async function startDevStack(): Promise<void> {
+  await ensureDevHostAccess();
   writeDaemonEnv();
+  await ensureOrchestrationRuntime();
   await bootstrapOrchestration();
+  await runDevStackInstall();
   await installDaemonSystemd();
+  await restartDevStackServices();
+  await waitForDevStack();
   printStartupBanner();
-  await followLogs();
+  printStackStatus();
 }

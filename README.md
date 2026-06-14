@@ -60,6 +60,3 @@ Deno is not on your PATH by design. To run it manually:
 
 All repositories use **`trunk`** as the default branch.
 
-## Legacy setup
-
-The previous Tilt-based workflow lives in [`old/`](old/).

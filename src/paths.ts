@@ -39,24 +39,49 @@ export function platformRepoPath(dir: string): string {
   return `${TURBOPANEL_PLATFORM}/${dir}`;
 }
 
+function isNotFound(err: unknown): boolean {
+  return err instanceof Deno.errors.NotFound;
+}
+
+/** True when path exists; uses sudo for permission-denied paths under /opt/turbopanel. */
+export function pathExists(path: string): boolean {
+  try {
+    Deno.statSync(path);
+    return true;
+  } catch (err) {
+    if (isNotFound(err)) {
+      return false;
+    }
+  }
+
+  if (!commandExistsSync("sudo")) {
+    return false;
+  }
+
+  const proc = new Deno.Command("sudo", {
+    args: ["test", "-e", path],
+    stdout: "null",
+    stderr: "null",
+  }).outputSync();
+  return proc.success;
+}
+
+function commandExistsSync(name: string): boolean {
+  const proc = new Deno.Command("/bin/sh", {
+    args: ["-c", 'command -v "$1" >/dev/null 2>&1', "_", name],
+    stdout: "null",
+    stderr: "null",
+  }).outputSync();
+  return proc.success;
+}
+
 export function checkPlatformRepos(): RepoStatus[] {
   return PLATFORM_REPOS.map(({ dir, repo }) => {
-    let present = false;
-    try {
-      Deno.statSync(platformRepoPath(dir));
-      present = true;
-    } catch {
-      present = false;
-    }
-    return { dir, repo, present };
+    const target = platformRepoPath(dir);
+    return { dir, repo, present: pathExists(target) };
   });
 }
 
 export function denoRuntimeInstalled(): boolean {
-  try {
-    Deno.statSync(DENO_BIN);
-    return true;
-  } catch {
-    return false;
-  }
+  return pathExists(DENO_BIN);
 }

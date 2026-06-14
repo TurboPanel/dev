@@ -29,7 +29,7 @@ export type DeveloperState = {
   refresh: () => Promise<void>;
 };
 
-export function useDeveloperState(): DeveloperState {
+export function useDeveloperState(enabled = true): DeveloperState {
   const [healthOk, setHealthOk] = useState<boolean | null>(null);
   const [connections, setConnections] = useState<DaemonConnection[]>([]);
   const [events, setEvents] = useState<DaemonEvent[]>([]);
@@ -57,12 +57,13 @@ export function useDeveloperState(): DeveloperState {
   }, []);
 
   useEffect(() => {
+    if (!enabled) return;
     void refresh();
     const timer = setInterval(() => {
       void refresh();
     }, POLL_MS);
     return () => clearInterval(timer);
-  }, [refresh]);
+  }, [enabled, refresh]);
 
   const fleet = useMemo(
     () => uniqueFleetConnections(connections),

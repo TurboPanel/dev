@@ -26,8 +26,10 @@ type Mode =
   | { kind: "assign"; serverId: string; orgIndex: number };
 
 export function ServersSection({
+  interactable = false,
   onEditingChange,
 }: {
+  interactable?: boolean;
   onEditingChange?: (editing: boolean) => void;
 }) {
   const [servers, setServers] = useState<ServerRecord[]>([]);
@@ -147,6 +149,8 @@ export function ServersSection({
     }
 
     if (mode.kind === "browse") {
+      if (!interactable) return;
+
       if (key.upArrow && servers.length > 0) {
         setMode((m) =>
           m.kind === "browse"

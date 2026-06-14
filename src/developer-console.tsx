@@ -1,6 +1,6 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Box, Text, useInput } from "@deno-ink/core";
-import { ALL_TARGET, useDeveloperState } from "@turbopanel/use-developer-state";
+import { ALL_TARGET, type DeveloperState } from "@turbopanel/use-developer-state";
 import { FleetSection } from "@turbopanel/sections/fleet-section";
 import { ServiceStatusSection } from "@turbopanel/sections/service-status-section";
 import { NetworkSection } from "@turbopanel/sections/network-section";
@@ -19,14 +19,34 @@ const SECTIONS = [
   { id: "servers", label: "Servers" },
 ] as const;
 
-type SectionId = typeof SECTIONS[number]["id"];
-
-export function DeveloperConsole({ onExit }: { onExit: () => void }) {
-  const state = useDeveloperState();
+export function DeveloperPanels({
+  state,
+  onEditingChange,
+  onPanelFocusChange,
+}: {
+  state: DeveloperState;
+  onEditingChange?: (editing: boolean) => void;
+  onPanelFocusChange?: (focused: boolean) => void;
+}) {
   const { healthOk, fleet, target, setTarget, targetLabel, error } = state;
   const [sectionIndex, setSectionIndex] = useState(0);
+  const [panelFocused, setPanelFocused] = useState(false);
   const [editingActive, setEditingActive] = useState(false);
   const activeId = SECTIONS[sectionIndex].id;
+
+  const setEditing = (editing: boolean) => {
+    setEditingActive(editing);
+    onEditingChange?.(editing);
+  };
+
+  const setPanelFocus = (focused: boolean) => {
+    setPanelFocused(focused);
+    onPanelFocusChange?.(focused);
+  };
+
+  useEffect(() => {
+    return () => onPanelFocusChange?.(false);
+  }, [onPanelFocusChange]);
 
   const cycleTarget = () => {
     if (fleet.length === 0) {
@@ -46,31 +66,29 @@ export function DeveloperConsole({ onExit }: { onExit: () => void }) {
   };
 
   useInput((input, key) => {
-    if (!editingActive) {
-      if (input === "q" || key.escape) {
-        onExit();
-        return;
-      }
-      if (input === "t") {
-        cycleTarget();
-        return;
-      }
-      if (input === "[") {
-        setSectionIndex((i) => Math.max(0, i - 1));
-        return;
-      }
-      if (input === "]") {
-        setSectionIndex((i) => Math.min(SECTIONS.length - 1, i + 1));
-        return;
-      }
+    if (editingActive) return;
+
+    if (key.escape && panelFocused) {
+      setPanelFocus(false);
+      return;
     }
-    const sidebarSections: SectionId[] = ["services", "network", "connectivity"];
-    if (sidebarSections.includes(activeId)) {
-      if (key.upArrow) {
-        setSectionIndex((i) => Math.max(0, i - 1));
-      } else if (key.downArrow) {
-        setSectionIndex((i) => Math.min(SECTIONS.length - 1, i + 1));
-      }
+
+    if (panelFocused) return;
+
+    if (input === "t") {
+      cycleTarget();
+      return;
+    }
+    if (key.upArrow) {
+      setSectionIndex((i) => Math.max(0, i - 1));
+      return;
+    }
+    if (key.downArrow) {
+      setSectionIndex((i) => Math.min(SECTIONS.length - 1, i + 1));
+      return;
+    }
+    if (key.return) {
+      setPanelFocus(true);
     }
   });
 
@@ -78,29 +96,50 @@ export function DeveloperConsole({ onExit }: { onExit: () => void }) {
     switch (activeId) {
       case "fleet":
         return (
-          <FleetSection state={state} onEditingChange={setEditingActive} />
+          <FleetSection
+            state={state}
+            interactable={panelFocused}
+            onEditingChange={setEditing}
+          />
         );
       case "services":
         return <ServiceStatusSection />;
       case "network":
-        return <NetworkSection state={state} />;
+        return (
+          <NetworkSection state={state} interactable={panelFocused} />
+        );
       case "shell":
         return (
-          <ShellSection state={state} onEditingChange={setEditingActive} />
+          <ShellSection
+            state={state}
+            interactable={panelFocused}
+            onEditingChange={setEditing}
+          />
         );
       case "connectivity":
-        return <ConnectivitySection state={state} />;
+        return (
+          <ConnectivitySection state={state} interactable={panelFocused} />
+        );
       case "database":
-        return <DatabaseSection state={state} />;
+        return (
+          <DatabaseSection
+            state={state}
+            interactable={panelFocused}
+          />
+        );
       case "servers":
-        return <ServersSection onEditingChange={setEditingActive} />;
+        return (
+          <ServersSection
+            interactable={panelFocused}
+            onEditingChange={setEditing}
+          />
+        );
     }
   };
 
   return (
-    <Box flexDirection="column" padding={1}>
-      <Text bold color="cyan">Developer Console</Text>
-      <Box marginTop={1}>
+    <Box flexDirection="column" marginTop={1}>
+      <Box>
         <Text color={healthOk ? "green" : healthOk === null ? "yellow" : "red"}>
           ●{" "}
         </Text>
@@ -108,7 +147,9 @@ export function DeveloperConsole({ onExit }: { onExit: () => void }) {
           {fleet.length} server{fleet.length === 1 ? "" : "s"} · target:{" "}
           {targetLabel}
         </Text>
-        <Text dimColor> · t cycle target · q exit</Text>
+        <Text dimColor>
+          {panelFocused ? " · Esc back" : " · t cycle target · Enter open"}
+        </Text>
       </Box>
       {error ? (
         <Box marginTop={1}>
@@ -118,14 +159,18 @@ export function DeveloperConsole({ onExit }: { onExit: () => void }) {
 
       <Box marginTop={1}>
         <Box width={22} flexDirection="column">
-          <Text bold dimColor>Sections [ ]</Text>
+          <Text bold dimColor>
+            {panelFocused ? "Sections" : "Sections ↑↓"}
+          </Text>
           {SECTIONS.map((section, index) => (
             <Text
               key={section.id}
-              color={index === sectionIndex ? "cyan" : undefined}
-              bold={index === sectionIndex}
+              color={!panelFocused && index === sectionIndex ? "cyan" : undefined}
+              bold={!panelFocused && index === sectionIndex}
+              dimColor={panelFocused || index !== sectionIndex}
             >
-              {index === sectionIndex ? "› " : "  "}{section.label}
+              {!panelFocused && index === sectionIndex ? "› " : "  "}
+              {section.label}
             </Text>
           ))}
         </Box>

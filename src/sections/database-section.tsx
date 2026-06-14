@@ -17,7 +17,13 @@ const ACTIONS = [
   "Reset Dev Instance",
 ] as const;
 
-export function DatabaseSection({ state }: { state: DeveloperState }) {
+export function DatabaseSection({
+  state,
+  interactable = false,
+}: {
+  state: DeveloperState;
+  interactable?: boolean;
+}) {
   const { healthOk } = state;
   const [status, setStatus] = useState<DatabaseStatus | null>(null);
   const [studioStatus, setStudioStatus] = useState<DrizzleStudioStatus | null>(
@@ -66,12 +72,12 @@ export function DatabaseSection({ state }: { state: DeveloperState }) {
         setStudioStatus(studio);
         const url = result.browserUrl ||
           studio?.browserUrl ||
-          drizzleStudioOpenUrl({ hostname: "localhost", localPort: result.port });
+          drizzleStudioOpenUrl();
         setMessage({
           ok: true,
           text: studio?.running
-            ? `Studio running on port ${studio.port}. Open ${url}`
-            : `Studio API started on port ${result.port}. Open ${url}`,
+            ? `Studio running on port ${studio?.port ?? result.port}. Open ${url}`
+            : `Studio started on port ${result.port}. Open ${url}`,
         });
       } else if (action === "Reset Dev Instance") {
         await resetDevInstance();
@@ -101,6 +107,8 @@ export function DatabaseSection({ state }: { state: DeveloperState }) {
       }
       return;
     }
+
+    if (!interactable) return;
 
     if (key.upArrow) {
       setActionIndex((i) => Math.max(0, i - 1));
@@ -160,7 +168,9 @@ export function DatabaseSection({ state }: { state: DeveloperState }) {
             : "Not running"}
         </Text>
         {studioStatus?.running ? (
-          <Text dimColor>Open {studioStatus.browserUrl}</Text>
+          <Text dimColor>
+            Open {studioStatus.browserUrl}
+          </Text>
         ) : (
           <Text dimColor>
             Use Start Drizzle Studio to launch the local browser UI.

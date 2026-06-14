@@ -16,7 +16,26 @@
       "path": "/opt/turbopanel/platform/website",
     },
   ],
-  "settings": {},
+  "settings": {
+    "remote.restoreForwardedPorts": true,
+    "remote.portsAttributes": {
+      "8443": {
+        "label": "Caddy HTTPS",
+        "protocol": "https",
+        "onAutoForward": "notify"
+      },
+      "8081": {
+        "label": "Expo UI",
+        "protocol": "http",
+        "onAutoForward": "notify"
+      },
+      "19820": {
+        "label": "Website (Next.js)",
+        "protocol": "http",
+        "onAutoForward": "notify"
+      }
+    }
+  },
   "extensions": {
     "recommendations": [
       "sonarsource.sonarlint-vscode",
