@@ -1,0 +1,22 @@
+{
+  "name": "@turbopanel/dev",
+  "version": "0.1.0",
+  "exports": "./src/main.tsx",
+  "tasks": {
+    "dev": "deno run --allow-all --watch src/main.tsx",
+    "start": "deno run --allow-all src/main.tsx",
+    "cache": "deno cache src/main.tsx"
+  },
+  "imports": {
+    "@deno-ink/core": "jsr:@deno-ink/core@^0.2.1",
+    "@turbopanel/paths": "./src/paths.ts",
+    "react": "npm:react@^19.0.0"
+  },
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "jsxImportSource": "react",
+    "jsxImportSourceTypes": "npm:@types/react@^19",
+    "lib": ["deno.window", "dom", "dom.iterable"],
+    "strict": true
+  }
+}
