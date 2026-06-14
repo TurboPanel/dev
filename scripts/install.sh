@@ -22,7 +22,7 @@ resolve_repo_dir() {
     */install.sh)
       _script_dir=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
       _repo_dir=$(CDPATH= cd -- "$_script_dir/.." && pwd)
-      if [ -f "$_repo_dir/deno.json" ]; then
+      if [ -d "$_repo_dir/.git" ]; then
         printf '%s' "$_repo_dir"
         return 0
       fi
