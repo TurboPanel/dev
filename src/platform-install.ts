@@ -1,5 +1,5 @@
 import {
-  PLATFORM_REPOS,
+  DAEMON_REPO,
   platformRepoPath,
   sshRepoUrl,
   TURBOPANEL_PLATFORM,
@@ -16,7 +16,7 @@ async function commandExists(name: string): Promise<boolean> {
   return (await proc.output()).success;
 }
 
-async function runInherit(cmd: string[]): Promise<number> {
+export async function runInherit(cmd: string[]): Promise<number> {
   const proc = new Deno.Command(cmd[0], {
     args: cmd.slice(1),
     stdin: "inherit",
@@ -41,14 +41,13 @@ async function ensurePlatformDir(): Promise<void> {
     return;
   }
 
-  const user = Deno.env.get("USER") ?? Deno.env.get("LOGNAME") ?? "root";
   console.log(`→ Administrator privileges required for ${TURBOPANEL_PLATFORM}`);
 
   const code = await runInherit([
     "sudo",
     "sh",
     "-c",
-    `mkdir -p '${TURBOPANEL_PLATFORM}' && chown -R '${user}:' '${TURBOPANEL_PLATFORM}'`,
+    `mkdir -p '${TURBOPANEL_PLATFORM}'`,
   ]);
 
   if (code !== 0) {
@@ -169,20 +168,16 @@ async function cloneOrUpdateRepo(
   return "updated";
 }
 
-export async function installPlatformRepos(): Promise<void> {
+export async function installDaemon(): Promise<void> {
   await ensureGit();
   await ensurePlatformDir();
 
-  for (const { dir, repo } of PLATFORM_REPOS) {
-    await cloneOrUpdateRepo(dir, repo);
-  }
+  const { dir, repo } = DAEMON_REPO;
+  await cloneOrUpdateRepo(dir, repo);
 
   console.log("");
-  console.log("✓ Platform repositories ready");
-  console.log(`  ${TURBOPANEL_PLATFORM}/`);
-  for (const { dir } of PLATFORM_REPOS) {
-    console.log(`  ├── ${dir}/`);
-  }
+  console.log("✓ Daemon repository ready");
+  console.log(`  ${platformRepoPath(dir)}/`);
   console.log("");
   console.log("Run ./console to return to the console.");
 }

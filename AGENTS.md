@@ -19,7 +19,7 @@ This replaces the old Tilt-based workflow in `old/`.
 ├── deno.json
 └── src/
 /opt/turbopanel/
-├── platform/             # instance, ui, daemon, website (future — from console)
+├── platform/             # daemon (from console); instance/ui installed by daemon via Ansible
 └── runtime/
     └── deno/
         └── v2.8.3/
@@ -33,6 +33,7 @@ This replaces the old Tilt-based workflow in `old/`.
 | `curl -fsSL https://develop.trbp.nl \| sh` | Clone/update `./turbopanel-dev` via SSH. |
 | `sh scripts/install.sh` | Same when run from inside the repo to update the checkout. |
 | `./console` | Install Deno runtime if missing (sudo), cache deps, launch Ink console (`deno task dev`). |
+| Start dev stack (console action) | Writes daemon `.env`, bootstraps orchestration, installs systemd unit, tails journals. |
 
 **Typical flow:**
 
@@ -46,7 +47,7 @@ cd turbopanel-dev
 
 - **`scripts/install.sh`** — clones/updates **only** `turbopanel-dev` via `git@github.com:turbopanel/turbopanel-dev.git`. No sudo, no Deno, no platform repos.
 - **`console`** — ensures Deno is installed under `/opt/turbopanel/runtime` (sudo on first run), caches dependencies, starts the console.
-- **Ink console** — installs platform repos via SSH (`git@github.com:turbopanel/...`), prompts for sudo when `/opt/turbopanel/platform` is not writable.
+- **Ink console** — installs the **daemon** repo only via SSH; writes developer identity (`TURBOPANEL_DEV_USER/UID/GID`) into the daemon `.env`; runs `bootstrap-orchestration.sh` and `install-daemon-systemd.sh` to hand off to the daemon, which installs everything else via Ansible.
 
 ## Deno app
 
@@ -71,6 +72,8 @@ Keep the CLI **simple**. Platform repo install, service monitoring, and updates 
 - **`scripts/install.sh` only installs this repo** — no runtime, no platform repos.
 - **`console` owns the Deno runtime** and starting the console.
 - **`turbopanel-dev` installs to `./turbopanel-dev`** in the user's cwd.
+- The console installs **only** the daemon repo. All other platform repos (instance, ui, website) are installed by the daemon via Ansible (`instance-dev-install.yml`).
+- Developer identity (`TURBOPANEL_DEV_USER`, `TURBOPANEL_DEV_UID`, `TURBOPANEL_DEV_GID`) is captured from the invoking user at runtime via `Deno.env.get('USER')` and `Deno.uid()`/`Deno.gid()` — never hardcoded.
 - Do not commit secrets or environment-specific config.
 - `old/` is reference only — do not extend unless explicitly asked.
 
@@ -78,6 +81,8 @@ Keep the CLI **simple**. Platform repo install, service monitoring, and updates 
 
 - Do not add Deno install, dependency caching, or sudo to `scripts/install.sh`.
 - Do not add platform repo cloning to shell scripts — that belongs in the console.
+- Do not add instance/ui/website repo cloning to the console — the daemon owns those via Ansible.
+- Do not hardcode developer UID/GID — always read from `getDevUser()`/`getDevUid()`/`getDevGid()` in `src/paths.ts`.
 - Do not reintroduce `pull.sh`.
 - Do not clone `turbopanel-dev` into `/opt/turbopanel/platform`.
 - Do not add PATH symlinks, `env.sh`, or profile hooks — `console` runs Deno from `/opt/turbopanel/runtime/deno/v2.8.3/bin/deno` directly.

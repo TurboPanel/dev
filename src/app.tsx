@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { Box, SelectInput, Text, useApp, useInput } from "@deno-ink/core";
-import { installPlatformRepos } from "@turbopanel/platform-install";
+import { followLogs, startDevStack } from "@turbopanel/daemon-lifecycle";
+import { installDaemon } from "@turbopanel/platform-install";
 import {
   checkPlatformRepos,
   denoRuntimeInstalled,
@@ -26,29 +27,38 @@ function StatusLine({
   );
 }
 
+async function runAfterExit(fn: () => Promise<void>): Promise<void> {
+  try {
+    await fn();
+    Deno.exit(0);
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : error);
+    Deno.exit(1);
+  }
+}
+
 export function App() {
   const { exit } = useApp();
   const [refresh, setRefresh] = useState(0);
-  const repos = useMemo(() => checkPlatformRepos(), [refresh]);
+  const daemonStatus = useMemo(() => checkPlatformRepos()[0], [refresh]);
   const runtimeReady = denoRuntimeInstalled();
-  const reposReady = repos.every((repo) => repo.present);
-  const readyCount = repos.filter((repo) => repo.present).length;
+  const daemonPresent = daemonStatus.present;
 
   const menuItems = useMemo(() => {
-    const items: Array<{ label: string; value: string }> = [];
+    const items: Array<{ label: string; value: string }> = [
+      { label: "Install/update daemon", value: "install" },
+    ];
 
-    if (!reposReady) {
-      items.push({
-        label: "Install platform repos",
-        value: "install",
-      });
+    if (daemonPresent) {
+      items.push({ label: "Start dev stack", value: "start" });
+      items.push({ label: "Follow logs", value: "logs" });
     }
 
     items.push({ label: "Refresh status", value: "refresh" });
     items.push({ label: "Quit", value: "quit" });
 
     return items;
-  }, [reposReady]);
+  }, [daemonPresent]);
 
   useInput((input, key) => {
     if (input === "q" || key.escape) {
@@ -69,15 +79,19 @@ export function App() {
 
     if (item.value === "install") {
       exit();
-      queueMicrotask(async () => {
-        try {
-          await installPlatformRepos();
-          Deno.exit(0);
-        } catch (error) {
-          console.error(error instanceof Error ? error.message : error);
-          Deno.exit(1);
-        }
-      });
+      queueMicrotask(() => runAfterExit(installDaemon));
+      return;
+    }
+
+    if (item.value === "start") {
+      exit();
+      queueMicrotask(() => runAfterExit(startDevStack));
+      return;
+    }
+
+    if (item.value === "logs") {
+      exit();
+      queueMicrotask(() => runAfterExit(followLogs));
     }
   };
 
@@ -100,16 +114,13 @@ export function App() {
       </Box>
 
       <Box flexDirection="column" marginTop={1}>
-        <Text bold>Platform ({readyCount}/{repos.length})</Text>
+        <Text bold>Platform</Text>
         <Text dimColor>{TURBOPANEL_PLATFORM}</Text>
-        {repos.map((repo) => (
-          <StatusLine
-            key={repo.dir}
-            label={repo.dir}
-            ok={repo.present}
-            detail={repo.repo}
-          />
-        ))}
+        <StatusLine
+          label="daemon"
+          ok={daemonStatus.present}
+          detail={daemonStatus.repo}
+        />
       </Box>
 
       <Box flexDirection="column" marginTop={1}>
