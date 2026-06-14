@@ -9,6 +9,51 @@ const BRANCH = "trunk";
 const TURBOPANEL_USER = "turbopanel";
 const TURBOPANEL_GROUP = "turbopanel";
 
+let turbopanelUserExistsCache: boolean | null = null;
+
+async function turbopanelUserExists(): Promise<boolean> {
+  if (turbopanelUserExistsCache !== null) {
+    return turbopanelUserExistsCache;
+  }
+  const proc = new Deno.Command("getent", {
+    args: ["passwd", TURBOPANEL_USER],
+    stdout: "null",
+    stderr: "null",
+  });
+  turbopanelUserExistsCache = (await proc.output()).success;
+  return turbopanelUserExistsCache;
+}
+
+async function runGitInherit(gitArgs: string[]): Promise<number> {
+  if (await turbopanelUserExists()) {
+    return runInherit(["sudo", "-u", TURBOPANEL_USER, "git", ...gitArgs]);
+  }
+  return runInherit(["git", ...gitArgs]);
+}
+
+async function runGitCapture(
+  gitArgs: string[],
+): Promise<{ success: boolean; code: number; stdout: string; stderr: string }> {
+  const proc = await turbopanelUserExists()
+    ? new Deno.Command("sudo", {
+      args: ["-u", TURBOPANEL_USER, "git", ...gitArgs],
+      stdout: "piped",
+      stderr: "piped",
+    })
+    : new Deno.Command("git", {
+      args: gitArgs,
+      stdout: "piped",
+      stderr: "piped",
+    });
+  const output = await proc.output();
+  return {
+    success: output.success,
+    code: output.code ?? 1,
+    stdout: new TextDecoder().decode(output.stdout).trim(),
+    stderr: new TextDecoder().decode(output.stderr).trim(),
+  };
+}
+
 async function commandExists(name: string): Promise<boolean> {
   const proc = new Deno.Command("/bin/sh", {
     args: ["-c", 'command -v "$1" >/dev/null 2>&1', "_", name],
@@ -81,6 +126,10 @@ function canManageDaemonCheckout(target: string): boolean {
 }
 
 async function ensureTurbopanelOwnership(target: string): Promise<void> {
+  if (!(await turbopanelUserExists())) {
+    return;
+  }
+
   const code = await runInherit([
     "sudo",
     "sh",
@@ -111,11 +160,15 @@ async function privilegedClone(
     return cloneCode;
   }
 
+  const chownStep = (await turbopanelUserExists())
+    ? ` && chown -R '${TURBOPANEL_USER}:${TURBOPANEL_GROUP}' '${target}'`
+    : "";
+
   return await runInherit([
     "sudo",
     "sh",
     "-c",
-    `mkdir -p '${TURBOPANEL_PLATFORM}' && rm -rf '${target}' && mv '${tmpDir}' '${target}' && chown -R '${TURBOPANEL_USER}:${TURBOPANEL_GROUP}' '${target}'`,
+    `mkdir -p '${TURBOPANEL_PLATFORM}' && rm -rf '${target}' && mv '${tmpDir}' '${target}'${chownStep}`,
   ]);
 }
 
@@ -138,63 +191,29 @@ async function ensureGit(): Promise<void> {
 }
 
 async function isGitRepo(path: string): Promise<boolean> {
-  const proc = new Deno.Command("sudo", {
-    args: ["-u", TURBOPANEL_USER, "git", "-C", path, "rev-parse", "--git-dir"],
-    stdout: "null",
-    stderr: "null",
-  });
-  return (await proc.output()).success;
+  const result = await runGitCapture(["-C", path, "rev-parse", "--git-dir"]);
+  return result.success;
 }
 
 async function hasUncommittedChanges(path: string): Promise<boolean> {
-  const proc = new Deno.Command("sudo", {
-    args: [
-      "-u",
-      TURBOPANEL_USER,
-      "git",
-      "-C",
-      path,
-      "status",
-      "--porcelain",
-    ],
-    stdout: "piped",
-    stderr: "null",
-  });
-  const output = await proc.output();
-  if (!output.success) {
+  const result = await runGitCapture(["-C", path, "status", "--porcelain"]);
+  if (!result.success) {
     return true;
   }
-  return new TextDecoder().decode(output.stdout).trim().length > 0;
+  return result.stdout.length > 0;
 }
 
 async function ensureOriginUrl(path: string, url: string): Promise<void> {
-  const proc = new Deno.Command("sudo", {
-    args: ["-u", TURBOPANEL_USER, "git", "-C", path, "remote", "get-url", "origin"],
-    stdout: "piped",
-    stderr: "null",
-  });
-  const output = await proc.output();
-  if (!output.success) {
+  const result = await runGitCapture(["-C", path, "remote", "get-url", "origin"]);
+  if (!result.success) {
     return;
   }
 
-  const current = new TextDecoder().decode(output.stdout).trim();
-  if (current === url) {
+  if (result.stdout === url) {
     return;
   }
 
-  await runInherit([
-    "sudo",
-    "-u",
-    TURBOPANEL_USER,
-    "git",
-    "-C",
-    path,
-    "remote",
-    "set-url",
-    "origin",
-    url,
-  ]);
+  await runGitInherit(["-C", path, "remote", "set-url", "origin", url]);
 }
 
 async function cloneOrUpdateRepo(
@@ -238,11 +257,7 @@ async function cloneOrUpdateRepo(
   }
 
   console.log(`→ Updating ${dir}...`);
-  const code = await runInherit([
-    "sudo",
-    "-u",
-    TURBOPANEL_USER,
-    "git",
+  const code = await runGitInherit([
     "-C",
     target,
     "pull",
