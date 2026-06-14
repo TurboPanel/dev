@@ -50,7 +50,7 @@ cd turbopanel-dev
 
 ## Deno app
 
-- **`deno.json`** — tasks, imports (`@deno-ink/core`, React 19).
+- **`deno.json`** — tasks, imports (`@deno-ink/core`, React 18).
 - **`src/main.tsx`** — entry; renders the Ink app.
 - **`src/app.tsx`** — developer console UI (runtime + platform status for now).
 - **`src/paths.ts`** — shared path constants and platform repo checks.
@@ -80,6 +80,6 @@ Keep the CLI **simple**. Platform repo install, service monitoring, and updates 
 - Do not add platform repo cloning to shell scripts — that belongs in the console.
 - Do not reintroduce `pull.sh`.
 - Do not clone `turbopanel-dev` into `/opt/turbopanel/platform`.
-- Do not add PATH symlinks, `env.sh`, or profile hooks.
+- Do not add PATH symlinks, `env.sh`, or profile hooks — `dev.sh` runs Deno from `/opt/turbopanel/runtime/deno/v2.8.2/bin/deno` directly.
 - Do not bump the pinned Deno version without updating `scripts/lib/paths.sh`, `src/paths.ts`, and docs.
 - Do not commit directly to `trunk` — use a feature branch and open a PR.

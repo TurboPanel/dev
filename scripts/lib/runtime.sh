@@ -1,10 +1,10 @@
 # Install the pinned Deno runtime under /opt/turbopanel/runtime.
-# Source after privileges.sh and paths.sh.
+# Source after privileges.sh, paths.sh, and packages.sh.
 
 tp_install_deno_runtime_body() {
   mkdir -p "$DENO_VERSION_DIR"
   DENO_INSTALL="$DENO_VERSION_DIR" \
-    curl -fsSL https://deno.land/install.sh | sh -s "v${DENO_VERSION}"
+    curl -fsSL https://deno.land/install.sh | sh -s "v${DENO_VERSION}" -- -y --no-modify-path
 }
 
 tp_install_deno_runtime() {
@@ -12,17 +12,7 @@ tp_install_deno_runtime() {
     return 0
   fi
 
-  if ! command -v curl >/dev/null 2>&1; then
-    tp_error "curl is not installed."
-    echo "Debian: apt install curl"
-    exit 1
-  fi
-
-  if ! command -v unzip >/dev/null 2>&1; then
-    tp_error "unzip is not installed."
-    echo "Debian: apt install unzip"
-    exit 1
-  fi
+  tp_ensure_deno_prerequisites
 
   tp_info "Installing Deno v${DENO_VERSION} to ${DENO_VERSION_DIR}"
 
@@ -34,13 +24,9 @@ tp_install_deno_runtime() {
       exit 1
     fi
     tp_info "Administrator privileges required for ${TURBOPANEL_ROOT}"
-    sudo sh -c "
-      DENO_VERSION_DIR='$DENO_VERSION_DIR' \
-      DENO_VERSION='$DENO_VERSION' \
-      mkdir -p \"\$DENO_VERSION_DIR\" && \
-      DENO_INSTALL=\"\$DENO_VERSION_DIR\" \
-        curl -fsSL https://deno.land/install.sh | sh -s \"v\${DENO_VERSION}\"
-    "
+    sudo mkdir -p "$DENO_VERSION_DIR"
+    sudo env DENO_INSTALL="$DENO_VERSION_DIR" sh -c \
+      "curl -fsSL https://deno.land/install.sh | sh -s v${DENO_VERSION} -- -y --no-modify-path"
   fi
 
   if [ ! -x "$DENO_BIN" ]; then

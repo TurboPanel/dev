@@ -21,7 +21,7 @@ cd turbopanel-dev
 
 **For `./dev.sh`**
 
-- `curl`, `unzip`, `sudo`
+- `sudo` (installs `curl` and `unzip` via apt if missing, then Deno on first run)
 
 ## Layout
 
