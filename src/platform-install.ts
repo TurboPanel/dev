@@ -184,5 +184,5 @@ export async function installPlatformRepos(): Promise<void> {
     console.log(`  ├── ${dir}/`);
   }
   console.log("");
-  console.log("Run ./dev.sh to return to the console.");
+  console.log("Run ./console to return to the console.");
 }

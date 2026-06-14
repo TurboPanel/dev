@@ -15,7 +15,7 @@ This replaces the old Tilt-based workflow in `old/`.
 ```
 ~/…/turbopanel-dev/       # ./turbopanel-dev from install.sh (user's cwd)
 ├── install.sh            # clone/update this repo only
-├── dev.sh                # runtime install + launch console
+├── console               # runtime install + launch console
 ├── deno.json
 └── src/
 /opt/turbopanel/
@@ -32,20 +32,20 @@ This replaces the old Tilt-based workflow in `old/`.
 |--------|---------|
 | `curl -fsSL https://develop.trbp.nl \| sh` | Clone/update `./turbopanel-dev` via SSH. |
 | `sh install.sh` | Same when run from outside the repo, or re-run from inside to update the checkout. |
-| `./dev.sh` | Install Deno runtime if missing (sudo), cache deps, launch Ink console (`deno task dev`). |
+| `./console` | Install Deno runtime if missing (sudo), cache deps, launch Ink console (`deno task dev`). |
 
 **Typical flow:**
 
 ```bash
 curl -fsSL https://develop.trbp.nl | sh
 cd turbopanel-dev
-./dev.sh
+./console
 ```
 
 ## Responsibilities
 
 - **`install.sh`** — clones/updates **only** `turbopanel-dev` via `git@github.com:turbopanel/turbopanel-dev.git`. No sudo, no Deno, no platform repos.
-- **`dev.sh`** — ensures Deno is installed under `/opt/turbopanel/runtime` (sudo on first run), caches dependencies, starts the console.
+- **`console`** — ensures Deno is installed under `/opt/turbopanel/runtime` (sudo on first run), caches dependencies, starts the console.
 - **Ink console** — installs platform repos via SSH (`git@github.com:turbopanel/...`), prompts for sudo when `/opt/turbopanel/platform` is not writable.
 
 ## Deno app
@@ -69,7 +69,7 @@ Keep the CLI **simple**. Platform repo install, service monitoring, and updates 
 - Shell scripts are **POSIX `sh`** — no bashisms.
 - Git clones use **SSH** (`git@github.com:turbopanel/...`), not HTTPS.
 - **`install.sh` only installs this repo** — no runtime, no platform repos.
-- **`dev.sh` owns the Deno runtime** and starting the console.
+- **`console` owns the Deno runtime** and starting the console.
 - **`turbopanel-dev` installs to `./turbopanel-dev`** in the user's cwd.
 - Do not commit secrets or environment-specific config.
 - `old/` is reference only — do not extend unless explicitly asked.
@@ -80,6 +80,6 @@ Keep the CLI **simple**. Platform repo install, service monitoring, and updates 
 - Do not add platform repo cloning to shell scripts — that belongs in the console.
 - Do not reintroduce `pull.sh`.
 - Do not clone `turbopanel-dev` into `/opt/turbopanel/platform`.
-- Do not add PATH symlinks, `env.sh`, or profile hooks — `dev.sh` runs Deno from `/opt/turbopanel/runtime/deno/v2.8.2/bin/deno` directly.
+- Do not add PATH symlinks, `env.sh`, or profile hooks — `console` runs Deno from `/opt/turbopanel/runtime/deno/v2.8.2/bin/deno` directly.
 - Do not bump the pinned Deno version without updating `scripts/lib/paths.sh`, `src/paths.ts`, and docs.
 - Do not commit directly to `trunk` — use a feature branch and open a PR.

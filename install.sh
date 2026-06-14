@@ -83,5 +83,5 @@ echo "  ${REPO_DIR}"
 echo
 info "Start the developer console:"
 echo "  cd ${REPO_DIR}"
-echo "  ./dev.sh"
+echo "  ./console"
 echo

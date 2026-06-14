@@ -7,10 +7,10 @@ Development environment for [TurboPanel](https://github.com/turbopanel/turbopane
 ```bash
 curl -fsSL https://develop.trbp.nl | sh
 cd turbopanel-dev
-./dev.sh
+./console
 ```
 
-`install.sh` clones this repo into `./turbopanel-dev` (relative to where you run the command). `./dev.sh` installs the Deno runtime on first run (sudo) and starts the developer console.
+`install.sh` clones this repo into `./turbopanel-dev` (relative to where you run the command). `./console` installs the Deno runtime on first run (sudo) and starts the developer console.
 
 ## Prerequisites
 
@@ -19,7 +19,7 @@ cd turbopanel-dev
 - `git`
 - SSH access to GitHub (`git@github.com:turbopanel/...`)
 
-**For `./dev.sh`**
+**For `./console`**
 
 - `sudo` (installs `curl` and `unzip` via apt if missing, then Deno on first run)
 
@@ -28,11 +28,11 @@ cd turbopanel-dev
 ```
 ~/turbopanel-dev/                    # install.sh
 ├── install.sh                       # clone/update this repo only
-├── dev.sh                           # runtime + console
+├── console                          # runtime + console
 └── src/
 /opt/turbopanel/
 ├── platform/                        # platform repos (from console)
-└── runtime/deno/v2.8.2/bin/deno     # dev.sh (first run)
+└── runtime/deno/v2.8.2/bin/deno     # console (first run)
 ```
 
 ## Updating the checkout
@@ -47,7 +47,7 @@ Or from inside the repo:
 sh install.sh
 ```
 
-Re-run `./dev.sh` to refresh dependencies or the runtime.
+Re-run `./console` to refresh dependencies or the runtime.
 
 Deno is not on your PATH by design. To run it manually:
 

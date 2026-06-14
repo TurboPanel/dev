@@ -94,7 +94,7 @@ export function App() {
           ok={runtimeReady}
           detail={runtimeReady
             ? "installed under /opt/turbopanel/runtime"
-            : "run ./dev.sh"}
+            : "run ./console"}
         />
       </Box>
 
