@@ -1,11 +1,19 @@
 import React from "react";
 import { Box, Text } from "@deno-ink/core";
+import { readInstanceRuntime } from "@turbopanel/instance-runtime";
 import {
   DENO_VERSION,
   TURBOPANEL_PLATFORM,
   type RepoStatus,
 } from "@turbopanel/paths";
-import { stackSummary, type StackUnitStatus } from "@turbopanel/stack-status";
+import {
+  checkInstanceApiHealth,
+  instanceReachable,
+  instanceSocketPresent,
+  stackSummary,
+  type StackUnitStatus,
+  wranglerProcessRunning,
+} from "@turbopanel/stack-status";
 import { StatusLine } from "@turbopanel/status-line";
 
 export function StatusArea({
@@ -14,7 +22,7 @@ export function StatusArea({
   daemonPresent,
   platformDirectAccess,
   stackUnits,
-  instanceReady,
+  developerUnlocked,
   stackHealthy,
 }: {
   runtimeReady: boolean;
@@ -22,9 +30,12 @@ export function StatusArea({
   daemonPresent: boolean;
   platformDirectAccess: boolean;
   stackUnits: StackUnitStatus[];
-  instanceReady: boolean;
+  developerUnlocked: boolean;
   stackHealthy: boolean;
 }) {
+  const runtime = readInstanceRuntime();
+  const apiReady = instanceReachable();
+
   return (
     <Box flexDirection="column" marginTop={1}>
       <Text bold>Runtime</Text>
@@ -54,6 +65,13 @@ export function StatusArea({
       {daemonPresent ? (
         <Box flexDirection="column" marginTop={1}>
           <Text bold>Dev stack</Text>
+          <StatusLine
+            label="instance runtime"
+            ok={runtime === "workers" ? wranglerProcessRunning() : apiReady}
+            detail={runtime === "workers"
+              ? "Workers (wrangler via systemd)"
+              : "Deno (systemd + socket)"}
+          />
           <Text dimColor>{stackSummary(stackUnits)}</Text>
           {stackUnits.map((unit) => (
             <StatusLine
@@ -63,18 +81,43 @@ export function StatusArea({
               detail={unit.detail}
             />
           ))}
+          {runtime === "workers" ? (
+            <>
           <StatusLine
-            label="instance.sock"
-            ok={instanceReady}
-            detail={instanceReady
-              ? "/run/turbopanel/instance.sock"
-              : stackHealthy
-              ? "waiting for instance"
-              : "start dev stack"}
+            label="wrangler dev"
+            ok={wranglerProcessRunning()}
+            detail={wranglerProcessRunning()
+              ? "turbopanel-instance.service (systemd)"
+              : "systemctl start turbopanel-instance"}
           />
-          {!instanceReady ? (
+              <StatusLine
+                label="instance API"
+                ok={apiReady}
+                detail={apiReady
+                  ? "reachable via Caddy/wrangler"
+                  : "run pnpm dev in platform/instance (console writes .dev.vars)"}
+              />
+            </>
+          ) : (
+            <StatusLine
+              label="instance.sock"
+              ok={instanceSocketPresent()}
+              detail={instanceSocketPresent()
+                ? "/run/turbopanel/instance.sock"
+                : stackHealthy
+                ? "waiting for instance"
+                : "start dev stack"}
+            />
+          )}
+          {!developerUnlocked ? (
             <Text dimColor>
-              Developer area unlocks when instance.sock is present
+              {runtime === "workers"
+                ? "Developer area unlocks when Caddy is active"
+                : "Developer area unlocks when instance.sock is present"}
+            </Text>
+          ) : !apiReady && runtime === "workers" ? (
+            <Text dimColor>
+              Developer area open — start wrangler to reach the instance API
             </Text>
           ) : null}
         </Box>

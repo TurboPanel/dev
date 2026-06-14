@@ -8,8 +8,7 @@ import {
   startDevStack,
   switchBuildMode,
 } from "@turbopanel/daemon-lifecycle";
-import { InstanceArea } from "@turbopanel/instance-area";
-import { switchInstanceRuntime } from "@turbopanel/instance-runtime";
+import { switchInstanceRuntime, readInstanceRuntime } from "@turbopanel/instance-runtime";
 import { installDaemon } from "@turbopanel/platform-install";
 import {
   checkPlatformRepos,
@@ -18,7 +17,7 @@ import {
 } from "@turbopanel/paths";
 import {
   fetchStackStatus,
-  instanceSocketPresent,
+  instanceReachable,
   stackSummary,
 } from "@turbopanel/stack-status";
 import { StatusArea } from "@turbopanel/status-area";
@@ -38,12 +37,10 @@ function areaHelp(areaId: string, panelFocused: boolean): string {
   switch (areaId) {
     case "status":
       return "← → areas · q quit";
-    case "instance":
-      return "← → areas · ↑↓ actions · Enter · q quit";
     case "developer":
       return panelFocused
         ? "← → areas · Esc back · q quit"
-        : "← → areas · ↑↓ sections · Enter open · t target · q quit";
+        : "← → areas · ↑↓ sections · Enter focus · t target · q quit";
     default:
       return "← → areas · ↑↓ menu · Enter · q quit";
   }
@@ -59,12 +56,16 @@ export function App() {
   const runtimeReady = denoRuntimeInstalled();
   const daemonPresent = daemonStatus.present;
   const stackUnits = useMemo(() => fetchStackStatus(), [refresh]);
-  const stackHealthy = useMemo(
-    () => stackUnits.some((unit) => unit.active === true),
-    [stackUnits],
-  );
-  const instanceReady = useMemo(() => instanceSocketPresent(), [refresh]);
-  const developerState = useDeveloperState(instanceReady);
+  const instanceRuntime = useMemo(() => readInstanceRuntime(), [refresh]);
+  const developerUnlocked = useMemo(() => {
+    const caddy = stackUnits.find((unit) => unit.unit === "turbopanel-caddy");
+    if (instanceRuntime === "workers") {
+      return caddy?.active === true;
+    }
+    return instanceReachable();
+  }, [refresh, stackUnits, instanceRuntime]);
+  const instanceApiReady = useMemo(() => instanceReachable(), [refresh]);
+  const developerState = useDeveloperState(instanceApiReady);
   const buildMode = useMemo(
     () => (daemonPresent ? readBuildMode() : null),
     [daemonPresent, refresh],
@@ -80,15 +81,19 @@ export function App() {
     }
   }, [refresh]);
 
+  const stackHealthy = useMemo(
+    () => stackUnits.some((unit) => unit.active === true),
+    [stackUnits],
+  );
+
   const areas = useMemo(() => {
     const list: AreaTab[] = [{ id: "status", label: "Status" }];
-    list.push({ id: "instance", label: "Instance" });
-    if (instanceReady) {
+    if (developerUnlocked) {
       list.push({ id: "developer", label: "Developer" });
     }
     list.push({ id: "actions", label: "Actions" });
     return list;
-  }, [instanceReady]);
+  }, [developerUnlocked]);
 
   const activeAreaIndex = areas.findIndex((area) => area.id === activeAreaId);
   const resolvedAreaIndex = activeAreaIndex === -1 ? 0 : activeAreaIndex;
@@ -107,7 +112,19 @@ export function App() {
 
     if (daemonPresent) {
       items.push({ label: "Start dev stack", value: "start" });
-      items.push({ label: "Follow logs", value: "logs" });
+      items.push({ label: "Follow logs (fullscreen)", value: "logs" });
+
+      if (instanceRuntime === "deno") {
+        items.push({
+          label: "Switch to Workers runtime",
+          value: "runtime-workers",
+        });
+      } else {
+        items.push({
+          label: "Switch to Deno runtime",
+          value: "runtime-deno",
+        });
+      }
 
       if (!productionBuildActive) {
         items.push({
@@ -125,7 +142,7 @@ export function App() {
     items.push({ label: "Quit", value: "quit" });
 
     return items;
-  }, [daemonPresent, productionBuildActive]);
+  }, [daemonPresent, productionBuildActive, instanceRuntime]);
 
   useInput((input, key) => {
     if (developerEditing) return;
@@ -182,6 +199,18 @@ export function App() {
       return;
     }
 
+    if (item.value === "runtime-workers") {
+      exit();
+      queueMicrotask(() => runAfterExit(() => switchInstanceRuntime("workers")));
+      return;
+    }
+
+    if (item.value === "runtime-deno") {
+      exit();
+      queueMicrotask(() => runAfterExit(() => switchInstanceRuntime("deno")));
+      return;
+    }
+
     if (item.value === "build-production") {
       exit();
       queueMicrotask(() => runAfterExit(() => switchBuildMode("production")));
@@ -194,7 +223,7 @@ export function App() {
     }
   };
 
-  const headerSummary = instanceReady
+  const headerSummary = developerUnlocked
     ? `${stackSummary(stackUnits)} · ${developerState.fleet.length} server${
       developerState.fleet.length === 1 ? "" : "s"
     }`
@@ -220,23 +249,12 @@ export function App() {
           daemonPresent={daemonPresent}
           platformDirectAccess={platformDirectAccess}
           stackUnits={stackUnits}
-          instanceReady={instanceReady}
+          developerUnlocked={developerUnlocked}
           stackHealthy={stackHealthy}
         />
       ) : null}
 
-      {activeArea.id === "instance" ? (
-        <InstanceArea
-          onSwitch={(target) => {
-            exit();
-            queueMicrotask(() =>
-              runAfterExit(() => switchInstanceRuntime(target))
-            );
-          }}
-        />
-      ) : null}
-
-      {activeArea.id === "developer" && instanceReady ? (
+      {activeArea.id === "developer" && developerUnlocked ? (
         <DeveloperPanels
           state={developerState}
           onEditingChange={setDeveloperEditing}

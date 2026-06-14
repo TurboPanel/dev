@@ -105,14 +105,14 @@ async function postgresSocketStatus(): Promise<ServiceStatus> {
     const stat = await Deno.stat(POSTGRES_SOCKET);
     if (stat.isSocket) {
       return {
-        name: "turbopanel-postgres",
+        name: "turbopanel-db",
         active: true,
         detail: "socket ready",
         statusSummary: POSTGRES_SOCKET,
       };
     }
     return {
-      name: "turbopanel-postgres",
+      name: "turbopanel-db",
       active: null,
       detail: "unexpected socket path type",
       statusSummary: POSTGRES_SOCKET,
@@ -120,14 +120,14 @@ async function postgresSocketStatus(): Promise<ServiceStatus> {
   } catch (err) {
     if (isPermissionDenied(err)) {
       return {
-        name: "turbopanel-postgres",
+        name: "turbopanel-db",
         active: null,
         detail: "permission denied",
         statusSummary: POSTGRES_SOCKET,
       };
     }
     return {
-      name: "turbopanel-postgres",
+      name: "turbopanel-db",
       active: false,
       detail: "socket missing",
       statusSummary: POSTGRES_SOCKET,

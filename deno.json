@@ -10,7 +10,6 @@
   "imports": {
     "@deno-ink/core": "jsr:@deno-ink/core@^0.2.1",
     "@turbopanel/area-tabs": "./src/area-tabs.tsx",
-    "@turbopanel/developer-console": "./src/developer-console.tsx",
     "@turbopanel/instance-client": "./src/instance-client.ts",
     "@turbopanel/paths": "./src/paths.ts",
     "@turbopanel/platform-install": "./src/platform-install.ts",
@@ -21,6 +20,8 @@
     "@turbopanel/sections/connectivity-section": "./src/sections/connectivity-section.tsx",
     "@turbopanel/sections/database-section": "./src/sections/database-section.tsx",
     "@turbopanel/sections/fleet-section": "./src/sections/fleet-section.tsx",
+    "@turbopanel/developer-console": "./src/developer-console.tsx",
+    "@turbopanel/sections/logs-section": "./src/sections/logs-section.tsx",
     "@turbopanel/sections/instance-section": "./src/sections/instance-section.tsx",
     "@turbopanel/sections/network-section": "./src/sections/network-section.tsx",
     "@turbopanel/sections/servers-section": "./src/sections/servers-section.tsx",
@@ -30,6 +31,7 @@
     "@turbopanel/stack-status": "./src/stack-status.ts",
     "@turbopanel/status-area": "./src/status-area.tsx",
     "@turbopanel/status-line": "./src/status-line.tsx",
+    "@turbopanel/workers-dev-vars": "./src/workers-dev-vars.ts",
     "@turbopanel/use-developer-state": "./src/use-developer-state.ts",
     "react": "npm:react@18.3.1",
     "react/jsx-runtime": "npm:react@18.3.1/jsx-runtime"

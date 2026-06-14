@@ -3,6 +3,8 @@ export const TURBOPANEL_PLATFORM = `${TURBOPANEL_ROOT}/platform`;
 export const DENO_VERSION = "2.8.3";
 export const DENO_BIN =
   `${TURBOPANEL_ROOT}/runtimes/deno/v${DENO_VERSION}/bin/deno`;
+export const WRANGLER_DEV_PORT = 18787;
+export const CADDY_HTTPS = "https://localhost:8443";
 
 export const DAEMON_REPO = {
   dir: "daemon",

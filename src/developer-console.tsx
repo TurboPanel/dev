@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Box, Text, useInput } from "@deno-ink/core";
 import { ALL_TARGET, type DeveloperState } from "@turbopanel/use-developer-state";
 import { FleetSection } from "@turbopanel/sections/fleet-section";
+import { LogsSection } from "@turbopanel/sections/logs-section";
 import { ServiceStatusSection } from "@turbopanel/sections/service-status-section";
 import { NetworkSection } from "@turbopanel/sections/network-section";
 import { ShellSection } from "@turbopanel/sections/shell-section";
@@ -10,12 +11,13 @@ import { DatabaseSection } from "@turbopanel/sections/database-section";
 import { ServersSection } from "@turbopanel/sections/servers-section";
 
 const SECTIONS = [
+  { id: "logs", label: "Logs" },
   { id: "fleet", label: "Fleet" },
   { id: "services", label: "Services" },
-  { id: "network", label: "Network" },
-  { id: "shell", label: "Shell" },
   { id: "connectivity", label: "Connectivity" },
   { id: "database", label: "Database" },
+  { id: "shell", label: "Shell" },
+  { id: "network", label: "Network" },
   { id: "servers", label: "Servers" },
 ] as const;
 
@@ -33,6 +35,12 @@ export function DeveloperPanels({
   const [panelFocused, setPanelFocused] = useState(false);
   const [editingActive, setEditingActive] = useState(false);
   const activeId = SECTIONS[sectionIndex].id;
+  const interactiveSection = activeId === "fleet" ||
+    activeId === "shell" ||
+    activeId === "connectivity" ||
+    activeId === "database" ||
+    activeId === "servers" ||
+    activeId === "network";
 
   const setEditing = (editing: boolean) => {
     setEditingActive(editing);
@@ -87,13 +95,15 @@ export function DeveloperPanels({
       setSectionIndex((i) => Math.min(SECTIONS.length - 1, i + 1));
       return;
     }
-    if (key.return) {
+    if (key.return && interactiveSection) {
       setPanelFocus(true);
     }
   });
 
   const renderSection = () => {
     switch (activeId) {
+      case "logs":
+        return <LogsSection />;
       case "fleet":
         return (
           <FleetSection
@@ -148,7 +158,11 @@ export function DeveloperPanels({
           {targetLabel}
         </Text>
         <Text dimColor>
-          {panelFocused ? " · Esc back" : " · t cycle target · Enter open"}
+          {panelFocused
+            ? " · Esc back"
+            : interactiveSection
+            ? " · ↑↓ sections · Enter focus · t target"
+            : " · ↑↓ sections · t target"}
         </Text>
       </Box>
       {error ? (
@@ -157,26 +171,22 @@ export function DeveloperPanels({
         </Box>
       ) : null}
 
-      <Box marginTop={1}>
-        <Box width={22} flexDirection="column">
-          <Text bold dimColor>
-            {panelFocused ? "Sections" : "Sections ↑↓"}
-          </Text>
-          {SECTIONS.map((section, index) => (
+      <Box marginTop={1} flexDirection="row">
+        {SECTIONS.map((section, index) => (
+          <Box key={section.id} marginRight={2}>
             <Text
-              key={section.id}
-              color={!panelFocused && index === sectionIndex ? "cyan" : undefined}
-              bold={!panelFocused && index === sectionIndex}
-              dimColor={panelFocused || index !== sectionIndex}
+              color={index === sectionIndex ? "cyan" : undefined}
+              bold={index === sectionIndex}
+              dimColor={index !== sectionIndex}
             >
-              {!panelFocused && index === sectionIndex ? "› " : "  "}
-              {section.label}
+              {index === sectionIndex ? `[${section.label}]` : section.label}
             </Text>
-          ))}
-        </Box>
-        <Box flexDirection="column" marginLeft={2} flexGrow={1}>
-          {renderSection()}
-        </Box>
+          </Box>
+        ))}
+      </Box>
+
+      <Box flexDirection="column" marginTop={1}>
+        {renderSection()}
       </Box>
     </Box>
   );

@@ -84,25 +84,23 @@ export function InstanceSection({
           ok={runtime === "deno" ? instanceUnit.active === true : true}
           detail={
             runtime === "workers"
-              ? "Workers — wrangler dev not managed by console"
+              ? "Workers (wrangler via systemd)"
               : "Deno (systemd)"
           }
         />
         {runtime === "workers" ? (
           <StatusLine
             label="wrangler dev"
-            ok={true}
-            detail="not managed by console — run pnpm dev in platform/instance"
+            ok={instanceUnit.active === true}
+            detail={instanceUnit.active === true
+              ? "turbopanel-instance.service"
+              : instanceUnit.detail}
           />
         ) : null}
         <StatusLine
           label="turbopanel-instance"
-          ok={runtime === "workers" ? true : instanceUnit.active === true}
-          detail={
-            runtime === "workers"
-              ? `${instanceUnit.detail} (expected — use wrangler dev)`
-              : instanceUnit.detail
-          }
+          ok={runtime === "workers" ? instanceUnit.active === true : instanceUnit.active === true}
+          detail={instanceUnit.detail}
         />
       </Box>
       {runtime === "workers" ? (

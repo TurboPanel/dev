@@ -6,6 +6,7 @@ import {
   writeDaemonEnv,
 } from "@turbopanel/daemon-lifecycle";
 import { TURBOPANEL_PLATFORM, TURBOPANEL_ROOT } from "@turbopanel/paths";
+import { ensureWorkersDevVars } from "@turbopanel/workers-dev-vars";
 
 const TURBOPANEL_USER = "turbopanel";
 
@@ -60,6 +61,43 @@ async function runPostgresSetupWithExpose(exposePort: boolean): Promise<void> {
   }
 }
 
+async function runInstanceLaunchRefresh(): Promise<void> {
+  const orchestrationDir = `${TURBOPANEL_PLATFORM}/daemon/orchestration`;
+  const ansiblePlaybook = `${orchestrationDir}/runtime/venv/bin/ansible-playbook`;
+  const ansibleCfg = `${orchestrationDir}/ansible.cfg`;
+  const launchPlaybook =
+    `${orchestrationDir}/playbooks/instance-launch-only.yml`;
+  const runtime = readInstanceRuntime();
+
+  const ansibleInvocation = [
+    `env ANSIBLE_CONFIG=${shellQuote(ansibleCfg)}`,
+    shellQuote(ansiblePlaybook),
+    "-i localhost,",
+    "-c local",
+    `-e turbopanel_instance_runtime=${runtime}`,
+    `-e postgres_expose_port=${runtime === "workers" ? "true" : "false"}`,
+    shellQuote(launchPlaybook),
+  ].join(" ");
+
+  const command =
+    `cd ${shellQuote(orchestrationDir)} && ${ansibleInvocation}`;
+
+  const code = turbopanelUserExists()
+    ? await runSudo([
+      "-u",
+      TURBOPANEL_USER,
+      "env",
+      `HOME=${TURBOPANEL_ROOT}`,
+      "bash",
+      "-c",
+      command,
+    ])
+    : await runSudo(["bash", "-c", command]);
+  if (code !== 0) {
+    throw new Error("instance-launch-only.yml failed");
+  }
+}
+
 export async function switchInstanceRuntime(
   target: "deno" | "workers",
 ): Promise<void> {
@@ -68,13 +106,14 @@ export async function switchInstanceRuntime(
   await ensureOrchestrationRuntime();
   await bootstrapOrchestration();
   await runPostgresSetupWithExpose(target === "workers");
+  await runInstanceLaunchRefresh();
 
   if (target === "workers") {
-    const code = await runSudo(["systemctl", "stop", "turbopanel-instance"]);
+    const code = await runSudo(["systemctl", "restart", "turbopanel-instance"]);
     if (code !== 0) {
-      throw new Error("failed to stop turbopanel-instance");
+      throw new Error("failed to start turbopanel-instance (Workers/wrangler)");
     }
-    console.log("Run pnpm dev in platform/instance (not managed by this console)");
+    console.log("turbopanel-instance restarted — wrangler dev managed by systemd");
   } else {
     console.log(
       "Stop any separate pnpm dev (wrangler) terminal in platform/instance before using the systemd instance.",

@@ -1,3 +1,6 @@
+import { readInstanceRuntime } from "@turbopanel/instance-runtime";
+import { CADDY_HTTPS, WRANGLER_DEV_PORT } from "@turbopanel/paths";
+
 export type StackUnitStatus = {
   unit: string;
   label: string;
@@ -34,6 +37,18 @@ function systemctlIsActive(unit: string): { active: boolean | null; detail: stri
   return { active: null, detail: text || `exit ${proc.code}` };
 }
 
+function curlHttpStatus(url: string, insecure = false): string {
+  const args = insecure
+    ? ["-sk", "-o", "/dev/null", "-w", "%{http_code}", url]
+    : ["-s", "-o", "/dev/null", "-w", "%{http_code}", url];
+  const proc = new Deno.Command("curl", {
+    args,
+    stdout: "piped",
+    stderr: "null",
+  }).outputSync();
+  return new TextDecoder().decode(proc.stdout).trim();
+}
+
 export function instanceSocketPresent(): boolean {
   try {
     const stat = Deno.statSync(INSTANCE_SOCKET);
@@ -41,6 +56,30 @@ export function instanceSocketPresent(): boolean {
   } catch {
     return false;
   }
+}
+
+export function wranglerProcessRunning(): boolean {
+  const { active } = systemctlIsActive("turbopanel-instance");
+  return active === true;
+}
+
+export function checkInstanceApiHealth(): boolean {
+  const caddyCode = curlHttpStatus(`${CADDY_HTTPS}/api/health`, true);
+  if (caddyCode === "200") return true;
+  const wranglerCode = curlHttpStatus(
+    `http://127.0.0.1:${WRANGLER_DEV_PORT}/api/health`,
+  );
+  return wranglerCode === "200";
+}
+
+/** Whether the developer console can reach the instance API. */
+export function instanceReachable(): boolean {
+  const runtime = readInstanceRuntime();
+  const socketPresent = instanceSocketPresent();
+  const apiHealthy = runtime === "workers" ? checkInstanceApiHealth() : false;
+  const reachable = runtime === "workers" ? apiHealthy : socketPresent;
+
+  return reachable;
 }
 
 export function fetchStackStatus(): StackUnitStatus[] {

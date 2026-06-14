@@ -1,10 +1,12 @@
-import { TURBOPANEL_PLATFORM } from "@turbopanel/paths";
+import { readInstanceRuntime } from "@turbopanel/instance-runtime";
+import { CADDY_HTTPS, TURBOPANEL_PLATFORM, WRANGLER_DEV_PORT } from "@turbopanel/paths";
 
 export const DEVELOPER_API = "/api/developer/v1";
 export const CLIENT_API = "/api/client/v1";
 
 const INSTANCE_SOCKET = "/run/turbopanel/instance.sock";
-const HTTPS_FALLBACK = "https://localhost:8443";
+const HTTPS_FALLBACK = CADDY_HTTPS;
+const WRANGLER_FALLBACK = `http://127.0.0.1:${WRANGLER_DEV_PORT}`;
 const CA_CERT_PATH = `${TURBOPANEL_PLATFORM}/turbopanel/certs/ca.crt`;
 
 let httpsClient: Deno.HttpClient | undefined;
@@ -92,15 +94,49 @@ async function rawFetch(path: string, init?: RequestInit): Promise<Response> {
     "content-type": "application/json",
     ...(init?.headers as Record<string, string> | undefined),
   };
+  const runtime = readInstanceRuntime();
+
+  if (runtime === "workers") {
+    let caddyError: string | undefined;
+    let wranglerError: string | undefined;
+    try {
+      const response = await fetch(`${HTTPS_FALLBACK}${path}`, {
+        ...init,
+        headers,
+        client: getHttpsClient(),
+      });
+      if (response.ok || response.status < 500) {
+        return response;
+      }
+      caddyError = `HTTP ${response.status}`;
+    } catch (err) {
+      caddyError = err instanceof Error ? err.message : String(err);
+    }
+
+    try {
+      const response = await fetch(`${WRANGLER_FALLBACK}${path}`, {
+        ...init,
+        headers,
+      });
+      return response;
+    } catch (err) {
+      wranglerError = err instanceof Error ? err.message : String(err);
+      throw new Error(
+        `Workers instance unreachable (caddy: ${caddyError ?? "?"}, wrangler: ${wranglerError})`,
+      );
+    }
+  }
 
   try {
-    return await fetchViaUnixSocket(path, { ...init, headers });
+    const response = await fetchViaUnixSocket(path, { ...init, headers });
+    return response;
   } catch {
-    return await fetch(`${HTTPS_FALLBACK}${path}`, {
+    const response = await fetch(`${HTTPS_FALLBACK}${path}`, {
       ...init,
       headers,
       client: getHttpsClient(),
     });
+    return response;
   }
 }
 

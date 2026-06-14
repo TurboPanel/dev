@@ -1,0 +1,194 @@
+import { runSudo } from "@turbopanel/daemon-lifecycle";
+import { getDevUser, TURBOPANEL_PLATFORM } from "@turbopanel/paths";
+
+const POSTGRES_PASS_PATH = "/etc/turbopanel/postgres/.pgpass";
+const POSTGRES_CONFIG_PATH = "/etc/turbopanel/postgres/config.json";
+const MANAGED_NODE = "/opt/turbopanel/runtimes/node/current/bin/node";
+const HYPERDRIVE_ENV_KEY =
+  "CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE";
+
+type PostgresConfig = {
+  user: string;
+  db: string;
+  port: number;
+};
+
+function readTextFile(path: string): string | null {
+  try {
+    return Deno.readTextFileSync(path);
+  } catch {
+    return null;
+  }
+}
+
+async function readPrivilegedText(path: string): Promise<string | null> {
+  const direct = readTextFile(path);
+  if (direct !== null) return direct;
+
+  const proc = await new Deno.Command("sudo", {
+    args: ["cat", path],
+    stdout: "piped",
+    stderr: "null",
+  }).output();
+  if (!proc.success) return null;
+  return new TextDecoder().decode(proc.stdout);
+}
+
+function parseEnvFile(content: string): Map<string, string> {
+  const values = new Map<string, string>();
+  for (const line of content.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const eq = trimmed.indexOf("=");
+    if (eq <= 0) continue;
+    values.set(trimmed.slice(0, eq), trimmed.slice(eq + 1));
+  }
+  return values;
+}
+
+function formatEnvFile(
+  header: string,
+  values: Map<string, string>,
+): string {
+  const lines = [header];
+  for (const [key, value] of values) {
+    lines.push(`${key}=${value}`);
+  }
+  lines.push("");
+  return lines.join("\n");
+}
+
+function resolveWorkersInstanceDir(): string {
+  const managed = `${TURBOPANEL_PLATFORM}/turbopanel`;
+  try {
+    Deno.statSync(`${managed}/wrangler.jsonc`);
+    return managed;
+  } catch {
+    // fall back to dev checkout when managed tree is absent
+  }
+  const devCheckout = `${TURBOPANEL_PLATFORM}/instance`;
+  try {
+    Deno.statSync(`${devCheckout}/wrangler.jsonc`);
+    return devCheckout;
+  } catch {
+    return managed;
+  }
+}
+
+async function readPostgresConfig(): Promise<PostgresConfig> {
+  const raw = await readPrivilegedText(POSTGRES_CONFIG_PATH);
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw) as Partial<PostgresConfig>;
+      return {
+        user: parsed.user ?? "turbopanel",
+        db: parsed.db ?? "turbopanel",
+        port: parsed.port ?? 5432,
+      };
+    } catch {
+      // fall through to defaults
+    }
+  }
+  return { user: "turbopanel", db: "turbopanel", port: 5432 };
+}
+
+async function readPostgresPassword(): Promise<string> {
+  const password = (await readPrivilegedText(POSTGRES_PASS_PATH))?.trim();
+  if (!password) {
+    throw new Error(
+      "Postgres password missing — run Start dev stack or postgres-setup first",
+    );
+  }
+  return password;
+}
+
+async function generateTurboSecret(instanceDir: string): Promise<string> {
+  const script = `${instanceDir}/scripts/generate-secret.mjs`;
+  const proc = await new Deno.Command(MANAGED_NODE, {
+    args: [script],
+    stdout: "piped",
+    stderr: "piped",
+  }).output();
+  if (!proc.success) {
+    throw new Error("failed to generate TURBOPANEL_SECRET");
+  }
+  const secret = new TextDecoder().decode(proc.stdout).trim();
+  if (!secret) {
+    throw new Error("generate-secret.mjs returned empty output");
+  }
+  return secret;
+}
+
+function hyperdriveLocalConnectionString(
+  config: PostgresConfig,
+  password: string,
+): string {
+  const user = encodeURIComponent(config.user);
+  const pass = encodeURIComponent(password);
+  // Use hostname, not 127.0.0.1 — postgres.js + Hyperdrive local hangs on IP (workers-sdk#6179).
+  return `postgresql://${user}:${pass}@localhost:${config.port}/${config.db}`;
+}
+
+async function writeEnvFile(path: string, content: string): Promise<void> {
+  try {
+    Deno.writeTextFileSync(path, content);
+    return;
+  } catch {
+    const tmp = await Deno.makeTempFile({ prefix: "turbopanel-env-" });
+    try {
+      await Deno.writeTextFile(tmp, content);
+      const code = await runSudo(["cp", tmp, path]);
+      if (code !== 0) {
+        throw new Error(`failed to write ${path}`);
+      }
+      await runSudo(["chown", `${getDevUser()}:turbopanel`, path]);
+      await runSudo(["chmod", "640", path]);
+    } finally {
+      await Deno.remove(tmp);
+    }
+  }
+}
+
+/** Write instance/.env + .dev.vars for wrangler dev in Workers mode. */
+export async function ensureWorkersDevVars(): Promise<string> {
+  const instanceDir = resolveWorkersInstanceDir();
+  const envPath = `${instanceDir}/.env`;
+  const devVarsPath = `${instanceDir}/.dev.vars`;
+
+  const envValues = parseEnvFile(readTextFile(envPath) ?? "");
+  const devVarValues = parseEnvFile(readTextFile(devVarsPath) ?? "");
+
+  const [config, password] = await Promise.all([
+    readPostgresConfig(),
+    readPostgresPassword(),
+  ]);
+
+  envValues.set(
+    HYPERDRIVE_ENV_KEY,
+    hyperdriveLocalConnectionString(config, password),
+  );
+
+  if (!devVarValues.has("TURBOPANEL_SECRET")) {
+    devVarValues.set("TURBOPANEL_SECRET", await generateTurboSecret(instanceDir));
+  }
+  if (!devVarValues.has("TURBOPANEL_IS_SIGNUP_ENABLED")) {
+    devVarValues.set("TURBOPANEL_IS_SIGNUP_ENABLED", "1");
+  }
+
+  await writeEnvFile(
+    envPath,
+    formatEnvFile(
+      "# Generated by turbopanel-dev for Workers mode (gitignored by instance/.gitignore)",
+      envValues,
+    ),
+  );
+  await writeEnvFile(
+    devVarsPath,
+    formatEnvFile(
+      "# Generated by turbopanel-dev for Workers mode (gitignored by instance/.gitignore)",
+      devVarValues,
+    ),
+  );
+
+  return instanceDir;
+}

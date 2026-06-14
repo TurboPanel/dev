@@ -12,6 +12,7 @@ import { ensureDevHostAccess } from "@turbopanel/ensure-dev-host-access";
 import { runInherit } from "@turbopanel/platform-install";
 import {
   fetchStackStatus,
+  instanceReachable,
   instanceSocketPresent,
   stackSummary,
 } from "@turbopanel/stack-status";
@@ -296,7 +297,7 @@ async function restartDevStackServices(): Promise<void> {
   const runtime = readInstanceRuntime();
   await runSudo(["systemctl", "daemon-reload"]);
   const required = runtime === "workers"
-    ? (["turbopanel-caddy", "turbopanel-daemon"] as const)
+    ? (["turbopanel-instance", "turbopanel-caddy", "turbopanel-daemon"] as const)
     : ([
       "turbopanel-instance",
       "turbopanel-caddy",
@@ -317,7 +318,7 @@ function stackIsReady(): boolean {
   const units = fetchStackStatus();
   const caddy = units.find((unit) => unit.unit === "turbopanel-caddy");
   if (runtime === "workers") {
-    return caddy?.active === true;
+    return caddy?.active === true && instanceReachable();
   }
   const instance = units.find((unit) => unit.unit === "turbopanel-instance");
   return instance?.active === true &&
@@ -329,14 +330,14 @@ async function waitForDevStack(): Promise<void> {
   const runtime = readInstanceRuntime();
   const deadline = Date.now() + STACK_WAIT_MS;
   if (runtime === "workers") {
-    console.log("→ Workers runtime: waiting for Caddy (run pnpm dev separately)...");
+    console.log("→ Workers runtime: waiting for instance (wrangler) and Caddy...");
   } else {
     console.log("→ Waiting for instance and Caddy to become ready...");
   }
   while (Date.now() < deadline) {
     if (stackIsReady()) {
       if (runtime === "workers") {
-        console.log("✓ Caddy is ready — run pnpm dev in platform/instance");
+        console.log("✓ Workers instance and Caddy are ready");
       } else {
         console.log("✓ Dev stack is ready");
       }
@@ -415,7 +416,7 @@ function printStartupBanner(): void {
 -----------------------------------------
 TurboPanel dev stack (Workers runtime):
   Caddy        @ https://localhost:${CADDY_PORT}  (user: instance)
-  Instance     @ run pnpm dev in platform/instance (not managed by console)
+  Instance     @ wrangler dev via turbopanel-instance.service (systemd)
   UI (Expo)    @ http://127.0.0.1:8081  (user: instance)
   Daemon       @ (no port, user: turbopanel)
   Postgres     @ 127.0.0.1:5432 (TCP, for wrangler Hyperdrive)
@@ -446,20 +447,19 @@ function printStackStatus(): void {
   const units = fetchStackStatus();
   console.log("Dev stack status:", stackSummary(units));
   for (const unit of units) {
-    const expectedStoppedInWorkers = runtime === "workers" &&
-      unit.unit === "turbopanel-instance" &&
-      unit.active === false;
-    const mark = unit.active === true || expectedStoppedInWorkers
+    const mark = unit.active === true
       ? "✓"
       : unit.active === false
       ? "○"
       : "?";
-    console.log(`  ${mark} ${unit.label}: ${unit.detail}${
-      expectedStoppedInWorkers ? " (expected in Workers mode)" : ""
-    }`);
+    console.log(`  ${mark} ${unit.label}: ${unit.detail}`);
   }
   if (runtime === "workers") {
-    console.log("  ○ instance.sock not used — run pnpm dev in platform/instance");
+    console.log(
+      instanceReachable()
+        ? "  ✓ instance API reachable via Caddy/wrangler"
+        : "  ○ instance API not reachable — check journalctl -u turbopanel-instance",
+    );
   } else {
     console.log(
       instanceSocketPresent()
