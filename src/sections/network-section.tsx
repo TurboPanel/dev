@@ -92,14 +92,10 @@ export function NetworkSection({
   return (
     <Box flexDirection="column">
       <Text bold>Network</Text>
+      <Text dimColor>{"─".repeat(40)}</Text>
       <Box marginTop={1}>
         <Text dimColor>
           Reads IPs assigned to physical interfaces only
-        </Text>
-      </Box>
-      <Box marginTop={1}>
-        <Text color={canFetch ? "cyan" : "gray"}>
-          Enter — Get IP addresses{fetching ? " …" : ""}
         </Text>
       </Box>
       {error ? (
@@ -125,6 +121,14 @@ export function NetworkSection({
           ))}
         </Box>
       ) : null}
+
+      <Box marginTop={1}>
+        <Text dimColor>
+          {interactable
+            ? `Enter get IP addresses · Esc back${fetching ? " …" : ""}`
+            : "Enter to focus"}
+        </Text>
+      </Box>
     </Box>
   );
 }

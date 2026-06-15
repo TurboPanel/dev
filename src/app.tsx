@@ -1,5 +1,12 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Box, SelectInput, Text, useApp, useInput } from "@deno-ink/core";
+import {
+  Box,
+  SelectInput,
+  Text,
+  useApp,
+  useInput,
+  useTerminalSize,
+} from "@deno-ink/core";
 import { AreaTabs, type AreaTab } from "@turbopanel/area-tabs";
 import { DeveloperPanels } from "@turbopanel/developer-console";
 import {
@@ -31,6 +38,11 @@ async function runAfterExit(fn: () => Promise<void>): Promise<void> {
     console.error(error instanceof Error ? error.message : error);
     Deno.exit(1);
   }
+}
+
+function HorizontalRule() {
+  const { columns } = useTerminalSize();
+  return <Text dimColor>{"─".repeat(Math.max(columns, 1))}</Text>;
 }
 
 function areaHelp(areaId: string, panelFocused: boolean): string {
@@ -234,41 +246,51 @@ export function App() {
     : "getting started";
 
   return (
-    <Box flexDirection="column" padding={1}>
-      <Text bold color="cyan">
-        TurboPanel Dev Console
-      </Text>
-      <Text dimColor>{headerSummary}</Text>
+    <Box flexDirection="column" height="100%">
+      <Box paddingX={1} paddingTop={1}>
+        <Text bold color="cyan">TurboPanel Dev Console</Text>
+        <Text dimColor> · {headerSummary}</Text>
+      </Box>
 
-      <AreaTabs areas={areas} activeIndex={resolvedAreaIndex} />
+      <HorizontalRule />
 
-      {activeArea.id === "status" ? (
-        <StatusArea
-          runtimeReady={runtimeReady}
-          daemonStatus={daemonStatus}
-          daemonPresent={daemonPresent}
-          platformDirectAccess={platformDirectAccess}
-          stackUnits={stackUnits}
-          developerUnlocked={developerUnlocked}
-          stackHealthy={stackHealthy}
-        />
-      ) : null}
+      <Box paddingX={1} paddingY={1}>
+        <AreaTabs areas={areas} activeIndex={resolvedAreaIndex} />
+      </Box>
 
-      {activeArea.id === "developer" && developerUnlocked ? (
-        <DeveloperPanels
-          state={developerState}
-          onEditingChange={setDeveloperEditing}
-          onPanelFocusChange={setDeveloperPanelFocused}
-        />
-      ) : null}
+      <HorizontalRule />
 
-      {activeArea.id === "actions" ? (
-        <Box flexDirection="column" marginTop={1}>
-          <SelectInput items={menuItems} onSelect={handleSelect} />
-        </Box>
-      ) : null}
+      <Box flexDirection="column" flexGrow={1} paddingX={1} paddingY={1}>
+        {activeArea.id === "status" ? (
+          <StatusArea
+            runtimeReady={runtimeReady}
+            daemonStatus={daemonStatus}
+            daemonPresent={daemonPresent}
+            platformDirectAccess={platformDirectAccess}
+            stackUnits={stackUnits}
+            developerUnlocked={developerUnlocked}
+            stackHealthy={stackHealthy}
+          />
+        ) : null}
 
-      <Box marginTop={1}>
+        {activeArea.id === "developer" && developerUnlocked ? (
+          <DeveloperPanels
+            state={developerState}
+            onEditingChange={setDeveloperEditing}
+            onPanelFocusChange={setDeveloperPanelFocused}
+          />
+        ) : null}
+
+        {activeArea.id === "actions" ? (
+          <Box flexDirection="column">
+            <SelectInput items={menuItems} onSelect={handleSelect} />
+          </Box>
+        ) : null}
+      </Box>
+
+      <HorizontalRule />
+
+      <Box paddingX={1} paddingBottom={1}>
         <Text dimColor>{areaHelp(activeArea.id, developerPanelFocused)}</Text>
       </Box>
     </Box>

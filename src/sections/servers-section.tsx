@@ -196,11 +196,7 @@ export function ServersSection({
   return (
     <Box flexDirection="column">
       <Text bold>Servers</Text>
-      <Box marginTop={1}>
-        <Text dimColor>
-          a add · e edit name · o assign org · ↑↓ select server
-        </Text>
-      </Box>
+      <Text dimColor>{"─".repeat(40)}</Text>
       {error ? (
         <Box marginTop={1}>
           <Text color="red">{error}</Text>
@@ -228,7 +224,7 @@ export function ServersSection({
 
       {mode.kind === "assign" ? (
         <Box marginTop={1} flexDirection="column">
-          <Text dimColor>Assign organization (←→ · Enter):</Text>
+          <Text dimColor>Assign organization:</Text>
           {orgOptions.map((orgId, index) => {
             const label = orgId === null
               ? "Unassigned"
@@ -276,6 +272,18 @@ export function ServersSection({
             </Box>
           ))
         )}
+      </Box>
+
+      <Box marginTop={1}>
+        <Text dimColor>
+          {mode.kind === "add" || mode.kind === "edit"
+            ? "Enter save · Esc cancel"
+            : mode.kind === "assign"
+            ? "←→ select · Enter assign · Esc cancel"
+            : interactable
+            ? "a add · e edit name · o assign org · ↑↓ select server · Esc back"
+            : "Enter to focus"}
+        </Text>
       </Box>
     </Box>
   );

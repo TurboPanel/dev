@@ -1,9 +1,11 @@
 import {
+  CADDY_HTTPS,
   DAEMON_ENV_PATH,
   DENO_BIN,
   getDevGid,
   getDevUid,
   getDevUser,
+  PLATFORM_CA_CERT_PATH,
   platformRepoPath,
   TURBOPANEL_PLATFORM,
   TURBOPANEL_ROOT,
@@ -190,7 +192,25 @@ export function readInstanceRuntime(): "deno" | "workers" {
   return env.get("TURBOPANEL_INSTANCE_RUNTIME") === "workers" ? "workers" : "deno";
 }
 
+const WORKERS_INSTANCE_URL_KEYS = [
+  "TURBOPANEL_INSTANCE_URL",
+  "TURBOPANEL_INSTANCE_CA",
+] as const;
+
+function resolveRuntimeForWrite(
+  extra?: Record<string, string>,
+): "deno" | "workers" {
+  if (extra?.TURBOPANEL_INSTANCE_RUNTIME === "workers") {
+    return "workers";
+  }
+  if (extra?.TURBOPANEL_INSTANCE_RUNTIME === "deno") {
+    return "deno";
+  }
+  return readInstanceRuntime();
+}
+
 export function writeDaemonEnv(extra?: Record<string, string>): void {
+  const runtime = resolveRuntimeForWrite(extra);
   const entries: Record<string, string> = {
     TURBOPANEL_DEV_INSTANCE: "1",
     TURBOPANEL_TRUNK_BRANCH: "trunk",
@@ -199,6 +219,16 @@ export function writeDaemonEnv(extra?: Record<string, string>): void {
     TURBOPANEL_DEV_GID: String(getDevGid()),
     ...extra,
   };
+
+  const removeKeys = new Set<string>();
+  if (runtime === "workers") {
+    entries.TURBOPANEL_INSTANCE_URL = CADDY_HTTPS;
+    entries.TURBOPANEL_INSTANCE_CA = PLATFORM_CA_CERT_PATH;
+  } else {
+    for (const key of WORKERS_INSTANCE_URL_KEYS) {
+      removeKeys.add(key);
+    }
+  }
 
   let content = "";
   try {
@@ -225,6 +255,9 @@ export function writeDaemonEnv(extra?: Record<string, string>): void {
   if (content.length > 0) {
     for (const line of content.split("\n")) {
       const match = line.match(/^([A-Z_][A-Z0-9_]*)=/);
+      if (match && removeKeys.has(match[1])) {
+        continue;
+      }
       if (match && managedKeys.has(match[1])) {
         if (!updated.has(match[1])) {
           lines.push(`${match[1]}=${entries[match[1]]}`);

@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Box, Text } from "@deno-ink/core";
 import { fetchServiceStatuses, type ServiceStatus } from "@turbopanel/service-status";
-import { StatusLine } from "@turbopanel/status-line";
 
 export function ServiceStatusSection() {
   const [services, setServices] = useState<ServiceStatus[]>([]);
@@ -33,6 +32,7 @@ export function ServiceStatusSection() {
   return (
     <Box flexDirection="column">
       <Text bold>Services</Text>
+      <Text dimColor>{"─".repeat(40)}</Text>
       <Box marginTop={1}>
         <Text dimColor>
           systemd units, Postgres socket, and sockets under /run/turbopanel
@@ -46,11 +46,19 @@ export function ServiceStatusSection() {
       <Box flexDirection="column" marginTop={1}>
         {services.map((service) => (
           <Box key={service.name} flexDirection="column" marginBottom={1}>
-            <StatusLine
-              label={service.name}
-              ok={service.active}
-              detail={service.detail}
-            />
+            <Box>
+              <Text
+                color={service.active === null
+                  ? "yellow"
+                  : service.active
+                  ? "green"
+                  : "red"}
+              >
+                ●{" "}
+              </Text>
+              <Text>{service.name}</Text>
+              <Text dimColor> — {service.detail}</Text>
+            </Box>
             {service.statusSummary ? (
               <Text dimColor>  {service.statusSummary}</Text>
             ) : null}

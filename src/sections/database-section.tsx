@@ -131,8 +131,13 @@ export function DatabaseSection({
   return (
     <Box flexDirection="column">
       <Text bold>Database</Text>
+      <Text dimColor>{"─".repeat(40)}</Text>
       <Box marginTop={1}>
-        <Text color={status?.connected ? "green" : "yellow"}>● </Text>
+        <Text
+          color={status === null ? "yellow" : status.connected ? "green" : "red"}
+        >
+          ●{" "}
+        </Text>
         <Text>
           {status === null
             ? "Checking database…"
@@ -179,7 +184,7 @@ export function DatabaseSection({
       </Box>
 
       <Box flexDirection="column" marginTop={1}>
-        <Text bold dimColor>Actions (↑↓ · Enter)</Text>
+        <Text dimColor>Actions</Text>
         {ACTIONS.map((action, index) => (
           <Text
             key={action}
@@ -197,7 +202,7 @@ export function DatabaseSection({
       {confirmReset ? (
         <Box marginTop={1}>
           <Text color="yellow">
-            Reset dev instance? Drops all Postgres data. y/N
+            Reset dev instance? Drops all Postgres data.
           </Text>
         </Box>
       ) : null}
@@ -207,6 +212,16 @@ export function DatabaseSection({
           <Text color={message.ok ? "green" : "red"}>{message.text}</Text>
         </Box>
       ) : null}
+
+      <Box marginTop={1}>
+        <Text dimColor>
+          {confirmReset
+            ? "y reset · N cancel · Esc cancel"
+            : interactable
+            ? "↑↓ select · Enter run · Esc back"
+            : "Enter to focus"}
+        </Text>
+      </Box>
     </Box>
   );
 }

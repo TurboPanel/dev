@@ -123,4 +123,14 @@ export async function switchInstanceRuntime(
       throw new Error("failed to start turbopanel-instance");
     }
   }
+
+  const daemonCode = await runSudo(["systemctl", "restart", "turbopanel-daemon"]);
+  if (daemonCode !== 0) {
+    throw new Error("failed to restart turbopanel-daemon");
+  }
+  console.log(
+    target === "workers"
+      ? "turbopanel-daemon restarted — connecting via Caddy HTTPS"
+      : "turbopanel-daemon restarted — connecting via instance Unix socket",
+  );
 }

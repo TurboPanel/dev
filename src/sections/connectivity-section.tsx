@@ -37,11 +37,7 @@ export function ConnectivitySection({
   return (
     <Box flexDirection="column">
       <Text bold>Connectivity</Text>
-      <Box marginTop={1}>
-        <Text color={healthOk ? "cyan" : "gray"}>
-          b or Enter — Broadcast ping to all daemons{sending ? " …" : ""}
-        </Text>
-      </Box>
+      <Text dimColor>{"─".repeat(40)}</Text>
       {error ? (
         <Box marginTop={1}>
           <Text color="red">{error}</Text>
@@ -58,6 +54,14 @@ export function ConnectivitySection({
             </Text>
           ))
         )}
+      </Box>
+
+      <Box marginTop={1}>
+        <Text dimColor>
+          {interactable
+            ? `b or Enter broadcast ping · Esc back${sending ? " …" : ""}`
+            : "Enter to focus"}
+        </Text>
       </Box>
     </Box>
   );

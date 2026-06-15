@@ -85,6 +85,7 @@ export function ShellSection({
   return (
     <Box flexDirection="column">
       <Text bold>Shell</Text>
+      <Text dimColor>{"─".repeat(40)}</Text>
       <Box marginTop={1}>
         <Text dimColor>
           Run on {targetLabel}
@@ -96,11 +97,6 @@ export function ShellSection({
           {command}{running ? " …" : ""}
         </Text>
       </Box>
-      <Text dimColor>
-        {inputFocused
-          ? "Enter run · Esc blur command"
-          : "i focus command · Tab/[ ] sections · q exit"}
-      </Text>
       {error ? (
         <Box marginTop={1}>
           <Text color="red">{error}</Text>
@@ -125,6 +121,16 @@ export function ShellSection({
             </Box>
           ))
         )}
+      </Box>
+
+      <Box marginTop={1}>
+        <Text dimColor>
+          {!interactable
+            ? "Enter to focus"
+            : inputFocused
+            ? "Enter run · Esc blur command"
+            : "i focus command · Esc back"}
+        </Text>
       </Box>
     </Box>
   );

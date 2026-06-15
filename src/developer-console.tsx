@@ -160,9 +160,7 @@ export function DeveloperPanels({
         <Text dimColor>
           {panelFocused
             ? " · Esc back"
-            : interactiveSection
-            ? " · ↑↓ sections · Enter focus · t target"
-            : " · ↑↓ sections · t target"}
+            : " · ↑↓ section · Enter focus · t target"}
         </Text>
       </Box>
       {error ? (
@@ -172,21 +170,36 @@ export function DeveloperPanels({
       ) : null}
 
       <Box marginTop={1} flexDirection="row">
-        {SECTIONS.map((section, index) => (
-          <Box key={section.id} marginRight={2}>
-            <Text
-              color={index === sectionIndex ? "cyan" : undefined}
-              bold={index === sectionIndex}
-              dimColor={index !== sectionIndex}
-            >
-              {index === sectionIndex ? `[${section.label}]` : section.label}
-            </Text>
-          </Box>
-        ))}
-      </Box>
+        <Box flexDirection="column" width={16}>
+          {SECTIONS.map((section, index) => {
+            const active = index === sectionIndex;
+            return (
+              <Text
+                key={section.id}
+                color={active ? "cyan" : undefined}
+                bold={active}
+                dimColor={!active}
+              >
+                {active ? `› ${section.label}` : `  ${section.label}`}
+              </Text>
+            );
+          })}
+        </Box>
 
-      <Box flexDirection="column" marginTop={1}>
-        {renderSection()}
+        <Box
+          flexDirection="column"
+          flexGrow={1}
+          marginLeft={1}
+          paddingLeft={1}
+          borderStyle="single"
+          borderLeft
+          borderTop={false}
+          borderRight={false}
+          borderBottom={false}
+          borderDimColor
+        >
+          {renderSection()}
+        </Box>
       </Box>
     </Box>
   );

@@ -56,6 +56,7 @@ export function LogsSection({ live = true }: { live?: boolean }) {
   return (
     <Box flexDirection="column">
       <Text bold>Logs</Text>
+      <Text dimColor>{"─".repeat(40)}</Text>
       <Text dimColor>
         journalctl · {JOURNAL_UNITS.join(", ")}
         {runtime === "workers"

@@ -158,6 +158,7 @@ export function FleetSection({
   return (
     <Box flexDirection="column">
       <Text bold>Fleet</Text>
+      <Text dimColor>{"─".repeat(40)}</Text>
       <Box marginTop={1}>
         <Text color={healthOk ? "green" : healthOk === null ? "yellow" : "red"}>
           ●{" "}
@@ -181,7 +182,7 @@ export function FleetSection({
       ) : null}
 
       <Box flexDirection="column" marginTop={1}>
-        <Text bold dimColor>Actions (↑↓ · Enter)</Text>
+        <Text dimColor>Actions</Text>
         {ACTIONS.map((action, index) => (
           <Text
             key={action}
@@ -196,9 +197,8 @@ export function FleetSection({
 
       {promptMode === "token" ? (
         <Box marginTop={1} flexDirection="column">
-          <Text dimColor>Enter tunnel token (empty to clear):</Text>
+          <Text dimColor>Tunnel token (empty to clear):</Text>
           <Text>{tokenInput ? "•".repeat(tokenInput.length) : "(empty)"}</Text>
-          <Text dimColor>Enter save · Esc cancel</Text>
         </Box>
       ) : null}
 
@@ -228,6 +228,16 @@ export function FleetSection({
             </Box>
           ))
         )}
+      </Box>
+
+      <Box marginTop={1}>
+        <Text dimColor>
+          {promptMode === "token"
+            ? "Enter save · Esc cancel"
+            : interactable
+            ? "↑↓ select · Enter run · Esc back"
+            : "Enter to focus"}
+        </Text>
       </Box>
     </Box>
   );

@@ -11,19 +11,24 @@ export function AreaTabs({
   activeIndex: number;
 }) {
   return (
-    <Box flexDirection="row" marginTop={1}>
-      <Text dimColor>← → </Text>
-      {areas.map((area, index) => (
-        <Box key={area.id} marginRight={2}>
-          <Text
-            bold={index === activeIndex}
-            color={index === activeIndex ? "cyan" : undefined}
-            dimColor={index !== activeIndex}
+    <Box flexDirection="row">
+      {areas.map((area, index) => {
+        const active = index === activeIndex;
+
+        return (
+          <Box
+            key={area.id}
+            marginLeft={index > 0 ? -1 : 0}
+            borderStyle="single"
+            borderColor={active ? "cyan" : undefined}
+            borderDimColor={!active}
           >
-            {index === activeIndex ? "› " : "  "}{area.label}
-          </Text>
-        </Box>
-      ))}
+            <Text bold={active} color={active ? "cyan" : undefined} dimColor={!active}>
+              {" "}{area.label}{" "}
+            </Text>
+          </Box>
+        );
+      })}
     </Box>
   );
 }
