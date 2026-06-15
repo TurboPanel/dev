@@ -1,5 +1,5 @@
 #!/bin/sh
-# Install the co-located dev instance stack (Postgres, instance, Caddy, UI) via Ansible.
+# Install the co-located dev instance stack via a single Ansible converge playbook.
 # Mirrors the daemon's runInstanceDevInstall() path so Start dev stack is synchronous.
 set -eu
 
@@ -15,7 +15,6 @@ DAEMON_DIR="$TURBOPANEL_PLATFORM/daemon"
 ORCHESTRATION_DIR="$DAEMON_DIR/orchestration"
 ANSIBLE_PLAYBOOK="$ORCHESTRATION_DIR/runtime/venv/bin/ansible-playbook"
 ANSIBLE_CFG="$ORCHESTRATION_DIR/ansible.cfg"
-DOCKER_PLAYBOOK="$ORCHESTRATION_DIR/playbooks/docker-setup.yml"
 INSTANCE_PLAYBOOK="$ORCHESTRATION_DIR/playbooks/instance-dev-install.yml"
 ENV_FILE="$DAEMON_DIR/.env"
 
@@ -108,8 +107,6 @@ EXTRA_VARS="
 -e postgres_expose_port=${POSTGRES_EXPOSE}
 "
 
-# shellcheck disable=SC2086
-run_playbook "$DOCKER_PLAYBOOK" -e turbopanel_dev_user="${DEV_USER}"
 # shellcheck disable=SC2086
 run_playbook "$INSTANCE_PLAYBOOK" $EXTRA_VARS
 

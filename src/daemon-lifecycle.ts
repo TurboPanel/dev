@@ -337,24 +337,36 @@ export async function installDaemonSystemd(): Promise<void> {
   }
 }
 
+function instanceSocketStatusLabel(): string {
+  if (instanceSocketPresent()) return "ready";
+  const units = fetchStackStatus();
+  const instance = units.find((unit) => unit.unit === "turbopanel-instance");
+  if (instance?.active === true) return "starting";
+  return "waiting";
+}
+
 async function restartDevStackServices(): Promise<void> {
   const runtime = readInstanceRuntime();
   await runSudo(["systemctl", "daemon-reload"]);
-  const required = runtime === "workers"
-    ? (["turbopanel-instance", "turbopanel-caddy", "turbopanel-daemon"] as const)
-    : ([
+  if (runtime === "workers") {
+    for (const unit of [
       "turbopanel-instance",
       "turbopanel-caddy",
       "turbopanel-daemon",
-    ] as const);
-  for (const unit of required) {
-    const code = await runSudo(["systemctl", "restart", unit]);
-    if (code !== 0) {
-      throw new Error(`failed to restart ${unit}`);
+    ] as const) {
+      const code = await runSudo(["systemctl", "restart", unit]);
+      if (code !== 0) {
+        throw new Error(`failed to restart ${unit}`);
+      }
     }
+    await runSudo(["systemctl", "restart", "turbopanel-ui"]);
+    return;
   }
-  // UI unit is dev-only; ignore restart failure in static mode.
-  await runSudo(["systemctl", "restart", "turbopanel-ui"]);
+  // Deno mode: instance-dev-install already converged instance/caddy units.
+  const code = await runSudo(["systemctl", "restart", "turbopanel-daemon"]);
+  if (code !== 0) {
+    throw new Error("failed to restart turbopanel-daemon");
+  }
 }
 
 function stackIsReady(): boolean {
@@ -395,7 +407,7 @@ async function waitForDevStack(): Promise<void> {
     } else {
       console.log(
         `  … instance: ${instance?.detail ?? "?"}, caddy: ${caddy?.detail ?? "?"}, socket: ${
-          instanceSocketPresent() ? "ready" : "waiting"
+          instanceSocketStatusLabel()
         }`,
       );
     }
