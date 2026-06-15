@@ -18,18 +18,6 @@ TURBOPANEL_GROUP=turbopanel
 TURBOPANEL_DEV_SUDOERS=/etc/sudoers.d/turbopanel-dev-console
 TURBOPANEL_DEV_IDENTITY_STAMP=/etc/turbopanel/dev-permissions-identity.stamp
 RUNTIME_SOCKET_DIR=/run/turbopanel
-DEBUG_LOG=/home/dev/turbopanel-dev/.cursor/debug-9777bc.log
-
-# #region agent log
-_tp_debug_log() {
-  _hyp=$1
-  _msg=$2
-  _data=$3
-  _ts=$(date +%s)
-  printf '{"sessionId":"9777bc","hypothesisId":"%s","location":"dev-host-access.sh","message":"%s","data":%s,"timestamp":%s}\n' \
-    "$_hyp" "$_msg" "$_data" "$_ts" >>"$DEBUG_LOG" 2>/dev/null || true
-}
-# #endregion
 
 tp_path_exists() {
   _pe_path=$1
@@ -163,30 +151,13 @@ tp_apply_dev_host_acls_if_needed() {
     _sentinel_ok=1
   fi
 
-  # #region agent log
-  _tp_debug_log "H1" "acl_skip_check" \
-    "{\"expected\":\"${_stamp_expected}\",\"current\":\"${_stamp_current}\",\"sentinel_ok\":${_sentinel_ok}}"
-  # #endregion
-
-  tp_apply_dev_host_acls_light
-
   if [ "$_stamp_current" = "$_stamp_expected" ] && [ "$_sentinel_ok" -eq 1 ]; then
-    # #region agent log
-    _tp_debug_log "H1" "checkout_acl_skipped" "{\"reason\":\"stamp_and_sentinel_match\"}"
-    # #endregion
     return 0
   fi
 
   tp_info "Applying dev ACLs on platform checkouts (first run or identity changed)…"
-  # #region agent log
-  _acl_start=$(date +%s)
-  # #endregion
   tp_apply_dev_host_acls_checkouts
   tp_write_dev_identity_stamp
-  # #region agent log
-  _acl_end=$(date +%s)
-  _tp_debug_log "H2" "checkout_acl_applied" "{\"duration_s\":$((_acl_end - _acl_start))}"
-  # #endregion
 }
 
 tp_apply_dev_host_acls() {

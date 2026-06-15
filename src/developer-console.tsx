@@ -19,6 +19,15 @@ const SECTIONS = [
   { id: "servers", label: "Servers" },
 ] as const;
 
+const SIDEBAR_WIDTH = 12;
+
+function formatSidebarItem(label: string, active: boolean): string {
+  const text = `${active ? "›" : " "}${label}`;
+  return text.length >= SIDEBAR_WIDTH
+    ? text.slice(0, SIDEBAR_WIDTH)
+    : text.padEnd(SIDEBAR_WIDTH, " ");
+}
+
 export function DeveloperPanels({
   contentHeight,
   state,
@@ -153,7 +162,12 @@ export function DeveloperPanels({
 
   return (
     <Box flexDirection="row" height={contentHeight} width="100%">
-      <Box flexDirection="column" width={12} height={contentHeight}>
+      <Box
+        flexDirection="column"
+        flexShrink={0}
+        width={SIDEBAR_WIDTH}
+        height={contentHeight}
+      >
         {SECTIONS.map((section, index) => {
           const active = index === sectionIndex;
           return (
@@ -163,7 +177,7 @@ export function DeveloperPanels({
               bold={active}
               dimColor={!active}
             >
-              {active ? `›${section.label}` : ` ${section.label}`}
+              {formatSidebarItem(section.label, active)}
             </Text>
           );
         })}
@@ -172,6 +186,8 @@ export function DeveloperPanels({
       <Box
         flexDirection="column"
         flexGrow={1}
+        flexShrink={1}
+        minWidth={0}
         height={contentHeight}
         marginLeft={1}
         paddingLeft={1}

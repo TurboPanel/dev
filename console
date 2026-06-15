@@ -25,15 +25,7 @@ tp_info "Checking Deno runtime…"
 tp_ensure_deno_runtime
 
 tp_info "Setting up dev host access (group, sudoers, ACLs)…"
-# #region agent log
-_tp_dha_start=$(date +%s)
-_tp_debug_log "H4" "dev_host_access_start" "{}"
-# #endregion
 tp_ensure_dev_host_access
-# #region agent log
-_tp_dha_end=$(date +%s)
-_tp_debug_log "H4" "dev_host_access_done" "{\"duration_s\":$((_tp_dha_end - _tp_dha_start))}"
-# #endregion
 
 if "$DENO_BIN" cache --frozen "$SCRIPT_DIR/src/main.tsx" 2>/dev/null; then
   tp_info "Dependencies ready"
