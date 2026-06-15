@@ -1,12 +1,11 @@
 import {
   CADDY_HTTPS,
   DAEMON_ENV_PATH,
+  DevIdentityError,
   DENO_BIN,
-  getDevGid,
-  getDevUid,
-  getDevUser,
   PLATFORM_CA_CERT_PATH,
   platformRepoPath,
+  resolveDevIdentity,
   TURBOPANEL_PLATFORM,
   TURBOPANEL_ROOT,
 } from "@turbopanel/paths";
@@ -209,14 +208,26 @@ function resolveRuntimeForWrite(
   return readInstanceRuntime();
 }
 
+function requireDevIdentity() {
+  try {
+    return resolveDevIdentity();
+  } catch (err) {
+    if (err instanceof DevIdentityError) {
+      throw new Error(`Developer identity: ${err.message}`);
+    }
+    throw err;
+  }
+}
+
 export function writeDaemonEnv(extra?: Record<string, string>): void {
+  const dev = requireDevIdentity();
   const runtime = resolveRuntimeForWrite(extra);
   const entries: Record<string, string> = {
     TURBOPANEL_DEV_INSTANCE: "1",
     TURBOPANEL_TRUNK_BRANCH: "trunk",
-    TURBOPANEL_DEV_USER: getDevUser(),
-    TURBOPANEL_DEV_UID: String(getDevUid()),
-    TURBOPANEL_DEV_GID: String(getDevGid()),
+    TURBOPANEL_DEV_USER: dev.user,
+    TURBOPANEL_DEV_UID: String(dev.uid),
+    TURBOPANEL_DEV_GID: String(dev.gid),
     ...extra,
   };
 

@@ -1,6 +1,6 @@
 # turbopanel-dev
 
-Development environment for [TurboPanel](https://github.com/turbopanel/turbopanel). A Deno CLI with an Ink-style terminal UI for bootstrapping and working on a Debian 13 VM.
+Development environment for [TurboPanel](https://github.com/turbopanel/instance). A Deno CLI with an Ink-style terminal UI for bootstrapping and working on a Debian 13 VM.
 
 ## Getting started
 
@@ -31,7 +31,8 @@ cd turbopanel-dev
 ├── scripts/install.sh               # clone/update this repo only
 └── src/
 /opt/turbopanel/
-├── platform/                        # platform repos (from console)
+├── platform/
+│   └── instance/                    # Hono API (installed by daemon via Ansible)
 └── runtime/deno/v2.8.3/bin/deno     # console (first run)
 ```
 

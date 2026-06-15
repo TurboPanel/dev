@@ -3,6 +3,13 @@
 # sudo for console-driven turbopanel operations (current session + future runs).
 # Source after privileges.sh and paths.sh; runtime.sh optional for Deno fix.
 
+_tp_dha_lib_dir=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
+if [ ! -f "$_tp_dha_lib_dir/dev-identity.sh" ] && [ -n "${SCRIPT_DIR:-}" ]; then
+  _tp_dha_lib_dir=$SCRIPT_DIR/lib
+fi
+# shellcheck source=scripts/lib/dev-identity.sh
+. "$_tp_dha_lib_dir/dev-identity.sh"
+
 TURBOPANEL_GROUP=turbopanel
 TURBOPANEL_DEV_SUDOERS=/etc/sudoers.d/turbopanel-dev-console
 RUNTIME_SOCKET_DIR=/run/turbopanel
@@ -22,15 +29,14 @@ tp_sudo() {
 }
 
 tp_dev_in_turbopanel_group() {
-  _ditg_user=${1:-${USER:-}}
+  _ditg_user=$1
   [ -n "$_ditg_user" ] || return 1
   id -nG "$_ditg_user" 2>/dev/null | tr ' ' '\n' | grep -qx "$TURBOPANEL_GROUP"
 }
 
 tp_install_dev_console_sudoers() {
-  _ids_user=${USER:-}
+  _ids_user=$TP_DEV_USER
   [ -n "$_ids_user" ] || return 1
-  [ "$_ids_user" != root ] || return 0
 
   _ids_tmp=$(mktemp)
   # shellcheck disable=SC2016
@@ -62,7 +68,7 @@ EOF
 }
 
 tp_apply_dev_host_acls() {
-  _ada_user=${USER:-}
+  _ada_user=$TP_DEV_USER
   [ -n "$_ada_user" ] || return 1
 
   if ! command -v setfacl >/dev/null 2>&1; then
@@ -97,7 +103,7 @@ tp_apply_dev_host_acls() {
 }
 
 tp_ensure_git_safe_directories() {
-  _egsd_user=${USER:-}
+  _egsd_user=$TP_DEV_USER
   [ -n "$_egsd_user" ] || return 1
   command -v git >/dev/null 2>&1 || return 0
 
@@ -112,10 +118,11 @@ tp_ensure_git_safe_directories() {
   done
 }
 
-  tp_ensure_dev_host_access() {
-  _edha_user=${USER:-}
-  [ -n "$_edha_user" ] || return 1
-  [ "$_edha_user" != root ] || return 0
+tp_ensure_dev_host_access() {
+  if ! tp_resolve_dev_identity; then
+    tp_error "Cannot resolve developer identity from session (refusing spoofable USER/LOGNAME)"
+    return 1
+  fi
 
   if ! command -v sudo >/dev/null 2>&1; then
     tp_warn "sudo is required for co-located dev access setup"
@@ -126,9 +133,9 @@ tp_ensure_git_safe_directories() {
   tp_sudo true
 
   if getent group "$TURBOPANEL_GROUP" >/dev/null 2>&1; then
-    if ! tp_dev_in_turbopanel_group "$_edha_user"; then
-      tp_info "Adding ${_edha_user} to ${TURBOPANEL_GROUP} group"
-      tp_sudo usermod -aG "$TURBOPANEL_GROUP" "$_edha_user"
+    if ! tp_dev_in_turbopanel_group "$TP_DEV_USER"; then
+      tp_info "Adding ${TP_DEV_USER} to ${TURBOPANEL_GROUP} group"
+      tp_sudo usermod -aG "$TURBOPANEL_GROUP" "$TP_DEV_USER"
     fi
   fi
 
@@ -143,6 +150,8 @@ tp_ensure_git_safe_directories() {
 
 case $(basename "$0") in
   dev-host-access.sh)
+    # shellcheck source=scripts/lib/privileges.sh
+    . "$(CDPATH= cd -- "$(dirname "$0")" && pwd)/privileges.sh"
     tp_ensure_dev_host_access
     ;;
 esac

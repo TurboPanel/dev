@@ -8,6 +8,8 @@ SCRIPT_DIR=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
 . "$SCRIPT_DIR/lib/privileges.sh"
 # shellcheck source=scripts/lib/paths.sh
 . "$SCRIPT_DIR/lib/paths.sh"
+# shellcheck source=scripts/lib/dev-identity.sh
+. "$SCRIPT_DIR/lib/dev-identity.sh"
 
 DAEMON_DIR="$TURBOPANEL_PLATFORM/daemon"
 ORCHESTRATION_DIR="$DAEMON_DIR/orchestration"
@@ -66,9 +68,27 @@ run_playbook() {
     "$_rp_playbook"
 }
 
-DEV_USER=$(read_env_var TURBOPANEL_DEV_USER "${USER:-}")
-DEV_UID=$(read_env_var TURBOPANEL_DEV_UID "$(id -u)")
-DEV_GID=$(read_env_var TURBOPANEL_DEV_GID "$(id -g)")
+tp_require_dev_identity
+
+_env_user=$(read_env_var TURBOPANEL_DEV_USER "")
+if [ -n "$_env_user" ] && [ "$_env_user" != "$TP_DEV_USER" ]; then
+  tp_error "TURBOPANEL_DEV_USER in daemon .env ($_env_user) does not match session ($TP_DEV_USER)"
+  exit 1
+fi
+_env_uid=$(read_env_var TURBOPANEL_DEV_UID "")
+if [ -n "$_env_uid" ] && [ "$_env_uid" != "$TP_DEV_UID" ]; then
+  tp_error "TURBOPANEL_DEV_UID in daemon .env ($_env_uid) does not match session ($TP_DEV_UID)"
+  exit 1
+fi
+_env_gid=$(read_env_var TURBOPANEL_DEV_GID "")
+if [ -n "$_env_gid" ] && [ "$_env_gid" != "$TP_DEV_GID" ]; then
+  tp_error "TURBOPANEL_DEV_GID in daemon .env ($_env_gid) does not match session ($TP_DEV_GID)"
+  exit 1
+fi
+
+DEV_USER=$TP_DEV_USER
+DEV_UID=$TP_DEV_UID
+DEV_GID=$TP_DEV_GID
 UI_MODE=$(read_env_var TURBOPANEL_UI_MODE dev)
 INSTANCE_RUN_MODE=$(read_env_var TURBOPANEL_INSTANCE_RUN_MODE source)
 INSTANCE_RUNTIME=$(read_env_var TURBOPANEL_INSTANCE_RUNTIME deno)

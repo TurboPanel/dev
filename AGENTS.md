@@ -126,7 +126,7 @@ Polls every 2 s (same endpoints as the retired Expo `DeveloperProvider`): `/api/
 - **`console` owns the Deno runtime** and starting the console.
 - **`turbopanel-dev` installs to `./turbopanel-dev`** in the user's cwd.
 - The console installs **only** the daemon repo. All other platform repos (instance, ui, website) are installed by the daemon via Ansible (`instance-dev-install.yml`).
-- Developer identity (`TURBOPANEL_DEV_USER`, `TURBOPANEL_DEV_UID`, `TURBOPANEL_DEV_GID`) is captured from the invoking user at runtime via `Deno.env.get('USER')` and `Deno.uid()`/`Deno.gid()` — never hardcoded.
+- Developer identity (`TURBOPANEL_DEV_USER`, `TURBOPANEL_DEV_UID`, `TURBOPANEL_DEV_GID`) is resolved from the **process UID** via `getent passwd` (`resolveDevIdentity()` in `src/paths.ts`, `tp_resolve_dev_identity()` in `scripts/lib/dev-identity.sh`). **`USER` / `LOGNAME` are never trusted.** Unresolved identities and `root` are rejected; the only root exception is a validated `SUDO_USER` passwd entry when the console runs under `sudo`. The dev stack refuses to write `TURBOPANEL_DEV_*` or run Ansible when identity cannot be resolved cleanly.
 - Do not commit secrets or environment-specific config.
 
 ## What agents must NOT do
@@ -134,7 +134,7 @@ Polls every 2 s (same endpoints as the retired Expo `DeveloperProvider`): `/api/
 - Do not add Deno install, dependency caching, or sudo to `scripts/install.sh`.
 - Do not add platform repo cloning to shell scripts — that belongs in the console.
 - Do not add instance/ui/website repo cloning to the console — the daemon owns those via Ansible.
-- Do not hardcode developer UID/GID — always read from `getDevUser()`/`getDevUid()`/`getDevGid()` in `src/paths.ts`.
+- Do not hardcode developer UID/GID — always read from `resolveDevIdentity()` (or `getDevUser()`/`getDevUid()`/`getDevGid()` wrappers) in `src/paths.ts`, or `tp_require_dev_identity()` in shell scripts.
 - Do not reintroduce `pull.sh`.
 - Do not clone `turbopanel-dev` into `/opt/turbopanel/platform`.
 - Do not add PATH symlinks, `env.sh`, or profile hooks — `console` runs Deno from `/opt/turbopanel/runtimes/deno/v2.8.3/bin/deno` directly.

@@ -158,7 +158,8 @@ export function DatabaseSection({
       ) : (
         <Box marginTop={1}>
           <Text dimColor>
-            Set TURBOPANEL_PG_* on the instance unit (see daemon postgres role).
+            Set TURBOPANEL_DATABASE_URL on the instance unit — a full Postgres
+            URL, typically injected by the instance-launch role on managed hosts.
           </Text>
         </Box>
       )}
