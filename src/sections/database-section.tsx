@@ -4,18 +4,15 @@ import {
   drizzleStudioOpenUrl,
   fetchDatabaseStatus,
   fetchDrizzleStudioStatus,
-  resetDevInstance,
   startDrizzleStudio,
   type DatabaseStatus,
   type DrizzleStudioStatus,
 } from "@turbopanel/instance-client";
-import { isInstanceUnavailableError } from "@turbopanel/instance-recovery";
 import type { DeveloperState } from "@turbopanel/use-developer-state";
 
 const ACTIONS = [
   "Test connection",
   "Start Drizzle Studio",
-  "Reset Dev Instance",
 ] as const;
 
 export function DatabaseSection({
@@ -25,7 +22,7 @@ export function DatabaseSection({
   state: DeveloperState;
   interactable?: boolean;
 }) {
-  const { healthOk, recovery, startInstanceRecovery } = state;
+  const { healthOk, recovery } = state;
   const [status, setStatus] = useState<DatabaseStatus | null>(null);
   const [studioStatus, setStudioStatus] = useState<DrizzleStudioStatus | null>(
     null,
@@ -35,7 +32,6 @@ export function DatabaseSection({
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(
     null,
   );
-  const [confirmReset, setConfirmReset] = useState(false);
 
   const refreshStatus = async () => {
     if (recovery?.active) return;
@@ -82,53 +78,18 @@ export function DatabaseSection({
             ? `Studio running on port ${studio?.port ?? result.port}. Open ${url}`
             : `Studio started on port ${result.port}. Open ${url}`,
         });
-      } else if (action === "Reset Dev Instance") {
-        let resetAccepted = false;
-        try {
-          await resetDevInstance();
-          resetAccepted = true;
-        } catch (err) {
-          if (!isInstanceUnavailableError(err)) {
-            throw err;
-          }
-        }
-        setConfirmReset(false);
-        setMessage({
-          ok: true,
-          text: resetAccepted
-            ? "Database wiped — restarting instance, please stand by…"
-            : "Instance is restarting after reset — please stand by…",
-        });
-        const recovered = await startInstanceRecovery("database reset");
-        if (recovered) {
-          await refreshStatus();
-          setMessage({
-            ok: true,
-            text: "Dev instance reset complete — database is fresh.",
-          });
-        }
       }
     } catch (err) {
       setMessage({
         ok: false,
         text: err instanceof Error ? err.message : "Action failed",
       });
-      setConfirmReset(false);
     } finally {
       setBusy(false);
     }
   };
 
   useInput((input, key) => {
-    if (confirmReset) {
-      if (input === "y" || input === "Y") {
-        void runAction("Reset Dev Instance");
-      } else if (input === "n" || input === "N" || key.escape) {
-        setConfirmReset(false);
-      }
-      return;
-    }
-
     if (!interactable) return;
 
     if (key.upArrow) {
@@ -137,9 +98,7 @@ export function DatabaseSection({
       setActionIndex((i) => Math.min(ACTIONS.length - 1, i + 1));
     } else if (key.return && !busy && (healthOk || recovery?.active)) {
       const action = ACTIONS[actionIndex];
-      if (action === "Reset Dev Instance") {
-        setConfirmReset(true);
-      } else if (
+      if (
         action === "Start Drizzle Studio" && status?.configured === true
       ) {
         void runAction(action);
@@ -226,14 +185,6 @@ export function DatabaseSection({
         ))}
       </Box>
 
-      {confirmReset ? (
-        <Box marginTop={1}>
-          <Text color="yellow">
-            Reset dev instance? Drops all Postgres data.
-          </Text>
-        </Box>
-      ) : null}
-
       {message ? (
         <Box marginTop={1}>
           <Text color={message.ok ? "green" : "red"}>{message.text}</Text>
@@ -242,10 +193,8 @@ export function DatabaseSection({
 
       <Box marginTop={1}>
         <Text dimColor>
-          {confirmReset
-            ? "y reset · N cancel · Esc cancel"
-            : interactable
-            ? "↑↓ select · Enter run · Esc back"
+          {interactable
+            ? "↑↓ select · Enter run · Esc back · m menu to reset dev environment"
             : "Enter to focus"}
         </Text>
       </Box>

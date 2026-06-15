@@ -69,7 +69,7 @@ The developer console is not a separate Ink view — it is part of `./console`. 
 | **Status** | Runtime, platform checkout, dev stack units |
 | **Instance** | Runtime mode (Deno/Workers), instance unit status, switch action |
 | **Developer** | Fleet, services, shell, database, … (when `instance.sock` is present) |
-| **Actions** | Install daemon, start stack, follow logs, build mode, refresh, quit |
+| **Actions** | Install daemon, start stack, follow logs, runtime switch, build mode, reset dev environment, quit |
 
 Only one area is visible at a time — no scrolling past status + sections + menu on one screen.
 
@@ -84,7 +84,7 @@ In the **Developer** area: **↑↓** picks a section, **Enter** opens it, **Esc
 | Network | Interface IP addresses | Enter fetch |
 | Shell | Remote commands on target | type command · Enter run |
 | Connectivity | WS event log + broadcast ping | b or Enter broadcast |
-| Database | Postgres test, Drizzle Studio, reset dev | ↑↓ actions · Enter · y/N confirm reset |
+| Database | Postgres test, Drizzle Studio | ↑↓ actions · Enter |
 | Servers | Register servers, assign orgs | a/e/o · ↑↓ select |
 
 Navigate sections with **↑↓**, **Enter** to open, **Esc** to return to the list. **t** cycles daemon target (`all servers` or per-host). **← →** switches areas. **q** / **Esc** (when not inside a section) quits the console.

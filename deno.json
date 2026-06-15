@@ -10,6 +10,8 @@
   },
   "imports": {
     "@deno-ink/core": "jsr:@deno-ink/core@^0.2.1",
+    "@turbopanel/action-menu": "./src/action-menu.tsx",
+    "@turbopanel/cli-prompt": "./src/cli-prompt.ts",
     "@turbopanel/compact-header": "./src/compact-header.ts",
     "@turbopanel/fetch-timeout": "./src/fetch-timeout.ts",
     "@turbopanel/use-stack-status": "./src/use-stack-status.ts",
@@ -31,6 +33,7 @@
     "@turbopanel/sections/servers-section": "./src/sections/servers-section.tsx",
     "@turbopanel/sections/service-status-section": "./src/sections/service-status-section.tsx",
     "@turbopanel/sections/shell-section": "./src/sections/shell-section.tsx",
+    "@turbopanel/reset-dev-environment": "./src/reset-dev-environment.ts",
     "@turbopanel/service-status": "./src/service-status.ts",
     "@turbopanel/stack-status": "./src/stack-status.ts",
     "@turbopanel/stack-logs": "./src/stack-logs.ts",

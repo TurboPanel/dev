@@ -1,12 +1,12 @@
 import React, { useMemo, useState } from "react";
 import {
   Box,
-  SelectInput,
   Text,
   useApp,
   useInput,
   useTerminalSize,
 } from "@deno-ink/core";
+import { ActionMenu } from "@turbopanel/action-menu";
 import { buildCompactHeader } from "@turbopanel/compact-header";
 import { DeveloperPanels } from "@turbopanel/developer-console";
 import {
@@ -17,6 +17,7 @@ import {
 } from "@turbopanel/daemon-lifecycle";
 import { switchInstanceRuntime, readInstanceRuntime } from "@turbopanel/instance-runtime";
 import { installDaemon } from "@turbopanel/platform-install";
+import { resetDevEnvironment } from "@turbopanel/reset-dev-environment";
 import {
   checkPlatformRepos,
   denoRuntimeInstalled,
@@ -84,6 +85,10 @@ export function App() {
 
     if (daemonPresent) {
       items.push({ label: "Start dev stack", value: "start" });
+      items.push({
+        label: "Reset turbopanel development environment",
+        value: "reset-dev",
+      });
       items.push({ label: "Follow logs (fullscreen)", value: "logs" });
 
       if (instanceRuntime === "deno") {
@@ -185,6 +190,12 @@ export function App() {
     if (item.value === "build-dev") {
       exit();
       queueMicrotask(() => runAfterExit(() => switchBuildMode("dev")));
+      return;
+    }
+
+    if (item.value === "reset-dev") {
+      exit();
+      queueMicrotask(() => runAfterExit(resetDevEnvironment));
     }
   };
 
@@ -225,8 +236,8 @@ export function App() {
 
       {showMenu ? (
         <Box flexShrink={0} paddingX={1} flexDirection="column">
-          <Text dimColor>Actions · Esc cancel</Text>
-          <SelectInput items={menuItems} onSelect={handleSelect} />
+          <Text dimColor>Actions · ↑↓ select · Enter run · Esc cancel</Text>
+          <ActionMenu items={menuItems} onSelect={handleSelect} />
         </Box>
       ) : (
         <Box flexShrink={0} paddingX={1}>

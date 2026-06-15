@@ -1,9 +1,11 @@
+import { fetchHealth } from "@turbopanel/instance-client";
+import { readInstanceRuntime } from "@turbopanel/instance-runtime";
 import {
+  checkInstanceApiHealth,
   fetchStackStatus,
   instanceSocketPresent,
   type StackUnitStatus,
 } from "@turbopanel/stack-status";
-import { fetchHealth } from "@turbopanel/instance-client";
 
 export type InstanceRecoverySnapshot = {
   active: true;
@@ -24,10 +26,24 @@ function instanceUnitDetail(stack: StackUnitStatus[]): string {
 }
 
 function recoveryMessage(
+  runtime: "deno" | "workers",
   instanceDetail: string,
   socketReady: boolean,
   apiHealthy: boolean,
 ): string {
+  if (runtime === "workers") {
+    if (!apiHealthy) {
+      if (instanceDetail === "activating") {
+        return "Wrangler dev is restarting — please stand by…";
+      }
+      if (instanceDetail === "inactive" || instanceDetail === "failed") {
+        return "Instance unit stopped — waiting for wrangler dev…";
+      }
+      return "Waiting for Workers instance API health…";
+    }
+    return "Workers instance is back online";
+  }
+
   if (!socketReady) {
     if (instanceDetail === "activating") {
       return "Instance is restarting — please stand by…";
@@ -62,11 +78,15 @@ export async function waitForInstanceRecovery(
 ): Promise<boolean> {
   const deadline = Date.now() + RECOVERY_TIMEOUT_MS;
   while (Date.now() < deadline) {
+    const runtime = readInstanceRuntime();
     const stack = fetchStackStatus();
     const instanceDetail = instanceUnitDetail(stack);
     const socketReady = instanceSocketPresent();
     let apiHealthy = false;
-    if (socketReady) {
+
+    if (runtime === "workers") {
+      apiHealthy = checkInstanceApiHealth();
+    } else if (socketReady) {
       try {
         const health = await fetchHealth();
         apiHealthy = health.ok;
@@ -75,7 +95,12 @@ export async function waitForInstanceRecovery(
       }
     }
 
-    const message = recoveryMessage(instanceDetail, socketReady, apiHealthy);
+    const message = recoveryMessage(
+      runtime,
+      instanceDetail,
+      socketReady,
+      apiHealthy,
+    );
 
     onUpdate({
       active: true,
@@ -87,7 +112,10 @@ export async function waitForInstanceRecovery(
       stack,
     });
 
-    if (socketReady && apiHealthy) {
+    const ready = runtime === "workers"
+      ? apiHealthy
+      : socketReady && apiHealthy;
+    if (ready) {
       return true;
     }
 

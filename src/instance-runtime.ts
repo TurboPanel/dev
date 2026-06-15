@@ -109,6 +109,7 @@ export async function switchInstanceRuntime(
   await runInstanceLaunchRefresh();
 
   if (target === "workers") {
+    await ensureWorkersDevVars();
     const code = await runSudo(["systemctl", "restart", "turbopanel-instance"]);
     if (code !== 0) {
       throw new Error("failed to start turbopanel-instance (Workers/wrangler)");
