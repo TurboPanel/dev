@@ -30,7 +30,8 @@ export function DeveloperPanels({
   onEditingChange?: (editing: boolean) => void;
   onPanelFocusChange?: (focused: boolean) => void;
 }) {
-  const { healthOk, fleet, target, setTarget, targetLabel, error } = state;
+  const { healthOk, fleet, target, setTarget, targetLabel, error, recovery } =
+    state;
   const [sectionIndex, setSectionIndex] = useState(0);
   const [panelFocused, setPanelFocused] = useState(false);
   const [editingActive, setEditingActive] = useState(false);
@@ -150,7 +151,13 @@ export function DeveloperPanels({
   return (
     <Box flexDirection="column" marginTop={1}>
       <Box>
-        <Text color={healthOk ? "green" : healthOk === null ? "yellow" : "red"}>
+        <Text color={recovery?.active
+          ? "yellow"
+          : healthOk
+          ? "green"
+          : healthOk === null
+          ? "yellow"
+          : "red"}>
           ●{" "}
         </Text>
         <Text>
@@ -163,7 +170,16 @@ export function DeveloperPanels({
             : " · ↑↓ section · Enter focus · t target"}
         </Text>
       </Box>
-      {error ? (
+      {recovery?.active ? (
+        <Box marginTop={1} flexDirection="column">
+          <Text color="yellow">⟳ {recovery.message}</Text>
+          <Text dimColor>
+            instance: {recovery.instanceDetail} · socket:{" "}
+            {recovery.socketReady ? "ready" : "waiting"} · API:{" "}
+            {recovery.apiHealthy ? "healthy" : "waiting"}
+          </Text>
+        </Box>
+      ) : error ? (
         <Box marginTop={1}>
           <Text color="red">{error}</Text>
         </Box>

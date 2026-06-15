@@ -1,47 +1,23 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Box, Text } from "@deno-ink/core";
 import { readInstanceRuntime } from "@turbopanel/instance-runtime";
+import { fetchStackLogLines, type StackLogLine } from "@turbopanel/stack-logs";
 import { wranglerProcessRunning } from "@turbopanel/stack-status";
-
-const JOURNAL_UNITS = [
-  "turbopanel-daemon",
-  "turbopanel-instance",
-  "turbopanel-caddy",
-  "turbopanel-ui",
-  "turbopanel-rabbitmq",
-] as const;
 
 const POLL_MS = 2_000;
 const MAX_LINES = 18;
 
-async function fetchJournalLines(): Promise<string[]> {
-  const proc = await new Deno.Command("journalctl", {
-    args: [
-      "-n",
-      String(MAX_LINES),
-      "--no-pager",
-      "--output=short-iso",
-      ...JOURNAL_UNITS.flatMap((unit) => ["-u", unit]),
-    ],
-    stdout: "piped",
-    stderr: "null",
-  }).output();
-
-  if (!proc.success) {
-    return ["(journalctl unavailable — need systemd access)"];
-  }
-
-  const text = new TextDecoder().decode(proc.stdout).trim();
-  if (!text) return ["(no journal lines yet)"];
-  return text.split("\n").slice(-MAX_LINES);
-}
-
 export function LogsSection({ live = true }: { live?: boolean }) {
-  const [lines, setLines] = useState<string[]>(["(loading logs…)"]);
+  const [header, setHeader] = useState("(loading logs…)");
+  const [lines, setLines] = useState<StackLogLine[]>([
+    { source: "…", text: "(loading logs…)" },
+  ]);
   const runtime = readInstanceRuntime();
 
   const refresh = useCallback(async () => {
-    setLines(await fetchJournalLines());
+    const result = await fetchStackLogLines(MAX_LINES);
+    setHeader(result.header);
+    setLines(result.lines);
   }, []);
 
   useEffect(() => {
@@ -58,17 +34,21 @@ export function LogsSection({ live = true }: { live?: boolean }) {
       <Text bold>Logs</Text>
       <Text dimColor>{"─".repeat(40)}</Text>
       <Text dimColor>
-        journalctl · {JOURNAL_UNITS.join(", ")}
+        {header}
         {runtime === "workers"
           ? wranglerProcessRunning()
             ? " · turbopanel-instance.service active"
             : " · start turbopanel-instance.service"
           : ""}
       </Text>
+      <Text dimColor>
+        /var/log/turbopanel/instance/*.log, daemon/*.log (journalctl fallback)
+      </Text>
       <Box flexDirection="column" marginTop={1}>
         {lines.map((line, index) => (
-          <Text key={`${index}-${line.slice(0, 24)}`} wrap="truncate">
-            {line}
+          <Text key={`${index}-${line.source}-${line.text.slice(0, 24)}`} wrap="truncate">
+            <Text dimColor>[{line.source}] </Text>
+            {line.text}
           </Text>
         ))}
       </Box>

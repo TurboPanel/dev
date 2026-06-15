@@ -10,6 +10,10 @@ import {
   type DaemonConnection,
   type DaemonEvent,
 } from "@turbopanel/instance-client";
+import {
+  type InstanceRecoverySnapshot,
+  waitForInstanceRecovery,
+} from "@turbopanel/instance-recovery";
 
 export const ALL_TARGET = "__all__";
 
@@ -21,12 +25,14 @@ export type DeveloperState = {
   events: DaemonEvent[];
   commands: CommandResult[];
   error: string | null;
+  recovery: InstanceRecoverySnapshot | null;
   target: string;
   setTarget: (target: string) => void;
   fleet: DaemonConnection[];
   targetLabel: string;
   staleCount: number;
   refresh: () => Promise<void>;
+  startInstanceRecovery: (reason: string) => Promise<boolean>;
 };
 
 export function useDeveloperState(enabled = true): DeveloperState {
@@ -36,8 +42,14 @@ export function useDeveloperState(enabled = true): DeveloperState {
   const [commands, setCommands] = useState<CommandResult[]>([]);
   const [target, setTarget] = useState<string>(ALL_TARGET);
   const [error, setError] = useState<string | null>(null);
+  const [recovery, setRecovery] = useState<InstanceRecoverySnapshot | null>(
+    null,
+  );
 
   const refresh = useCallback(async () => {
+    if (recovery?.active) {
+      return;
+    }
     try {
       const [health, conn, ev, cmd] = await Promise.all([
         fetchHealth(),
@@ -54,7 +66,20 @@ export function useDeveloperState(enabled = true): DeveloperState {
       setHealthOk(false);
       setError(err instanceof Error ? err.message : "Failed to reach instance");
     }
-  }, []);
+  }, [recovery]);
+
+  const startInstanceRecovery = useCallback(async (reason: string) => {
+    setError(null);
+    setHealthOk(false);
+    const ready = await waitForInstanceRecovery(reason, setRecovery);
+    setRecovery(null);
+    if (ready) {
+      await refresh();
+    } else {
+      setError("Instance did not recover within 2 minutes — check journalctl -u turbopanel-instance");
+    }
+    return ready;
+  }, [refresh]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -91,11 +116,13 @@ export function useDeveloperState(enabled = true): DeveloperState {
     events,
     commands,
     error,
+    recovery,
     target,
     setTarget,
     fleet,
     targetLabel,
     staleCount,
     refresh,
+    startInstanceRecovery,
   };
 }

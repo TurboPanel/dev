@@ -9,6 +9,7 @@ import {
   type DatabaseStatus,
   type DrizzleStudioStatus,
 } from "@turbopanel/instance-client";
+import { isInstanceUnavailableError } from "@turbopanel/instance-recovery";
 import type { DeveloperState } from "@turbopanel/use-developer-state";
 
 const ACTIONS = [
@@ -24,7 +25,7 @@ export function DatabaseSection({
   state: DeveloperState;
   interactable?: boolean;
 }) {
-  const { healthOk } = state;
+  const { healthOk, recovery, startInstanceRecovery } = state;
   const [status, setStatus] = useState<DatabaseStatus | null>(null);
   const [studioStatus, setStudioStatus] = useState<DrizzleStudioStatus | null>(
     null,
@@ -37,6 +38,7 @@ export function DatabaseSection({
   const [confirmReset, setConfirmReset] = useState(false);
 
   const refreshStatus = async () => {
+    if (recovery?.active) return;
     const [dbStatus, studio] = await Promise.all([
       fetchDatabaseStatus().catch(() => null),
       fetchDrizzleStudioStatus().catch(() => null),
@@ -46,10 +48,11 @@ export function DatabaseSection({
   };
 
   useEffect(() => {
+    if (recovery?.active) return;
     void refreshStatus();
     const timer = setInterval(() => void refreshStatus(), 5000);
     return () => clearInterval(timer);
-  }, []);
+  }, [recovery?.active]);
 
   const runAction = async (action: typeof ACTIONS[number]) => {
     setBusy(true);
@@ -80,12 +83,30 @@ export function DatabaseSection({
             : `Studio started on port ${result.port}. Open ${url}`,
         });
       } else if (action === "Reset Dev Instance") {
-        await resetDevInstance();
+        let resetAccepted = false;
+        try {
+          await resetDevInstance();
+          resetAccepted = true;
+        } catch (err) {
+          if (!isInstanceUnavailableError(err)) {
+            throw err;
+          }
+        }
+        setConfirmReset(false);
         setMessage({
           ok: true,
-          text: "Dev instance reset started; instance is restarting.",
+          text: resetAccepted
+            ? "Database wiped — restarting instance, please stand by…"
+            : "Instance is restarting after reset — please stand by…",
         });
-        setConfirmReset(false);
+        const recovered = await startInstanceRecovery("database reset");
+        if (recovered) {
+          await refreshStatus();
+          setMessage({
+            ok: true,
+            text: "Dev instance reset complete — database is fresh.",
+          });
+        }
       }
     } catch (err) {
       setMessage({
@@ -114,7 +135,7 @@ export function DatabaseSection({
       setActionIndex((i) => Math.max(0, i - 1));
     } else if (key.downArrow) {
       setActionIndex((i) => Math.min(ACTIONS.length - 1, i + 1));
-    } else if (key.return && !busy && healthOk) {
+    } else if (key.return && !busy && (healthOk || recovery?.active)) {
       const action = ACTIONS[actionIndex];
       if (action === "Reset Dev Instance") {
         setConfirmReset(true);
@@ -134,12 +155,20 @@ export function DatabaseSection({
       <Text dimColor>{"─".repeat(40)}</Text>
       <Box marginTop={1}>
         <Text
-          color={status === null ? "yellow" : status.connected ? "green" : "red"}
+          color={recovery?.active
+            ? "yellow"
+            : status === null
+            ? "yellow"
+            : status.connected
+            ? "green"
+            : "red"}
         >
           ●{" "}
         </Text>
         <Text>
-          {status === null
+          {recovery?.active
+            ? recovery.message
+            : status === null
             ? "Checking database…"
             : !status.configured
             ? "Postgres not configured"
@@ -148,6 +177,15 @@ export function DatabaseSection({
             : "Configured but unreachable"}
         </Text>
       </Box>
+      {recovery?.active ? (
+        <Box marginTop={1} flexDirection="column">
+          <Text dimColor>
+            instance: {recovery.instanceDetail} · socket:{" "}
+            {recovery.socketReady ? "ready" : "waiting"} · API:{" "}
+            {recovery.apiHealthy ? "healthy" : "waiting"}
+          </Text>
+        </Box>
+      ) : null}
       {status?.configured ? (
         <Box marginTop={1}>
           <Text dimColor>
