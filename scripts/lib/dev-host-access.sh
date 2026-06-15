@@ -5,7 +5,11 @@
 
 _tp_dha_lib_dir=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
 if [ ! -f "$_tp_dha_lib_dir/dev-identity.sh" ] && [ -n "${SCRIPT_DIR:-}" ]; then
-  _tp_dha_lib_dir=$SCRIPT_DIR/lib
+  if [ -f "$SCRIPT_DIR/scripts/lib/dev-identity.sh" ]; then
+    _tp_dha_lib_dir=$SCRIPT_DIR/scripts/lib
+  elif [ -f "$SCRIPT_DIR/lib/dev-identity.sh" ]; then
+    _tp_dha_lib_dir=$SCRIPT_DIR/lib
+  fi
 fi
 # shellcheck source=scripts/lib/dev-identity.sh
 . "$_tp_dha_lib_dir/dev-identity.sh"
