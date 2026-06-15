@@ -98,14 +98,14 @@ Navigate sections with **↑↓**, **Enter** to open, **Esc** to return to the l
 | `deno` (default) | `turbopanel-instance` systemd unit + Unix socket at `/run/turbopanel/instance.sock` |
 | `workers` | Stops the systemd unit, re-runs Postgres with TCP (`postgres_expose_port=true` on `127.0.0.1:5432`), and expects `pnpm dev` in `platform/instance` manually |
 
-Workers mode has no Redis. Set `CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE` in `instance/.dev.vars` (e.g. `postgresql://turbopanel:<pass>@127.0.0.1:5432/turbopanel`). Switch via the **Instance** area in the console.
+Workers mode has no Redis. `ensureWorkersDevVars()` writes both `CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE` (for the Hyperdrive runtime binding) and `TURBOPANEL_DATABASE_URL` (for `drizzle-kit migrate`) to `instance/.env`. Switch via the **Instance** area in the console.
 
 ### API client (`src/instance-client.ts`)
 
 Single choke-point for `/api/developer/v1/*` and `/api/health`:
 
 1. **Primary:** raw HTTP/1.1 over Unix socket `/run/turbopanel/instance.sock`
-2. **Fallback:** `https://localhost:8443` with platform CA from `/opt/turbopanel/platform/turbopanel/certs/ca.crt` (or permissive TLS if CA missing)
+2. **Fallback:** `https://localhost:8443` with platform CA from `/opt/turbopanel/platform/instance/certs/ca.crt` (or permissive TLS if CA missing)
 
 ### Polling (`src/use-developer-state.ts`)
 

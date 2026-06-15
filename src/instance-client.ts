@@ -1,5 +1,9 @@
 import { readInstanceRuntime } from "@turbopanel/instance-runtime";
-import { CADDY_HTTPS, TURBOPANEL_PLATFORM, WRANGLER_DEV_PORT } from "@turbopanel/paths";
+import {
+  CADDY_HTTPS,
+  PLATFORM_CA_CERT_PATH,
+  WRANGLER_DEV_PORT,
+} from "@turbopanel/paths";
 
 export const DEVELOPER_API = "/api/developer/v1";
 export const CLIENT_API = "/api/client/v1";
@@ -7,7 +11,7 @@ export const CLIENT_API = "/api/client/v1";
 const INSTANCE_SOCKET = "/run/turbopanel/instance.sock";
 const HTTPS_FALLBACK = CADDY_HTTPS;
 const WRANGLER_FALLBACK = `http://127.0.0.1:${WRANGLER_DEV_PORT}`;
-const CA_CERT_PATH = `${TURBOPANEL_PLATFORM}/turbopanel/certs/ca.crt`;
+const CA_CERT_PATH = PLATFORM_CA_CERT_PATH;
 
 let httpsClient: Deno.HttpClient | undefined;
 
@@ -270,7 +274,7 @@ export type UpgradeStatus = {
 export type DatabaseStatus = {
   configured: boolean;
   connected: boolean;
-  transport: "socket" | "tcp" | null;
+  transport: "url" | null;
   user: string | null;
   database: string | null;
   version: string | null;

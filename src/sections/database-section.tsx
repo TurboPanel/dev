@@ -62,8 +62,8 @@ export function DatabaseSection({
           ok: dbStatus.connected,
           text: dbStatus.connected
             ? dbStatus.version
-              ? `Connected (${dbStatus.transport ?? "unknown"}). ${dbStatus.version}`
-              : "Connected."
+              ? `Connected via ${dbStatus.transport ?? "url"}. ${dbStatus.version}`
+              : `Connected via ${dbStatus.transport ?? "url"}.`
             : dbStatus.error ?? "Not connected",
         });
       } else if (action === "Start Drizzle Studio") {
@@ -144,7 +144,7 @@ export function DatabaseSection({
             : !status.configured
             ? "Postgres not configured"
             : status.connected
-            ? `Connected via ${status.transport ?? "unknown"}`
+            ? `Connected via ${status.transport}`
             : "Configured but unreachable"}
         </Text>
       </Box>

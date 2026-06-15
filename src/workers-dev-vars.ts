@@ -1,5 +1,5 @@
 import { runSudo } from "@turbopanel/daemon-lifecycle";
-import { getDevUser, TURBOPANEL_PLATFORM } from "@turbopanel/paths";
+import { getDevUser, INSTANCE_DIR } from "@turbopanel/paths";
 
 const POSTGRES_PASS_PATH = "/etc/turbopanel/postgres/.pgpass";
 const POSTGRES_CONFIG_PATH = "/etc/turbopanel/postgres/config.json";
@@ -56,23 +56,6 @@ function formatEnvFile(
   }
   lines.push("");
   return lines.join("\n");
-}
-
-function resolveWorkersInstanceDir(): string {
-  const managed = `${TURBOPANEL_PLATFORM}/turbopanel`;
-  try {
-    Deno.statSync(`${managed}/wrangler.jsonc`);
-    return managed;
-  } catch {
-    // fall back to dev checkout when managed tree is absent
-  }
-  const devCheckout = `${TURBOPANEL_PLATFORM}/instance`;
-  try {
-    Deno.statSync(`${devCheckout}/wrangler.jsonc`);
-    return devCheckout;
-  } catch {
-    return managed;
-  }
 }
 
 async function readPostgresConfig(): Promise<PostgresConfig> {
@@ -151,7 +134,7 @@ async function writeEnvFile(path: string, content: string): Promise<void> {
 
 /** Write instance/.env + .dev.vars for wrangler dev in Workers mode. */
 export async function ensureWorkersDevVars(): Promise<string> {
-  const instanceDir = resolveWorkersInstanceDir();
+  const instanceDir = INSTANCE_DIR;
   const envPath = `${instanceDir}/.env`;
   const devVarsPath = `${instanceDir}/.dev.vars`;
 
@@ -165,6 +148,10 @@ export async function ensureWorkersDevVars(): Promise<string> {
 
   envValues.set(
     HYPERDRIVE_ENV_KEY,
+    hyperdriveLocalConnectionString(config, password),
+  );
+  envValues.set(
+    "TURBOPANEL_DATABASE_URL",
     hyperdriveLocalConnectionString(config, password),
   );
 

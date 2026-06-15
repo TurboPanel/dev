@@ -1,12 +1,12 @@
 export const TURBOPANEL_ROOT = "/opt/turbopanel";
 export const TURBOPANEL_PLATFORM = `${TURBOPANEL_ROOT}/platform`;
+export const INSTANCE_DIR = `${TURBOPANEL_PLATFORM}/instance`;
 export const DENO_VERSION = "2.8.3";
 export const DENO_BIN =
   `${TURBOPANEL_ROOT}/runtimes/deno/v${DENO_VERSION}/bin/deno`;
 export const WRANGLER_DEV_PORT = 18787;
 export const CADDY_HTTPS = "https://localhost:8443";
-export const PLATFORM_CA_CERT_PATH =
-  `${TURBOPANEL_PLATFORM}/turbopanel/certs/ca.crt`;
+export const PLATFORM_CA_CERT_PATH = `${INSTANCE_DIR}/certs/ca.crt`;
 
 export const DAEMON_REPO = {
   dir: "daemon",
