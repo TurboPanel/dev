@@ -179,7 +179,7 @@ export function DatabaseSection({
           </Text>
         ) : (
           <Text dimColor>
-            Use Start Drizzle Studio to launch the local browser UI.
+            Studio auto-starts in dev; use Start Drizzle Studio to retry.
           </Text>
         )}
       </Box>
