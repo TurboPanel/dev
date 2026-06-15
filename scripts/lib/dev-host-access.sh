@@ -88,11 +88,27 @@ tp_apply_dev_host_acls() {
   for _ada_checkout in \
     "$TURBOPANEL_PLATFORM" \
     "$TURBOPANEL_PLATFORM/daemon" \
-    "$TURBOPANEL_PLATFORM/turbopanel" \
+    "$TURBOPANEL_PLATFORM/instance" \
     "$TURBOPANEL_PLATFORM/ui"; do
     tp_path_exists "$_ada_checkout" || continue
     tp_sudo setfacl -R -m "u:${_ada_user}:rwx" "$_ada_checkout" 2>/dev/null || true
     tp_sudo setfacl -R -d -m "u:${_ada_user}:rwx" "$_ada_checkout" 2>/dev/null || true
+  done
+}
+
+tp_ensure_git_safe_directories() {
+  _egsd_user=${USER:-}
+  [ -n "$_egsd_user" ] || return 1
+  command -v git >/dev/null 2>&1 || return 0
+
+  for _egsd_repo in \
+    "$TURBOPANEL_PLATFORM/daemon" \
+    "$TURBOPANEL_PLATFORM/instance" \
+    "$TURBOPANEL_PLATFORM/ui"; do
+    tp_path_exists "$_egsd_repo/.git" || continue
+    git config --global --get-all safe.directory 2>/dev/null \
+      | grep -Fx "$_egsd_repo" >/dev/null 2>&1 && continue
+    git config --global --add safe.directory "$_egsd_repo" 2>/dev/null || true
   done
 }
 
@@ -118,6 +134,7 @@ tp_apply_dev_host_acls() {
 
   tp_install_dev_console_sudoers
   tp_apply_dev_host_acls
+  tp_ensure_git_safe_directories
 
   if command -v tp_fix_deno_runtime_access >/dev/null 2>&1; then
     tp_fix_deno_runtime_access || true
