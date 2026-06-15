@@ -1,5 +1,3 @@
-import { fetchStackStatus } from "@turbopanel/stack-status";
-
 const LOG_SOURCES: Array<{ unit: string; path: string }> = [
   { unit: "instance", path: "/var/log/turbopanel/instance/instance.err.log" },
   { unit: "instance", path: "/var/log/turbopanel/instance/instance.log" },
@@ -32,15 +30,13 @@ export type StackLogLine = {
   text: string;
 };
 
-export async function fetchStackLogLines(maxLines = 18): Promise<{
+export async function fetchStackLogLines(maxLines = 8): Promise<{
   lines: StackLogLine[];
   header: string;
 }> {
   const instanceRestarts = systemctlShow("NRestarts", "turbopanel-instance");
   const instanceState = systemctlShow("ActiveState", "turbopanel-instance");
-  const stack = fetchStackStatus();
-  const activeCount = stack.filter((unit) => unit.active === true).length;
-  const header = `instance ${instanceState} · restarts ${instanceRestarts} · ${activeCount}/${stack.length} units active`;
+  const header = `inst ${instanceState} · restarts ${instanceRestarts}`;
 
   const collected: StackLogLine[] = [];
   for (const source of LOG_SOURCES) {
@@ -51,36 +47,11 @@ export async function fetchStackLogLines(maxLines = 18): Promise<{
   }
 
   if (collected.length === 0) {
-    const journalProc = await new Deno.Command("journalctl", {
-      args: [
-        "-n",
-        String(maxLines),
-        "--no-pager",
-        "--output=short-iso",
-        "-u",
-        "turbopanel-instance",
-        "-u",
-        "turbopanel-daemon",
-      ],
-      stdout: "piped",
-      stderr: "null",
-    }).output();
-    if (journalProc.success) {
-      const journalText = new TextDecoder().decode(journalProc.stdout).trim();
-      if (journalText) {
-        for (const text of journalText.split("\n")) {
-          collected.push({ source: "journal", text });
-        }
-      }
-    }
-  }
-
-  if (collected.length === 0) {
     return {
       header,
       lines: [{
         source: "hint",
-        text: "No log files yet — run instance converge to install /var/log/turbopanel/instance/*.log",
+        text: "No log files at /var/log/turbopanel/{instance,daemon}/*.log yet",
       }],
     };
   }

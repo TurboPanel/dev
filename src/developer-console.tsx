@@ -3,7 +3,6 @@ import { Box, Text, useInput } from "@deno-ink/core";
 import { ALL_TARGET, type DeveloperState } from "@turbopanel/use-developer-state";
 import { FleetSection } from "@turbopanel/sections/fleet-section";
 import { LogsSection } from "@turbopanel/sections/logs-section";
-import { ServiceStatusSection } from "@turbopanel/sections/service-status-section";
 import { NetworkSection } from "@turbopanel/sections/network-section";
 import { ShellSection } from "@turbopanel/sections/shell-section";
 import { ConnectivitySection } from "@turbopanel/sections/connectivity-section";
@@ -13,29 +12,30 @@ import { ServersSection } from "@turbopanel/sections/servers-section";
 const SECTIONS = [
   { id: "logs", label: "Logs" },
   { id: "fleet", label: "Fleet" },
-  { id: "services", label: "Services" },
-  { id: "connectivity", label: "Connectivity" },
   { id: "database", label: "Database" },
+  { id: "connectivity", label: "Events" },
   { id: "shell", label: "Shell" },
   { id: "network", label: "Network" },
   { id: "servers", label: "Servers" },
 ] as const;
 
 export function DeveloperPanels({
+  contentHeight,
   state,
   onEditingChange,
   onPanelFocusChange,
 }: {
+  contentHeight: number;
   state: DeveloperState;
   onEditingChange?: (editing: boolean) => void;
   onPanelFocusChange?: (focused: boolean) => void;
 }) {
-  const { healthOk, fleet, target, setTarget, targetLabel, error, recovery } =
-    state;
+  const { target, setTarget, fleet } = state;
   const [sectionIndex, setSectionIndex] = useState(0);
   const [panelFocused, setPanelFocused] = useState(false);
   const [editingActive, setEditingActive] = useState(false);
   const activeId = SECTIONS[sectionIndex].id;
+  const panelLines = Math.max(3, contentHeight);
   const interactiveSection = activeId === "fleet" ||
     activeId === "shell" ||
     activeId === "connectivity" ||
@@ -104,7 +104,7 @@ export function DeveloperPanels({
   const renderSection = () => {
     switch (activeId) {
       case "logs":
-        return <LogsSection />;
+        return <LogsSection maxLines={panelLines - 1} />;
       case "fleet":
         return (
           <FleetSection
@@ -113,8 +113,6 @@ export function DeveloperPanels({
             onEditingChange={setEditing}
           />
         );
-      case "services":
-        return <ServiceStatusSection />;
       case "network":
         return (
           <NetworkSection state={state} interactable={panelFocused} />
@@ -125,11 +123,16 @@ export function DeveloperPanels({
             state={state}
             interactable={panelFocused}
             onEditingChange={setEditing}
+            maxLines={panelLines - 3}
           />
         );
       case "connectivity":
         return (
-          <ConnectivitySection state={state} interactable={panelFocused} />
+          <ConnectivitySection
+            state={state}
+            interactable={panelFocused}
+            maxLines={panelLines - 2}
+          />
         );
       case "database":
         return (
@@ -149,73 +152,37 @@ export function DeveloperPanels({
   };
 
   return (
-    <Box flexDirection="column" marginTop={1}>
-      <Box>
-        <Text color={recovery?.active
-          ? "yellow"
-          : healthOk
-          ? "green"
-          : healthOk === null
-          ? "yellow"
-          : "red"}>
-          ●{" "}
-        </Text>
-        <Text>
-          {fleet.length} server{fleet.length === 1 ? "" : "s"} · target:{" "}
-          {targetLabel}
-        </Text>
-        <Text dimColor>
-          {panelFocused
-            ? " · Esc back"
-            : " · ↑↓ section · Enter focus · t target"}
-        </Text>
+    <Box flexDirection="row" height={contentHeight} width="100%">
+      <Box flexDirection="column" width={12} height={contentHeight}>
+        {SECTIONS.map((section, index) => {
+          const active = index === sectionIndex;
+          return (
+            <Text
+              key={section.id}
+              color={active ? "cyan" : undefined}
+              bold={active}
+              dimColor={!active}
+            >
+              {active ? `›${section.label}` : ` ${section.label}`}
+            </Text>
+          );
+        })}
       </Box>
-      {recovery?.active ? (
-        <Box marginTop={1} flexDirection="column">
-          <Text color="yellow">⟳ {recovery.message}</Text>
-          <Text dimColor>
-            instance: {recovery.instanceDetail} · socket:{" "}
-            {recovery.socketReady ? "ready" : "waiting"} · API:{" "}
-            {recovery.apiHealthy ? "healthy" : "waiting"}
-          </Text>
-        </Box>
-      ) : error ? (
-        <Box marginTop={1}>
-          <Text color="red">{error}</Text>
-        </Box>
-      ) : null}
 
-      <Box marginTop={1} flexDirection="row">
-        <Box flexDirection="column" width={16}>
-          {SECTIONS.map((section, index) => {
-            const active = index === sectionIndex;
-            return (
-              <Text
-                key={section.id}
-                color={active ? "cyan" : undefined}
-                bold={active}
-                dimColor={!active}
-              >
-                {active ? `› ${section.label}` : `  ${section.label}`}
-              </Text>
-            );
-          })}
-        </Box>
-
-        <Box
-          flexDirection="column"
-          flexGrow={1}
-          marginLeft={1}
-          paddingLeft={1}
-          borderStyle="single"
-          borderLeft
-          borderTop={false}
-          borderRight={false}
-          borderBottom={false}
-          borderDimColor
-        >
-          {renderSection()}
-        </Box>
+      <Box
+        flexDirection="column"
+        flexGrow={1}
+        height={contentHeight}
+        marginLeft={1}
+        paddingLeft={1}
+        borderStyle="single"
+        borderLeft
+        borderTop={false}
+        borderRight={false}
+        borderBottom={false}
+        borderDimColor
+      >
+        {renderSection()}
       </Box>
     </Box>
   );

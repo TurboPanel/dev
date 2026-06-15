@@ -82,9 +82,38 @@ export function instanceReachable(): boolean {
   return reachable;
 }
 
+function parseIsActiveLine(text: string): { active: boolean | null; detail: string } {
+  if (text === "active") {
+    return { active: true, detail: "active" };
+  }
+  if (text === "inactive" || text === "failed") {
+    return { active: false, detail: text };
+  }
+  if (text === "unknown") {
+    return { active: null, detail: "not installed" };
+  }
+  return { active: null, detail: text || "unknown" };
+}
+
 export function fetchStackStatus(): StackUnitStatus[] {
-  return STACK_UNITS.map(({ unit, label }) => {
-    const { active, detail } = systemctlIsActive(unit);
+  const unitNames = STACK_UNITS.map((entry) => entry.unit);
+  const proc = new Deno.Command("systemctl", {
+    args: ["is-active", ...unitNames],
+    stdout: "piped",
+    stderr: "piped",
+  }).outputSync();
+
+  const stdout = new TextDecoder().decode(proc.stdout).trim();
+  const stderr = new TextDecoder().decode(proc.stderr).trim();
+  const lines = stdout
+    ? stdout.split("\n")
+    : stderr
+    ? stderr.split("\n")
+    : [];
+
+  return STACK_UNITS.map(({ unit, label }, index) => {
+    const text = lines[index]?.trim() ?? "";
+    const { active, detail } = parseIsActiveLine(text);
     return { unit, label, active, detail };
   });
 }

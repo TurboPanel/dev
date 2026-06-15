@@ -157,21 +157,6 @@ export function FleetSection({
 
   return (
     <Box flexDirection="column">
-      <Text bold>Fleet</Text>
-      <Text dimColor>{"─".repeat(40)}</Text>
-      <Box marginTop={1}>
-        <Text color={healthOk ? "green" : healthOk === null ? "yellow" : "red"}>
-          ●{" "}
-        </Text>
-        <Text>
-          API {healthOk === null ? "checking…" : healthOk ? "healthy" : "unreachable"}
-        </Text>
-        <Text dimColor>
-          {" "}· {fleet.length} server{fleet.length === 1 ? "" : "s"}
-          {staleCount > 0 ? ` (${staleCount} stale sockets clearing…)` : ""}
-        </Text>
-      </Box>
-
       {dirtyRepos.length > 0 ? (
         <Box marginTop={1}>
           <Text color="red">
@@ -181,8 +166,7 @@ export function FleetSection({
         </Box>
       ) : null}
 
-      <Box flexDirection="column" marginTop={1}>
-        <Text dimColor>Actions</Text>
+      <Box flexDirection="column" marginTop={dirtyRepos.length > 0 ? 1 : 0}>
         {ACTIONS.map((action, index) => (
           <Text
             key={action}
@@ -209,21 +193,16 @@ export function FleetSection({
       ) : null}
 
       <Box flexDirection="column" marginTop={1}>
-        <Text bold>Server nodes</Text>
         {fleet.length === 0 ? (
           <Text dimColor>Waiting for daemon connections…</Text>
         ) : (
           fleet.map((conn) => (
-            <Box key={conn.id} flexDirection="column" marginTop={1}>
+            <Box key={conn.id} marginTop={1}>
               <Text bold>{daemonLabel(conn.id, connections)}</Text>
-              <Text dimColor>Connection: {conn.id}</Text>
-              {conn.hostname ? <Text dimColor>Hostname: {conn.hostname}</Text> : null}
-              {conn.serverId ? <Text dimColor>Server ID: {conn.serverId}</Text> : null}
-              {conn.remoteAddress ? (
-                <Text dimColor>Remote: {conn.remoteAddress}</Text>
-              ) : null}
               <Text dimColor>
-                Connected: {new Date(conn.connectedAt).toLocaleString()}
+                {conn.hostname ?? conn.id}
+                {conn.remoteAddress ? ` · ${conn.remoteAddress}` : ""}
+                {staleCount > 0 ? ` · ${staleCount} stale` : ""}
               </Text>
             </Box>
           ))

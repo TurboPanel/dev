@@ -151,9 +151,7 @@ export function DatabaseSection({
 
   return (
     <Box flexDirection="column">
-      <Text bold>Database</Text>
-      <Text dimColor>{"─".repeat(40)}</Text>
-      <Box marginTop={1}>
+      <Box>
         <Text
           color={recovery?.active
             ? "yellow"
@@ -177,16 +175,7 @@ export function DatabaseSection({
             : "Configured but unreachable"}
         </Text>
       </Box>
-      {recovery?.active ? (
-        <Box marginTop={1} flexDirection="column">
-          <Text dimColor>
-            instance: {recovery.instanceDetail} · socket:{" "}
-            {recovery.socketReady ? "ready" : "waiting"} · API:{" "}
-            {recovery.apiHealthy ? "healthy" : "waiting"}
-          </Text>
-        </Box>
-      ) : null}
-      {status?.configured ? (
+      {recovery?.active ? null : status?.configured ? (
         <Box marginTop={1}>
           <Text dimColor>
             Database {status.database ?? "—"} as {status.user ?? "—"}
@@ -203,7 +192,6 @@ export function DatabaseSection({
       )}
 
       <Box marginTop={1} flexDirection="column">
-        <Text bold>Drizzle Studio</Text>
         <Text color={studioStatus?.running ? "green" : "yellow"}>
           {studioStatus === null
             ? "Checking studio status…"

@@ -10,7 +10,9 @@
   },
   "imports": {
     "@deno-ink/core": "jsr:@deno-ink/core@^0.2.1",
-    "@turbopanel/area-tabs": "./src/area-tabs.tsx",
+    "@turbopanel/compact-header": "./src/compact-header.ts",
+    "@turbopanel/fetch-timeout": "./src/fetch-timeout.ts",
+    "@turbopanel/use-stack-status": "./src/use-stack-status.ts",
     "@turbopanel/instance-client": "./src/instance-client.ts",
     "@turbopanel/paths": "./src/paths.ts",
     "@turbopanel/platform-install": "./src/platform-install.ts",

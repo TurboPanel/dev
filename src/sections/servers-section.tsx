@@ -195,8 +195,6 @@ export function ServersSection({
 
   return (
     <Box flexDirection="column">
-      <Text bold>Servers</Text>
-      <Text dimColor>{"─".repeat(40)}</Text>
       {error ? (
         <Box marginTop={1}>
           <Text color="red">{error}</Text>

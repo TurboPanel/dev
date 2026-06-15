@@ -19,10 +19,12 @@ export function ShellSection({
   state,
   interactable = false,
   onEditingChange,
+  maxLines = 8,
 }: {
   state: DeveloperState;
   interactable?: boolean;
   onEditingChange?: (editing: boolean) => void;
+  maxLines?: number;
 }) {
   const { healthOk, connections, commands, fleet, target, targetLabel, refresh } =
     state;
@@ -84,13 +86,7 @@ export function ShellSection({
 
   return (
     <Box flexDirection="column">
-      <Text bold>Shell</Text>
-      <Text dimColor>{"─".repeat(40)}</Text>
-      <Box marginTop={1}>
-        <Text dimColor>
-          Run on {targetLabel}
-        </Text>
-      </Box>
+      <Text dimColor>Run on {targetLabel}</Text>
       <Box marginTop={1}>
         <Text color="cyan">$ </Text>
         <Text color={inputFocused ? "cyan" : undefined}>
@@ -103,11 +99,10 @@ export function ShellSection({
         </Box>
       ) : null}
       <Box flexDirection="column" marginTop={1}>
-        <Text bold>Results</Text>
         {commands.length === 0 ? (
           <Text dimColor>No commands run yet</Text>
         ) : (
-          [...commands].reverse().map((result) => (
+          [...commands].reverse().slice(0, maxLines).map((result) => (
             <Box key={result.id} flexDirection="column" marginTop={1}>
               <Text>
                 {daemonLabel(result.daemonId, connections)} · exit{" "}

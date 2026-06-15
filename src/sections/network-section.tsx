@@ -91,13 +91,6 @@ export function NetworkSection({
 
   return (
     <Box flexDirection="column">
-      <Text bold>Network</Text>
-      <Text dimColor>{"─".repeat(40)}</Text>
-      <Box marginTop={1}>
-        <Text dimColor>
-          Reads IPs assigned to physical interfaces only
-        </Text>
-      </Box>
       {error ? (
         <Box marginTop={1}>
           <Text color="red">{error}</Text>

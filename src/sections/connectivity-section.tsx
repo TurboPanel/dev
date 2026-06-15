@@ -6,9 +6,11 @@ import type { DeveloperState } from "@turbopanel/use-developer-state";
 export function ConnectivitySection({
   state,
   interactable = false,
+  maxLines = 12,
 }: {
   state: DeveloperState;
   interactable?: boolean;
+  maxLines?: number;
 }) {
   const { healthOk, connections, events, refresh } = state;
   const [sending, setSending] = useState(false);
@@ -36,19 +38,16 @@ export function ConnectivitySection({
 
   return (
     <Box flexDirection="column">
-      <Text bold>Connectivity</Text>
-      <Text dimColor>{"─".repeat(40)}</Text>
       {error ? (
         <Box marginTop={1}>
           <Text color="red">{error}</Text>
         </Box>
       ) : null}
-      <Box flexDirection="column" marginTop={1}>
-        <Text bold>Activity</Text>
+      <Box flexDirection="column" marginTop={error ? 1 : 0}>
         {events.length === 0 ? (
           <Text dimColor>Waiting for websocket traffic…</Text>
         ) : (
-          [...events].reverse().map((event, index) => (
+          [...events].reverse().slice(0, maxLines).map((event, index) => (
             <Text key={`${event.at}-${index}`} dimColor>
               {formatEvent(event, connections)}
             </Text>

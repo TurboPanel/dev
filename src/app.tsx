@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
   Box,
   SelectInput,
@@ -7,7 +7,7 @@ import {
   useInput,
   useTerminalSize,
 } from "@deno-ink/core";
-import { AreaTabs, type AreaTab } from "@turbopanel/area-tabs";
+import { buildCompactHeader } from "@turbopanel/compact-header";
 import { DeveloperPanels } from "@turbopanel/developer-console";
 import {
   followLogs,
@@ -20,15 +20,13 @@ import { installDaemon } from "@turbopanel/platform-install";
 import {
   checkPlatformRepos,
   denoRuntimeInstalled,
-  platformRepoPath,
 } from "@turbopanel/paths";
 import {
-  fetchStackStatus,
   instanceReachable,
-  stackSummary,
+  instanceSocketPresent,
 } from "@turbopanel/stack-status";
-import { StatusArea } from "@turbopanel/status-area";
 import { useDeveloperState } from "@turbopanel/use-developer-state";
+import { useStackStatus } from "@turbopanel/use-stack-status";
 
 async function runAfterExit(fn: () => Promise<void>): Promise<void> {
   try {
@@ -40,82 +38,44 @@ async function runAfterExit(fn: () => Promise<void>): Promise<void> {
   }
 }
 
-function HorizontalRule() {
-  const { columns } = useTerminalSize();
-  return <Text dimColor>{"─".repeat(Math.max(columns, 1))}</Text>;
-}
-
-function areaHelp(areaId: string, panelFocused: boolean): string {
-  switch (areaId) {
-    case "status":
-      return "← → areas · q quit";
-    case "developer":
-      return panelFocused
-        ? "← → areas · Esc back · q quit"
-        : "← → areas · ↑↓ sections · Enter focus · t target · q quit";
-    default:
-      return "← → areas · ↑↓ menu · Enter · q quit";
-  }
-}
-
 export function App() {
   const { exit } = useApp();
-  const [refresh, setRefresh] = useState(0);
+  const { rows, columns } = useTerminalSize(250);
   const [developerEditing, setDeveloperEditing] = useState(false);
   const [developerPanelFocused, setDeveloperPanelFocused] = useState(false);
-  const [activeAreaId, setActiveAreaId] = useState("status");
-  const daemonStatus = useMemo(() => checkPlatformRepos()[0], [refresh]);
+  const [showMenu, setShowMenu] = useState(false);
+  const daemonStatus = useMemo(() => checkPlatformRepos()[0], []);
   const runtimeReady = denoRuntimeInstalled();
   const daemonPresent = daemonStatus.present;
-  const stackUnits = useMemo(() => fetchStackStatus(), [refresh]);
-  const instanceRuntime = useMemo(() => readInstanceRuntime(), [refresh]);
+  const stackUnits = useStackStatus(daemonPresent);
+  const instanceRuntime = useMemo(() => readInstanceRuntime(), []);
   const developerUnlocked = useMemo(() => {
     const caddy = stackUnits.find((unit) => unit.unit === "turbopanel-caddy");
     if (instanceRuntime === "workers") {
       return caddy?.active === true;
     }
-    return instanceReachable();
-  }, [refresh, stackUnits, instanceRuntime]);
-  const instanceApiReady = useMemo(() => instanceReachable(), [refresh]);
+    return instanceSocketPresent();
+  }, [stackUnits, instanceRuntime]);
+  const instanceApiReady = useMemo(() => {
+    if (instanceRuntime === "workers") return instanceReachable();
+    return instanceSocketPresent();
+  }, [stackUnits, instanceRuntime]);
   const developerState = useDeveloperState(instanceApiReady);
   const buildMode = useMemo(
     () => (daemonPresent ? readBuildMode() : null),
-    [daemonPresent, refresh],
+    [daemonPresent],
   );
   const productionBuildActive = buildMode?.uiMode === "static" &&
     buildMode?.instanceRunMode === "compiled";
-  const platformDirectAccess = useMemo(() => {
-    try {
-      Deno.statSync(platformRepoPath("daemon"));
-      return true;
-    } catch {
-      return false;
-    }
-  }, [refresh]);
 
-  const stackHealthy = useMemo(
-    () => stackUnits.some((unit) => unit.active === true),
-    [stackUnits],
-  );
-
-  const areas = useMemo(() => {
-    const list: AreaTab[] = [{ id: "status", label: "Status" }];
-    if (developerUnlocked) {
-      list.push({ id: "developer", label: "Developer" });
-    }
-    list.push({ id: "actions", label: "Actions" });
-    return list;
-  }, [developerUnlocked]);
-
-  const activeAreaIndex = areas.findIndex((area) => area.id === activeAreaId);
-  const resolvedAreaIndex = activeAreaIndex === -1 ? 0 : activeAreaIndex;
-  const activeArea = areas[resolvedAreaIndex];
-
-  useEffect(() => {
-    if (!areas.some((area) => area.id === activeAreaId)) {
-      setActiveAreaId(areas[areas.length - 1].id);
-    }
-  }, [activeAreaId, areas]);
+  const headerLine = buildCompactHeader({
+    runtimeReady,
+    daemonPresent,
+    stackUnits,
+    instanceRuntime,
+    socketPresent: instanceSocketPresent(),
+    developerState: instanceApiReady ? developerState : null,
+  });
 
   const menuItems = useMemo(() => {
     const items: Array<{ label: string; value: string }> = [
@@ -150,14 +110,21 @@ export function App() {
       }
     }
 
-    items.push({ label: "Refresh status", value: "refresh" });
     items.push({ label: "Quit", value: "quit" });
 
     return items;
   }, [daemonPresent, productionBuildActive, instanceRuntime]);
 
+  const footerRows = showMenu ? menuItems.length + 1 : 1;
+  const mainHeight = Math.max(1, rows - 1 - footerRows);
+
   useInput((input, key) => {
     if (developerEditing) return;
+
+    if (showMenu) {
+      if (key.escape) setShowMenu(false);
+      return;
+    }
 
     if (key.escape && developerPanelFocused) return;
 
@@ -166,30 +133,16 @@ export function App() {
       return;
     }
 
-    if (key.leftArrow) {
-      const currentIndex = areas.findIndex((area) => area.id === activeAreaId);
-      const index = currentIndex === -1 ? 0 : currentIndex;
-      const next = index <= 0 ? areas.length - 1 : index - 1;
-      setActiveAreaId(areas[next].id);
-      return;
-    }
-
-    if (key.rightArrow) {
-      const currentIndex = areas.findIndex((area) => area.id === activeAreaId);
-      const index = currentIndex === -1 ? 0 : currentIndex;
-      const next = index >= areas.length - 1 ? 0 : index + 1;
-      setActiveAreaId(areas[next].id);
+    if (input === "m") {
+      setShowMenu(true);
     }
   });
 
   const handleSelect = (item: { label: string; value: string }) => {
+    setShowMenu(false);
+
     if (item.value === "quit") {
       exit();
-      return;
-    }
-
-    if (item.value === "refresh") {
-      setRefresh((count) => count + 1);
       return;
     }
 
@@ -235,64 +188,55 @@ export function App() {
     }
   };
 
-  const headerSummary = developerUnlocked
-    ? `${stackSummary(stackUnits)} · ${developerState.fleet.length} server${
-      developerState.fleet.length === 1 ? "" : "s"
-    }`
-    : daemonPresent
-    ? stackSummary(stackUnits)
-    : runtimeReady
-    ? "runtime ready"
-    : "getting started";
-
   return (
-    <Box flexDirection="column" height="100%">
-      <Box paddingX={1} paddingTop={1}>
-        <Text bold color="cyan">TurboPanel Dev Console</Text>
-        <Text dimColor> · {headerSummary}</Text>
+    <Box flexDirection="column" height={rows} width={columns}>
+      <Box flexShrink={0} paddingX={1}>
+        <Text wrap="truncate">{headerLine}</Text>
       </Box>
 
-      <HorizontalRule />
-
-      <Box paddingX={1} paddingY={1}>
-        <AreaTabs areas={areas} activeIndex={resolvedAreaIndex} />
+      <Box
+        flexDirection="column"
+        flexGrow={1}
+        height={mainHeight}
+        paddingX={1}
+      >
+        {!daemonPresent ? (
+          <Text dimColor>
+            Daemon not installed — press m for menu, then Install/update daemon
+          </Text>
+        ) : developerUnlocked ? (
+          developerState.healthOk === null && !developerState.error ? (
+            <Text dimColor>Connecting to instance API…</Text>
+          ) : (
+            <DeveloperPanels
+              contentHeight={mainHeight}
+              state={developerState}
+              onEditingChange={setDeveloperEditing}
+              onPanelFocusChange={setDeveloperPanelFocused}
+            />
+          )
+        ) : (
+          <Text dimColor>
+            Waiting for instance — stack units above show progress; m menu to
+            start dev stack
+          </Text>
+        )}
       </Box>
 
-      <HorizontalRule />
-
-      <Box flexDirection="column" flexGrow={1} paddingX={1} paddingY={1}>
-        {activeArea.id === "status" ? (
-          <StatusArea
-            runtimeReady={runtimeReady}
-            daemonStatus={daemonStatus}
-            daemonPresent={daemonPresent}
-            platformDirectAccess={platformDirectAccess}
-            stackUnits={stackUnits}
-            developerUnlocked={developerUnlocked}
-            stackHealthy={stackHealthy}
-          />
-        ) : null}
-
-        {activeArea.id === "developer" && developerUnlocked ? (
-          <DeveloperPanels
-            state={developerState}
-            onEditingChange={setDeveloperEditing}
-            onPanelFocusChange={setDeveloperPanelFocused}
-          />
-        ) : null}
-
-        {activeArea.id === "actions" ? (
-          <Box flexDirection="column">
-            <SelectInput items={menuItems} onSelect={handleSelect} />
-          </Box>
-        ) : null}
-      </Box>
-
-      <HorizontalRule />
-
-      <Box paddingX={1} paddingBottom={1}>
-        <Text dimColor>{areaHelp(activeArea.id, developerPanelFocused)}</Text>
-      </Box>
+      {showMenu ? (
+        <Box flexShrink={0} paddingX={1} flexDirection="column">
+          <Text dimColor>Actions · Esc cancel</Text>
+          <SelectInput items={menuItems} onSelect={handleSelect} />
+        </Box>
+      ) : (
+        <Box flexShrink={0} paddingX={1}>
+          <Text dimColor>
+            {developerUnlocked
+              ? "↑↓ section · Enter focus · t target · m menu · q quit"
+              : "m menu · q quit"}
+          </Text>
+        </Box>
+      )}
     </Box>
   );
 }

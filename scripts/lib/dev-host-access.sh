@@ -16,7 +16,20 @@ fi
 
 TURBOPANEL_GROUP=turbopanel
 TURBOPANEL_DEV_SUDOERS=/etc/sudoers.d/turbopanel-dev-console
+TURBOPANEL_DEV_IDENTITY_STAMP=/etc/turbopanel/dev-permissions-identity.stamp
 RUNTIME_SOCKET_DIR=/run/turbopanel
+DEBUG_LOG=/home/dev/turbopanel-dev/.cursor/debug-9777bc.log
+
+# #region agent log
+_tp_debug_log() {
+  _hyp=$1
+  _msg=$2
+  _data=$3
+  _ts=$(date +%s)
+  printf '{"sessionId":"9777bc","hypothesisId":"%s","location":"dev-host-access.sh","message":"%s","data":%s,"timestamp":%s}\n' \
+    "$_hyp" "$_msg" "$_data" "$_ts" >>"$DEBUG_LOG" 2>/dev/null || true
+}
+# #endregion
 
 tp_path_exists() {
   _pe_path=$1
@@ -71,7 +84,34 @@ EOF
   rm -f "$_ids_tmp"
 }
 
-tp_apply_dev_host_acls() {
+tp_dev_identity_stamp_expected() {
+  printf '%s:%s:%s' "$TP_DEV_USER" "$TP_DEV_UID" "$TP_DEV_GID"
+}
+
+tp_read_dev_identity_stamp() {
+  if tp_path_exists "$TURBOPANEL_DEV_IDENTITY_STAMP"; then
+    tp_sudo cat "$TURBOPANEL_DEV_IDENTITY_STAMP" 2>/dev/null | tr -d '\n\r'
+  fi
+}
+
+tp_write_dev_identity_stamp() {
+  _stamp_expected=$(tp_dev_identity_stamp_expected)
+  _stamp_tmp=$(mktemp)
+  printf '%s\n' "$_stamp_expected" >"$_stamp_tmp"
+  tp_sudo install -m 0644 "$_stamp_tmp" "$TURBOPANEL_DEV_IDENTITY_STAMP"
+  rm -f "$_stamp_tmp"
+}
+
+tp_dev_host_acl_sentinel_ok() {
+  if ! command -v getfacl >/dev/null 2>&1; then
+    return 0
+  fi
+  _sentinel="$TURBOPANEL_PLATFORM/daemon"
+  tp_path_exists "$_sentinel" || return 0
+  tp_sudo getfacl -e "$_sentinel" 2>/dev/null | grep -q "user:${TP_DEV_USER}:rwx"
+}
+
+tp_apply_dev_host_acls_light() {
   _ada_user=$TP_DEV_USER
   [ -n "$_ada_user" ] || return 1
 
@@ -94,6 +134,15 @@ tp_apply_dev_host_acls() {
   _ada_apply "$TURBOPANEL_ROOT" rx
   _ada_apply "$TURBOPANEL_RUNTIME" rx
   _ada_apply "$RUNTIME_SOCKET_DIR" rwx
+}
+
+tp_apply_dev_host_acls_checkouts() {
+  _ada_user=$TP_DEV_USER
+  [ -n "$_ada_user" ] || return 1
+
+  if ! command -v setfacl >/dev/null 2>&1; then
+    return 0
+  fi
 
   for _ada_checkout in \
     "$TURBOPANEL_PLATFORM" \
@@ -104,6 +153,45 @@ tp_apply_dev_host_acls() {
     tp_sudo setfacl -R -m "u:${_ada_user}:rwx" "$_ada_checkout" 2>/dev/null || true
     tp_sudo setfacl -R -d -m "u:${_ada_user}:rwx" "$_ada_checkout" 2>/dev/null || true
   done
+}
+
+tp_apply_dev_host_acls_if_needed() {
+  _stamp_expected=$(tp_dev_identity_stamp_expected)
+  _stamp_current=$(tp_read_dev_identity_stamp)
+  _sentinel_ok=0
+  if tp_dev_host_acl_sentinel_ok; then
+    _sentinel_ok=1
+  fi
+
+  # #region agent log
+  _tp_debug_log "H1" "acl_skip_check" \
+    "{\"expected\":\"${_stamp_expected}\",\"current\":\"${_stamp_current}\",\"sentinel_ok\":${_sentinel_ok}}"
+  # #endregion
+
+  tp_apply_dev_host_acls_light
+
+  if [ "$_stamp_current" = "$_stamp_expected" ] && [ "$_sentinel_ok" -eq 1 ]; then
+    # #region agent log
+    _tp_debug_log "H1" "checkout_acl_skipped" "{\"reason\":\"stamp_and_sentinel_match\"}"
+    # #endregion
+    return 0
+  fi
+
+  tp_info "Applying dev ACLs on platform checkouts (first run or identity changed)…"
+  # #region agent log
+  _acl_start=$(date +%s)
+  # #endregion
+  tp_apply_dev_host_acls_checkouts
+  tp_write_dev_identity_stamp
+  # #region agent log
+  _acl_end=$(date +%s)
+  _tp_debug_log "H2" "checkout_acl_applied" "{\"duration_s\":$((_acl_end - _acl_start))}"
+  # #endregion
+}
+
+tp_apply_dev_host_acls() {
+  tp_apply_dev_host_acls_light
+  tp_apply_dev_host_acls_checkouts
 }
 
 tp_ensure_git_safe_directories() {
@@ -134,6 +222,7 @@ tp_ensure_dev_host_access() {
   fi
 
   # One interactive sudo prompt when needed; later steps use NOPASSWD rules.
+  tp_info "Verifying sudo access…"
   tp_sudo true
 
   if getent group "$TURBOPANEL_GROUP" >/dev/null 2>&1; then
@@ -143,8 +232,9 @@ tp_ensure_dev_host_access() {
     fi
   fi
 
+  tp_info "Installing dev console sudoers rules…"
   tp_install_dev_console_sudoers
-  tp_apply_dev_host_acls
+  tp_apply_dev_host_acls_if_needed
   tp_ensure_git_safe_directories
 
   if command -v tp_fix_deno_runtime_access >/dev/null 2>&1; then

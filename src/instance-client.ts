@@ -38,6 +38,8 @@ function concatBytes(chunks: Uint8Array[]): Uint8Array {
   return out;
 }
 
+const SOCKET_TIMEOUT_MS = 4_000;
+
 async function fetchViaUnixSocket(
   path: string,
   init?: RequestInit,
@@ -64,6 +66,16 @@ async function fetchViaUnixSocket(
   const request = `${headerLines.join("\r\n")}\r\n\r\n${bodyText}`;
 
   const conn = await Deno.connect({ transport: "unix", path: INSTANCE_SOCKET });
+  let timedOut = false;
+  const timeoutId = setTimeout(() => {
+    timedOut = true;
+    try {
+      conn.close();
+    } catch {
+      // ignore close errors on timeout
+    }
+  }, SOCKET_TIMEOUT_MS);
+
   try {
     await conn.write(new TextEncoder().encode(request));
 
@@ -73,6 +85,10 @@ async function fetchViaUnixSocket(
       const n = await conn.read(buf);
       if (n === null) break;
       chunks.push(buf.slice(0, n));
+    }
+
+    if (timedOut) {
+      throw new Error("instance socket timed out");
     }
 
     const raw = new TextDecoder().decode(concatBytes(chunks));
@@ -88,8 +104,20 @@ async function fetchViaUnixSocket(
     const status = statusMatch ? Number.parseInt(statusMatch[1], 10) : 500;
 
     return new Response(body, { status });
+  } catch (err) {
+    if (timedOut) {
+      throw new Error("instance socket timed out");
+    }
+    throw err;
   } finally {
-    conn.close();
+    clearTimeout(timeoutId);
+    if (!timedOut) {
+      try {
+        conn.close();
+      } catch {
+        // ignore
+      }
+    }
   }
 }
 

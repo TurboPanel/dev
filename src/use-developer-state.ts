@@ -14,10 +14,12 @@ import {
   type InstanceRecoverySnapshot,
   waitForInstanceRecovery,
 } from "@turbopanel/instance-recovery";
+import { withTimeout } from "@turbopanel/fetch-timeout";
 
 export const ALL_TARGET = "__all__";
 
-const POLL_MS = 2_000;
+const POLL_MS = 3_000;
+const FETCH_TIMEOUT_MS = 4_000;
 
 export type DeveloperState = {
   healthOk: boolean | null;
@@ -52,10 +54,10 @@ export function useDeveloperState(enabled = true): DeveloperState {
     }
     try {
       const [health, conn, ev, cmd] = await Promise.all([
-        fetchHealth(),
-        fetchDaemonConnections(),
-        fetchDaemonEvents(),
-        fetchCommandResults(),
+        withTimeout(fetchHealth(), FETCH_TIMEOUT_MS, "health"),
+        withTimeout(fetchDaemonConnections(), FETCH_TIMEOUT_MS, "connections"),
+        withTimeout(fetchDaemonEvents(), FETCH_TIMEOUT_MS, "events"),
+        withTimeout(fetchCommandResults(), FETCH_TIMEOUT_MS, "commands"),
       ]);
       setHealthOk(health.ok);
       setConnections(conn.connections);
