@@ -140,3 +140,11 @@ Polls every 2 s (same endpoints as the retired Expo `DeveloperProvider`): `/api/
 - Do not add PATH symlinks, `env.sh`, or profile hooks — `console` runs Deno from `/opt/turbopanel/runtimes/deno/v2.8.3/bin/deno` directly.
 - Do not bump the pinned Deno version without updating `scripts/lib/paths.sh`, `src/paths.ts`, and docs. The next `./console` run installs the new version and removes older `v*` directories under `/opt/turbopanel/runtimes/deno`.
 - Do not commit directly to `trunk` — use a feature branch and open a PR.
+
+## Legacy runtime directory
+
+Older checkouts installed Deno under `/opt/turbopanel/runtime` (singular). Current layout uses `/opt/turbopanel/runtimes/deno/v<DENO_VERSION>/`. If you still have the old tree after upgrading, remove it manually once the new runtime works:
+
+```bash
+sudo rm -rf /opt/turbopanel/runtime
+```

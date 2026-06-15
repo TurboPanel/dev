@@ -71,7 +71,7 @@ export function FleetSection({
         setMessage({
           ok: result.ok,
           text: result.ok
-            ? `Pushed daemon build to ${result.results.length} agent(s).`
+            ? `Pushed daemon build to ${result.results.length} daemon(s).`
             : `Sync errors: ${
               failed.map((r) => `${r.daemonId} (${r.error ?? "failed"})`).join(
                 ", ",
