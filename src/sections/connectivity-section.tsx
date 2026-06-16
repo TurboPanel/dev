@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { Box, Text, useInput } from "@deno-ink/core";
-import { broadcastToDaemon, formatEvent } from "@turbopanel/instance-client";
-import type { DeveloperState } from "@turbopanel/use-developer-state";
+import { broadcastToDaemon, formatEvent } from "@turbopanel/lib/instance-client.ts";
+import type { DeveloperState } from "@turbopanel/hooks/use-developer-state.ts";
 
 export function ConnectivitySection({
   state,

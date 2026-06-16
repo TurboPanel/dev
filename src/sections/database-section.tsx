@@ -7,8 +7,8 @@ import {
   startDrizzleStudio,
   type DatabaseStatus,
   type DrizzleStudioStatus,
-} from "@turbopanel/instance-client";
-import type { DeveloperState } from "@turbopanel/use-developer-state";
+} from "@turbopanel/lib/instance-client.ts";
+import type { DeveloperState } from "@turbopanel/hooks/use-developer-state.ts";
 
 const ACTIONS = [
   "Test connection",

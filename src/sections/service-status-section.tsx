@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Box, Text } from "@deno-ink/core";
-import { fetchServiceStatuses, type ServiceStatus } from "@turbopanel/service-status";
+import { fetchServiceStatuses, type ServiceStatus } from "@turbopanel/lib/service-status.ts";
 
 export function ServiceStatusSection() {
   const [services, setServices] = useState<ServiceStatus[]>([]);

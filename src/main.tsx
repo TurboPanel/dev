@@ -1,6 +1,6 @@
 import { render } from "@deno-ink/core";
 import React, { useEffect, useState } from "react";
-import { BootScreen } from "./boot-screen.tsx";
+import { BootScreen } from "@turbopanel/screens/boot-screen.tsx";
 
 function openStdin(): Deno.FsFile | typeof Deno.stdin {
   if (Deno.stdin.isTerminal()) {

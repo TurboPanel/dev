@@ -1,13 +1,13 @@
-import { readInstanceRuntime } from "@turbopanel/instance-runtime";
+import { readInstanceRuntime } from "@turbopanel/lib/instance-runtime.ts";
 import {
   fetchLocalDrizzleStudioStatus,
   startLocalDrizzleStudio,
-} from "@turbopanel/drizzle-studio";
+} from "@turbopanel/lib/drizzle-studio.ts";
 import {
   CADDY_HTTPS,
   PLATFORM_CA_CERT_PATH,
   WRANGLER_DEV_PORT,
-} from "@turbopanel/paths";
+} from "@turbopanel/lib/paths.ts";
 
 export const DEVELOPER_API = "/api/developer/v1";
 export const CLIENT_API = "/api/client/v1";
@@ -505,6 +505,16 @@ export async function syncDevToAllDaemons(): Promise<{
 }> {
   return await instanceFetch(`${DEVELOPER_API}/daemon/sync-dev`, {
     method: "POST",
+  });
+}
+
+export async function updateAllDaemons(updateUrl: string): Promise<{
+  ok: boolean;
+  results: Array<{ daemonId: string; ok: boolean; error?: string }>;
+}> {
+  return await instanceFetch(`${DEVELOPER_API}/daemon/update`, {
+    method: "POST",
+    body: JSON.stringify({ updateUrl }),
   });
 }
 

@@ -7,7 +7,7 @@ import {
   updateServer,
   type OrganizationRecord,
   type ServerRecord,
-} from "@turbopanel/instance-client";
+} from "@turbopanel/lib/instance-client.ts";
 
 function organizationLabel(
   organizationId: string | null,

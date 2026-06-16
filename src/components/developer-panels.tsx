@@ -1,13 +1,13 @@
 import React, { useEffect, useState } from "react";
 import { Box, Text, useInput } from "@deno-ink/core";
-import { ALL_TARGET, type DeveloperState } from "@turbopanel/use-developer-state";
-import { FleetSection } from "@turbopanel/sections/fleet-section";
-import { LogsSection } from "@turbopanel/sections/logs-section";
-import { NetworkSection } from "@turbopanel/sections/network-section";
-import { ShellSection } from "@turbopanel/sections/shell-section";
-import { ConnectivitySection } from "@turbopanel/sections/connectivity-section";
-import { DatabaseSection } from "@turbopanel/sections/database-section";
-import { ServersSection } from "@turbopanel/sections/servers-section";
+import { ALL_TARGET, type DeveloperState } from "@turbopanel/hooks/use-developer-state.ts";
+import { FleetSection } from "@turbopanel/sections/fleet-section.tsx";
+import { LogsSection } from "@turbopanel/sections/logs-section.tsx";
+import { NetworkSection } from "@turbopanel/sections/network-section.tsx";
+import { ShellSection } from "@turbopanel/sections/shell-section.tsx";
+import { ConnectivitySection } from "@turbopanel/sections/connectivity-section.tsx";
+import { DatabaseSection } from "@turbopanel/sections/database-section.tsx";
+import { ServersSection } from "@turbopanel/sections/servers-section.tsx";
 
 const SECTIONS = [
   { id: "logs", label: "Logs" },
@@ -29,12 +29,12 @@ function formatSidebarItem(label: string, active: boolean): string {
 }
 
 export function DeveloperPanels({
-  contentHeight,
+  mainHeight,
   state,
   onEditingChange,
   onPanelFocusChange,
 }: {
-  contentHeight: number;
+  mainHeight: number;
   state: DeveloperState;
   onEditingChange?: (editing: boolean) => void;
   onPanelFocusChange?: (focused: boolean) => void;
@@ -44,7 +44,7 @@ export function DeveloperPanels({
   const [panelFocused, setPanelFocused] = useState(false);
   const [editingActive, setEditingActive] = useState(false);
   const activeId = SECTIONS[sectionIndex].id;
-  const panelLines = Math.max(3, contentHeight);
+  const panelLines = Math.max(3, mainHeight);
   const interactiveSection = activeId === "fleet" ||
     activeId === "shell" ||
     activeId === "connectivity" ||
@@ -161,12 +161,11 @@ export function DeveloperPanels({
   };
 
   return (
-    <Box flexDirection="row" height={contentHeight} width="100%">
+    <Box flexDirection="row" flexGrow={1} flexShrink={1} minHeight={0} width="100%">
       <Box
         flexDirection="column"
         flexShrink={0}
         width={SIDEBAR_WIDTH}
-        height={contentHeight}
       >
         {SECTIONS.map((section, index) => {
           const active = index === sectionIndex;
@@ -188,7 +187,7 @@ export function DeveloperPanels({
         flexGrow={1}
         flexShrink={1}
         minWidth={0}
-        height={contentHeight}
+        minHeight={0}
         marginLeft={1}
         paddingLeft={1}
         borderStyle="single"

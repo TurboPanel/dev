@@ -49,29 +49,42 @@ cd turbopanel-dev
 
 ## Deno app
 
-- **`deno.json`** — tasks, imports (`@deno-ink/core`, React 18).
-- **`src/main.tsx`** — entry; renders the Ink app.
-- **`src/app.tsx`** — unified Ink console (runtime/platform status, dev stack actions, developer sections when instance.sock is present).
-- **`src/developer-console.tsx`** — developer section sidebar + panel renderer (`DeveloperPanels`), embedded by `app.tsx`.
-- **`src/instance-client.ts`** — HTTP client for the instance API (Unix socket + HTTPS fallback).
-- **`src/use-developer-state.ts`** — shared 2 s polling hook for fleet/health/events/commands.
-- **`src/sections/`** — Ink section components (fleet, services, network, shell, connectivity, database, servers).
-- **`src/paths.ts`** — shared path constants and platform repo checks.
+Ink console layout: **menu bar** (top) · **screen** (flex-grow main) · **status bar** (bottom). Always fills the terminal (`fullScreen`).
+
+```
+src/
+├── main.tsx              # entry; lazy-loads app, boot screen
+├── app.tsx               # root state, input routing, composes shell + screens
+├── components/
+│   ├── layout/           # app-shell, menu-bar, status-bar
+│   ├── developer-panels.tsx
+│   ├── action-menu.tsx, area-tabs.tsx, runtime-badge.tsx, status-line.tsx
+├── screens/
+│   ├── boot-screen.tsx
+│   ├── main-screen.tsx   # routes Status / Instance / Developer areas
+│   ├── status-screen.tsx, instance-screen.tsx, developer-screen.tsx
+├── sections/             # developer sub-panels (fleet, shell, database, …)
+├── hooks/                # use-developer-state, use-stack-status
+└── lib/                  # paths, instance-client, daemon-lifecycle, stack-status, …
+```
+
+Import aliases in `deno.json`: `@turbopanel/components/`, `@turbopanel/screens/`, `@turbopanel/hooks/`, `@turbopanel/lib/`, `@turbopanel/sections/`.
 
 Keep the CLI **simple**. Platform repo install, service monitoring, and updates belong in the Ink app — not new shell scripts.
 
 ## Developer console
 
-The developer console is not a separate Ink view — it is part of `./console`. Use **←** / **→** to switch areas:
+The developer console is not a separate Ink view — it is part of `./console`. Use **←** / **→** to switch areas in the menu bar:
 
 | Area | Contents |
 |------|----------|
 | **Status** | Runtime, platform checkout, dev stack units |
 | **Instance** | Runtime mode (Deno/Workers), instance unit status, switch action |
 | **Developer** | Fleet, services, shell, database, … (when `instance.sock` is present) |
-| **Actions** | Install daemon, start stack, follow logs, runtime switch, build mode, reset dev environment, quit |
 
-Only one area is visible at a time — no scrolling past status + sections + menu on one screen.
+Stack actions (install daemon, start stack, follow logs, runtime switch, build mode, reset dev environment, quit) live in the **m** menu (status bar expands while open).
+
+Only one area is visible at a time — header + main + footer always fit one terminal screen.
 
 In the **Developer** area: **↑↓** picks a section, **Enter** opens it, **Esc** returns to the section list. Section panels then own their own keys (↑↓ actions in Fleet, `i` to type in Shell, etc.).
 
@@ -87,7 +100,7 @@ In the **Developer** area: **↑↓** picks a section, **Enter** opens it, **Esc
 | Database | Postgres test, Drizzle Studio | ↑↓ actions · Enter |
 | Servers | Register servers, assign orgs | a/e/o · ↑↓ select |
 
-Navigate sections with **↑↓**, **Enter** to open, **Esc** to return to the list. **t** cycles daemon target (`all servers` or per-host). **← →** switches areas. **q** / **Esc** (when not inside a section) quits the console.
+Navigate sections with **↑↓**, **Enter** to open, **Esc** to return to the list. **t** cycles daemon target (`all servers` or per-host). **← →** switches areas (menu bar). **m** opens the action menu. **q** / **Esc** (when not inside a section) quits the console.
 
 ### Instance runtime env vars
 

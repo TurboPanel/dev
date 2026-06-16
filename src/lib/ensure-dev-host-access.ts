@@ -1,4 +1,4 @@
-import { runInherit } from "@turbopanel/platform-install";
+import { runInherit } from "@turbopanel/lib/platform-install.ts";
 
 const DEV_HOST_ACCESS_SCRIPT = "scripts/lib/dev-host-access.sh";
 

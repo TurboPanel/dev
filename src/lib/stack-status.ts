@@ -1,5 +1,5 @@
-import { readInstanceRuntime } from "@turbopanel/instance-runtime";
-import { CADDY_HTTPS, WRANGLER_DEV_PORT } from "@turbopanel/paths";
+import { readInstanceRuntime } from "@turbopanel/lib/instance-runtime.ts";
+import { CADDY_HTTPS, WRANGLER_DEV_PORT } from "@turbopanel/lib/paths.ts";
 
 export type StackUnitStatus = {
   unit: string;

@@ -1,11 +1,11 @@
-import { promptConfirm, promptRuntimeTarget } from "@turbopanel/cli-prompt";
-import { resetDevInstance } from "@turbopanel/instance-client";
-import { isInstanceUnavailableError, waitForInstanceRecovery } from "@turbopanel/instance-recovery";
+import { promptConfirm, promptRuntimeTarget } from "@turbopanel/lib/cli-prompt.ts";
+import { resetDevInstance } from "@turbopanel/lib/instance-client.ts";
+import { isInstanceUnavailableError, waitForInstanceRecovery } from "@turbopanel/lib/instance-recovery.ts";
 import {
   readInstanceRuntime,
   switchInstanceRuntime,
-} from "@turbopanel/instance-runtime";
-import { ensureWorkersDevVars } from "@turbopanel/workers-dev-vars";
+} from "@turbopanel/lib/instance-runtime.ts";
+import { ensureWorkersDevVars } from "@turbopanel/lib/workers-dev-vars.ts";
 
 function runtimeLabel(target: "deno" | "workers"): string {
   return target === "deno"

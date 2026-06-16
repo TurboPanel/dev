@@ -4,9 +4,9 @@ import {
   readInstanceRuntime as readInstanceRuntimeFromEnv,
   runSudo,
   writeDaemonEnv,
-} from "@turbopanel/daemon-lifecycle";
-import { TURBOPANEL_PLATFORM, TURBOPANEL_ROOT } from "@turbopanel/paths";
-import { ensureWorkersDevVars } from "@turbopanel/workers-dev-vars";
+} from "@turbopanel/lib/daemon-lifecycle.ts";
+import { TURBOPANEL_PLATFORM, TURBOPANEL_ROOT } from "@turbopanel/lib/paths.ts";
+import { ensureWorkersDevVars } from "@turbopanel/lib/workers-dev-vars.ts";
 
 const TURBOPANEL_USER = "turbopanel";
 

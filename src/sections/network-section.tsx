@@ -7,9 +7,9 @@ import {
   fetchInstanceAddresses,
   type ServerAddressEntry,
   type ServerAddresses,
-} from "@turbopanel/instance-client";
-import { ALL_TARGET } from "@turbopanel/use-developer-state";
-import type { DeveloperState } from "@turbopanel/use-developer-state";
+} from "@turbopanel/lib/instance-client.ts";
+import { ALL_TARGET } from "@turbopanel/hooks/use-developer-state.ts";
+import type { DeveloperState } from "@turbopanel/hooks/use-developer-state.ts";
 
 function formatAddresses(addresses: ServerAddresses): string[] {
   const lines: string[] = [];

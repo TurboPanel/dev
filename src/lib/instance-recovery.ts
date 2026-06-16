@@ -1,11 +1,11 @@
-import { fetchHealth } from "@turbopanel/instance-client";
-import { readInstanceRuntime } from "@turbopanel/instance-runtime";
+import { fetchHealth } from "@turbopanel/lib/instance-client.ts";
+import { readInstanceRuntime } from "@turbopanel/lib/instance-runtime.ts";
 import {
   checkInstanceApiHealth,
   fetchStackStatus,
   instanceSocketPresent,
   type StackUnitStatus,
-} from "@turbopanel/stack-status";
+} from "@turbopanel/lib/stack-status.ts";
 
 export type InstanceRecoverySnapshot = {
   active: true;

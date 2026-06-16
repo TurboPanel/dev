@@ -9,12 +9,12 @@ import {
   type CommandResult,
   type DaemonConnection,
   type DaemonEvent,
-} from "@turbopanel/instance-client";
+} from "@turbopanel/lib/instance-client.ts";
 import {
   type InstanceRecoverySnapshot,
   waitForInstanceRecovery,
-} from "@turbopanel/instance-recovery";
-import { withTimeout } from "@turbopanel/fetch-timeout";
+} from "@turbopanel/lib/instance-recovery.ts";
+import { withTimeout } from "@turbopanel/lib/fetch-timeout.ts";
 
 export const ALL_TARGET = "__all__";
 

@@ -1,4 +1,4 @@
-import { INSTANCE_DIR, TURBOPANEL_ROOT } from "@turbopanel/paths";
+import { INSTANCE_DIR, TURBOPANEL_ROOT } from "@turbopanel/lib/paths.ts";
 
 const STUDIO_PORT = 4983;
 const STUDIO_BROWSER_URL = "https://local.drizzle.studio";

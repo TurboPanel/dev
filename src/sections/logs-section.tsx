@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Box, Text } from "@deno-ink/core";
-import { fetchStackLogLines, type StackLogLine } from "@turbopanel/stack-logs";
+import { fetchStackLogLines, type StackLogLine } from "@turbopanel/lib/stack-logs.ts";
 
 const POLL_MS = 3_000;
 

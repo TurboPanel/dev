@@ -1,33 +1,41 @@
 import React, { useMemo, useState } from "react";
 import {
-  Box,
-  Text,
   useApp,
   useInput,
-  useTerminalSize,
 } from "@deno-ink/core";
-import { ActionMenu } from "@turbopanel/action-menu";
-import { buildCompactHeader } from "@turbopanel/compact-header";
-import { DeveloperPanels } from "@turbopanel/developer-console";
+import { AppShell } from "@turbopanel/components/layout/app-shell.tsx";
+import { MenuBar } from "@turbopanel/components/layout/menu-bar.tsx";
+import {
+  buildStatusSummary,
+  StatusBar,
+} from "@turbopanel/components/layout/status-bar.tsx";
 import {
   followLogs,
   readBuildMode,
   startDevStack,
   switchBuildMode,
-} from "@turbopanel/daemon-lifecycle";
-import { switchInstanceRuntime, readInstanceRuntime } from "@turbopanel/instance-runtime";
-import { installDaemon } from "@turbopanel/platform-install";
-import { resetDevEnvironment } from "@turbopanel/reset-dev-environment";
+} from "@turbopanel/lib/daemon-lifecycle.ts";
+import {
+  switchInstanceRuntime,
+  readInstanceRuntime,
+} from "@turbopanel/lib/instance-runtime.ts";
+import { installDaemon } from "@turbopanel/lib/platform-install.ts";
+import { resetDevEnvironment } from "@turbopanel/lib/reset-dev-environment.ts";
 import {
   checkPlatformRepos,
   denoRuntimeInstalled,
-} from "@turbopanel/paths";
+} from "@turbopanel/lib/paths.ts";
 import {
   instanceReachable,
   instanceSocketPresent,
-} from "@turbopanel/stack-status";
-import { useDeveloperState } from "@turbopanel/use-developer-state";
-import { useStackStatus } from "@turbopanel/use-stack-status";
+} from "@turbopanel/lib/stack-status.ts";
+import { useDeveloperState } from "@turbopanel/hooks/use-developer-state.ts";
+import { useStackStatus } from "@turbopanel/hooks/use-stack-status.ts";
+import { useTerminalLayout } from "@turbopanel/hooks/use-terminal-layout.ts";
+import {
+  MainScreen,
+  type MainScreenArea,
+} from "@turbopanel/screens/main-screen.tsx";
 
 async function runAfterExit(fn: () => Promise<void>): Promise<void> {
   try {
@@ -39,9 +47,15 @@ async function runAfterExit(fn: () => Promise<void>): Promise<void> {
   }
 }
 
+const AREAS: Array<{ id: MainScreenArea; label: string }> = [
+  { id: "status", label: "Status" },
+  { id: "instance", label: "Instance" },
+  { id: "developer", label: "Developer" },
+];
+
 export function App() {
   const { exit } = useApp();
-  const { rows, columns } = useTerminalSize(250);
+  const [areaIndex, setAreaIndex] = useState(0);
   const [developerEditing, setDeveloperEditing] = useState(false);
   const [developerPanelFocused, setDeveloperPanelFocused] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
@@ -60,7 +74,7 @@ export function App() {
   const instanceApiReady = useMemo(() => {
     if (instanceRuntime === "workers") return instanceReachable();
     return instanceSocketPresent();
-  }, [stackUnits, instanceRuntime]);
+  }, [instanceRuntime]);
   const developerState = useDeveloperState(instanceApiReady);
   const buildMode = useMemo(
     () => (daemonPresent ? readBuildMode() : null),
@@ -69,14 +83,8 @@ export function App() {
   const productionBuildActive = buildMode?.uiMode === "static" &&
     buildMode?.instanceRunMode === "compiled";
 
-  const headerLine = buildCompactHeader({
-    runtimeReady,
-    daemonPresent,
-    stackUnits,
-    instanceRuntime,
-    socketPresent: instanceSocketPresent(),
-    developerState: instanceApiReady ? developerState : null,
-  });
+  const activeArea = AREAS[areaIndex].id;
+  const stackHealthy = stackUnits.every((unit) => unit.active === true);
 
   const menuItems = useMemo(() => {
     const items: Array<{ label: string; value: string }> = [
@@ -121,7 +129,20 @@ export function App() {
   }, [daemonPresent, productionBuildActive, instanceRuntime]);
 
   const footerRows = showMenu ? menuItems.length + 1 : 1;
-  const mainHeight = Math.max(1, rows - 1 - footerRows);
+  const { rows, columns, appHeight, mainHeight } = useTerminalLayout(footerRows);
+
+  const statusSummary = buildStatusSummary({
+    runtimeReady,
+    daemonPresent,
+    stackUnits,
+    instanceRuntime,
+    socketPresent: instanceSocketPresent(),
+    developerState: instanceApiReady ? developerState : null,
+  });
+
+  const hints = developerUnlocked && activeArea === "developer"
+    ? "↑↓ section · Enter focus · t target · m menu · q quit"
+    : "← → area · m menu · q quit";
 
   useInput((input, key) => {
     if (developerEditing) return;
@@ -140,10 +161,22 @@ export function App() {
 
     if (input === "m") {
       setShowMenu(true);
+      return;
+    }
+
+    if (developerPanelFocused) return;
+
+    if (key.leftArrow) {
+      setAreaIndex((i) => Math.max(0, i - 1));
+      return;
+    }
+
+    if (key.rightArrow) {
+      setAreaIndex((i) => Math.min(AREAS.length - 1, i + 1));
     }
   });
 
-  const handleSelect = (item: { label: string; value: string }) => {
+  const handleMenuSelect = (item: { label: string; value: string }) => {
     setShowMenu(false);
 
     if (item.value === "quit") {
@@ -199,55 +232,50 @@ export function App() {
     }
   };
 
+  const handleInstanceSwitch = (target: "deno" | "workers") => {
+    exit();
+    queueMicrotask(() => runAfterExit(() => switchInstanceRuntime(target)));
+  };
+
   return (
-    <Box flexDirection="column" height={rows} width={columns}>
-      <Box flexShrink={0} paddingX={1}>
-        <Text wrap="truncate">{headerLine}</Text>
-      </Box>
-
-      <Box
-        flexDirection="column"
-        flexGrow={1}
-        height={mainHeight}
-        paddingX={1}
-      >
-        {!daemonPresent ? (
-          <Text dimColor>
-            Daemon not installed — press m for menu, then Install/update daemon
-          </Text>
-        ) : developerUnlocked ? (
-          developerState.healthOk === null && !developerState.error ? (
-            <Text dimColor>Connecting to instance API…</Text>
-          ) : (
-            <DeveloperPanels
-              contentHeight={mainHeight}
-              state={developerState}
-              onEditingChange={setDeveloperEditing}
-              onPanelFocusChange={setDeveloperPanelFocused}
-            />
-          )
-        ) : (
-          <Text dimColor>
-            Waiting for instance — stack units above show progress; m menu to
-            start dev stack
-          </Text>
-        )}
-      </Box>
-
-      {showMenu ? (
-        <Box flexShrink={0} paddingX={1} flexDirection="column">
-          <Text dimColor>Actions · ↑↓ select · Enter run · Esc cancel</Text>
-          <ActionMenu items={menuItems} onSelect={handleSelect} />
-        </Box>
-      ) : (
-        <Box flexShrink={0} paddingX={1}>
-          <Text dimColor>
-            {developerUnlocked
-              ? "↑↓ section · Enter focus · t target · m menu · q quit"
-              : "m menu · q quit"}
-          </Text>
-        </Box>
-      )}
-    </Box>
+    <AppShell
+      height={appHeight}
+      columns={columns}
+      menuBar={
+        <MenuBar
+          areas={AREAS}
+          activeIndex={areaIndex}
+          instanceRuntime={instanceRuntime}
+        />
+      }
+      main={
+        <MainScreen
+          area={activeArea}
+          mainHeight={mainHeight}
+          runtimeReady={runtimeReady}
+          daemonStatus={daemonStatus}
+          daemonPresent={daemonPresent}
+          platformDirectAccess={false}
+          stackUnits={stackUnits}
+          developerUnlocked={developerUnlocked}
+          stackHealthy={stackHealthy}
+          developerState={developerState}
+          onInstanceSwitch={handleInstanceSwitch}
+          onDeveloperEditingChange={setDeveloperEditing}
+          onDeveloperPanelFocusChange={setDeveloperPanelFocused}
+        />
+      }
+      statusBar={
+        <StatusBar
+          showMenu={showMenu}
+          menuItems={menuItems}
+          onMenuSelect={handleMenuSelect}
+          hints={hints}
+          statusSummary={statusSummary}
+          columns={columns}
+          rows={rows}
+        />
+      }
+    />
   );
 }

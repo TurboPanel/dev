@@ -1,4 +1,4 @@
-import { ensureWorkersDevVars } from "@turbopanel/workers-dev-vars";
+import { ensureWorkersDevVars } from "@turbopanel/lib/workers-dev-vars.ts";
 
 const path = await ensureWorkersDevVars();
 console.log(`wrote ${path}`);

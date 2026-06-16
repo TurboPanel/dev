@@ -8,15 +8,15 @@ import {
   resolveDevIdentity,
   TURBOPANEL_PLATFORM,
   TURBOPANEL_ROOT,
-} from "@turbopanel/paths";
-import { ensureDevHostAccess } from "@turbopanel/ensure-dev-host-access";
-import { runInherit } from "@turbopanel/platform-install";
+} from "@turbopanel/lib/paths.ts";
+import { ensureDevHostAccess } from "@turbopanel/lib/ensure-dev-host-access.ts";
+import { runInherit } from "@turbopanel/lib/platform-install.ts";
 import {
   fetchStackStatus,
   instanceReachable,
   instanceSocketPresent,
   stackSummary,
-} from "@turbopanel/stack-status";
+} from "@turbopanel/lib/stack-status.ts";
 
 const CADDY_PORT = 8443;
 const TURBOPANEL_USER = "turbopanel";
@@ -335,6 +335,39 @@ export async function installDaemonSystemd(): Promise<void> {
   if (code !== 0) {
     throw new Error("install-daemon-systemd.sh failed");
   }
+}
+
+export async function buildDaemonBinary(): Promise<void> {
+  const script =
+    `${TURBOPANEL_PLATFORM}/daemon/scripts/run-daemon-update.sh`;
+  const code = await runPrivilegedDaemonBash(script);
+  if (code !== 0) {
+    throw new Error("run-daemon-update.sh failed");
+  }
+}
+
+function resolveLanIp(): string {
+  for (const addr of Deno.networkInterfaces()) {
+    if (addr.family !== "IPv4") continue;
+    const ip = addr.address;
+    if (ip.startsWith("127.") || ip.startsWith("169.254.")) continue;
+    return ip;
+  }
+  return "127.0.0.1";
+}
+
+export async function startUpdateServer(): Promise<
+  { pid: number; url: string }
+> {
+  const serveScriptPath =
+    `${TURBOPANEL_PLATFORM}/daemon/scripts/serve-update.sh`;
+  const child = new Deno.Command("sh", {
+    args: [serveScriptPath],
+    stdout: "inherit",
+    stderr: "inherit",
+  }).spawn();
+  const lanIp = resolveLanIp();
+  return { pid: child.pid, url: `http://${lanIp}:8444` };
 }
 
 function instanceSocketStatusLabel(): string {

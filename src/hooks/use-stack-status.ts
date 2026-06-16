@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { fetchStackStatus, type StackUnitStatus } from "@turbopanel/stack-status";
+import { fetchStackStatus, type StackUnitStatus } from "@turbopanel/lib/stack-status.ts";
 
 const POLL_MS = 3_000;
 

@@ -1,7 +1,8 @@
 import React, { useCallback, useMemo, useState } from "react";
 import { Box, SelectInput, Text } from "@deno-ink/core";
-import { readInstanceRuntime } from "@turbopanel/instance-runtime";
-import { StatusLine } from "@turbopanel/status-line";
+import { readInstanceRuntime } from "@turbopanel/lib/instance-runtime.ts";
+import { RuntimeBadge } from "@turbopanel/components/runtime-badge.tsx";
+import { StatusLine } from "@turbopanel/components/status-line.tsx";
 
 function systemctlIsActive(unit: string): { active: boolean | null; detail: string } {
   const proc = new Deno.Command("systemctl", {
@@ -79,15 +80,22 @@ export function InstanceSection({
     <Box flexDirection="column">
       <Text bold>Instance Runtime</Text>
       <Box flexDirection="column" marginTop={1}>
-        <StatusLine
-          label="runtime"
-          ok={runtime === "deno" ? instanceUnit.active === true : true}
-          detail={
-            runtime === "workers"
-              ? "Workers (wrangler via systemd)"
-              : "Deno (systemd)"
-          }
-        />
+        <Box>
+          <Text color={runtime === "deno" && instanceUnit.active !== true
+            ? "yellow"
+            : "green"}
+          >
+            {runtime === "deno" && instanceUnit.active !== true ? "○ " : "✓ "}
+          </Text>
+          <Text>runtime</Text>
+          <Text dimColor> — </Text>
+          <RuntimeBadge runtime={runtime} />
+          <Text dimColor>
+            {runtime === "workers"
+              ? " (wrangler via systemd)"
+              : " (systemd)"}
+          </Text>
+        </Box>
         {runtime === "workers" ? (
           <StatusLine
             label="wrangler dev"

@@ -1,22 +1,22 @@
 import React from "react";
 import { Box, Text } from "@deno-ink/core";
-import { readInstanceRuntime } from "@turbopanel/instance-runtime";
+import { RuntimeBadge } from "@turbopanel/components/runtime-badge.tsx";
 import {
   DENO_VERSION,
   TURBOPANEL_PLATFORM,
   type RepoStatus,
-} from "@turbopanel/paths";
+} from "@turbopanel/lib/paths.ts";
 import {
-  checkInstanceApiHealth,
   instanceReachable,
   instanceSocketPresent,
   stackSummary,
   type StackUnitStatus,
   wranglerProcessRunning,
-} from "@turbopanel/stack-status";
-import { StatusLine } from "@turbopanel/status-line";
+} from "@turbopanel/lib/stack-status.ts";
+import { readInstanceRuntime } from "@turbopanel/lib/instance-runtime.ts";
+import { StatusLine } from "@turbopanel/components/status-line.tsx";
 
-export function StatusArea({
+export function StatusScreen({
   runtimeReady,
   daemonStatus,
   daemonPresent,
@@ -37,7 +37,7 @@ export function StatusArea({
   const apiReady = instanceReachable();
 
   return (
-    <Box flexDirection="column" marginTop={1}>
+    <Box flexDirection="column" flexGrow={1} flexShrink={1} minHeight={0} width="100%">
       <Text bold>Runtime</Text>
       <StatusLine
         label="Deno runtime"
@@ -65,13 +65,25 @@ export function StatusArea({
       {daemonPresent ? (
         <Box flexDirection="column" marginTop={1}>
           <Text bold>Dev stack</Text>
-          <StatusLine
-            label="instance runtime"
-            ok={runtime === "workers" ? wranglerProcessRunning() : apiReady}
-            detail={runtime === "workers"
-              ? "Workers (wrangler via systemd)"
-              : "Deno (systemd + socket)"}
-          />
+          <Box>
+            <Text
+              color={runtime === "workers"
+                ? (wranglerProcessRunning() ? "green" : "yellow")
+                : (apiReady ? "green" : "yellow")}
+            >
+              {runtime === "workers"
+                ? (wranglerProcessRunning() ? "✓ " : "○ ")
+                : (apiReady ? "✓ " : "○ ")}
+            </Text>
+            <Text>instance runtime</Text>
+            <Text dimColor> — </Text>
+            <RuntimeBadge runtime={runtime} />
+            <Text dimColor>
+              {runtime === "workers"
+                ? " (wrangler via systemd)"
+                : " (systemd + socket)"}
+            </Text>
+          </Box>
           <Text dimColor>{stackSummary(stackUnits)}</Text>
           {stackUnits.map((unit) => (
             <StatusLine
@@ -83,13 +95,13 @@ export function StatusArea({
           ))}
           {runtime === "workers" ? (
             <>
-          <StatusLine
-            label="wrangler dev"
-            ok={wranglerProcessRunning()}
-            detail={wranglerProcessRunning()
-              ? "turbopanel-instance.service (systemd)"
-              : "systemctl start turbopanel-instance"}
-          />
+              <StatusLine
+                label="wrangler dev"
+                ok={wranglerProcessRunning()}
+                detail={wranglerProcessRunning()
+                  ? "turbopanel-instance.service (systemd)"
+                  : "systemctl start turbopanel-instance"}
+              />
               <StatusLine
                 label="instance API"
                 ok={apiReady}

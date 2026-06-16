@@ -3,7 +3,7 @@ import {
   platformRepoPath,
   sshRepoUrl,
   TURBOPANEL_PLATFORM,
-} from "@turbopanel/paths";
+} from "@turbopanel/lib/paths.ts";
 
 const BRANCH = "trunk";
 const TURBOPANEL_USER = "turbopanel";

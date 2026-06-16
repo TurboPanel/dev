@@ -1,16 +1,27 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Box, Text, useInput } from "@deno-ink/core";
+import {
+  buildDaemonBinary,
+  startUpdateServer,
+} from "@turbopanel/lib/daemon-lifecycle.ts";
 import {
   daemonLabel,
   fetchUpgradeStatus,
   setInstanceTunnelToken,
   syncDevToAllDaemons,
+  updateAllDaemons,
   upgradeSystem,
   type DirtyRepo,
-} from "@turbopanel/instance-client";
-import type { DeveloperState } from "@turbopanel/use-developer-state";
+} from "@turbopanel/lib/instance-client.ts";
+import type { DeveloperState } from "@turbopanel/hooks/use-developer-state.ts";
 
-const ACTIONS = ["Upgrade System", "Sync Dev Build", "Save Tunnel Token"] as const;
+const ACTIONS = [
+  "Upgrade System",
+  "Sync Dev Build",
+  "Save Tunnel Token",
+  "Build Daemon Binary",
+  "Update Daemon",
+] as const;
 
 export function FleetSection({
   state,
@@ -30,11 +41,26 @@ export function FleetSection({
   );
   const [promptMode, setPromptMode] = useState<"token" | null>(null);
   const [tokenInput, setTokenInput] = useState("");
+  const updateServerPidRef = useRef<number | null>(null);
 
   useEffect(() => {
     onEditingChange?.(promptMode === "token");
     return () => onEditingChange?.(false);
   }, [promptMode, onEditingChange]);
+
+  useEffect(() => {
+    return () => {
+      const pid = updateServerPidRef.current;
+      if (pid !== null) {
+        try {
+          Deno.kill(pid, "SIGTERM");
+        } catch {
+          // ignore
+        }
+        updateServerPidRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -78,6 +104,38 @@ export function FleetSection({
               )
             }`,
         });
+      } else if (action === "Build Daemon Binary") {
+        await buildDaemonBinary();
+        setMessage({
+          ok: true,
+          text:
+            "Daemon binary built at dist/turbopanel-daemon. Update server can now be started.",
+        });
+      } else if (action === "Update Daemon") {
+        let pid: number | undefined;
+        try {
+          const server = await startUpdateServer();
+          pid = server.pid;
+          updateServerPidRef.current = pid;
+          const result = await updateAllDaemons(server.url);
+          setMessage({
+            ok: result.ok,
+            text: result.results.map((r) =>
+              r.ok
+                ? `${r.daemonId}: ok`
+                : `${r.daemonId}: error (${r.error ?? "failed"})`
+            ).join(", "),
+          });
+        } finally {
+          if (pid !== undefined) {
+            try {
+              Deno.kill(pid, "SIGTERM");
+            } catch {
+              // ignore
+            }
+          }
+          updateServerPidRef.current = null;
+        }
       }
     } catch (err) {
       setMessage({
@@ -150,6 +208,10 @@ export function FleetSection({
       ) {
         void runAction(action);
       } else if (action === "Sync Dev Build" && healthOk && fleet.length > 0) {
+        void runAction(action);
+      } else if (action === "Build Daemon Binary") {
+        void runAction(action);
+      } else if (action === "Update Daemon" && healthOk && fleet.length > 0) {
         void runAction(action);
       }
     }

@@ -1,5 +1,5 @@
-import { runSudo } from "@turbopanel/daemon-lifecycle";
-import { getDevUser, INSTANCE_DIR } from "@turbopanel/paths";
+import { runSudo } from "@turbopanel/lib/daemon-lifecycle.ts";
+import { getDevUser, INSTANCE_DIR } from "@turbopanel/lib/paths.ts";
 
 const POSTGRES_PASS_PATH = "/etc/turbopanel/postgres/.pgpass";
 const POSTGRES_CONFIG_PATH = "/etc/turbopanel/postgres/config.json";
