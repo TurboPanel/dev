@@ -20,6 +20,7 @@
     "@turbopanel/platform-install": "./src/platform-install.ts",
     "@turbopanel/ensure-dev-host-access": "./src/ensure-dev-host-access.ts",
     "@turbopanel/daemon-lifecycle": "./src/daemon-lifecycle.ts",
+    "@turbopanel/drizzle-studio": "./src/drizzle-studio.ts",
     "@turbopanel/instance-area": "./src/instance-area.tsx",
     "@turbopanel/instance-runtime": "./src/instance-runtime.ts",
     "@turbopanel/instance-recovery": "./src/instance-recovery.ts",

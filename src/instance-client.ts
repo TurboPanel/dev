@@ -1,5 +1,9 @@
 import { readInstanceRuntime } from "@turbopanel/instance-runtime";
 import {
+  fetchLocalDrizzleStudioStatus,
+  startLocalDrizzleStudio,
+} from "@turbopanel/drizzle-studio";
+import {
   CADDY_HTTPS,
   PLATFORM_CA_CERT_PATH,
   WRANGLER_DEV_PORT,
@@ -302,7 +306,7 @@ export type UpgradeStatus = {
 export type DatabaseStatus = {
   configured: boolean;
   connected: boolean;
-  transport: "url" | null;
+  transport: "socket" | "tcp" | null;
   user: string | null;
   database: string | null;
   version: string | null;
@@ -462,6 +466,9 @@ export async function fetchDatabaseStatus(): Promise<DatabaseStatus> {
 }
 
 export async function fetchDrizzleStudioStatus(): Promise<DrizzleStudioStatus> {
+  if (readInstanceRuntime() === "workers") {
+    return await fetchLocalDrizzleStudioStatus();
+  }
   return await instanceFetch(`${DEVELOPER_API}/database/studio`);
 }
 
@@ -470,6 +477,9 @@ export async function startDrizzleStudio(): Promise<{
   browserUrl: string;
   port: number;
 }> {
+  if (readInstanceRuntime() === "workers") {
+    return await startLocalDrizzleStudio();
+  }
   return await instanceFetch(`${DEVELOPER_API}/database/studio`, {
     method: "POST",
   });
