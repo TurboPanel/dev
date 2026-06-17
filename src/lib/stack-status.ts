@@ -1,5 +1,8 @@
 import { readInstanceRuntime } from "@turbopanel/lib/instance-runtime.ts";
-import { CADDY_HTTPS, WRANGLER_DEV_PORT } from "@turbopanel/lib/paths.ts";
+import {
+  CADDY_HTTPS,
+  WRANGLER_DEV_PORT,
+} from "@turbopanel/lib/paths.ts";
 
 export type StackUnitStatus = {
   unit: string;
@@ -111,11 +114,13 @@ export function fetchStackStatus(): StackUnitStatus[] {
     ? stderr.split("\n")
     : [];
 
-  return STACK_UNITS.map(({ unit, label }, index) => {
+  const units = STACK_UNITS.map(({ unit, label }, index) => {
     const text = lines[index]?.trim() ?? "";
     const { active, detail } = parseIsActiveLine(text);
     return { unit, label, active, detail };
   });
+
+  return units;
 }
 
 export function stackSummary(units: StackUnitStatus[]): string {
