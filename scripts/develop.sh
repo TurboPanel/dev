@@ -6,8 +6,38 @@ REPO_SLUG=turbopanel/turbopanel-dev
 REPO_URL=git@github.com:${REPO_SLUG}.git
 BRANCH=trunk
 
-_tp_install_lib_dir=$(CDPATH= cd -- "$(dirname "$0")" && pwd 2>/dev/null)/lib
-if [ ! -f "$_tp_install_lib_dir/privileges.sh" ]; then
+# Piped bootstrap (curl | sh): $0 is "sh", not a path to this script. Re-fetch the
+# latest develop.sh via GitHub API (fresh) instead of relying on a cached trunk URL.
+case $0 in
+  */develop.sh) ;;
+  *)
+    if [ -z "${TURBOPANEL_DEV_BOOTSTRAPPED:-}" ]; then
+      _tp_sha=$(curl -fsSL "https://api.github.com/repos/${REPO_SLUG}/git/ref/heads/${BRANCH}" 2>/dev/null \
+        | tr ',' '\n' | sed -n 's/.*"sha"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+      if [ -n "$_tp_sha" ]; then
+        _tp_fresh=$(mktemp)
+        if curl -fsSL "https://raw.githubusercontent.com/${REPO_SLUG}/${_tp_sha}/scripts/develop.sh" -o "$_tp_fresh" 2>/dev/null; then
+          TURBOPANEL_DEV_BOOTSTRAPPED=1
+          export TURBOPANEL_DEV_BOOTSTRAPPED
+          exec sh "$_tp_fresh" "$@"
+        fi
+        rm -f "$_tp_fresh"
+      fi
+    fi
+    ;;
+esac
+
+# Load helper libraries from the checkout when available; otherwise download them.
+_tp_install_lib_dir=
+case $0 in
+  */develop.sh)
+    _tp_candidate=$(CDPATH= cd -- "$(dirname "$0")" && pwd)/lib
+    if [ -f "$_tp_candidate/privileges.sh" ]; then
+      _tp_install_lib_dir=$_tp_candidate
+    fi
+    ;;
+esac
+if [ -z "$_tp_install_lib_dir" ]; then
   _tp_lib_base=${TURBOPANEL_DEV_LIB_BASE:-https://raw.githubusercontent.com/turbopanel/turbopanel-dev/trunk/scripts/lib}
   _tp_install_lib_dir=$(mktemp -d)
   for _tp_lib in privileges.sh git-github-ssh.sh; do
