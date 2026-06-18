@@ -14,7 +14,7 @@ _tp_install_lib_dir=$(CDPATH= cd -- "$(dirname "$0")" && pwd)/lib
 
 resolve_repo_dir() {
   case $0 in
-    */install.sh)
+    */develop.sh)
       _script_dir=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
       _repo_dir=$(CDPATH= cd -- "$_script_dir/.." && pwd)
       if [ -d "$_repo_dir/.git" ]; then

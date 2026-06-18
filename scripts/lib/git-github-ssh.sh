@@ -216,7 +216,7 @@ tp_ensure_github_ssh() {
   if [ -z "$_egs_name" ] || [ -z "$_egs_email" ]; then
     if [ ! -t 0 ]; then
       tp_error "Git identity is not configured and this script is not interactive."
-      tp_error "Run sh scripts/install.sh from a terminal to set up SSH keys and git signing."
+      tp_error "Run sh scripts/develop.sh from a terminal to set up SSH keys and git signing."
       exit 1
     fi
     _egs_identity=$(tp_prompt_git_identity "$_egs_name" "$_egs_email")
@@ -235,7 +235,7 @@ tp_ensure_github_ssh() {
   if ! tp_github_ssh_auth_works; then
     if [ ! -t 0 ]; then
       tp_error "GitHub SSH authentication failed and this script is not interactive."
-      tp_error "Add ~/.ssh/id_ed25519.pub to your GitHub account and re-run install."
+      tp_error "Add ~/.ssh/id_ed25519.pub to your GitHub account and re-run develop.sh."
       exit 1
     fi
     tp_show_github_ssh_key_instructions

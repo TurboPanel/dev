@@ -6,14 +6,14 @@
 
 **Target host:** Debian 13 (Vagrant support planned).
 
-**Bootstrap URL:** https://develop.trbp.nl → `scripts/install.sh` on the `trunk` branch.
+**Bootstrap URL:** https://develop.trbp.nl → `scripts/develop.sh` on the `trunk` branch.
 
 ## Filesystem layout
 
 ```
-~/…/turbopanel-dev/       # ./turbopanel-dev from scripts/install.sh (user's cwd)
+~/…/turbopanel-dev/       # ./turbopanel-dev from scripts/develop.sh (user's cwd)
 ├── console               # runtime install + launch console
-├── scripts/install.sh    # clone/update this repo only
+├── scripts/develop.sh    # clone/update this repo only
 ├── deno.json
 └── src/
 /opt/turbopanel/
@@ -29,7 +29,7 @@
 | Script | Purpose |
 |--------|---------|
 | `curl -fsSL https://develop.trbp.nl \| sh` | Clone/update `./turbopanel-dev` via SSH. |
-| `sh scripts/install.sh` | Same when run from inside the repo to update the checkout. |
+| `sh scripts/develop.sh` | Same when run from inside the repo to update the checkout. |
 | `./console` | Install Deno runtime if missing (sudo), cache deps, launch Ink console (`deno task dev`). |
 | Start dev stack (console action) | Writes daemon `.env`, bootstraps orchestration, installs systemd unit, tails journals. |
 
@@ -43,7 +43,7 @@ cd turbopanel-dev
 
 ## Responsibilities
 
-- **`scripts/install.sh`** — clones/updates **only** `turbopanel-dev` via `git@github.com:turbopanel/turbopanel-dev.git`. On first run, prompts for git `user.name` and `user.email`, generates `~/.ssh/id_ed25519` if missing, configures SSH commit signing, and verifies GitHub SSH before cloning. No sudo for git clone itself; may use sudo for `git` / `openssh-client` apt installs.
+- **`scripts/develop.sh`** — clones/updates **only** `turbopanel-dev` via `git@github.com:turbopanel/turbopanel-dev.git`. On first run, prompts for git `user.name` and `user.email`, generates `~/.ssh/id_ed25519` if missing, configures SSH commit signing, and verifies GitHub SSH before cloning. No sudo for git clone itself; may use sudo for `git` / `openssh-client` apt installs.
 - **`console`** — ensures Deno is installed under `/opt/turbopanel/runtimes` (sudo on first run), caches dependencies, starts the console.
 - **Ink console** — installs the **daemon** repo only via SSH; writes developer identity (`TURBOPANEL_DEV_USER/UID/GID`) into the daemon `.env`; runs `bootstrap-orchestration.sh` and `install-daemon-systemd.sh` to hand off to the daemon, which installs everything else via Ansible.
 
@@ -135,7 +135,7 @@ Polls every 2 s (same endpoints as the retired Expo `DeveloperProvider`): `/api/
 - Default git branch is **`trunk`** everywhere.
 - Shell scripts are **POSIX `sh`** — no bashisms.
 - Git clones use **SSH** (`git@github.com:turbopanel/...`), not HTTPS.
-- **`scripts/install.sh` only installs this repo** — no runtime, no platform repos.
+- **`scripts/develop.sh` only installs this repo** — no runtime, no platform repos.
 - **`console` owns the Deno runtime** and starting the console.
 - **`turbopanel-dev` installs to `./turbopanel-dev`** in the user's cwd.
 - The console installs **only** the daemon repo. All other platform repos (instance, ui, website) are installed by the daemon via Ansible (`instance-dev-install.yml`).
@@ -144,7 +144,7 @@ Polls every 2 s (same endpoints as the retired Expo `DeveloperProvider`): `/api/
 
 ## What agents must NOT do
 
-- Do not add Deno install, dependency caching, or sudo to `scripts/install.sh`.
+- Do not add Deno install, dependency caching, or sudo to `scripts/develop.sh`.
 - Do not add platform repo cloning to shell scripts — that belongs in the console.
 - Do not add instance/ui/website repo cloning to the console — the daemon owns those via Ansible.
 - Do not hardcode developer UID/GID — always read from `resolveDevIdentity()` (or `getDevUser()`/`getDevUid()`/`getDevGid()` wrappers) in `src/paths.ts`, or `tp_require_dev_identity()` in shell scripts.
