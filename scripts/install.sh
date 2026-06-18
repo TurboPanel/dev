@@ -31,12 +31,32 @@ resolve_repo_dir() {
   printf '%s' "$(CDPATH= cd -- "$(pwd)" && pwd)/${REPO_NAME}"
 }
 
-require_command() {
-  if ! command -v "$1" >/dev/null 2>&1; then
-    error "$1 is not installed."
-    echo "Debian: apt install $2"
+ensure_git() {
+  if command -v git >/dev/null 2>&1; then
+    return 0
+  fi
+
+  info "git is not installed — installing…"
+
+  if [ "$(id -u)" -eq 0 ]; then
+    apt-get update -qq
+    DEBIAN_FRONTEND=noninteractive apt-get install -y git
+  elif command -v sudo >/dev/null 2>&1; then
+    info "Administrator privileges required to install git"
+    sudo apt-get update -qq
+    DEBIAN_FRONTEND=noninteractive sudo apt-get install -y git
+  else
+    error "git is not installed and sudo is not available."
+    echo "Install git manually: apt install git"
     exit 1
   fi
+
+  if ! command -v git >/dev/null 2>&1; then
+    error "git is still not available after install."
+    exit 1
+  fi
+
+  success "git installed"
 }
 
 ensure_origin_url() {
@@ -72,7 +92,7 @@ clone_or_update_repo() {
   success "Updated ${REPO_NAME}"
 }
 
-require_command git git
+ensure_git
 
 REPO_DIR=$(resolve_repo_dir)
 clone_or_update_repo "$REPO_DIR"
