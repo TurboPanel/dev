@@ -1,9 +1,9 @@
-import React from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Box, Text, useInput } from "@deno-ink/core";
+import { AnsibleTaskList } from "@turbopanel/components/ansible-task-list.tsx";
 import {
-  AnsibleTaskList,
-  type AnsibleTaskRow,
-} from "@turbopanel/components/ansible-task-list.tsx";
+  buildAnsibleTaskView,
+} from "@turbopanel/hooks/use-ansible-events.ts";
 import { useTerminalLayout } from "@turbopanel/hooks/use-terminal-layout.ts";
 
 export function TaskRunScreen({
@@ -15,36 +15,65 @@ export function TaskRunScreen({
   onDone,
 }: {
   title: string;
-  tasks: AnsibleTaskRow[];
+  tasks: import("@turbopanel/components/ansible-task-list.tsx").AnsibleTaskRow[];
   recap: string | null;
   error: string | null;
   done: boolean;
   onDone: () => void;
 }) {
-  const { columns, appHeight } = useTerminalLayout(1);
+  const { columns, mainHeight } = useTerminalLayout(0);
+  const [spinnerFrame, setSpinnerFrame] = useState(0);
+  const finished = done || error !== null;
+  const busy = !finished;
+  const hasRunningTask = tasks.some((task) => task.status === "running");
+
+  const footerRows = finished ? (error ? 2 : 1) : (busy && !hasRunningTask ? 1 : 0);
+  const taskRowBudget = Math.max(4, mainHeight - 1 - footerRows);
+
+  const view = useMemo(
+    () => buildAnsibleTaskView(tasks, taskRowBudget),
+    [tasks, taskRowBudget],
+  );
+
+  useEffect(() => {
+    if (!busy) return;
+    const timer = setInterval(() => {
+      setSpinnerFrame((frame) => (frame + 1) % 4);
+    }, 120);
+    return () => clearInterval(timer);
+  }, [busy]);
+
+  const spinner = ["⠋", "⠙", "⠹", "⠸"][spinnerFrame];
 
   useInput(() => {
-    if (done) {
+    if (finished) {
       onDone();
     }
   });
 
   return (
-    <Box flexDirection="column" width={columns} height={appHeight} paddingX={1}>
-      <Text bold color="cyan">{title}</Text>
+    <Box flexDirection="column" width={columns} height={mainHeight}>
+      <Box flexShrink={0}>
+        <Text bold color="cyan">{title}</Text>
+      </Box>
       <AnsibleTaskList
-        tasks={tasks}
+        steps={view.steps}
+        activePlay={view.activePlay}
+        recentTasks={view.recentTasks}
+        hiddenTaskCount={view.hiddenTaskCount}
         recap={recap}
         error={error}
         columns={columns}
       />
-      {done && !error && <Text dimColor>Press any key to return</Text>}
-      {done && error && (
-        <>
+      <Box flexShrink={0} flexDirection="column">
+        {busy && !hasRunningTask && (
+          <Text color="cyan">{spinner} Starting Ansible…</Text>
+        )}
+        {finished && !error && <Text dimColor>Press any key to return</Text>}
+        {finished && error && (
           <Text color="red">Task failed — press any key to return</Text>
-          <Text dimColor>Press any key to return</Text>
-        </>
-      )}
+        )}
+      </Box>
     </Box>
   );
 }

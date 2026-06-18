@@ -3,17 +3,21 @@ import {
   DAEMON_ENV_PATH,
   DevIdentityError,
   DENO_BIN,
+  DAEMON_DENO_CONFIG,
   PLATFORM_CA_CERT_PATH,
   platformRepoPath,
   resolveDevIdentity,
   TURBOPANEL_PLATFORM,
   TURBOPANEL_ROOT,
 } from "@turbopanel/lib/paths.ts";
+import { daemonEnvAssignments } from "@turbopanel/lib/daemon-env.ts";
 import { ensureWebsiteSystemdUnit } from "@turbopanel/lib/ensure-website-systemd.ts";
 import {
+  ensureOrchestrationRunnerInstalled,
   runBuildTogglePrivileged,
   runInstanceDevInstallPrivileged,
 } from "@turbopanel/lib/daemon-orchestration.ts";
+import { ensureTurbopanelGithubAccess } from "@turbopanel/lib/turbopanel-github-access.ts";
 import { runInherit } from "@turbopanel/lib/platform-install.ts";
 import {
   fetchStackStatus,
@@ -22,6 +26,7 @@ import {
 } from "@turbopanel/lib/stack-status.ts";
 
 const TURBOPANEL_USER = "turbopanel";
+const TURBOPANEL_GROUP = "turbopanel";
 const DAEMON_DIR = platformRepoPath("daemon");
 const STACK_WAIT_MS = 120_000;
 const STACK_POLL_MS = 3_000;
@@ -42,13 +47,13 @@ function turbopanelUserExists(): boolean {
   }).outputSync().success;
 }
 
-function pathDirectlyAccessible(path: string): boolean {
-  try {
-    Deno.statSync(path);
-    return true;
-  } catch {
-    return false;
-  }
+function sudoCredentialsValid(): boolean {
+  return new Deno.Command("sudo", {
+    args: ["-n", "true"],
+    stdin: "null",
+    stdout: "null",
+    stderr: "null",
+  }).outputSync().success;
 }
 
 export async function runSudo(args: string[]): Promise<number> {
@@ -75,14 +80,74 @@ export async function runPrivilegedDaemonBash(script: string): Promise<number> {
       command,
     ]);
   }
-  if (pathDirectlyAccessible(script)) {
-    return runInherit(["bash", "-c", command]);
-  }
   return runSudo(["bash", "-c", command]);
 }
 
 async function runRootDaemonBash(script: string): Promise<number> {
   return runSudo(["bash", "-c", daemonScriptCommand(script)]);
+}
+
+async function runPrivilegedDaemonDenoCapture(
+  script: string,
+  denoArgs: string[],
+  scriptArgs: string[] = [],
+): Promise<{ code: number; stdout: string; stderr: string }> {
+  const denoInvocation = [
+    DENO_BIN,
+    "run",
+    ...denoArgs,
+    script,
+    ...scriptArgs,
+  ].map(shellQuote).join(" ");
+  // turbopanel must not inherit the developer's cwd (e.g. ~/turbopanel-dev).
+  const command = `cd ${shellQuote(DAEMON_DIR)} && exec ${denoInvocation}`;
+
+  const tpExists = turbopanelUserExists();
+  // UV_VENV_CLEAR lets `uv venv` overwrite a partial venv left by an interrupted
+  // bootstrap instead of failing with "a virtual environment already exists".
+  const envAssignments = [
+    `HOME=${TURBOPANEL_ROOT}`,
+    "UV_VENV_CLEAR=1",
+    ...daemonEnvAssignments(),
+  ];
+  const sudoBody = tpExists
+    ? [
+      "-u",
+      TURBOPANEL_USER,
+      "env",
+      ...envAssignments,
+      "bash",
+      "-c",
+      command,
+    ]
+    : [
+      "env",
+      ...envAssignments,
+      "bash",
+      "-c",
+      command,
+    ];
+
+  async function attempt(nopass: boolean): Promise<Deno.CommandOutput> {
+    const prefix = nopass ? ["-n"] : [];
+    return await new Deno.Command("sudo", {
+      args: [...prefix, ...sudoBody],
+      stdin: "null",
+      stdout: "piped",
+      stderr: "piped",
+    }).output();
+  }
+
+  let output = await attempt(true);
+  if (!output.success && (output.code ?? 1) === 1) {
+    output = await attempt(false);
+  }
+
+  return {
+    code: output.code ?? 1,
+    stdout: new TextDecoder().decode(output.stdout),
+    stderr: new TextDecoder().decode(output.stderr),
+  };
 }
 
 async function runPrivilegedDaemonDeno(
@@ -99,23 +164,31 @@ async function runPrivilegedDaemonDeno(
   ].map(shellQuote).join(" ");
   const command = `cd ${shellQuote(DAEMON_DIR)} && exec ${denoInvocation}`;
 
+  const tpExists = turbopanelUserExists();
+
   // Always run as turbopanel when the user exists so runtimes/uv cache
   // (uv, python, ansible) stays owned by turbopanel — not the dev user.
-  if (turbopanelUserExists()) {
+  if (tpExists) {
     return runSudo([
       "-u",
       TURBOPANEL_USER,
       "env",
       `HOME=${TURBOPANEL_ROOT}`,
+      ...daemonEnvAssignments(),
       "bash",
       "-c",
       command,
     ]);
   }
-  if (pathDirectlyAccessible(script)) {
-    return runInherit(["bash", "-c", command]);
-  }
-  return runSudo(["bash", "-c", command]);
+  // Before Ansible creates turbopanel, bootstrap must install runtimes as root.
+  return runSudo([
+    "env",
+    `HOME=${TURBOPANEL_ROOT}`,
+    ...daemonEnvAssignments(),
+    "bash",
+    "-c",
+    command,
+  ]);
 }
 
 export type BuildMode = {
@@ -304,21 +377,76 @@ export function writeBuildMode(
   });
 }
 
+async function ensureTurbopanelRuntimesOwnership(): Promise<void> {
+  if (!turbopanelUserExists()) {
+    return;
+  }
+
+  const runtimesDir = `${TURBOPANEL_ROOT}/runtimes`;
+  // Early bootstrap as root can leave root-owned files under uv/cache while the
+  // top-level runtimes directory is already turbopanel-owned and writable.
+  const code = await runSudo([
+    "chown",
+    "-R",
+    `${TURBOPANEL_USER}:${TURBOPANEL_GROUP}`,
+    runtimesDir,
+  ]);
+  // turbopanel's HOME (/opt/turbopanel) must be writable so ansible can create
+  // ~/.ansible/tmp during bootstrap verification. The turbopanel-user Ansible
+  // role normally owns this dir, but it has not run yet at bootstrap time.
+  // Non-recursive: keep platform/ subtree ownership untouched; mode stays 0755
+  // so the dev user can still traverse into runtimes/.
+  const rootCode = await runSudo([
+    "chown",
+    `${TURBOPANEL_USER}:${TURBOPANEL_GROUP}`,
+    TURBOPANEL_ROOT,
+  ]);
+  // An early bootstrap run as root creates a root-owned ~/.ansible under
+  // /opt/turbopanel; reclaim it so the turbopanel user can write its tmp dir.
+  const ansibleHomeCode = await runSudo([
+    "bash",
+    "-c",
+    `d=${shellQuote(`${TURBOPANEL_ROOT}/.ansible`)}; if [ -e "$d" ]; then chown -R ${TURBOPANEL_USER}:${TURBOPANEL_GROUP} "$d"; fi`,
+  ]);
+  // Early Deno/corepack installs as root can leave a root-owned ~/.cache; pnpm
+  // via corepack needs turbopanel to write under /opt/turbopanel/.cache/node.
+  const cacheHomeCode = await runSudo([
+    "bash",
+    "-c",
+    `d=${shellQuote(`${TURBOPANEL_ROOT}/.cache`)}; if [ -e "$d" ]; then chown -R ${TURBOPANEL_USER}:${TURBOPANEL_GROUP} "$d"; fi`,
+  ]);
+  if (code !== 0 || rootCode !== 0 || ansibleHomeCode !== 0 || cacheHomeCode !== 0) {
+    throw new Error("Failed to align /opt/turbopanel ownership with turbopanel user");
+  }
+}
+
 export async function bootstrapOrchestration(): Promise<void> {
+  await ensureTurbopanelRuntimesOwnership();
   const script =
     `${TURBOPANEL_PLATFORM}/daemon/scripts/bootstrap-orchestration.ts`;
-  const code = await runPrivilegedDaemonDeno(
-    script,
-    [
-      "--allow-net",
-      "--allow-read",
-      "--allow-write",
-      "--allow-run",
-      "--allow-env",
-    ],
-  );
-  if (code !== 0) {
-    throw new Error("bootstrap-orchestration.ts failed");
+  const denoArgs = [
+    "--config",
+    DAEMON_DENO_CONFIG,
+    "--allow-net",
+    "--allow-read",
+    "--allow-write",
+    "--allow-run",
+    "--allow-env",
+  ];
+
+  const result = await runPrivilegedDaemonDenoCapture(script, denoArgs);
+  if (result.code !== 0) {
+    const detail = result.stderr.trim() || result.stdout.trim();
+    if (/sudo:.*(password|terminal)/i.test(detail)) {
+      throw new Error(
+        "sudo credentials expired — quit the console and run ./console again to re-authenticate",
+      );
+    }
+    throw new Error(
+      detail
+        ? `bootstrap-orchestration.ts failed: ${detail.split("\n").at(-1)}`
+        : "bootstrap-orchestration.ts failed",
+    );
   }
 }
 
@@ -467,11 +595,35 @@ export async function startDevStack(handlers?: {
 
   writeDaemonEnv();
 
+  onStep?.("Verify sudo access", "running");
+  if (!sudoCredentialsValid()) {
+    onStep?.("Verify sudo access", "failed");
+    throw new Error(
+      "sudo credentials expired — quit the console and run ./console again to re-authenticate",
+    );
+  }
+  onStep?.("Verify sudo access", "ok");
+
   onStep?.("Bootstrap orchestration", "running");
   await bootstrapOrchestration();
   onStep?.("Bootstrap orchestration", "ok");
 
-  await runInstanceDevInstallPrivileged(onEvent);
+  onStep?.("Configure turbopanel GitHub SSH", "running");
+  await ensureTurbopanelGithubAccess();
+  onStep?.("Configure turbopanel GitHub SSH", "ok");
+
+  onStep?.("Install orchestration runner", "running");
+  await ensureOrchestrationRunnerInstalled();
+  onStep?.("Install orchestration runner", "ok");
+
+  onStep?.("Converge dev stack (Ansible)", "running");
+  try {
+    await runInstanceDevInstallPrivileged(onEvent);
+    onStep?.("Converge dev stack (Ansible)", "ok");
+  } catch (err) {
+    onStep?.("Converge dev stack (Ansible)", "failed");
+    throw err;
+  }
 
   if (readInstanceRuntime() === "workers") {
     onStep?.("Install website systemd unit", "running");

@@ -21,10 +21,10 @@ tp_deno_runtime_present() {
 # After Ansible creates turbopanel:turbopanel (750) under /opt/turbopanel, the
 # invoking developer still needs to execute the console-owned Deno binary.
 tp_fix_deno_runtime_access() {
-  _dev_user=${USER:-}
-  if [ -z "$_dev_user" ] || [ "$_dev_user" = "root" ]; then
-    return 0
+  if ! tp_resolve_dev_identity; then
+    return 1
   fi
+  _dev_user=$TP_DEV_USER
   if ! command -v sudo >/dev/null 2>&1; then
     return 1
   fi
@@ -32,12 +32,15 @@ tp_fix_deno_runtime_access() {
     return 1
   fi
 
-  # Traverse /opt/turbopanel without granting list access; open runtime for read+execute.
+  # Open the full path chain: /opt/turbopanel → runtimes → deno/<version>/deno.
+  # chmod o+x on intermediate dirs; chmod -R o+rx on the versioned runtime tree.
   sudo chmod o+x "$TURBOPANEL_ROOT" 2>/dev/null || true
+  sudo chmod o+x "$TURBOPANEL_RUNTIMES_DIR" 2>/dev/null || true
   sudo chmod -R o+rx "$DENO_RUNTIME_ROOT" 2>/dev/null || true
 
   if command -v setfacl >/dev/null 2>&1; then
     sudo setfacl -m "u:${_dev_user}:rx" "$TURBOPANEL_ROOT" 2>/dev/null || true
+    sudo setfacl -m "u:${_dev_user}:rx" "$TURBOPANEL_RUNTIMES_DIR" 2>/dev/null || true
     sudo setfacl -R -m "u:${_dev_user}:rx" "$DENO_RUNTIME_ROOT" 2>/dev/null || true
     sudo setfacl -R -d -m "u:${_dev_user}:rx" "$DENO_RUNTIME_ROOT" 2>/dev/null || true
   fi
@@ -63,6 +66,9 @@ tp_install_deno_runtime_body() {
   mkdir -p "$DENO_VERSION_DIR"
   mv "$_tmp/bin/deno" "$DENO_BIN"
   rm -rf "$_tmp"
+  if getent passwd turbopanel >/dev/null 2>&1; then
+    chown -R turbopanel:turbopanel "$DENO_RUNTIME_ROOT" 2>/dev/null || true
+  fi
   tp_repoint_deno_current
 }
 
@@ -156,6 +162,9 @@ tp_install_deno_runtime() {
       "curl -fsSL https://deno.land/install.sh | sh -s v${DENO_VERSION} -- -y --no-modify-path"
     sudo mv "$_tmp/bin/deno" "$DENO_BIN"
     sudo rm -rf "$_tmp"
+    if getent passwd turbopanel >/dev/null 2>&1; then
+      sudo chown -R turbopanel:turbopanel "$DENO_RUNTIME_ROOT" 2>/dev/null || true
+    fi
     tp_repoint_deno_current || true
     tp_fix_deno_runtime_access || true
   fi

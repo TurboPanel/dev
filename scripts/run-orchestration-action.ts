@@ -3,15 +3,27 @@
  * Runs daemon orchestration playbooks as turbopanel (invoked via sudo from the console).
  * Emits Ansible JSONL events on stdout — one JSON object per line.
  *
- * Uses the daemon checkout's Deno config so @std/* imports in the orchestration
- * module graph resolve the same way as daemon bootstrap.
+ * Installed to /opt/turbopanel/platform/daemon/scripts/ before each orchestration
+ * run so the turbopanel user can execute it without reading the developer checkout.
  */
-import {
-  ANSIBLE_COLLECTIONS_PATH,
-  ANSIBLE_LOCAL_TMP,
-  ANSIBLE_PLAYBOOK_BIN,
-  TURBOPANEL_PLATFORM,
-} from "../src/lib/paths.ts";
+const TURBOPANEL_ROOT = "/opt/turbopanel";
+const TURBOPANEL_PLATFORM = `${TURBOPANEL_ROOT}/platform`;
+const RUNTIMES_DIR = `${TURBOPANEL_ROOT}/runtimes`;
+const ANSIBLE_PLAYBOOK_BIN =
+  `${RUNTIMES_DIR}/ansible/current/bin/ansible-playbook`;
+const ANSIBLE_LOCAL_TMP = `${RUNTIMES_DIR}/uv/cache/ansible-tmp`;
+const ANSIBLE_COLLECTIONS_PATH = `${RUNTIMES_DIR}/ansible/galaxy-collections`;
+const DAEMON_ENV_PATH = `${TURBOPANEL_PLATFORM}/daemon/.env`;
+
+const INSTANCE_DEV_INSTALL_PLAYBOOK =
+  `${TURBOPANEL_PLATFORM}/daemon/orchestration/playbooks/instance-dev-install.yml`;
+
+const SSH_REPO_URLS = {
+  instance: "git@github.com:turbopanel/turbopanel.git",
+  ui: "git@github.com:turbopanel/turbopanel-ui.git",
+  website: "git@github.com:turbopanel/turbopanel-website.git",
+  daemon: "git@github.com:turbopanel/turbopanel-daemon.git",
+} as const;
 
 const DAEMON_ANSIBLE_EVENTS_PATH =
   `${TURBOPANEL_PLATFORM}/daemon/src/orchestration/ansible-events.ts`;
@@ -19,6 +31,23 @@ const DAEMON_ANSIBLE_PATH =
   `${TURBOPANEL_PLATFORM}/daemon/src/orchestration/ansible.ts`;
 const DAEMON_ORCHESTRATION_DIR =
   `${TURBOPANEL_PLATFORM}/daemon/orchestration`;
+
+function applyDaemonEnvToProcess(): void {
+  let content = "";
+  try {
+    content = Deno.readTextFileSync(DAEMON_ENV_PATH);
+  } catch {
+    return;
+  }
+  for (const line of content.split("\n")) {
+    const match = line.match(/^([A-Z_][A-Z0-9_]*)=(.*)$/);
+    if (match && !Deno.env.has(match[1])) {
+      Deno.env.set(match[1], match[2]);
+    }
+  }
+}
+
+applyDaemonEnvToProcess();
 
 function ansiblePlaybookEnv(): Record<string, string> {
   return {
@@ -39,11 +68,59 @@ function usage(): never {
   Deno.exit(2);
 }
 
+function devInstanceExtraArgs(): string[] {
+  const devUser = Deno.env.get("TURBOPANEL_DEV_USER");
+  const devUid = Deno.env.get("TURBOPANEL_DEV_UID");
+  const devGid = Deno.env.get("TURBOPANEL_DEV_GID");
+  const uiMode = Deno.env.get("TURBOPANEL_UI_MODE") === "static" ? "static" : "dev";
+  const instanceRunMode = Deno.env.get("TURBOPANEL_INSTANCE_RUN_MODE") === "compiled"
+    ? "compiled"
+    : "source";
+  const instanceRuntime = Deno.env.get("TURBOPANEL_INSTANCE_RUNTIME") === "workers"
+    ? "workers"
+    : "deno";
+
+  const args: string[] = [
+    "-e",
+    `instance_repo_url=${SSH_REPO_URLS.instance}`,
+    "-e",
+    `ui_repo_url=${SSH_REPO_URLS.ui}`,
+    "-e",
+    `website_repo_url=${SSH_REPO_URLS.website}`,
+  ];
+  if (devUser) args.push("-e", `turbopanel_dev_user=${devUser}`);
+  if (devUid) args.push("-e", `turbopanel_dev_uid=${devUid}`);
+  if (devGid) args.push("-e", `turbopanel_dev_gid=${devGid}`);
+  args.push("-e", `turbopanel_ui_mode=${uiMode}`);
+  args.push("-e", `turbopanel_instance_run_mode=${instanceRunMode}`);
+  args.push("-e", `turbopanel_instance_runtime=${instanceRuntime}`);
+  if (instanceRuntime === "workers") {
+    args.push("-e", "postgres_expose_port=true");
+  }
+  return args;
+}
+
 async function runInstanceDevInstall(): Promise<void> {
-  const mod = await import(DAEMON_ANSIBLE_PATH) as {
-    runInstanceDevInstall: (onEvent?: (event: unknown) => void) => Promise<void>;
+  const eventsMod = await import(DAEMON_ANSIBLE_EVENTS_PATH) as {
+    runPlaybookStreaming: (
+      ansiblePlaybookBin: string,
+      args: string[],
+      options: {
+        cwd?: string;
+        env?: Record<string, string>;
+        onEvent: (event: unknown) => void;
+      },
+    ) => Promise<void>;
   };
-  await mod.runInstanceDevInstall(emitEvent);
+  await eventsMod.runPlaybookStreaming(
+    ANSIBLE_PLAYBOOK_BIN,
+    ["-i", "localhost,", "-c", "local", ...devInstanceExtraArgs(), INSTANCE_DEV_INSTALL_PLAYBOOK],
+    {
+      cwd: DAEMON_ORCHESTRATION_DIR,
+      env: ansiblePlaybookEnv(),
+      onEvent: emitEvent,
+    },
+  );
 }
 
 async function runBuildToggle(): Promise<void> {

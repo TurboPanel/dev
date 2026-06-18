@@ -179,7 +179,6 @@ export function App() {
       onStep: (label, status, id) => {
         if (status === "failed") {
           ansible.emitStep(label, "failed", id);
-          ansible.setError(label);
           return;
         }
         ansible.emitStep(label, status, id);
@@ -196,9 +195,8 @@ export function App() {
       } catch (error) {
         if (!cancelled) {
           setEnvRefresh((value) => value + 1);
-          ansible.setError(
-            error instanceof Error ? error.message : String(error),
-          );
+          const message = error instanceof Error ? error.message : String(error);
+          ansible.setError((current) => current ?? message);
           ansible.setDone(true);
         }
       }

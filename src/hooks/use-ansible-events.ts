@@ -1,9 +1,17 @@
 import { useCallback, useState } from "react";
 import type { AnsibleTaskRow } from "@turbopanel/components/ansible-task-list.tsx";
 
-function stripRolePrefix(name: string): string {
-  const match = name.match(/^\s*[^:]+:\s*(.+)$/);
-  return match ? match[1].trim() : name.trim();
+function parseTaskName(full: string): { role: string | null; task: string } {
+  const match = full.match(/^\s*([^:]+)\s*:\s*(.+)$/);
+  if (match) {
+    return { role: match[1].trim(), task: match[2].trim() };
+  }
+  return { role: null, task: full.trim() };
+}
+
+function taskLabel(full: string): string {
+  const { role, task } = parseTaskName(full);
+  return role ? `${role} › ${task}` : task;
 }
 
 function hostMessages(hosts: Record<string, Record<string, unknown>>): string {
@@ -42,6 +50,44 @@ function upsertTask(
   return next;
 }
 
+function completeRunning(
+  tasks: AnsibleTaskRow[],
+  finalStatus: AnsibleTaskRow["status"],
+): AnsibleTaskRow[] {
+  return tasks.map((task) =>
+    task.status === "running" ? { ...task, status: finalStatus } : task
+  );
+}
+
+export type AnsibleTaskView = {
+  steps: AnsibleTaskRow[];
+  activePlay: AnsibleTaskRow | null;
+  recentTasks: AnsibleTaskRow[];
+  hiddenTaskCount: number;
+};
+
+/** Fit console steps + pinned play + a tail of Ansible tasks into a row budget. */
+export function buildAnsibleTaskView(
+  tasks: AnsibleTaskRow[],
+  maxRows: number,
+): AnsibleTaskView {
+  const steps = tasks.filter((task) => task.depth === 0);
+  const plays = tasks.filter((task) => task.depth === 1);
+  const ansibleTasks = tasks.filter((task) => task.depth === 2);
+
+  const activePlay =
+    [...plays].reverse().find((play) => play.status === "running") ??
+    [...plays].reverse().find((play) => play.status === "failed") ??
+    null;
+
+  const reserved = steps.length + (activePlay ? 1 : 0);
+  const recentBudget = Math.max(0, maxRows - reserved);
+  const hiddenTaskCount = Math.max(0, ansibleTasks.length - recentBudget);
+  const recentTasks = ansibleTasks.slice(-recentBudget);
+
+  return { steps, activePlay, recentTasks, hiddenTaskCount };
+}
+
 export function useAnsibleEvents() {
   const [tasks, setTasks] = useState<AnsibleTaskRow[]>([]);
   const [recap, setRecap] = useState<string | null>(null);
@@ -61,7 +107,9 @@ export function useAnsibleEvents() {
     id?: string,
   ) => {
     const stepId = id ?? `step:${label}`;
-    setTasks((current) => upsertTask(current, { id: stepId, label, status }));
+    setTasks((current) =>
+      upsertTask(current, { id: stepId, label, status, depth: 0 })
+    );
   }, []);
 
   const onEvent = useCallback((event: unknown) => {
@@ -70,16 +118,43 @@ export function useAnsibleEvents() {
     const eventType = record._event;
     if (typeof eventType !== "string") return;
 
+    if (eventType === "v2_playbook_on_play_start") {
+      const play = record.play as { name?: string; uuid?: string } | undefined;
+      const name = play?.name?.trim() || "play";
+      const playId = typeof play?.uuid === "string"
+        ? `play:${play.uuid}`
+        : `play:${name}`;
+      setTasks((current) => {
+        const closed = current.map((task) =>
+          task.depth === 1 && task.status === "running"
+            ? { ...task, status: "ok" as const }
+            : task
+        );
+        return upsertTask(closed, {
+          id: playId,
+          label: name,
+          status: "running",
+          depth: 1,
+        });
+      });
+      return;
+    }
+
     if (
       eventType === "v2_playbook_on_task_start" ||
       eventType === "v2_playbook_on_handler_task_start" ||
       eventType === "v2_runner_on_start"
     ) {
       const task = record.task as { id?: string; name?: string } | undefined;
-      const name = stripRolePrefix(task?.name ?? "task");
-      const id = typeof task?.id === "string" ? task.id : name;
+      const rawName = task?.name ?? "task";
+      const id = typeof task?.id === "string" ? `task:${task.id}` : `task:${rawName}`;
       setTasks((current) =>
-        upsertTask(current, { id, label: name, status: "running" })
+        upsertTask(current, {
+          id,
+          label: taskLabel(rawName),
+          status: "running",
+          depth: 2,
+        })
       );
       return;
     }
@@ -91,8 +166,8 @@ export function useAnsibleEvents() {
       eventType === "v2_runner_on_skipped"
     ) {
       const task = record.task as { id?: string; name?: string } | undefined;
-      const name = stripRolePrefix(task?.name ?? "task");
-      const id = typeof task?.id === "string" ? task.id : name;
+      const rawName = task?.name ?? "task";
+      const id = typeof task?.id === "string" ? `task:${task.id}` : `task:${rawName}`;
       const hosts = record.hosts as
         | Record<string, Record<string, unknown>>
         | undefined;
@@ -103,8 +178,9 @@ export function useAnsibleEvents() {
         setTasks((current) =>
           upsertTask(current, {
             id,
-            label: name,
+            label: taskLabel(rawName),
             status: changed ? "changed" : "ok",
+            depth: 2,
           })
         );
         return;
@@ -112,15 +188,26 @@ export function useAnsibleEvents() {
 
       if (eventType === "v2_runner_on_skipped") {
         setTasks((current) =>
-          upsertTask(current, { id, label: name, status: "skipped" })
+          upsertTask(current, {
+            id,
+            label: taskLabel(rawName),
+            status: "skipped",
+            depth: 2,
+          })
         );
         return;
       }
 
       const message = hosts ? hostMessages(hosts) : "task failed";
-      setTasks((current) =>
-        upsertTask(current, { id, label: name, status: "failed" })
-      );
+      setTasks((current) => {
+        const withTask = upsertTask(current, {
+          id,
+          label: taskLabel(rawName),
+          status: "failed",
+          depth: 2,
+        });
+        return completeRunning(withTask, "failed");
+      });
       setError(message);
       return;
     }
@@ -129,8 +216,19 @@ export function useAnsibleEvents() {
       const stats = record.stats as
         | Record<string, Record<string, number>>
         | undefined;
+      let failed = 0;
+      if (stats) {
+        for (const hostStats of Object.values(stats)) {
+          failed += hostStats.failures ?? hostStats.failed ?? 0;
+        }
+      }
+      const finalStatus: AnsibleTaskRow["status"] = failed > 0 ? "failed" : "ok";
+      setTasks((current) => completeRunning(current, finalStatus));
       if (stats) {
         setRecap(buildRecap(stats));
+      }
+      if (failed > 0) {
+        setDone(true);
       }
     }
   }, []);
