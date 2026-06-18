@@ -43,7 +43,7 @@ cd turbopanel-dev
 
 ## Responsibilities
 
-- **`scripts/install.sh`** — clones/updates **only** `turbopanel-dev` via `git@github.com:turbopanel/turbopanel-dev.git`. No sudo, no Deno, no platform repos.
+- **`scripts/install.sh`** — clones/updates **only** `turbopanel-dev` via `git@github.com:turbopanel/turbopanel-dev.git`. On first run, prompts for git `user.name` and `user.email`, generates `~/.ssh/id_ed25519` if missing, configures SSH commit signing, and verifies GitHub SSH before cloning. No sudo for git clone itself; may use sudo for `git` / `openssh-client` apt installs.
 - **`console`** — ensures Deno is installed under `/opt/turbopanel/runtimes` (sudo on first run), caches dependencies, starts the console.
 - **Ink console** — installs the **daemon** repo only via SSH; writes developer identity (`TURBOPANEL_DEV_USER/UID/GID`) into the daemon `.env`; runs `bootstrap-orchestration.sh` and `install-daemon-systemd.sh` to hand off to the daemon, which installs everything else via Ansible.
 

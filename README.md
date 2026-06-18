@@ -16,8 +16,9 @@ cd turbopanel-dev
 
 **For `scripts/install.sh`**
 
-- `git`
-- SSH access to GitHub (`git@github.com:turbopanel/...`)
+- Interactive terminal (for first-time GitHub SSH setup)
+- `git` (installed automatically if missing)
+- SSH access to GitHub (`git@github.com:turbopanel/...`) — the installer generates `~/.ssh/id_ed25519`, shows the public key for you to add on GitHub, and configures SSH commit signing
 
 **For `./console`**
 
