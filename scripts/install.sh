@@ -2,7 +2,7 @@
 set -eu
 
 REPO_NAME=turbopanel-dev
-REPO_URL=git@github.com:turbopanel/turbopanel-dev.git
+REPO_URL=https://github.com/turbopanel/turbopanel-dev.git
 BRANCH=trunk
 
 info() {
