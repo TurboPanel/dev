@@ -31,6 +31,14 @@ tp_error() {
   printf '%s✗%s %s\n' "$_TP_RED" "$_TP_RESET" "$*" >&2
 }
 
+# True when prompts can use the controlling terminal (including curl | sh from a TTY).
+tp_is_interactive() {
+  if [ -t 0 ]; then
+    return 0
+  fi
+  [ -r /dev/tty ] && [ -w /dev/tty ] 2>/dev/null
+}
+
 tp_trim_whitespace() {
   _tw=$1
   while [ -n "$_tw" ]; do
