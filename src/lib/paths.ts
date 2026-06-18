@@ -5,6 +5,8 @@ export const DENO_VERSION = "2.8.3";
 export const DENO_BIN =
   `${TURBOPANEL_ROOT}/runtimes/deno/v${DENO_VERSION}/bin/deno`;
 export const WRANGLER_DEV_PORT = 18787;
+export const WEBSITE_DEV_PORT = 19820;
+export const WEBSITE_DEV_URL = `http://localhost:${WEBSITE_DEV_PORT}`;
 export const CADDY_HTTPS = "https://localhost:8443";
 export const PLATFORM_CA_CERT_PATH = `${INSTANCE_DIR}/certs/ca.crt`;
 

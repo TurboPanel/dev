@@ -1,6 +1,7 @@
 import { readInstanceRuntime } from "@turbopanel/lib/instance-runtime.ts";
 import {
   CADDY_HTTPS,
+  WEBSITE_DEV_PORT,
   WRANGLER_DEV_PORT,
 } from "@turbopanel/lib/paths.ts";
 
@@ -11,12 +12,22 @@ export type StackUnitStatus = {
   detail: string;
 };
 
-const STACK_UNITS: Array<{ unit: string; label: string }> = [
+const STACK_UNITS_BASE: Array<{ unit: string; label: string }> = [
   { unit: "turbopanel-daemon", label: "daemon" },
   { unit: "turbopanel-instance", label: "instance" },
   { unit: "turbopanel-caddy", label: "caddy" },
   { unit: "turbopanel-ui", label: "ui (Expo)" },
 ];
+
+function stackUnitsForRuntime(): Array<{ unit: string; label: string }> {
+  if (readInstanceRuntime() === "workers") {
+    return [
+      ...STACK_UNITS_BASE,
+      { unit: "turbopanel-website", label: "website (Next.js)" },
+    ];
+  }
+  return STACK_UNITS_BASE;
+}
 
 const INSTANCE_SOCKET = "/run/turbopanel/instance.sock";
 
@@ -66,6 +77,11 @@ export function wranglerProcessRunning(): boolean {
   return active === true;
 }
 
+export function checkWebsiteDevHealth(): boolean {
+  const code = curlHttpStatus(`http://127.0.0.1:${WEBSITE_DEV_PORT}/`);
+  return code === "200" || code === "307" || code === "308";
+}
+
 export function checkInstanceApiHealth(): boolean {
   const caddyCode = curlHttpStatus(`${CADDY_HTTPS}/api/health`, true);
   if (caddyCode === "200") return true;
@@ -99,7 +115,7 @@ function parseIsActiveLine(text: string): { active: boolean | null; detail: stri
 }
 
 export function fetchStackStatus(): StackUnitStatus[] {
-  const unitNames = STACK_UNITS.map((entry) => entry.unit);
+  const unitNames = stackUnitsForRuntime().map((entry) => entry.unit);
   const proc = new Deno.Command("systemctl", {
     args: ["is-active", ...unitNames],
     stdout: "piped",
@@ -114,7 +130,7 @@ export function fetchStackStatus(): StackUnitStatus[] {
     ? stderr.split("\n")
     : [];
 
-  const units = STACK_UNITS.map(({ unit, label }, index) => {
+  const units = stackUnitsForRuntime().map(({ unit, label }, index) => {
     const text = lines[index]?.trim() ?? "";
     const { active, detail } = parseIsActiveLine(text);
     return { unit, label, active, detail };

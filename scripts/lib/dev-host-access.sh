@@ -136,7 +136,8 @@ tp_apply_dev_host_acls_checkouts() {
     "$TURBOPANEL_PLATFORM" \
     "$TURBOPANEL_PLATFORM/daemon" \
     "$TURBOPANEL_PLATFORM/instance" \
-    "$TURBOPANEL_PLATFORM/ui"; do
+    "$TURBOPANEL_PLATFORM/ui" \
+    "$TURBOPANEL_PLATFORM/website"; do
     tp_path_exists "$_ada_checkout" || continue
     tp_sudo setfacl -R -m "u:${_ada_user}:rwx" "$_ada_checkout" 2>/dev/null || true
     tp_sudo setfacl -R -d -m "u:${_ada_user}:rwx" "$_ada_checkout" 2>/dev/null || true
@@ -173,7 +174,8 @@ tp_ensure_git_safe_directories() {
   for _egsd_repo in \
     "$TURBOPANEL_PLATFORM/daemon" \
     "$TURBOPANEL_PLATFORM/instance" \
-    "$TURBOPANEL_PLATFORM/ui"; do
+    "$TURBOPANEL_PLATFORM/ui" \
+    "$TURBOPANEL_PLATFORM/website"; do
     tp_path_exists "$_egsd_repo/.git" || continue
     git config --global --get-all safe.directory 2>/dev/null \
       | grep -Fx "$_egsd_repo" >/dev/null 2>&1 && continue

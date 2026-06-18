@@ -9,6 +9,7 @@ import {
 import {
   instanceReachable,
   instanceSocketPresent,
+  checkWebsiteDevHealth,
   stackSummary,
   type StackUnitStatus,
   wranglerProcessRunning,
@@ -108,6 +109,11 @@ export function StatusScreen({
                 detail={apiReady
                   ? "reachable via Caddy/wrangler"
                   : "run pnpm dev in platform/instance (console writes .dev.vars)"}
+              />
+              <StatusLine
+                label="website"
+                ok={checkWebsiteDevHealth()}
+                detail={`http://127.0.0.1:19820 (turbopanel-website.service)`}
               />
             </>
           ) : (

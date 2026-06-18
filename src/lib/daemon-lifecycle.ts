@@ -8,7 +8,9 @@ import {
   resolveDevIdentity,
   TURBOPANEL_PLATFORM,
   TURBOPANEL_ROOT,
+  WEBSITE_DEV_URL,
 } from "@turbopanel/lib/paths.ts";
+import { ensureWebsiteSystemdUnit } from "@turbopanel/lib/ensure-website-systemd.ts";
 import { ensureDevHostAccess } from "@turbopanel/lib/ensure-dev-host-access.ts";
 import { runInherit } from "@turbopanel/lib/platform-install.ts";
 import {
@@ -386,6 +388,7 @@ async function restartDevStackServices(): Promise<void> {
       "turbopanel-instance",
       "turbopanel-caddy",
       "turbopanel-daemon",
+      "turbopanel-website",
     ] as const) {
       const code = await runSudo(["systemctl", "restart", unit]);
       if (code !== 0) {
@@ -495,6 +498,8 @@ export async function followLogs(): Promise<void> {
     "turbopanel-caddy",
     "-u",
     "turbopanel-ui",
+    "-u",
+    "turbopanel-website",
   ]);
 }
 
@@ -507,6 +512,7 @@ TurboPanel dev stack (Workers runtime):
   Caddy        @ https://localhost:${CADDY_PORT}  (user: instance)
   Instance     @ wrangler dev via turbopanel-instance.service (systemd)
   UI (Expo)    @ http://127.0.0.1:8081  (user: instance)
+  Website      @ ${WEBSITE_DEV_URL}  (user: instance)
   Daemon       @ (no port, user: turbopanel)
   Postgres     @ 127.0.0.1:5432 (TCP, for wrangler Hyperdrive)
 
@@ -558,7 +564,7 @@ function printStackStatus(): void {
   }
   console.log("");
   console.log(
-    "Follow logs: journalctl -fu turbopanel-daemon -u turbopanel-instance -u turbopanel-caddy -u turbopanel-ui",
+    "Follow logs: journalctl -fu turbopanel-daemon -u turbopanel-instance -u turbopanel-caddy -u turbopanel-ui -u turbopanel-website",
   );
 }
 
@@ -568,6 +574,9 @@ export async function startDevStack(): Promise<void> {
   await ensureOrchestrationRuntime();
   await bootstrapOrchestration();
   await runDevStackInstall();
+  if (readInstanceRuntime() === "workers") {
+    await ensureWebsiteSystemdUnit();
+  }
   await installDaemonSystemd();
   await restartDevStackServices();
   await waitForDevStack();

@@ -11,7 +11,7 @@ NODE="${TURBOPANEL_ROOT}/runtimes/node/current/bin/node"
 CLI="${TURBOPANEL_PLATFORM}/ui/node_modules/expo/bin/cli"
 PORT=8081
 
-tp_ensure_privileges
+tp_ensure_privileges /etc/systemd/system
 
 if [ ! -x "$NODE" ]; then
   echo "error: node runtime missing at $NODE" >&2

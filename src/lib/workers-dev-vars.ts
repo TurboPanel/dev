@@ -6,6 +6,9 @@ const POSTGRES_CONFIG_PATH = "/etc/turbopanel/postgres/config.json";
 const MANAGED_NODE = "/opt/turbopanel/runtimes/node/current/bin/node";
 const HYPERDRIVE_ENV_KEY =
   "CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE";
+const WEBSITE_CORS_ORIGINS =
+  "http://localhost:19820,http://127.0.0.1:19820";
+
 
 type PostgresConfig = {
   user: string;
@@ -160,6 +163,9 @@ export async function ensureWorkersDevVars(): Promise<string> {
   }
   if (!devVarValues.has("TURBOPANEL_IS_SIGNUP_ENABLED")) {
     devVarValues.set("TURBOPANEL_IS_SIGNUP_ENABLED", "1");
+  }
+  if (!devVarValues.has("TURBOPANEL_CORS_ORIGINS")) {
+    devVarValues.set("TURBOPANEL_CORS_ORIGINS", WEBSITE_CORS_ORIGINS);
   }
 
   await writeEnvFile(

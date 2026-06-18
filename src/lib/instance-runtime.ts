@@ -7,6 +7,7 @@ import {
 } from "@turbopanel/lib/daemon-lifecycle.ts";
 import { TURBOPANEL_PLATFORM, TURBOPANEL_ROOT } from "@turbopanel/lib/paths.ts";
 import { ensureWorkersDevVars } from "@turbopanel/lib/workers-dev-vars.ts";
+import { ensureWebsiteSystemdUnit } from "@turbopanel/lib/ensure-website-systemd.ts";
 
 const TURBOPANEL_USER = "turbopanel";
 
@@ -110,6 +111,7 @@ export async function switchInstanceRuntime(
 
   if (target === "workers") {
     await ensureWorkersDevVars();
+    await ensureWebsiteSystemdUnit();
     const code = await runSudo(["systemctl", "restart", "turbopanel-instance"]);
     if (code !== 0) {
       throw new Error("failed to start turbopanel-instance (Workers/wrangler)");
