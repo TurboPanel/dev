@@ -6,7 +6,14 @@ REPO_SLUG=turbopanel/turbopanel-dev
 REPO_URL=git@github.com:${REPO_SLUG}.git
 BRANCH=trunk
 
-_tp_install_lib_dir=$(CDPATH= cd -- "$(dirname "$0")" && pwd)/lib
+_tp_install_lib_dir=$(CDPATH= cd -- "$(dirname "$0")" && pwd 2>/dev/null)/lib
+if [ ! -f "$_tp_install_lib_dir/privileges.sh" ]; then
+  _tp_lib_base=${TURBOPANEL_DEV_LIB_BASE:-https://raw.githubusercontent.com/turbopanel/turbopanel-dev/trunk/scripts/lib}
+  _tp_install_lib_dir=$(mktemp -d)
+  for _tp_lib in privileges.sh git-github-ssh.sh; do
+    curl -fsSL "$_tp_lib_base/$_tp_lib" -o "$_tp_install_lib_dir/$_tp_lib"
+  done
+fi
 # shellcheck source=scripts/lib/privileges.sh
 . "$_tp_install_lib_dir/privileges.sh"
 # shellcheck source=scripts/lib/git-github-ssh.sh
