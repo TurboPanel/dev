@@ -151,6 +151,7 @@
   "workspace": {
     "dependencies": [
       "jsr:@deno-ink/core@~0.2.1",
+      "jsr:@std/path@*",
       "npm:@types/react@18",
       "npm:react@18.3.1"
     ]

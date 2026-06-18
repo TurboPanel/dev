@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   useApp,
   useInput,
@@ -9,6 +9,8 @@ import {
   buildStatusSummary,
   StatusBar,
 } from "@turbopanel/components/layout/status-bar.tsx";
+import { ConfirmPrompt } from "@turbopanel/components/confirm-prompt.tsx";
+import { RuntimeSelectPrompt } from "@turbopanel/components/runtime-select-prompt.tsx";
 import {
   followLogs,
   readBuildMode,
@@ -29,6 +31,7 @@ import {
   instanceReachable,
   instanceSocketPresent,
 } from "@turbopanel/lib/stack-status.ts";
+import { useAnsibleEvents } from "@turbopanel/hooks/use-ansible-events.ts";
 import { useDeveloperState } from "@turbopanel/hooks/use-developer-state.ts";
 import { useStackStatus } from "@turbopanel/hooks/use-stack-status.ts";
 import { useTerminalLayout } from "@turbopanel/hooks/use-terminal-layout.ts";
@@ -36,16 +39,7 @@ import {
   MainScreen,
   type MainScreenArea,
 } from "@turbopanel/screens/main-screen.tsx";
-
-async function runAfterExit(fn: () => Promise<void>): Promise<void> {
-  try {
-    await fn();
-    Deno.exit(0);
-  } catch (error) {
-    console.error(error instanceof Error ? error.message : error);
-    Deno.exit(1);
-  }
-}
+import { TaskRunScreen } from "@turbopanel/screens/task-run-screen.tsx";
 
 const AREAS: Array<{ id: MainScreenArea; label: string }> = [
   { id: "status", label: "Status" },
@@ -53,17 +47,44 @@ const AREAS: Array<{ id: MainScreenArea; label: string }> = [
   { id: "developer", label: "Developer" },
 ];
 
+type TaskHandlers = {
+  onEvent: (event: unknown) => void;
+  onStep: (
+    label: string,
+    status: "running" | "ok" | "failed",
+    id?: string,
+  ) => void;
+};
+
+type TaskRunState = {
+  title: string;
+  action: (handlers: TaskHandlers) => Promise<void>;
+};
+
+type ResetPromptState =
+  | { step: "runtime" }
+  | { step: "confirm"; target: "deno" | "workers" }
+  | null;
+
 export function App() {
   const { exit } = useApp();
   const [areaIndex, setAreaIndex] = useState(0);
   const [developerEditing, setDeveloperEditing] = useState(false);
   const [developerPanelFocused, setDeveloperPanelFocused] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
-  const daemonStatus = useMemo(() => checkPlatformRepos()[0], []);
-  const runtimeReady = denoRuntimeInstalled();
+  const [taskRun, setTaskRun] = useState<TaskRunState | null>(null);
+  const [resetPrompt, setResetPrompt] = useState<ResetPromptState>(null);
+  const [envRefresh, setEnvRefresh] = useState(0);
+  const ansible = useAnsibleEvents();
+
+  const daemonStatus = useMemo(
+    () => checkPlatformRepos()[0],
+    [envRefresh],
+  );
+  const runtimeReady = useMemo(() => denoRuntimeInstalled(), [envRefresh]);
   const daemonPresent = daemonStatus.present;
   const stackUnits = useStackStatus(daemonPresent);
-  const instanceRuntime = useMemo(() => readInstanceRuntime(), []);
+  const instanceRuntime = useMemo(() => readInstanceRuntime(), [envRefresh]);
   const developerUnlocked = useMemo(() => {
     const caddy = stackUnits.find((unit) => unit.unit === "turbopanel-caddy");
     if (instanceRuntime === "workers") {
@@ -78,7 +99,7 @@ export function App() {
   const developerState = useDeveloperState(instanceApiReady);
   const buildMode = useMemo(
     () => (daemonPresent ? readBuildMode() : null),
-    [daemonPresent],
+    [daemonPresent, envRefresh],
   );
   const productionBuildActive = buildMode?.uiMode === "static" &&
     buildMode?.instanceRunMode === "compiled";
@@ -128,7 +149,8 @@ export function App() {
     return items;
   }, [daemonPresent, productionBuildActive, instanceRuntime]);
 
-  const footerRows = showMenu ? menuItems.length + 1 : 1;
+  const inOverlay = taskRun !== null || resetPrompt !== null;
+  const footerRows = showMenu && !inOverlay ? menuItems.length + 1 : 1;
   const { rows, columns, appHeight, mainHeight } = useTerminalLayout(footerRows);
 
   const statusSummary = buildStatusSummary({
@@ -140,11 +162,55 @@ export function App() {
     developerState: instanceApiReady ? developerState : null,
   });
 
-  const hints = developerUnlocked && activeArea === "developer"
+  const hints = inOverlay
+    ? ""
+    : developerUnlocked && activeArea === "developer"
     ? "↑↓ section · Enter focus · t target · m menu · q quit"
     : "← → area · m menu · q quit";
 
+  useEffect(() => {
+    if (!taskRun) return;
+
+    ansible.reset();
+    let cancelled = false;
+
+    const handlers: TaskHandlers = {
+      onEvent: ansible.onEvent,
+      onStep: (label, status, id) => {
+        if (status === "failed") {
+          ansible.emitStep(label, "failed", id);
+          ansible.setError(label);
+          return;
+        }
+        ansible.emitStep(label, status, id);
+      },
+    };
+
+    (async () => {
+      try {
+        await taskRun.action(handlers);
+        if (!cancelled) {
+          setEnvRefresh((value) => value + 1);
+          ansible.setDone(true);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setEnvRefresh((value) => value + 1);
+          ansible.setError(
+            error instanceof Error ? error.message : String(error),
+          );
+          ansible.setDone(true);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [taskRun]);
+
   useInput((input, key) => {
+    if (inOverlay) return;
     if (developerEditing) return;
 
     if (showMenu) {
@@ -176,6 +242,11 @@ export function App() {
     }
   });
 
+  const beginTaskRun = (title: string, action: TaskRunState["action"]) => {
+    setShowMenu(false);
+    setTaskRun({ title, action });
+  };
+
   const handleMenuSelect = (item: { label: string; value: string }) => {
     setShowMenu(false);
 
@@ -185,57 +256,132 @@ export function App() {
     }
 
     if (item.value === "install") {
-      exit();
-      queueMicrotask(() => runAfterExit(installDaemon));
+      beginTaskRun("Installing daemon…", async ({ onStep }) => {
+        await installDaemon(onStep);
+      });
       return;
     }
 
     if (item.value === "start") {
-      exit();
-      queueMicrotask(() => runAfterExit(startDevStack));
+      beginTaskRun("Starting dev stack…", async (handlers) => {
+        await startDevStack(handlers);
+      });
       return;
     }
 
     if (item.value === "logs") {
       exit();
-      queueMicrotask(() => runAfterExit(followLogs));
+      queueMicrotask(async () => {
+        try {
+          await followLogs();
+          Deno.exit(0);
+        } catch (error) {
+          console.error(error instanceof Error ? error.message : error);
+          Deno.exit(1);
+        }
+      });
       return;
     }
 
     if (item.value === "runtime-workers") {
-      exit();
-      queueMicrotask(() => runAfterExit(() => switchInstanceRuntime("workers")));
+      beginTaskRun("Switching to Workers runtime…", async ({ onEvent }) => {
+        await switchInstanceRuntime("workers", onEvent);
+      });
       return;
     }
 
     if (item.value === "runtime-deno") {
-      exit();
-      queueMicrotask(() => runAfterExit(() => switchInstanceRuntime("deno")));
+      beginTaskRun("Switching to Deno runtime…", async ({ onEvent }) => {
+        await switchInstanceRuntime("deno", onEvent);
+      });
       return;
     }
 
     if (item.value === "build-production") {
-      exit();
-      queueMicrotask(() => runAfterExit(() => switchBuildMode("production")));
+      beginTaskRun("Switching to production build…", async ({ onEvent }) => {
+        await switchBuildMode("production", onEvent);
+      });
       return;
     }
 
     if (item.value === "build-dev") {
-      exit();
-      queueMicrotask(() => runAfterExit(() => switchBuildMode("dev")));
+      beginTaskRun("Switching to dev build…", async ({ onEvent }) => {
+        await switchBuildMode("dev", onEvent);
+      });
       return;
     }
 
     if (item.value === "reset-dev") {
-      exit();
-      queueMicrotask(() => runAfterExit(resetDevEnvironment));
+      setResetPrompt({ step: "runtime" });
     }
   };
 
   const handleInstanceSwitch = (target: "deno" | "workers") => {
-    exit();
-    queueMicrotask(() => runAfterExit(() => switchInstanceRuntime(target)));
+    const title = target === "workers"
+      ? "Switching to Workers runtime…"
+      : "Switching to Deno runtime…";
+    beginTaskRun(title, async ({ onEvent }) => {
+      await switchInstanceRuntime(target, onEvent);
+    });
   };
+
+  const mainContent = taskRun
+    ? (
+      <TaskRunScreen
+        title={taskRun.title}
+        tasks={ansible.tasks}
+        recap={ansible.recap}
+        error={ansible.error}
+        done={ansible.done}
+        onDone={() => setTaskRun(null)}
+      />
+    )
+    : resetPrompt?.step === "runtime"
+    ? (
+      <RuntimeSelectPrompt
+        onSelect={(target) => {
+          if (!target) {
+            setResetPrompt(null);
+            return;
+          }
+          setResetPrompt({ step: "confirm", target });
+        }}
+      />
+    )
+    : resetPrompt?.step === "confirm"
+    ? (
+      <ConfirmPrompt
+        question="This wipes all Postgres data and restarts the instance. Continue?"
+        onConfirm={(confirmed) => {
+          if (!confirmed) {
+            setResetPrompt(null);
+            return;
+          }
+          const target = resetPrompt.target;
+          setResetPrompt(null);
+          beginTaskRun("Resetting development environment…", async (handlers) => {
+            await resetDevEnvironment(target, handlers);
+          });
+        }}
+      />
+    )
+    : (
+      <MainScreen
+        area={activeArea}
+        mainHeight={mainHeight}
+        runtimeReady={runtimeReady}
+        daemonStatus={daemonStatus}
+        daemonPresent={daemonPresent}
+        platformDirectAccess={false}
+        stackUnits={stackUnits}
+        developerUnlocked={developerUnlocked}
+        stackHealthy={stackHealthy}
+        developerState={developerState}
+        onInstanceSwitch={handleInstanceSwitch}
+        onDeveloperEditingChange={setDeveloperEditing}
+        onDeveloperPanelFocusChange={setDeveloperPanelFocused}
+      />
+    );
 
   return (
     <AppShell
@@ -248,33 +394,21 @@ export function App() {
           instanceRuntime={instanceRuntime}
         />
       }
-      main={
-        <MainScreen
-          area={activeArea}
-          mainHeight={mainHeight}
-          runtimeReady={runtimeReady}
-          daemonStatus={daemonStatus}
-          daemonPresent={daemonPresent}
-          platformDirectAccess={false}
-          stackUnits={stackUnits}
-          developerUnlocked={developerUnlocked}
-          stackHealthy={stackHealthy}
-          developerState={developerState}
-          onInstanceSwitch={handleInstanceSwitch}
-          onDeveloperEditingChange={setDeveloperEditing}
-          onDeveloperPanelFocusChange={setDeveloperPanelFocused}
-        />
-      }
+      main={mainContent}
       statusBar={
-        <StatusBar
-          showMenu={showMenu}
-          menuItems={menuItems}
-          onMenuSelect={handleMenuSelect}
-          hints={hints}
-          statusSummary={statusSummary}
-          columns={columns}
-          rows={rows}
-        />
+        inOverlay
+          ? null
+          : (
+            <StatusBar
+              showMenu={showMenu}
+              menuItems={menuItems}
+              onMenuSelect={handleMenuSelect}
+              hints={hints}
+              statusSummary={statusSummary}
+              columns={columns}
+              rows={rows}
+            />
+          )
       }
     />
   );

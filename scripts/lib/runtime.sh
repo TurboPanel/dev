@@ -45,10 +45,25 @@ tp_fix_deno_runtime_access() {
   tp_deno_runtime_usable
 }
 
+tp_repoint_deno_current() {
+  if [ "$(id -u)" -eq 0 ] || tp_can_write_path "$DENO_RUNTIME_ROOT" 2>/dev/null; then
+    ln -sfn "$DENO_VERSION_DIR" "$DENO_RUNTIME_ROOT/current"
+    return 0
+  fi
+  command -v sudo >/dev/null 2>&1 && \
+    sudo ln -sfn "$DENO_VERSION_DIR" "$DENO_RUNTIME_ROOT/current"
+}
+
 tp_install_deno_runtime_body() {
-  mkdir -p "$DENO_VERSION_DIR"
-  DENO_INSTALL="$DENO_VERSION_DIR" \
+  _tmp="$DENO_RUNTIME_ROOT/.install"
+  rm -rf "$_tmp"
+  mkdir -p "$_tmp"
+  DENO_INSTALL="$_tmp" \
     curl -fsSL https://deno.land/install.sh | sh -s "v${DENO_VERSION}" -- -y --no-modify-path
+  mkdir -p "$DENO_VERSION_DIR"
+  mv "$_tmp/bin/deno" "$DENO_BIN"
+  rm -rf "$_tmp"
+  tp_repoint_deno_current
 }
 
 tp_remove_path() {
@@ -66,25 +81,34 @@ tp_remove_path() {
 
 tp_cleanup_old_deno_runtimes() {
   _old_dir=
+  _base=
   if [ ! -d "$DENO_RUNTIME_ROOT" ]; then
     return 0
   fi
-  for _old_dir in "$DENO_RUNTIME_ROOT"/v*; do
+  for _old_dir in "$DENO_RUNTIME_ROOT"/*; do
     [ -d "$_old_dir" ] || continue
+    _base=${_old_dir##*/}
+    case "$_base" in
+      current|.install) continue ;;
+    esac
     [ "$_old_dir" = "$DENO_VERSION_DIR" ] && continue
-    _old_ver=${_old_dir##*/v}
-    tp_info "Removing outdated Deno v${_old_ver}"
+    tp_info "Removing outdated Deno ${_base}"
     tp_remove_path "$_old_dir" || tp_warn "Could not remove ${_old_dir}"
   done
 }
 
 tp_other_deno_versions_present() {
   _old_dir=
+  _base=
   if [ ! -d "$DENO_RUNTIME_ROOT" ]; then
     return 1
   fi
-  for _old_dir in "$DENO_RUNTIME_ROOT"/v*; do
+  for _old_dir in "$DENO_RUNTIME_ROOT"/*; do
     [ -d "$_old_dir" ] || continue
+    _base=${_old_dir##*/}
+    case "$_base" in
+      current|.install) continue ;;
+    esac
     [ "$_old_dir" = "$DENO_VERSION_DIR" ] && continue
     return 0
   done
@@ -93,11 +117,13 @@ tp_other_deno_versions_present() {
 
 tp_install_deno_runtime() {
   if tp_deno_runtime_usable; then
+    tp_repoint_deno_current || true
     tp_cleanup_old_deno_runtimes
     return 0
   fi
 
   if tp_deno_runtime_present && tp_fix_deno_runtime_access; then
+    tp_repoint_deno_current || true
     tp_cleanup_old_deno_runtimes
     return 0
   fi
@@ -123,9 +149,14 @@ tp_install_deno_runtime() {
       exit 1
     fi
     tp_info "Administrator privileges required for ${TURBOPANEL_ROOT}"
-    sudo mkdir -p "$DENO_VERSION_DIR"
-    sudo env DENO_INSTALL="$DENO_VERSION_DIR" sh -c \
+    _tmp="$DENO_RUNTIME_ROOT/.install"
+    sudo rm -rf "$_tmp"
+    sudo mkdir -p "$_tmp" "$DENO_VERSION_DIR"
+    sudo env DENO_INSTALL="$_tmp" sh -c \
       "curl -fsSL https://deno.land/install.sh | sh -s v${DENO_VERSION} -- -y --no-modify-path"
+    sudo mv "$_tmp/bin/deno" "$DENO_BIN"
+    sudo rm -rf "$_tmp"
+    tp_repoint_deno_current || true
     tp_fix_deno_runtime_access || true
   fi
 

@@ -89,12 +89,37 @@ function canWritePlatformDir(): boolean {
   return canWritePath(TURBOPANEL_PLATFORM);
 }
 
-async function ensurePlatformDir(): Promise<void> {
+export type InstallStepHandler = (
+  label: string,
+  status: "running" | "ok" | "failed",
+) => void;
+
+async function ensureGit(onStep?: InstallStepHandler): Promise<void> {
+  if (await commandExists("git")) {
+    return;
+  }
+
+  onStep?.("Install git", "running");
+  const code = await runInherit([
+    "sudo",
+    "sh",
+    "-c",
+    "apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y git",
+  ]);
+
+  if (code !== 0 || !(await commandExists("git"))) {
+    onStep?.("Install git", "failed");
+    throw new Error("Failed to install git");
+  }
+  onStep?.("Install git", "ok");
+}
+
+async function ensurePlatformDir(onStep?: InstallStepHandler): Promise<void> {
   if (canWritePlatformDir()) {
     return;
   }
 
-  console.log(`→ Administrator privileges required for ${TURBOPANEL_PLATFORM}`);
+  onStep?.(`Create ${TURBOPANEL_PLATFORM}`, "running");
 
   const code = await runInherit([
     "sudo",
@@ -104,8 +129,10 @@ async function ensurePlatformDir(): Promise<void> {
   ]);
 
   if (code !== 0) {
+    onStep?.(`Create ${TURBOPANEL_PLATFORM}`, "failed");
     throw new Error(`Failed to create ${TURBOPANEL_PLATFORM}`);
   }
+  onStep?.(`Create ${TURBOPANEL_PLATFORM}`, "ok");
 }
 
 function daemonCheckoutExists(target: string): boolean {
@@ -172,24 +199,6 @@ async function privilegedClone(
   ]);
 }
 
-async function ensureGit(): Promise<void> {
-  if (await commandExists("git")) {
-    return;
-  }
-
-  console.log("→ git not found — installing");
-  const code = await runInherit([
-    "sudo",
-    "sh",
-    "-c",
-    "apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y git",
-  ]);
-
-  if (code !== 0 || !(await commandExists("git"))) {
-    throw new Error("Failed to install git");
-  }
-}
-
 async function isGitRepo(path: string): Promise<boolean> {
   const result = await runGitCapture(["-C", path, "rev-parse", "--git-dir"]);
   return result.success;
@@ -219,12 +228,13 @@ async function ensureOriginUrl(path: string, url: string): Promise<void> {
 async function cloneOrUpdateRepo(
   dir: string,
   repo: string,
+  onStep?: InstallStepHandler,
 ): Promise<"cloned" | "updated" | "skipped"> {
   const target = platformRepoPath(dir);
   const url = sshRepoUrl(repo);
 
   if (!daemonCheckoutExists(target)) {
-    console.log(`→ Cloning ${dir}...`);
+    onStep?.(`Clone ${dir}`, "running");
     const code = canManageDaemonCheckout(target)
       ? await runInherit([
         "git",
@@ -236,12 +246,13 @@ async function cloneOrUpdateRepo(
       ])
       : await privilegedClone(url, target);
     if (code !== 0) {
+      onStep?.(`Clone ${dir}`, "failed");
       throw new Error(`Failed to clone ${dir}`);
     }
     if (canManageDaemonCheckout(target)) {
       await ensureTurbopanelOwnership(target);
     }
-    console.log(`✓ Cloned ${dir}`);
+    onStep?.(`Clone ${dir}`, "ok");
     return "cloned";
   }
 
@@ -252,11 +263,11 @@ async function cloneOrUpdateRepo(
   await ensureOriginUrl(target, url);
 
   if (await hasUncommittedChanges(target)) {
-    console.log(`⚠ ${dir} has uncommitted changes — skipped`);
+    onStep?.(`Update ${dir} (skipped — uncommitted changes)`, "ok");
     return "skipped";
   }
 
-  console.log(`→ Updating ${dir}...`);
+  onStep?.(`Update ${dir}`, "running");
   const code = await runGitInherit([
     "-C",
     target,
@@ -266,22 +277,20 @@ async function cloneOrUpdateRepo(
     BRANCH,
   ]);
   if (code !== 0) {
+    onStep?.(`Update ${dir}`, "failed");
     throw new Error(`Failed to update ${dir}`);
   }
-  console.log(`✓ Updated ${dir}`);
+  onStep?.(`Update ${dir}`, "ok");
   return "updated";
 }
 
-export async function installDaemon(): Promise<void> {
-  await ensureGit();
-  await ensurePlatformDir();
+export async function installDaemon(
+  onStep?: InstallStepHandler,
+): Promise<void> {
+  await ensureGit(onStep);
+  await ensurePlatformDir(onStep);
 
   const { dir, repo } = DAEMON_REPO;
-  await cloneOrUpdateRepo(dir, repo);
-
-  console.log("");
-  console.log("✓ Daemon repository ready");
-  console.log(`  ${platformRepoPath(dir)}/`);
-  console.log("");
-  console.log("Run ./console to return to the console.");
+  await cloneOrUpdateRepo(dir, repo, onStep);
+  onStep?.("Daemon repository ready", "ok");
 }

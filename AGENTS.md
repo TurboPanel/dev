@@ -6,7 +6,7 @@
 
 **Target host:** Debian 13 (Vagrant support planned).
 
-**Bootstrap URL:** https://develop.trbp.nl → `scripts/develop.sh` on the `trunk` branch.
+**Bootstrap URL:** https://develop.trbp.nl → `scripts/develop.sh` on the `trunk` branch. When piped (`curl … | sh`), `$0` is `sh` so local `scripts/lib/` is not on disk yet — the script downloads those libs from `raw.githubusercontent.com` (override with `TURBOPANEL_DEV_LIB_BASE`) before clone.
 
 ## Filesystem layout
 
@@ -20,9 +20,11 @@
 ├── platform/             # daemon (from console); instance/ui installed by daemon via Ansible
 └── runtimes/
     └── deno/
-        └── v2.8.3/
-            └── bin/deno
+        └── 2.8.3/
+            └── deno          ← no v-prefix, no bin/ subdir
 ```
+
+`uv`, `python`, and `ansible` also live under `runtimes/` (installed by the daemon on first **Start dev stack**); each tool follows `runtimes/<tool>/<version>/` with a `current` symlink.
 
 ## Entry points
 
@@ -43,9 +45,9 @@ cd turbopanel-dev
 
 ## Responsibilities
 
-- **`scripts/develop.sh`** — clones/updates **only** `turbopanel-dev` via `git@github.com:turbopanel/turbopanel-dev.git`. On first run, prompts for git `user.name` and `user.email`, generates `~/.ssh/id_ed25519` if missing, configures SSH commit signing, and verifies GitHub SSH before cloning. No sudo for git clone itself; may use sudo for `git` / `openssh-client` apt installs.
-- **`console`** — ensures Deno is installed under `/opt/turbopanel/runtimes` (sudo on first run), caches dependencies, starts the console.
-- **Ink console** — installs the **daemon** repo only via SSH; writes developer identity (`TURBOPANEL_DEV_USER/UID/GID`) into the daemon `.env`; runs `bootstrap-orchestration.sh` and `install-daemon-systemd.sh` to hand off to the daemon, which installs everything else via Ansible.
+- **`scripts/develop.sh`** — clones/updates **only** `turbopanel-dev` via `git@github.com:turbopanel/turbopanel-dev.git`. Requires **`curl`**, **`sudo`**, and a **sudo-capable development user** before it runs (`scripts/lib/dev-prerequisites.sh`). On first run, prompts for git `user.name` and `user.email`, generates `~/.ssh/id_ed25519` if missing, configures SSH commit signing, and verifies GitHub SSH before cloning. May use sudo for `git` / `openssh-client` apt installs.
+- **`console`** — runs the same prerequisite check, then ensures Deno is installed under `/opt/turbopanel/runtimes` (sudo on first run), caches dependencies, starts the console.
+- **Ink console** — installs the **daemon** repo only via SSH; writes developer identity (`TURBOPANEL_DEV_USER/UID/GID`) into the daemon `.env`; runs `scripts/bootstrap-orchestration.ts` (Deno) to install the shared uv/Python/Ansible runtime under `/opt/turbopanel/runtimes/`, then installs `turbopanel-daemon.service`. Dev host access (sudoers fragment, ACLs, group membership) is applied by the `dev-host-access` Ansible role during **Start dev stack**; the `dev-host-access.sh` shell script has been removed. The daemon installs everything else via Ansible.
 
 ## Deno app
 
@@ -59,14 +61,18 @@ src/
 │   ├── layout/           # app-shell, menu-bar, status-bar
 │   ├── developer-panels.tsx
 │   ├── action-menu.tsx, area-tabs.tsx, runtime-badge.tsx, status-line.tsx
+│   ├── ansible-task-list.tsx
 ├── screens/
 │   ├── boot-screen.tsx
 │   ├── main-screen.tsx   # routes Status / Instance / Developer areas
 │   ├── status-screen.tsx, instance-screen.tsx, developer-screen.tsx
+│   ├── task-run-screen.tsx
 ├── sections/             # developer sub-panels (fleet, shell, database, …)
-├── hooks/                # use-developer-state, use-stack-status
-└── lib/                  # paths, instance-client, daemon-lifecycle, stack-status, …
+├── hooks/                # use-developer-state, use-stack-status, use-ansible-events.ts
+└── lib/                  # paths, instance-client, daemon-lifecycle, stack-status, daemon-orchestration.ts, …
 ```
+
+**Ansible task list.** Stack actions that drive Ansible (Start dev stack, Switch build mode, Reset dev environment, etc.) run in-process while Ink is mounted. The console dynamically imports the daemon's `src/orchestration/ansible-events.ts` wrapper from the daemon checkout once it is installed, subscribes to structured task events (`play-start`, `task-start`, `task-ok|changed|failed|skipped`, `recap`), and renders them as a live `<AnsibleTaskList>` inside `task-run-screen.tsx`. Raw `runAfterExit` shell hand-offs for Ansible actions have been removed. `followLogs` (`journalctl -f`) remains a deliberate fullscreen terminal takeover.
 
 Import aliases in `deno.json`: `@turbopanel/components/`, `@turbopanel/screens/`, `@turbopanel/hooks/`, `@turbopanel/lib/`, `@turbopanel/sections/`.
 
@@ -140,6 +146,7 @@ Polls every 2 s (same endpoints as the retired Expo `DeveloperProvider`): `/api/
 - **`turbopanel-dev` installs to `./turbopanel-dev`** in the user's cwd.
 - The console installs **only** the daemon repo. All other platform repos (instance, ui, website) are installed by the daemon via Ansible (`instance-dev-install.yml`).
 - Developer identity (`TURBOPANEL_DEV_USER`, `TURBOPANEL_DEV_UID`, `TURBOPANEL_DEV_GID`) is resolved from the **process UID** via `getent passwd` (`resolveDevIdentity()` in `src/paths.ts`, `tp_resolve_dev_identity()` in `scripts/lib/dev-identity.sh`). **`USER` / `LOGNAME` are never trusted.** Unresolved identities and `root` are rejected; the only root exception is a validated `SUDO_USER` passwd entry when the console runs under `sudo`. The dev stack refuses to write `TURBOPANEL_DEV_*` or run Ansible when identity cannot be resolved cleanly.
+- Do not add PATH symlinks, `env.sh`, or profile hooks — `console` runs Deno from `/opt/turbopanel/runtimes/deno/<DENO_VERSION>/deno` directly (no `v` prefix, no `bin/` subdir). No `/usr/local/bin/deno` link is created.
 - Do not commit secrets or environment-specific config.
 
 ## What agents must NOT do
@@ -150,14 +157,6 @@ Polls every 2 s (same endpoints as the retired Expo `DeveloperProvider`): `/api/
 - Do not hardcode developer UID/GID — always read from `resolveDevIdentity()` (or `getDevUser()`/`getDevUid()`/`getDevGid()` wrappers) in `src/paths.ts`, or `tp_require_dev_identity()` in shell scripts.
 - Do not reintroduce `pull.sh`.
 - Do not clone `turbopanel-dev` into `/opt/turbopanel/platform`.
-- Do not add PATH symlinks, `env.sh`, or profile hooks — `console` runs Deno from `/opt/turbopanel/runtimes/deno/v2.8.3/bin/deno` directly.
-- Do not bump the pinned Deno version without updating `scripts/lib/paths.sh`, `src/paths.ts`, and docs. The next `./console` run installs the new version and removes older `v*` directories under `/opt/turbopanel/runtimes/deno`.
+- Do not add PATH symlinks, `env.sh`, or profile hooks — `console` runs Deno from `/opt/turbopanel/runtimes/deno/<DENO_VERSION>/deno` directly.
+- Do not bump the pinned Deno version without updating `scripts/lib/paths.sh`, `src/paths.ts`, and docs. The next `./console` run installs the new version and removes older bare-version directories under `/opt/turbopanel/runtimes/deno`.
 - Do not commit directly to `trunk` — use a feature branch and open a PR.
-
-## Legacy runtime directory
-
-Older checkouts installed Deno under `/opt/turbopanel/runtime` (singular). Current layout uses `/opt/turbopanel/runtimes/deno/v<DENO_VERSION>/`. If you still have the old tree after upgrading, remove it manually once the new runtime works:
-
-```bash
-sudo rm -rf /opt/turbopanel/runtime
-```

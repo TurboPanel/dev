@@ -10,19 +10,23 @@ cd turbopanel-dev
 ./console
 ```
 
+The bootstrap URL pipes `scripts/develop.sh` into `sh` (no checkout on disk yet). Library helpers are downloaded from GitHub (`raw.githubusercontent.com`) for that first run; after clone, re-runs use the local `scripts/lib/` copy.
+
 `scripts/develop.sh` clones this repo into `./turbopanel-dev` (relative to where you run the command). `./console` installs the Deno runtime on first run (sudo) and starts the developer console.
 
 ## Prerequisites
 
-**For `scripts/develop.sh`**
+**For `scripts/develop.sh` and `./console`**
 
-- Interactive terminal (for first-time GitHub SSH setup)
-- `git` (installed automatically if missing)
-- SSH access to GitHub (`git@github.com:turbopanel/...`) — the installer generates `~/.ssh/id_ed25519`, shows the public key for you to add on GitHub, and configures SSH commit signing
+- Interactive terminal (for first-time GitHub SSH setup in `develop.sh`)
+- **`curl`** installed on the host before running (`apt install curl`)
+- **`sudo`** installed and the **development user** in the `sudo` group (or `wheel` / `admin`)
+- `git` (installed automatically by `develop.sh` when missing, via sudo)
+- SSH access to GitHub (`git@github.com:turbopanel/...`) — `develop.sh` generates `~/.ssh/id_ed25519`, shows the public key for GitHub, and configures SSH commit signing
 
-**For `./console`**
+**For `./console` only**
 
-- `sudo` (installs `curl` and `unzip` via apt if missing, then Deno on first run)
+- `sudo` (installs `unzip` via apt if missing, then Deno on first run)
 
 ## Layout
 
@@ -34,7 +38,8 @@ cd turbopanel-dev
 /opt/turbopanel/
 ├── platform/
 │   └── instance/                    # Hono API (installed by daemon via Ansible)
-└── runtime/deno/v2.8.3/bin/deno     # console (first run)
+└── runtimes/
+    └── deno/2.8.3/deno              # console-managed Deno runtime (first run)
 ```
 
 ## Updating the checkout

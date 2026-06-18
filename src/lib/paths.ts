@@ -1,9 +1,16 @@
 export const TURBOPANEL_ROOT = "/opt/turbopanel";
 export const TURBOPANEL_PLATFORM = `${TURBOPANEL_ROOT}/platform`;
+export const RUNTIMES_DIR =
+  Deno.env.get("TURBOPANEL_RUNTIMES_DIR")?.trim() || `${TURBOPANEL_ROOT}/runtimes`;
+export const ANSIBLE_PLAYBOOK_BIN =
+  `${RUNTIMES_DIR}/ansible/current/bin/ansible-playbook`;
+export const ANSIBLE_LOCAL_TMP = `${RUNTIMES_DIR}/uv/cache/ansible-tmp`;
+export const ANSIBLE_COLLECTIONS_PATH =
+  `${RUNTIMES_DIR}/ansible/galaxy-collections`;
 export const INSTANCE_DIR = `${TURBOPANEL_PLATFORM}/instance`;
 export const DENO_VERSION = "2.8.3";
 export const DENO_BIN =
-  `${TURBOPANEL_ROOT}/runtimes/deno/v${DENO_VERSION}/bin/deno`;
+  `${TURBOPANEL_ROOT}/runtimes/deno/${DENO_VERSION}/deno`;
 export const WRANGLER_DEV_PORT = 18787;
 export const WEBSITE_DEV_PORT = 19820;
 export const WEBSITE_DEV_URL = `http://localhost:${WEBSITE_DEV_PORT}`;
@@ -18,6 +25,7 @@ export const DAEMON_REPO = {
 export const PLATFORM_REPOS = [DAEMON_REPO] as const;
 
 export const DAEMON_ENV_PATH = `${TURBOPANEL_PLATFORM}/daemon/.env`;
+export const DAEMON_DENO_CONFIG = `${TURBOPANEL_PLATFORM}/daemon/deno.json`;
 
 export type RepoStatus = {
   dir: string;

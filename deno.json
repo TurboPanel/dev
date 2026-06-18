@@ -6,10 +6,12 @@
   "tasks": {
     "dev": "deno run --allow-all src/main.tsx",
     "console:watch": "deno run --allow-all --watch src/main.tsx",
-    "cache": "deno cache src/main.tsx"
+    "cache": "deno cache src/main.tsx",
+    "orchestration-action": "deno run --config /opt/turbopanel/platform/daemon/deno.json --allow-read --allow-run --allow-env --allow-write --allow-net scripts/run-orchestration-action.ts"
   },
   "imports": {
     "@deno-ink/core": "jsr:@deno-ink/core@^0.2.1",
+    "@std/path": "jsr:@std/path",
     "@turbopanel/components/": "./src/components/",
     "@turbopanel/hooks/": "./src/hooks/",
     "@turbopanel/lib/": "./src/lib/",

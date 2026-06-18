@@ -13,7 +13,8 @@ SCRIPT_DIR=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
 . "$SCRIPT_DIR/scripts/lib/paths.sh"       # DENO_BIN, /opt/turbopanel paths
 . "$SCRIPT_DIR/scripts/lib/packages.sh"    # apt install curl/unzip if needed
 . "$SCRIPT_DIR/scripts/lib/runtime.sh"      # tp_ensure_deno_runtime
-. "$SCRIPT_DIR/scripts/lib/dev-host-access.sh"  # tp_ensure_dev_host_access
+. "$SCRIPT_DIR/scripts/lib/dev-identity.sh" # tp_resolve_dev_identity
+. "$SCRIPT_DIR/scripts/lib/dev-prerequisites.sh"  # tp_ensure_dev_prerequisites
 
 if [ ! -t 0 ] || [ ! -t 1 ]; then
   tp_error "The developer console needs an interactive terminal."
@@ -21,11 +22,10 @@ if [ ! -t 0 ] || [ ! -t 1 ]; then
   exit 1
 fi
 
+tp_ensure_dev_prerequisites
+
 tp_info "Checking Deno runtime…"
 tp_ensure_deno_runtime
-
-tp_info "Setting up dev host access (group, sudoers, ACLs)…"
-tp_ensure_dev_host_access
 
 if "$DENO_BIN" cache --frozen "$SCRIPT_DIR/src/main.tsx" 2>/dev/null; then
   tp_info "Dependencies ready"

@@ -8,24 +8,21 @@ import {
   resolveDevIdentity,
   TURBOPANEL_PLATFORM,
   TURBOPANEL_ROOT,
-  WEBSITE_DEV_URL,
 } from "@turbopanel/lib/paths.ts";
 import { ensureWebsiteSystemdUnit } from "@turbopanel/lib/ensure-website-systemd.ts";
-import { ensureDevHostAccess } from "@turbopanel/lib/ensure-dev-host-access.ts";
+import {
+  runBuildTogglePrivileged,
+  runInstanceDevInstallPrivileged,
+} from "@turbopanel/lib/daemon-orchestration.ts";
 import { runInherit } from "@turbopanel/lib/platform-install.ts";
 import {
   fetchStackStatus,
   instanceReachable,
   instanceSocketPresent,
-  stackSummary,
 } from "@turbopanel/lib/stack-status.ts";
 
-const CADDY_PORT = 8443;
 const TURBOPANEL_USER = "turbopanel";
 const DAEMON_DIR = platformRepoPath("daemon");
-const DEV_STACK_INSTALL_SCRIPT = "scripts/run-dev-stack-install.sh";
-const ENSURE_ORCHESTRATION_RUNTIME_SCRIPT =
-  "scripts/ensure-orchestration-runtime.sh";
 const STACK_WAIT_MS = 120_000;
 const STACK_POLL_MS = 3_000;
 
@@ -65,8 +62,8 @@ export async function runSudo(args: string[]): Promise<number> {
 export async function runPrivilegedDaemonBash(script: string): Promise<number> {
   const command = daemonScriptCommand(script);
 
-  // Always run as turbopanel when the user exists so orchestration/runtime
-  // cache (uv, ansible-tmp) stays owned by turbopanel — not the dev user.
+  // Always run as turbopanel when the user exists so runtimes/uv cache
+  // (uv, ansible-tmp) stays owned by turbopanel — not the dev user.
   if (turbopanelUserExists()) {
     return runSudo([
       "-u",
@@ -102,9 +99,8 @@ async function runPrivilegedDaemonDeno(
   ].map(shellQuote).join(" ");
   const command = `cd ${shellQuote(DAEMON_DIR)} && exec ${denoInvocation}`;
 
-  if (pathDirectlyAccessible(script)) {
-    return runInherit(["bash", "-c", command]);
-  }
+  // Always run as turbopanel when the user exists so runtimes/uv cache
+  // (uv, python, ansible) stays owned by turbopanel — not the dev user.
   if (turbopanelUserExists()) {
     return runSudo([
       "-u",
@@ -115,6 +111,9 @@ async function runPrivilegedDaemonDeno(
       "-c",
       command,
     ]);
+  }
+  if (pathDirectlyAccessible(script)) {
+    return runInherit(["bash", "-c", command]);
   }
   return runSudo(["bash", "-c", command]);
 }
@@ -305,28 +304,21 @@ export function writeBuildMode(
   });
 }
 
-export async function ensureOrchestrationRuntime(): Promise<void> {
-  const script = `${Deno.cwd()}/${ENSURE_ORCHESTRATION_RUNTIME_SCRIPT}`;
-  const code = await runInherit(["sh", script]);
-  if (code !== 0) {
-    throw new Error("ensure-orchestration-runtime.sh failed");
-  }
-}
-
 export async function bootstrapOrchestration(): Promise<void> {
   const script =
-    `${TURBOPANEL_PLATFORM}/daemon/scripts/bootstrap-orchestration.sh`;
-  const code = await runPrivilegedDaemonBash(script);
+    `${TURBOPANEL_PLATFORM}/daemon/scripts/bootstrap-orchestration.ts`;
+  const code = await runPrivilegedDaemonDeno(
+    script,
+    [
+      "--allow-net",
+      "--allow-read",
+      "--allow-write",
+      "--allow-run",
+      "--allow-env",
+    ],
+  );
   if (code !== 0) {
-    throw new Error("bootstrap-orchestration.sh failed");
-  }
-}
-
-export async function runDevStackInstall(): Promise<void> {
-  const script = `${Deno.cwd()}/${DEV_STACK_INSTALL_SCRIPT}`;
-  const code = await runInherit(["sh", script]);
-  if (code !== 0) {
-    throw new Error("instance dev stack install failed");
+    throw new Error("bootstrap-orchestration.ts failed");
   }
 }
 
@@ -372,14 +364,6 @@ export async function startUpdateServer(): Promise<
   return { pid: child.pid, url: `http://${lanIp}:8444` };
 }
 
-function instanceSocketStatusLabel(): string {
-  if (instanceSocketPresent()) return "ready";
-  const units = fetchStackStatus();
-  const instance = units.find((unit) => unit.unit === "turbopanel-instance");
-  if (instance?.active === true) return "starting";
-  return "waiting";
-}
-
 async function restartDevStackServices(): Promise<void> {
   const runtime = readInstanceRuntime();
   await runSudo(["systemctl", "daemon-reload"]);
@@ -418,72 +402,38 @@ function stackIsReady(): boolean {
     instanceSocketPresent();
 }
 
-async function waitForDevStack(): Promise<void> {
-  const runtime = readInstanceRuntime();
+async function waitForDevStack(
+  onStep?: TaskStepHandler,
+): Promise<void> {
+  onStep?.("Waiting for stack to become ready", "running");
   const deadline = Date.now() + STACK_WAIT_MS;
-  if (runtime === "workers") {
-    console.log("→ Workers runtime: waiting for instance (wrangler) and Caddy...");
-  } else {
-    console.log("→ Waiting for instance and Caddy to become ready...");
-  }
   while (Date.now() < deadline) {
     if (stackIsReady()) {
-      if (runtime === "workers") {
-        console.log("✓ Workers instance and Caddy are ready");
-      } else {
-        console.log("✓ Dev stack is ready");
-      }
+      onStep?.("Waiting for stack to become ready", "ok");
       return;
-    }
-    const units = fetchStackStatus();
-    const instance = units.find((unit) => unit.unit === "turbopanel-instance");
-    const caddy = units.find((unit) => unit.unit === "turbopanel-caddy");
-    if (runtime === "workers") {
-      console.log(`  … caddy: ${caddy?.detail ?? "?"}`);
-    } else {
-      console.log(
-        `  … instance: ${instance?.detail ?? "?"}, caddy: ${caddy?.detail ?? "?"}, socket: ${
-          instanceSocketStatusLabel()
-        }`,
-      );
     }
     await new Promise((resolve) => setTimeout(resolve, STACK_POLL_MS));
   }
-  console.log(
-    "⚠ Stack services still starting — check status below or follow logs",
+  onStep?.("Waiting for stack to become ready", "failed");
+  throw new Error(
+    `Dev stack did not become ready within ${STACK_WAIT_MS / 1000} seconds`,
   );
 }
 
 export async function switchBuildMode(
   target: "production" | "dev",
+  onEvent?: (event: unknown) => void,
 ): Promise<void> {
   const uiMode = target === "production" ? "static" : "dev";
   const instanceRunMode = target === "production" ? "compiled" : "source";
 
   writeBuildMode(uiMode, instanceRunMode);
-
-  await ensureOrchestrationRuntime();
   await bootstrapOrchestration();
 
-  const toggleScript =
-    `${TURBOPANEL_PLATFORM}/daemon/scripts/run-build-toggle.ts`;
-  const code = await runPrivilegedDaemonDeno(
-    toggleScript,
-    [
-      "--allow-env",
-      "--allow-read",
-      "--allow-write",
-      "--allow-run",
-    ],
-    [
-      `--ui-mode=${uiMode}`,
-      `--instance-run-mode=${instanceRunMode}`,
-      "--force-build=true",
-    ],
+  await runBuildTogglePrivileged(
+    { uiMode, instanceRunMode, forceBuild: true },
+    onEvent,
   );
-  if (code !== 0) {
-    throw new Error("run-build-toggle failed");
-  }
 }
 
 export async function followLogs(): Promise<void> {
@@ -503,83 +453,39 @@ export async function followLogs(): Promise<void> {
   ]);
 }
 
-function printStartupBanner(): void {
-  const runtime = readInstanceRuntime();
-  if (runtime === "workers") {
-    console.log(`
------------------------------------------
-TurboPanel dev stack (Workers runtime):
-  Caddy        @ https://localhost:${CADDY_PORT}  (user: instance)
-  Instance     @ wrangler dev via turbopanel-instance.service (systemd)
-  UI (Expo)    @ http://127.0.0.1:8081  (user: instance)
-  Website      @ ${WEBSITE_DEV_URL}  (user: instance)
-  Daemon       @ (no port, user: turbopanel)
-  Postgres     @ 127.0.0.1:5432 (TCP, for wrangler Hyperdrive)
+export type TaskStepHandler = (
+  label: string,
+  status: "running" | "ok" | "failed",
+  id?: string,
+) => void;
 
-The daemon installs/updates everything via Ansible. Use the admin "Upgrade
-System" button (or sync-dev) to update; nothing auto-updates.
-=========================================
-`);
-    return;
-  }
+export async function startDevStack(handlers?: {
+  onEvent?: (event: unknown) => void;
+  onStep?: TaskStepHandler;
+}): Promise<void> {
+  const { onEvent, onStep } = handlers ?? {};
 
-  console.log(`
------------------------------------------
-TurboPanel dev stack (systemd-managed):
-  TurboPanel   @ https://localhost:${CADDY_PORT}  (Caddy, user: instance)
-  Instance     @ unix:///run/turbopanel/instance.sock  (user: instance)
-  UI (Expo)    @ http://127.0.0.1:8081  (user: instance)
-  Daemon       @ (no port, user: turbopanel)
-
-The daemon installs/updates everything via Ansible. Use the admin "Upgrade
-System" button (or sync-dev) to update; nothing auto-updates.
-=========================================
-`);
-}
-
-function printStackStatus(): void {
-  const runtime = readInstanceRuntime();
-  const units = fetchStackStatus();
-  console.log("Dev stack status:", stackSummary(units));
-  for (const unit of units) {
-    const mark = unit.active === true
-      ? "✓"
-      : unit.active === false
-      ? "○"
-      : "?";
-    console.log(`  ${mark} ${unit.label}: ${unit.detail}`);
-  }
-  if (runtime === "workers") {
-    console.log(
-      instanceReachable()
-        ? "  ✓ instance API reachable via Caddy/wrangler"
-        : "  ○ instance API not reachable — check journalctl -u turbopanel-instance",
-    );
-  } else {
-    console.log(
-      instanceSocketPresent()
-        ? "  ✓ instance.sock ready"
-        : "  ○ instance.sock not ready",
-    );
-  }
-  console.log("");
-  console.log(
-    "Follow logs: journalctl -fu turbopanel-daemon -u turbopanel-instance -u turbopanel-caddy -u turbopanel-ui -u turbopanel-website",
-  );
-}
-
-export async function startDevStack(): Promise<void> {
-  await ensureDevHostAccess();
   writeDaemonEnv();
-  await ensureOrchestrationRuntime();
+
+  onStep?.("Bootstrap orchestration", "running");
   await bootstrapOrchestration();
-  await runDevStackInstall();
+  onStep?.("Bootstrap orchestration", "ok");
+
+  await runInstanceDevInstallPrivileged(onEvent);
+
   if (readInstanceRuntime() === "workers") {
+    onStep?.("Install website systemd unit", "running");
     await ensureWebsiteSystemdUnit();
+    onStep?.("Install website systemd unit", "ok");
   }
+
+  onStep?.("Install daemon systemd unit", "running");
   await installDaemonSystemd();
+  onStep?.("Install daemon systemd unit", "ok");
+
+  onStep?.("Restart dev stack services", "running");
   await restartDevStackServices();
-  await waitForDevStack();
-  printStartupBanner();
-  printStackStatus();
+  onStep?.("Restart dev stack services", "ok");
+
+  await waitForDevStack(onStep);
 }
