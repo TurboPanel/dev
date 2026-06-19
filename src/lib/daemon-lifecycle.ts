@@ -580,13 +580,48 @@ async function ensurePlatformRepoCloneFixes(): Promise<void> {
 
 export async function ensureDevPlatformAccess(): Promise<void> {
   const dev = requireDevIdentity();
+  // #region agent log
+  const turbopanelGroupExists = new Deno.Command("getent", {
+    args: ["group", TURBOPANEL_GROUP],
+    stdout: "null",
+    stderr: "null",
+  }).outputSync().success;
+  const turbopanelUserExists = new Deno.Command("getent", {
+    args: ["passwd", TURBOPANEL_USER],
+    stdout: "null",
+    stderr: "null",
+  }).outputSync().success;
+  fetch("http://localhost:7882/ingest/09b3950f-5d3f-4c91-a3cf-e073cbcbe3cb", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Debug-Session-Id": "8aec57",
+    },
+    body: JSON.stringify({
+      sessionId: "8aec57",
+      runId: "post-fix",
+      hypothesisId: "A",
+      location: "daemon-lifecycle.ts:ensureDevPlatformAccess",
+      message: "ensureDevPlatformAccess entry",
+      data: {
+        devUser: dev.user,
+        turbopanelGroupExists,
+        turbopanelUserExists,
+        willRunUsermod: turbopanelGroupExists,
+      },
+      timestamp: Date.now(),
+    }),
+  }).catch(() => {});
+  // #endregion
   const script = [
     `set -eu`,
     `dev=${shellQuote(dev.user)}`,
     `root=${shellQuote(TURBOPANEL_ROOT)}`,
     `platform=${shellQuote(TURBOPANEL_PLATFORM)}`,
-    `if ! getent group turbopanel | grep -Eq ":$dev$|:.*[,:]$dev(,|$)"; then`,
-    `  usermod -aG turbopanel "$dev"`,
+    `if getent group turbopanel >/dev/null 2>&1; then`,
+    `  if ! getent group turbopanel | grep -Eq ":$dev$|:.*[,:]$dev(,|$)"; then`,
+    `    usermod -aG turbopanel "$dev"`,
+    `  fi`,
     `fi`,
     `if command -v setfacl >/dev/null 2>&1; then`,
     `  setfacl -m u:$dev:rx "$root"`,
@@ -604,6 +639,24 @@ export async function ensureDevPlatformAccess(): Promise<void> {
     `fi`,
   ].join("\n");
   const code = await runSudo(["bash", "-c", script]);
+  // #region agent log
+  fetch("http://localhost:7882/ingest/09b3950f-5d3f-4c91-a3cf-e073cbcbe3cb", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Debug-Session-Id": "8aec57",
+    },
+    body: JSON.stringify({
+      sessionId: "8aec57",
+      runId: "post-fix",
+      hypothesisId: "A",
+      location: "daemon-lifecycle.ts:ensureDevPlatformAccess",
+      message: "ensureDevPlatformAccess sudo script finished",
+      data: { exitCode: code },
+      timestamp: Date.now(),
+    }),
+  }).catch(() => {});
+  // #endregion
   if (code !== 0) {
     throw new Error("Failed to ensure dev user can access platform checkouts");
   }

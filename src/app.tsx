@@ -90,6 +90,37 @@ export function App() {
     if (!daemonPresent) {
       return;
     }
+    // #region agent log
+    const turbopanelGroupExists = new Deno.Command("getent", {
+      args: ["group", "turbopanel"],
+      stdout: "null",
+      stderr: "null",
+    }).outputSync().success;
+    const turbopanelUserExists = new Deno.Command("getent", {
+      args: ["passwd", "turbopanel"],
+      stdout: "null",
+      stderr: "null",
+    }).outputSync().success;
+    fetch("http://localhost:7882/ingest/09b3950f-5d3f-4c91-a3cf-e073cbcbe3cb", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Debug-Session-Id": "8aec57",
+      },
+      body: JSON.stringify({
+        sessionId: "8aec57",
+        runId: "post-fix",
+        hypothesisId: "A",
+        location: "app.tsx:useEffect",
+        message: "daemonPresent triggered ensureDevPlatformAccess",
+        data: { turbopanelGroupExists, turbopanelUserExists },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
+    if (!turbopanelGroupExists) {
+      return;
+    }
     void ensureDevPlatformAccess()
       .then(() => setPlatformDirectAccess(true))
       .catch(() => setPlatformDirectAccess(false));
