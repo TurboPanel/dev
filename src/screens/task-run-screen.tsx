@@ -11,6 +11,7 @@ export function TaskRunScreen({
   tasks,
   recap,
   error,
+  errorLogPath,
   done,
   onDone,
 }: {
@@ -18,6 +19,7 @@ export function TaskRunScreen({
   tasks: import("@turbopanel/components/ansible-task-list.tsx").AnsibleTaskRow[];
   recap: string | null;
   error: string | null;
+  errorLogPath?: string | null;
   done: boolean;
   onDone: () => void;
 }) {
@@ -27,7 +29,9 @@ export function TaskRunScreen({
   const busy = !finished;
   const hasRunningTask = tasks.some((task) => task.status === "running");
 
-  const footerRows = finished ? (error ? 2 : 1) : (busy && !hasRunningTask ? 1 : 0);
+  const footerRows = finished
+    ? (error ? (errorLogPath ? 3 : 2) : 1)
+    : (busy && !hasRunningTask ? 1 : 0);
   const taskRowBudget = Math.max(4, mainHeight - 1 - footerRows);
 
   const view = useMemo(
@@ -63,6 +67,7 @@ export function TaskRunScreen({
         hiddenTaskCount={view.hiddenTaskCount}
         recap={recap}
         error={error}
+        errorLogPath={errorLogPath}
         columns={columns}
       />
       <Box flexShrink={0} flexDirection="column">
@@ -72,6 +77,9 @@ export function TaskRunScreen({
         {finished && !error && <Text dimColor>Press any key to return</Text>}
         {finished && error && (
           <Text color="red">Task failed — press any key to return</Text>
+        )}
+        {finished && error && errorLogPath && (
+          <Text dimColor>Details saved to {errorLogPath}</Text>
         )}
       </Box>
     </Box>

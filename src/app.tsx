@@ -24,7 +24,9 @@ import {
 } from "@turbopanel/lib/instance-runtime.ts";
 import { installDaemon } from "@turbopanel/lib/platform-install.ts";
 import { resetDevEnvironment } from "@turbopanel/lib/reset-dev-environment.ts";
+import { writeTaskErrorLog } from "@turbopanel/lib/task-error-log.ts";
 import {
+  CONSOLE_LAST_TASK_ERROR_LOG,
   checkPlatformRepos,
   denoRuntimeInstalled,
 } from "@turbopanel/lib/paths.ts";
@@ -194,6 +196,19 @@ export function App() {
     ansible.reset();
     let cancelled = false;
 
+    const persistFailure = async (message: string) => {
+      ansible.setErrorLogPath(CONSOLE_LAST_TASK_ERROR_LOG);
+      try {
+        await writeTaskErrorLog({
+          title: taskRun.title,
+          message,
+          timestamp: new Date().toISOString(),
+        });
+      } catch {
+        // Best-effort — UI still shows the inline error.
+      }
+    };
+
     const handlers: TaskHandlers = {
       onEvent: ansible.onEvent,
       onStep: (label, status, id) => {
@@ -217,6 +232,7 @@ export function App() {
           setEnvRefresh((value) => value + 1);
           const message = error instanceof Error ? error.message : String(error);
           ansible.setError((current) => current ?? message);
+          await persistFailure(message);
           ansible.setDone(true);
         }
       }
@@ -350,6 +366,7 @@ export function App() {
         tasks={ansible.tasks}
         recap={ansible.recap}
         error={ansible.error}
+        errorLogPath={ansible.errorLogPath}
         done={ansible.done}
         onDone={() => setTaskRun(null)}
       />

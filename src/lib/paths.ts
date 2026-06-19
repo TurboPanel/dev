@@ -26,6 +26,9 @@ export const PLATFORM_REPOS = [DAEMON_REPO] as const;
 
 export const DAEMON_ENV_PATH = `${TURBOPANEL_PLATFORM}/daemon/.env`;
 export const DAEMON_DENO_CONFIG = `${TURBOPANEL_PLATFORM}/daemon/deno.json`;
+export const CONSOLE_LOG_DIR = `${TURBOPANEL_PLATFORM}/.local/console`;
+export const CONSOLE_LAST_TASK_ERROR_LOG =
+  `${CONSOLE_LOG_DIR}/last-task-error.log`;
 
 export type RepoStatus = {
   dir: string;

@@ -65,6 +65,7 @@ export function AnsibleTaskList({
   hiddenTaskCount,
   recap,
   error,
+  errorLogPath,
   columns,
 }: {
   steps: AnsibleTaskRow[];
@@ -73,6 +74,7 @@ export function AnsibleTaskList({
   hiddenTaskCount: number;
   recap: string | null;
   error: string | null;
+  errorLogPath?: string | null;
   columns: number;
 }) {
   return (
@@ -97,6 +99,9 @@ export function AnsibleTaskList({
           <Box marginTop={1} flexDirection="column">
             <Text color="red" bold>Error</Text>
             <Text color="red">{error}</Text>
+            {errorLogPath && (
+              <Text dimColor>Details saved to {errorLogPath}</Text>
+            )}
           </Box>
         )}
       </Box>

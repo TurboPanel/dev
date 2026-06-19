@@ -188,7 +188,6 @@ function orchestrationDenoArgs(runnerArgs: string[]): string[] {
     "--allow-run",
     "--allow-env",
     "--allow-write",
-    "--allow-net",
     ORCHESTRATION_RUNNER_SCRIPT,
     ...runnerArgs,
   ];

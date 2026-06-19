@@ -33,6 +33,9 @@ function formatSystemctlShow(output: string): string {
   if (props.ExecMainCode && props.ExecMainCode !== "0") {
     parts.push(`exit=${props.ExecMainCode}`);
   }
+  if (props.NRestarts && props.NRestarts !== "0") {
+    parts.push(`restarts=${props.NRestarts}`);
+  }
   return parts.join(" · ") || "unknown";
 }
 
@@ -46,7 +49,7 @@ async function systemctlUnitStatus(unit: string): Promise<ServiceStatus> {
     args: [
       "show",
       unit,
-      "--property=ActiveState,SubState,MainPID,Result,ExecMainCode,Description",
+      "--property=ActiveState,SubState,MainPID,Result,ExecMainCode,NRestarts,Description",
       "--no-pager",
     ],
     stdout: "piped",
@@ -194,6 +197,7 @@ export async function fetchServiceStatuses(): Promise<ServiceStatus[]> {
     "turbopanel-instance",
     "turbopanel-caddy",
     "turbopanel-ui",
+    "turbopanel-website",
     "turbopanel-daemon",
     "turbopanel-redis",
     "turbopanel-rabbitmq",

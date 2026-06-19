@@ -354,6 +354,7 @@ export function writeDaemonEnv(extra?: Record<string, string>): void {
   const entries: Record<string, string> = {
     TURBOPANEL_DEV_INSTANCE: "1",
     TURBOPANEL_TRUNK_BRANCH: "trunk",
+    TURBOPANEL_DAEMON_STATE_DIR: `${TURBOPANEL_PLATFORM}/daemon`,
     TURBOPANEL_DEV_USER: dev.user,
     TURBOPANEL_DEV_UID: String(dev.uid),
     TURBOPANEL_DEV_GID: String(dev.gid),

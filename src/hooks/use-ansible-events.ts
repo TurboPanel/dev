@@ -1,5 +1,7 @@
 import { useCallback, useState } from "react";
 import type { AnsibleTaskRow } from "@turbopanel/components/ansible-task-list.tsx";
+import { CONSOLE_LAST_TASK_ERROR_LOG } from "@turbopanel/lib/paths.ts";
+import { writeTaskErrorLog } from "@turbopanel/lib/task-error-log.ts";
 
 function parseTaskName(full: string): { role: string | null; task: string } {
   const match = full.match(/^\s*([^:]+)\s*:\s*(.+)$/);
@@ -92,12 +94,14 @@ export function useAnsibleEvents() {
   const [tasks, setTasks] = useState<AnsibleTaskRow[]>([]);
   const [recap, setRecap] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [errorLogPath, setErrorLogPath] = useState<string | null>(null);
   const [done, setDone] = useState(false);
 
   const reset = useCallback(() => {
     setTasks([]);
     setRecap(null);
     setError(null);
+    setErrorLogPath(null);
     setDone(false);
   }, []);
 
@@ -209,6 +213,12 @@ export function useAnsibleEvents() {
         return completeRunning(withTask, "failed");
       });
       setError(message);
+      setErrorLogPath(CONSOLE_LAST_TASK_ERROR_LOG);
+      void writeTaskErrorLog({
+        title: "Ansible converge",
+        message,
+        timestamp: new Date().toISOString(),
+      });
       return;
     }
 
@@ -237,11 +247,13 @@ export function useAnsibleEvents() {
     tasks,
     recap,
     error,
+    errorLogPath,
     done,
     onEvent,
     emitStep,
     reset,
     setDone,
     setError,
+    setErrorLogPath,
   };
 }
