@@ -6,6 +6,7 @@ import {
   type DaemonActionId,
 } from "../lib/daemon-actions.ts";
 import { LIST_SELECT_BG, LIST_SELECT_FG } from "../theme.ts";
+import { ServiceTitle } from "./service-title.tsx";
 
 function statusLabel(status: DevService["status"]): string {
   switch (status) {
@@ -45,7 +46,7 @@ export function ServiceDetailPanel({
       paddingX={1}
       paddingY={1}
     >
-      <Text bold>{service.label}</Text>
+      <ServiceTitle serviceId={service.id} label={service.label} width={width} />
       <Text dimColor>Status: {statusLabel(service.status)}</Text>
 
       <Box marginTop={1} flexDirection="column">

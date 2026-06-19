@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { spawnSync } from "node:child_process";
-import { DAEMON_REPO_DIR } from "./lib/paths.ts";
+import { DAEMON_REPO_DIR, platformRepoPath } from "./lib/paths.ts";
 
 export type DevServiceStatus =
   | "running"
@@ -17,11 +17,26 @@ export type DevService = {
 
 const DAEMON_UNIT = "turbopanel-daemon";
 
-const DOWNSTREAM_SERVICES: DevService[] = [
-  { id: "instance", label: "instance", status: "uninstalled" },
-  { id: "ui", label: "ui", status: "uninstalled" },
-  { id: "website", label: "website", status: "uninstalled" },
-];
+const DOWNSTREAM_SERVICE_DEFS = [
+  {
+    id: "instance",
+    label: "instance",
+    unit: "turbopanel-instance",
+    repoDir: platformRepoPath("instance"),
+  },
+  {
+    id: "ui",
+    label: "ui",
+    unit: "turbopanel-ui",
+    repoDir: platformRepoPath("ui"),
+  },
+  {
+    id: "website",
+    label: "website",
+    unit: "turbopanel-website",
+    repoDir: platformRepoPath("website"),
+  },
+] as const;
 
 function systemctlProperty(unit: string, property: string): string | null {
   const result = spawnSync(
@@ -48,32 +63,67 @@ export function isDaemonRepoInstalled(): boolean {
   return isDaemonSystemdInstalled();
 }
 
-export function isDaemonSystemdInstalled(): boolean {
-  const loadState = systemctlProperty(DAEMON_UNIT, "LoadState");
+function isSystemdUnitInstalled(unit: string): boolean {
+  const loadState = systemctlProperty(unit, "LoadState");
   return loadState === "loaded" || loadState === "masked";
 }
 
+export function isDaemonSystemdInstalled(): boolean {
+  return isSystemdUnitInstalled(DAEMON_UNIT);
+}
+
+function isRepoInstalled(repoDir: string): boolean {
+  try {
+    return existsSync(repoDir);
+  } catch {
+    // Platform checkout may be turbopanel-owned and not visible to the dev user.
+    return false;
+  }
+}
+
+function systemdServiceStatus(unit: string): DevServiceStatus | null {
+  if (!isSystemdUnitInstalled(unit)) {
+    return null;
+  }
+
+  const activeState = systemctlProperty(unit, "ActiveState");
+  const subState = systemctlProperty(unit, "SubState");
+
+  if (activeState === "active") {
+    return "running";
+  }
+
+  if (
+    activeState === "failed" ||
+    (activeState === "activating" && subState === "auto-restart")
+  ) {
+    return "pending";
+  }
+
+  if (activeState === "activating" || activeState === "reloading") {
+    return "starting";
+  }
+
+  return "stopped";
+}
+
+function serviceStatus(unit: string, repoDir?: string): DevServiceStatus {
+  const fromSystemd = systemdServiceStatus(unit);
+  if (fromSystemd !== null) {
+    return fromSystemd;
+  }
+
+  if (repoDir && isRepoInstalled(repoDir)) {
+    return "pending";
+  }
+
+  return "uninstalled";
+}
+
 function daemonStatus(): DevServiceStatus {
-  if (isDaemonSystemdInstalled()) {
-    const activeState = systemctlProperty(DAEMON_UNIT, "ActiveState");
-    const subState = systemctlProperty(DAEMON_UNIT, "SubState");
-
-    if (activeState === "active") {
-      return "running";
-    }
-
-    if (
-      activeState === "failed" ||
-      (activeState === "activating" && subState === "auto-restart")
-    ) {
-      return "pending";
-    }
-
-    if (activeState === "activating" || activeState === "reloading") {
-      return "starting";
-    }
-
-    return "stopped";
+  const fromSystemd = systemdServiceStatus(DAEMON_UNIT);
+  if (fromSystemd !== null) {
+    return fromSystemd;
   }
 
   if (isDaemonRepoInstalled()) {
@@ -81,6 +131,14 @@ function daemonStatus(): DevServiceStatus {
   }
 
   return "uninstalled";
+}
+
+function downstreamServices(): DevService[] {
+  return DOWNSTREAM_SERVICE_DEFS.map(({ id, label, unit, repoDir }) => ({
+    id,
+    label,
+    status: serviceStatus(unit, repoDir),
+  }));
 }
 
 export function isDaemonInstallable(status: DevServiceStatus): boolean {
@@ -98,5 +156,5 @@ export function getVisibleServices(): DevService[] {
     return [daemon];
   }
 
-  return [daemon, ...DOWNSTREAM_SERVICES];
+  return [daemon, ...downstreamServices()];
 }

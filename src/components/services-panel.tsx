@@ -8,7 +8,6 @@ import {
 } from "../lib/daemon-actions.ts";
 import type { DaemonOperation } from "../lib/spinners.ts";
 import { BORDER_COLOR, DARK_GREY, LIST_FOCUS_BG, LIST_FOCUS_FG, LIST_OPEN_BG, LIST_OPEN_FG } from "../theme.ts";
-import { InstallDaemonPanel } from "./install-daemon-panel.tsx";
 import { PurgeDaemonPanel } from "./purge-daemon-panel.tsx";
 import { RestartDaemonPanel } from "./restart-daemon-panel.tsx";
 import { ServiceDetailPanel } from "./service-detail-panel.tsx";
@@ -45,11 +44,10 @@ export function ServicesPanel({
   onCloseService,
   onDaemonAction,
   onSelectedIndexChange,
-  daemonOperation,
-  installFinished,
-  onDaemonOperationDone,
-  onInstallFinished,
+  onRestartDone,
   onPurgeDone,
+  onInstallFinished,
+  daemonOperation,
 }: {
   width: number;
   height: number;
@@ -57,14 +55,13 @@ export function ServicesPanel({
   selectedIndex: number;
   openServiceId?: string | null;
   daemonOperation?: DaemonOperation | null;
-  installFinished?: boolean;
-  onDaemonOperationDone?: () => void;
-  onInstallFinished?: (success: boolean) => void;
-  onPurgeDone?: () => void;
   onOpenService?: (serviceId: string) => void;
   onCloseService?: () => void;
   onDaemonAction?: (action: DaemonActionId) => void | Promise<void>;
   onSelectedIndexChange?: (index: number) => void;
+  onRestartDone?: () => void;
+  onPurgeDone?: () => void;
+  onInstallFinished?: (success: boolean) => void;
 }) {
   const leftWidth = serviceListWidth(services);
   const openService = openServiceId
@@ -175,11 +172,8 @@ export function ServicesPanel({
               : focused
               ? LIST_FOCUS_FG
               : undefined;
-            const daemonOp = service.id === "daemon"
-              && daemonOperation
-              && !installFinished
-              ? daemonOperation
-              : null;
+            const daemonOp =
+              service.id === "daemon" && daemonOperation ? daemonOperation : null;
             return (
               <Box
                 key={service.id}
@@ -207,34 +201,20 @@ export function ServicesPanel({
           })}
         </ScrollList>
       </Box>
-      {detailWidth > 0 && daemonOperation === "install" && onDaemonOperationDone && (
-        <Box width={detailWidth} height={height} paddingX={1} paddingY={1}>
-          <InstallDaemonPanel
-            width={Math.max(1, detailWidth - 2)}
-            height={Math.max(1, height - 2)}
-            onDone={onDaemonOperationDone}
-            onInstallFinished={onInstallFinished}
-          />
-        </Box>
+      {daemonOperation === "restart" && detailWidth > 0 && onRestartDone && (
+        <RestartDaemonPanel
+          width={detailWidth}
+          height={height}
+          onDone={onRestartDone}
+          onInstallFinished={onInstallFinished}
+        />
       )}
-      {detailWidth > 0 && daemonOperation === "purge" && (onPurgeDone ?? onDaemonOperationDone) && (
-        <Box width={detailWidth} height={height} paddingX={1} paddingY={1}>
-          <PurgeDaemonPanel
-            width={Math.max(1, detailWidth - 2)}
-            height={Math.max(1, height - 2)}
-            onDone={onPurgeDone ?? onDaemonOperationDone!}
-          />
-        </Box>
-      )}
-      {detailWidth > 0 && daemonOperation === "restart" && onDaemonOperationDone && (
-        <Box width={detailWidth} height={height} paddingX={1} paddingY={1}>
-          <RestartDaemonPanel
-            width={Math.max(1, detailWidth - 2)}
-            height={Math.max(1, height - 2)}
-            onDone={onDaemonOperationDone}
-            onInstallFinished={onInstallFinished}
-          />
-        </Box>
+      {daemonOperation === "purge" && detailWidth > 0 && onPurgeDone && (
+        <PurgeDaemonPanel
+          width={detailWidth}
+          height={height}
+          onDone={onPurgeDone}
+        />
       )}
       {openService && detailWidth > 0 && !daemonOperation && (
         <ServiceDetailPanel

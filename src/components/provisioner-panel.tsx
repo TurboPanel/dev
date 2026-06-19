@@ -29,7 +29,7 @@ function truncateLine(text: string, maxWidth: number): string {
 
 type BootstrapPhase = "uv" | "python" | "ansible" | "converge";
 
-export function InstallDaemonPanel({
+export function ProvisionerPanel({
   width,
   height,
   onDone,
@@ -212,7 +212,7 @@ export function InstallDaemonPanel({
   return (
     <Box flexDirection="column" width={width} height={height}>
       <Text color="cyan" bold>
-        Install Daemon
+        Provisioning development environment
       </Text>
       <Box flexDirection="column" marginTop={1} flexGrow={1} minHeight={0}>
         <AnsibleTaskList
@@ -243,7 +243,7 @@ export function InstallDaemonPanel({
       )}
       {finished && (
         <Box marginTop={1}>
-          <Text dimColor>Press any key to return</Text>
+          <Text dimColor>Press any key to continue</Text>
         </Box>
       )}
     </Box>

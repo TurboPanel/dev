@@ -28,7 +28,7 @@ function HotReloadApp({
 }) {
   const { columns, rows } = useWindowSize();
   const [appModule, setAppModule] = useState(initialModule);
-  const consoleApp = useConsoleApp(appModule.AREAS);
+  const consoleApp = useConsoleApp();
 
   useEffect(() => {
     let timeout: NodeJS.Timeout | undefined;
@@ -71,16 +71,18 @@ function HotReloadApp({
   const AppView = appModule.AppView;
   return (
     <AppView
-      activeIndex={consoleApp.activeIndex}
+      activeArea={consoleApp.activeArea}
+      provisioning={consoleApp.provisioning}
+      installFinished={consoleApp.installFinished}
       columns={columns}
       rows={rows}
       selectedServiceIndex={consoleApp.selectedServiceIndex}
       visibleServices={consoleApp.visibleServices}
       openServiceId={consoleApp.openServiceId}
       daemonOperation={consoleApp.daemonOperation}
-      installFinished={consoleApp.installFinished}
-      onDaemonOperationDone={consoleApp.handleDaemonOperationDone}
+      onProvisioningDone={consoleApp.handleProvisioningDone}
       onInstallFinished={consoleApp.handleInstallFinished}
+      onRestartDone={consoleApp.handleRestartDone}
       onPurgeDone={consoleApp.handlePurgeDone}
       onOpenService={consoleApp.handleOpenService}
       onCloseService={consoleApp.handleCloseService}

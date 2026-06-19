@@ -95,13 +95,19 @@ export function MenuBar({
   areas,
   activeIndex,
   columns,
+  provisioning,
+  provisionerArea,
 }: {
   areas: AreaTab[];
   activeIndex: number;
   columns: number;
+  provisioning?: boolean;
+  provisionerArea?: AreaTab;
 }) {
+  const displayAreas = provisioning && provisionerArea ? [provisionerArea] : areas;
+  const displayActiveIndex = provisioning ? 0 : activeIndex;
   const { activeArea, activeWidth, activeTabStart, rightWidth } =
-    activeTabMetrics(areas, activeIndex, columns);
+    activeTabMetrics(displayAreas, displayActiveIndex, columns);
 
   return (
     <Box flexDirection="column" width={columns}>
@@ -118,7 +124,7 @@ export function MenuBar({
           </Text>
         </Box>
         <Box flexGrow={1} />
-        <TabStrip areas={areas} activeIndex={activeIndex} />
+        <TabStrip areas={displayAreas} activeIndex={displayActiveIndex} />
       </Box>
 
       <Box flexDirection="row" width={columns} height={1}>

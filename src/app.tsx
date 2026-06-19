@@ -2,6 +2,8 @@ import React from "react";
 import { Box } from "ink";
 import { MainPanel } from "@turbopanel/components/main-panel.tsx";
 import { MenuBar, type AreaTab } from "@turbopanel/components/menu-bar.tsx";
+import { DeveloperPanel } from "@turbopanel/components/developer-panel.tsx";
+import { ProvisionerPanel } from "@turbopanel/components/provisioner-panel.tsx";
 import { ServicesPanel } from "@turbopanel/components/services-panel.tsx";
 import { statusHints } from "@turbopanel/components/status-bar.tsx";
 import { DARK_GREY } from "./theme.ts";
@@ -10,9 +12,15 @@ import type { DaemonActionId } from "./lib/daemon-actions.ts";
 import type { DaemonOperation } from "./lib/spinners.ts";
 
 export const AREAS: AreaTab[] = [
-  { id: "services", label: "Services", emoji: "⚙" },
   { id: "developer", label: "Developer", emoji: "💻" },
+  { id: "services", label: "Services", emoji: "⚙" },
 ];
+
+export const PROVISIONER_AREA: AreaTab = {
+  id: "provisioner",
+  label: "Provisioner",
+  emoji: "🔧",
+};
 
 const MENU_ROWS = 2;
 const STATUS_ROWS = 1;
@@ -28,29 +36,40 @@ function MainContent({
   onCloseService,
   onDaemonAction,
   onSelectedServiceIndexChange,
-  daemonOperation,
-  installFinished,
-  onDaemonOperationDone,
+  onProvisioningDone,
   onInstallFinished,
+  onRestartDone,
   onPurgeDone,
+  daemonOperation,
 }: {
-  activeArea: AreaTab;
+  activeArea: string;
   width: number;
   height: number;
   selectedServiceIndex: number;
   visibleServices: DevService[];
   openServiceId?: string | null;
+  daemonOperation?: DaemonOperation | null;
   onOpenService?: (serviceId: string) => void;
   onCloseService?: () => void;
   onDaemonAction?: (action: DaemonActionId) => void | Promise<void>;
   onSelectedServiceIndexChange?: (index: number) => void;
-  daemonOperation?: DaemonOperation | null;
-  installFinished?: boolean;
-  onDaemonOperationDone?: () => void;
+  onProvisioningDone?: () => void;
   onInstallFinished?: (success: boolean) => void;
+  onRestartDone?: () => void;
   onPurgeDone?: () => void;
 }) {
-  switch (activeArea.id) {
+  switch (activeArea) {
+    case "provisioner":
+      return (
+        <ProvisionerPanel
+          width={width}
+          height={height}
+          onDone={onProvisioningDone!}
+          onInstallFinished={onInstallFinished}
+        />
+      );
+    case "developer":
+      return <DeveloperPanel />;
     case "services":
       return (
         <ServicesPanel
@@ -60,14 +79,13 @@ function MainContent({
           selectedIndex={selectedServiceIndex}
           openServiceId={openServiceId}
           daemonOperation={daemonOperation}
-          installFinished={installFinished}
-          onDaemonOperationDone={onDaemonOperationDone}
-          onInstallFinished={onInstallFinished}
-          onPurgeDone={onPurgeDone}
           onOpenService={onOpenService}
           onCloseService={onCloseService}
           onDaemonAction={onDaemonAction}
           onSelectedIndexChange={onSelectedServiceIndexChange}
+          onRestartDone={onRestartDone}
+          onPurgeDone={onPurgeDone}
+          onInstallFinished={onInstallFinished}
         />
       );
     default:
@@ -76,48 +94,47 @@ function MainContent({
 }
 
 export function AppView({
-  activeIndex,
+  activeArea,
+  provisioning,
+  installFinished,
   columns,
   rows,
   selectedServiceIndex,
   visibleServices,
   openServiceId,
   daemonOperation,
-  installFinished,
-  onDaemonOperationDone,
+  onProvisioningDone,
   onInstallFinished,
+  onRestartDone,
   onPurgeDone,
   onOpenService,
   onCloseService,
   onDaemonAction,
   onSelectedServiceIndexChange,
 }: {
-  activeIndex: number;
+  activeArea: string;
+  provisioning: boolean;
+  installFinished?: boolean;
   columns: number;
   rows: number;
   selectedServiceIndex: number;
   visibleServices: DevService[];
   openServiceId?: string | null;
   daemonOperation?: DaemonOperation | null;
-  installFinished?: boolean;
-  onDaemonOperationDone?: () => void;
+  onProvisioningDone?: () => void;
   onInstallFinished?: (success: boolean) => void;
+  onRestartDone?: () => void;
   onPurgeDone?: () => void;
   onOpenService?: (serviceId: string) => void;
   onCloseService?: () => void;
   onDaemonAction?: (action: DaemonActionId) => void | Promise<void>;
   onSelectedServiceIndexChange?: (index: number) => void;
 }) {
-  const activeArea = AREAS[activeIndex] ?? AREAS[0]!;
+  const activeIndex = AREAS.findIndex((area) => area.id === activeArea);
+  const menuActiveIndex = activeIndex >= 0 ? activeIndex : 0;
   const innerWidth = columns - 2;
   const contentHeight = rows - MENU_ROWS - STATUS_ROWS;
-  const status = daemonOperation === "install"
-    ? "Installing daemon · Ctrl-C exit"
-    : daemonOperation === "purge"
-    ? "Purging daemon · Ctrl-C exit"
-    : daemonOperation === "restart"
-    ? "Restarting daemon · Ctrl-C exit"
-    : statusHints(activeArea.id, openServiceId);
+  const status = statusHints(activeArea, openServiceId, installFinished);
 
   return (
     <Box
@@ -126,7 +143,13 @@ export function AppView({
       height={rows}
       backgroundColor={DARK_GREY}
     >
-      <MenuBar areas={AREAS} activeIndex={activeIndex} columns={columns} />
+      <MenuBar
+        areas={AREAS}
+        activeIndex={menuActiveIndex}
+        columns={columns}
+        provisioning={provisioning}
+        provisionerArea={PROVISIONER_AREA}
+      />
 
       <MainPanel width={columns} status={status}>
         <MainContent
@@ -137,9 +160,9 @@ export function AppView({
           visibleServices={visibleServices}
           openServiceId={openServiceId}
           daemonOperation={daemonOperation}
-          installFinished={installFinished}
-          onDaemonOperationDone={onDaemonOperationDone}
+          onProvisioningDone={onProvisioningDone}
           onInstallFinished={onInstallFinished}
+          onRestartDone={onRestartDone}
           onPurgeDone={onPurgeDone}
           onOpenService={onOpenService}
           onCloseService={onCloseService}

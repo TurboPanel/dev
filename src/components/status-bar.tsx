@@ -2,11 +2,23 @@ import React from "react";
 import { Box, Text } from "ink";
 import { BORDER_COLOR, DARK_GREY } from "../theme.ts";
 
-export function statusHints(activeAreaId: string, openServiceId?: string | null): string {
+export function statusHints(
+  activeAreaId: string,
+  openServiceId?: string | null,
+  installFinished?: boolean,
+): string {
   if (activeAreaId === "services") {
     return openServiceId
       ? "Esc back · ↑ ↓ choose action · Enter run · Ctrl-C exit"
       : "← → switch tabs · ↑ ↓ select service · Enter open · Ctrl-C exit";
+  }
+  if (activeAreaId === "developer") {
+    return "← → switch tabs · Ctrl-C exit";
+  }
+  if (activeAreaId === "provisioner") {
+    return installFinished
+      ? "Press any key to continue · Ctrl-C exit"
+      : "Provisioning development environment · Ctrl-C exit";
   }
   return "← → switch tabs · Ctrl-C exit";
 }
