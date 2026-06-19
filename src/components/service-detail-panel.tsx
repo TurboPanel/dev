@@ -44,9 +44,14 @@ export function ServiceDetailPanel({
       width={width}
       height={height}
       paddingX={1}
-      paddingY={1}
+      paddingTop={0}
+      paddingBottom={1}
     >
-      <ServiceTitle serviceId={service.id} label={service.label} width={width} />
+      <ServiceTitle
+        serviceId={service.id}
+        label={service.label}
+        width={Math.max(1, width - 2)}
+      />
       <Text dimColor>Status: {statusLabel(service.status)}</Text>
 
       <Box marginTop={1} flexDirection="column">

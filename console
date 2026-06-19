@@ -2,7 +2,7 @@
 # Start the TurboPanel developer console (Node + Vite).
 #
 # 1. Load shared helpers (paths, sudo, apt packages, runtime installers)
-# 2. Ensure pinned Node (runs this repo) and pinned Deno (used by daemon/instance) are installed
+# 2. Ensure pinned Node (runs this repo) is installed
 # 3. Install JS dependencies with pnpm and launch the Ink TUI via vite-node
 set -eu
 
@@ -12,9 +12,9 @@ CONSOLE_WATCH=
 
 # Shared shell libraries (see scripts/lib/)
 . "$SCRIPT_DIR/scripts/lib/privileges.sh"  # tp_info, tp_error, sudo helpers
-. "$SCRIPT_DIR/scripts/lib/paths.sh"       # NODE_BIN/DENO_BIN, /opt/turbopanel paths
+. "$SCRIPT_DIR/scripts/lib/paths.sh"       # NODE_BIN, /opt/turbopanel paths
 . "$SCRIPT_DIR/scripts/lib/packages.sh"    # apt install curl/tar/xz if needed
-. "$SCRIPT_DIR/scripts/lib/runtime.sh"      # tp_ensure_node_runtime, tp_ensure_deno_runtime
+. "$SCRIPT_DIR/scripts/lib/runtime.sh"      # tp_ensure_node_runtime
 . "$SCRIPT_DIR/scripts/lib/dev-identity.sh" # tp_resolve_dev_identity
 . "$SCRIPT_DIR/scripts/lib/dev-prerequisites.sh"  # tp_ensure_dev_prerequisites
 
@@ -59,11 +59,6 @@ tp_ensure_dev_prerequisites
 tp_info "Checking Node runtime…"
 tp_ensure_node_runtime
 tp_ensure_corepack_pnpm "$SCRIPT_DIR"
-
-# Deno is not used to run this repo, but the daemon and instance do — install it
-# here so the rest of the platform can rely on the pinned runtime being present.
-tp_info "Checking Deno runtime (for daemon/instance)…"
-tp_ensure_deno_runtime
 
 PNPM_BIN=$(dirname "$NODE_BIN")/pnpm
 

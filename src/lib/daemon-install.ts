@@ -1,9 +1,8 @@
 import { spawn, spawnSync } from "node:child_process";
+import { bootstrapOrchestrationCommand } from "./daemon-exec.ts";
 import {
   ANSIBLE_COLLECTIONS_PATH,
-  DAEMON_DENO_CONFIG,
   DAEMON_REPO_DIR,
-  DENO_BIN,
   PYTHON_INSTALL_DIR,
   RUNTIMES_DIR,
   TURBOPANEL_ROOT,
@@ -79,26 +78,27 @@ async function ensureTurbopanelOwnership(
   }
 }
 
+function bootstrapSudoArgs(command: string): string[] {
+  const envArgs = ["env", ...bootstrapEnv(), "bash", "-c", command];
+  if (turbopanelUserExists()) {
+    return ["-n", "-u", TURBOPANEL_USER, ...envArgs];
+  }
+  // Before Ansible creates turbopanel, bootstrap must install runtimes as root.
+  return ["-n", ...envArgs];
+}
+
 export async function bootstrapOrchestration(
   onEvent: (event: unknown) => void,
   onOutput?: InstallOutputHandler,
 ): Promise<void> {
-  const denoInvocation = [
-    DENO_BIN,
-    "run",
-    "--config",
-    DAEMON_DENO_CONFIG,
-    "--allow-net",
-    "--allow-read",
-    "--allow-write",
-    "--allow-run",
-    "--allow-env",
-    `${DAEMON_DIR}/scripts/bootstrap-orchestration.ts`,
-  ].map(shellQuote).join(" ");
+  if (turbopanelUserExists()) {
+    await ensureTurbopanelOwnership(onOutput);
+  }
 
-  const command = `cd ${shellQuote(DAEMON_DIR)} && exec ${denoInvocation}`;
-  // Bootstrap installs shared runtimes as root; hand ownership to turbopanel after.
-  const args = ["-n", "env", ...bootstrapEnv(), "bash", "-c", command];
+  const bootstrapInvocation = bootstrapOrchestrationCommand();
+  const command =
+    `cd ${shellQuote(DAEMON_DIR)} && exec ${bootstrapInvocation}`;
+  const args = bootstrapSudoArgs(command);
 
   await new Promise<void>((resolve, reject) => {
     const child = spawn("sudo", args, {
@@ -153,7 +153,11 @@ export async function bootstrapOrchestration(
         handleLine(stdoutBuffer);
       }
       if (code === 0) {
-        void ensureTurbopanelOwnership(onOutput).then(resolve).catch(reject);
+        if (!turbopanelUserExists()) {
+          void ensureTurbopanelOwnership(onOutput).then(resolve).catch(reject);
+          return;
+        }
+        resolve();
         return;
       }
 

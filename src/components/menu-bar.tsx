@@ -96,15 +96,15 @@ export function MenuBar({
   activeIndex,
   columns,
   provisioning,
-  provisionerArea,
+  bootstrapArea,
 }: {
   areas: AreaTab[];
   activeIndex: number;
   columns: number;
   provisioning?: boolean;
-  provisionerArea?: AreaTab;
+  bootstrapArea?: AreaTab;
 }) {
-  const displayAreas = provisioning && provisionerArea ? [provisionerArea] : areas;
+  const displayAreas = provisioning && bootstrapArea ? [bootstrapArea] : areas;
   const displayActiveIndex = provisioning ? 0 : activeIndex;
   const { activeArea, activeWidth, activeTabStart, rightWidth } =
     activeTabMetrics(displayAreas, displayActiveIndex, columns);

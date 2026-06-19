@@ -3,13 +3,14 @@ import { Box, Text, useInput } from "ink";
 import { ScrollList } from "ink-scroll-list";
 import type { DevService } from "../dev-services.ts";
 import {
+  canRestartDaemon,
   daemonMenuActions,
   type DaemonActionId,
 } from "../lib/daemon-actions.ts";
 import type { DaemonOperation } from "../lib/spinners.ts";
-import { BORDER_COLOR, DARK_GREY, LIST_FOCUS_BG, LIST_FOCUS_FG, LIST_OPEN_BG, LIST_OPEN_FG } from "../theme.ts";
-import { PurgeDaemonPanel } from "./purge-daemon-panel.tsx";
-import { RestartDaemonPanel } from "./restart-daemon-panel.tsx";
+import { BORDER_COLOR, LIST_FOCUS_BG, LIST_FOCUS_FG, LIST_OPEN_BG, LIST_OPEN_FG } from "../theme.ts";
+import { DaemonDetailPanel } from "./daemon-detail-panel.tsx";
+import { RestartDaemonModal } from "./restart-daemon-modal.tsx";
 import { ServiceDetailPanel } from "./service-detail-panel.tsx";
 import { ServiceStatusIndicator } from "./service-status.tsx";
 
@@ -43,10 +44,11 @@ export function ServicesPanel({
   onOpenService,
   onCloseService,
   onDaemonAction,
+  onDaemonRestart,
   onSelectedIndexChange,
   onRestartDone,
-  onPurgeDone,
   onInstallFinished,
+  onRefreshServices,
   daemonOperation,
 }: {
   width: number;
@@ -58,10 +60,11 @@ export function ServicesPanel({
   onOpenService?: (serviceId: string) => void;
   onCloseService?: () => void;
   onDaemonAction?: (action: DaemonActionId) => void | Promise<void>;
+  onDaemonRestart?: () => void;
   onSelectedIndexChange?: (index: number) => void;
   onRestartDone?: () => void;
-  onPurgeDone?: () => void;
   onInstallFinished?: (success: boolean) => void;
+  onRefreshServices?: () => void;
 }) {
   const leftWidth = serviceListWidth(services);
   const openService = openServiceId
@@ -75,7 +78,7 @@ export function ServicesPanel({
   const listScrollIndex = inDetail && openServiceIndex >= 0
     ? openServiceIndex
     : selectedIndex;
-  const actions = useMemo(
+  const daemonActions = useMemo(
     () => (openService?.id === "daemon" ? daemonMenuActions(openService.status) : []),
     [openService],
   );
@@ -88,23 +91,23 @@ export function ServicesPanel({
   }, [openServiceId]);
 
   useEffect(() => {
-    if (selectedActionIndex >= actions.length) {
-      setSelectedActionIndex(Math.max(0, actions.length - 1));
+    if (selectedActionIndex >= daemonActions.length) {
+      setSelectedActionIndex(Math.max(0, daemonActions.length - 1));
     }
-  }, [actions.length, selectedActionIndex]);
+  }, [daemonActions.length, selectedActionIndex]);
 
   useInput((_input, key) => {
     if (daemonOperation) {
       return;
     }
 
-    if (inDetail) {
+    if (inDetail && openService?.id !== "daemon") {
       if (key.escape && onCloseService) {
         onCloseService();
         return;
       }
 
-      const lastAction = actions.length - 1;
+      const lastAction = daemonActions.length - 1;
       if (key.upArrow) {
         setSelectedActionIndex((index) => Math.max(0, index - 1));
         setActionMessage(null);
@@ -113,14 +116,29 @@ export function ServicesPanel({
         setSelectedActionIndex((index) => Math.min(lastAction, index + 1));
         setActionMessage(null);
       }
-      if (key.return && actions.length > 0 && onDaemonAction) {
-        const action = actions[selectedActionIndex];
+      if (key.return && daemonActions.length > 0 && onDaemonAction) {
+        const action = daemonActions[selectedActionIndex];
         if (action) {
           void Promise.resolve(onDaemonAction(action)).catch((error: unknown) => {
             const message = error instanceof Error ? error.message : String(error);
             setActionMessage(message);
           });
         }
+      }
+      return;
+    }
+
+    if (inDetail && openService?.id === "daemon") {
+      if (key.escape && onCloseService) {
+        onCloseService();
+        return;
+      }
+      if (
+        (_input === "r" || _input === "R") &&
+        canRestartDaemon() &&
+        onDaemonRestart
+      ) {
+        onDaemonRestart();
       }
       return;
     }
@@ -147,10 +165,8 @@ export function ServicesPanel({
         width={leftWidth}
         height={height}
         flexShrink={0}
-        backgroundColor={DARK_GREY}
         borderStyle="single"
         borderColor={BORDER_COLOR}
-        borderBackgroundColor={DARK_GREY}
         borderRight
         borderTop={false}
         borderBottom={false}
@@ -173,7 +189,11 @@ export function ServicesPanel({
               ? LIST_FOCUS_FG
               : undefined;
             const daemonOp =
-              service.id === "daemon" && daemonOperation ? daemonOperation : null;
+              service.id === "daemon" &&
+              daemonOperation &&
+              daemonOperation !== "restart"
+                ? daemonOperation
+                : null;
             return (
               <Box
                 key={service.id}
@@ -201,25 +221,31 @@ export function ServicesPanel({
           })}
         </ScrollList>
       </Box>
-      {daemonOperation === "restart" && detailWidth > 0 && onRestartDone && (
-        <RestartDaemonPanel
-          width={detailWidth}
-          height={height}
-          onDone={onRestartDone}
-          onInstallFinished={onInstallFinished}
-        />
+      {openService?.id === "daemon" && detailWidth > 0 && (
+        <Box width={detailWidth} height={height} position="relative">
+          <DaemonDetailPanel
+            service={openService}
+            actions={daemonActions}
+            width={detailWidth}
+            height={height}
+            onDaemonAction={onDaemonAction}
+            suspended={daemonOperation === "restart"}
+          />
+          {daemonOperation === "restart" && onRestartDone && (
+            <RestartDaemonModal
+              width={detailWidth}
+              height={height}
+              onDone={onRestartDone}
+              onReady={onInstallFinished}
+              onRefresh={onRefreshServices}
+            />
+          )}
+        </Box>
       )}
-      {daemonOperation === "purge" && detailWidth > 0 && onPurgeDone && (
-        <PurgeDaemonPanel
-          width={detailWidth}
-          height={height}
-          onDone={onPurgeDone}
-        />
-      )}
-      {openService && detailWidth > 0 && !daemonOperation && (
+      {openService && openService.id !== "daemon" && detailWidth > 0 && !daemonOperation && (
         <ServiceDetailPanel
           service={openService}
-          actions={actions}
+          actions={daemonActions}
           selectedActionIndex={selectedActionIndex}
           width={detailWidth}
           height={height}

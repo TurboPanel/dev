@@ -1,24 +1,36 @@
 import React from "react";
 import { Box, Text } from "ink";
-import { BORDER_COLOR, DARK_GREY } from "../theme.ts";
+import { canRestartDaemon } from "../lib/daemon-actions.ts";
+import type { DaemonOperation } from "../lib/spinners.ts";
+import { BORDER_COLOR } from "../theme.ts";
 
 export function statusHints(
   activeAreaId: string,
   openServiceId?: string | null,
   installFinished?: boolean,
+  daemonOperation?: DaemonOperation | null,
 ): string {
   if (activeAreaId === "services") {
+    if (openServiceId === "daemon") {
+      if (daemonOperation === "restart") {
+        return installFinished
+          ? "Enter OK · Ctrl-C exit"
+          : "↑ ↓ Yes/No · Enter select · Esc cancel · Ctrl-C exit";
+      }
+      const restartHint = canRestartDaemon() ? " · R restart" : "";
+      return `Esc back · Tab focus · ↑↓ scroll log · L level${restartHint} · Enter run · Ctrl-C exit`;
+    }
     return openServiceId
       ? "Esc back · ↑ ↓ choose action · Enter run · Ctrl-C exit"
       : "← → switch tabs · ↑ ↓ select service · Enter open · Ctrl-C exit";
   }
   if (activeAreaId === "developer") {
-    return "← → switch tabs · Ctrl-C exit";
+    return "↑ ↓ choose action · Enter run · ← → switch tabs · Ctrl-C exit";
   }
-  if (activeAreaId === "provisioner") {
+  if (activeAreaId === "bootstrap") {
     return installFinished
       ? "Press any key to continue · Ctrl-C exit"
-      : "Provisioning development environment · Ctrl-C exit";
+      : "Bootstrapping development environment · Ctrl-C exit";
   }
   return "← → switch tabs · Ctrl-C exit";
 }
@@ -38,13 +50,12 @@ export function StatusBar({ width, status }: { width: number; status: string }) 
 
   return (
     <Box flexDirection="row" width={width} height={1} flexShrink={0}>
-      <Text color={BORDER_COLOR} backgroundColor={DARK_GREY}>
+      <Text color={BORDER_COLOR}>
         ╰{"─".repeat(leftDashes)}
       </Text>
       <Box
         width={labelWidth}
         height={1}
-        backgroundColor={DARK_GREY}
         justifyContent="center"
         paddingX={1}
       >
@@ -52,7 +63,7 @@ export function StatusBar({ width, status }: { width: number; status: string }) 
           {display}
         </Text>
       </Box>
-      <Text color={BORDER_COLOR} backgroundColor={DARK_GREY}>
+      <Text color={BORDER_COLOR}>
         {"─".repeat(rightDashes)}╯
       </Text>
     </Box>

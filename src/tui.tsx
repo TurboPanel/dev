@@ -24,8 +24,11 @@ function App() {
       onPurgeDone={consoleApp.handlePurgeDone}
       onOpenService={consoleApp.handleOpenService}
       onCloseService={consoleApp.handleCloseService}
-      onDaemonAction={consoleApp.openServiceId === "daemon" ? consoleApp.handleDaemonAction : undefined}
+      onDaemonAction={consoleApp.handleDaemonAction}
+      onDeveloperDaemonAction={consoleApp.handleDaemonAction}
+      onDaemonRestart={consoleApp.handleDaemonRestart}
       onSelectedServiceIndexChange={consoleApp.setSelectedServiceIndex}
+      onRefreshServices={consoleApp.refreshServices}
     />
   );
 }

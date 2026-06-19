@@ -6,7 +6,6 @@ import { DeveloperPanel } from "@turbopanel/components/developer-panel.tsx";
 import { ProvisionerPanel } from "@turbopanel/components/provisioner-panel.tsx";
 import { ServicesPanel } from "@turbopanel/components/services-panel.tsx";
 import { statusHints } from "@turbopanel/components/status-bar.tsx";
-import { DARK_GREY } from "./theme.ts";
 import type { DevService } from "./dev-services.ts";
 import type { DaemonActionId } from "./lib/daemon-actions.ts";
 import type { DaemonOperation } from "./lib/spinners.ts";
@@ -16,10 +15,10 @@ export const AREAS: AreaTab[] = [
   { id: "services", label: "Services", emoji: "⚙" },
 ];
 
-export const PROVISIONER_AREA: AreaTab = {
-  id: "provisioner",
-  label: "Provisioner",
-  emoji: "🔧",
+export const BOOTSTRAP_AREA: AreaTab = {
+  id: "bootstrap",
+  label: "Bootstrap",
+  emoji: "🚀",
 };
 
 const MENU_ROWS = 2;
@@ -35,11 +34,14 @@ function MainContent({
   onOpenService,
   onCloseService,
   onDaemonAction,
+  onDeveloperDaemonAction,
+  onDaemonRestart,
   onSelectedServiceIndexChange,
   onProvisioningDone,
   onInstallFinished,
   onRestartDone,
   onPurgeDone,
+  onRefreshServices,
   daemonOperation,
 }: {
   activeArea: string;
@@ -52,14 +54,19 @@ function MainContent({
   onOpenService?: (serviceId: string) => void;
   onCloseService?: () => void;
   onDaemonAction?: (action: DaemonActionId) => void | Promise<void>;
+  onDeveloperDaemonAction?: (action: DaemonActionId) => void | Promise<void>;
+  onDaemonRestart?: () => void;
   onSelectedServiceIndexChange?: (index: number) => void;
   onProvisioningDone?: () => void;
   onInstallFinished?: (success: boolean) => void;
   onRestartDone?: () => void;
   onPurgeDone?: () => void;
+  onRefreshServices?: () => void;
 }) {
+  const daemon = visibleServices.find((service) => service.id === "daemon");
+
   switch (activeArea) {
-    case "provisioner":
+    case "bootstrap":
       return (
         <ProvisionerPanel
           width={width}
@@ -69,7 +76,16 @@ function MainContent({
         />
       );
     case "developer":
-      return <DeveloperPanel />;
+      return (
+        <DeveloperPanel
+          width={width}
+          height={height}
+          daemonStatus={daemon?.status}
+          daemonOperation={daemonOperation}
+          onDaemonAction={onDeveloperDaemonAction}
+          onPurgeDone={onPurgeDone}
+        />
+      );
     case "services":
       return (
         <ServicesPanel
@@ -82,10 +98,11 @@ function MainContent({
           onOpenService={onOpenService}
           onCloseService={onCloseService}
           onDaemonAction={onDaemonAction}
+          onDaemonRestart={onDaemonRestart}
           onSelectedIndexChange={onSelectedServiceIndexChange}
           onRestartDone={onRestartDone}
-          onPurgeDone={onPurgeDone}
           onInstallFinished={onInstallFinished}
+          onRefreshServices={onRefreshServices}
         />
       );
     default:
@@ -110,7 +127,10 @@ export function AppView({
   onOpenService,
   onCloseService,
   onDaemonAction,
+  onDeveloperDaemonAction,
+  onDaemonRestart,
   onSelectedServiceIndexChange,
+  onRefreshServices,
 }: {
   activeArea: string;
   provisioning: boolean;
@@ -128,27 +148,34 @@ export function AppView({
   onOpenService?: (serviceId: string) => void;
   onCloseService?: () => void;
   onDaemonAction?: (action: DaemonActionId) => void | Promise<void>;
+  onDeveloperDaemonAction?: (action: DaemonActionId) => void | Promise<void>;
+  onDaemonRestart?: () => void;
   onSelectedServiceIndexChange?: (index: number) => void;
+  onRefreshServices?: () => void;
 }) {
   const activeIndex = AREAS.findIndex((area) => area.id === activeArea);
   const menuActiveIndex = activeIndex >= 0 ? activeIndex : 0;
   const innerWidth = columns - 2;
   const contentHeight = rows - MENU_ROWS - STATUS_ROWS;
-  const status = statusHints(activeArea, openServiceId, installFinished);
+  const status = statusHints(
+    activeArea,
+    openServiceId,
+    installFinished,
+    daemonOperation,
+  );
 
   return (
     <Box
       flexDirection="column"
       width={columns}
       height={rows}
-      backgroundColor={DARK_GREY}
     >
       <MenuBar
         areas={AREAS}
         activeIndex={menuActiveIndex}
         columns={columns}
         provisioning={provisioning}
-        provisionerArea={PROVISIONER_AREA}
+        bootstrapArea={BOOTSTRAP_AREA}
       />
 
       <MainPanel width={columns} status={status}>
@@ -167,7 +194,10 @@ export function AppView({
           onOpenService={onOpenService}
           onCloseService={onCloseService}
           onDaemonAction={onDaemonAction}
+          onDeveloperDaemonAction={onDeveloperDaemonAction}
+          onDaemonRestart={onDaemonRestart}
           onSelectedServiceIndexChange={onSelectedServiceIndexChange}
+          onRefreshServices={onRefreshServices}
         />
       </MainPanel>
     </Box>

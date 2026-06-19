@@ -5,7 +5,7 @@ import type { DaemonActionId } from "../lib/daemon-actions.ts";
 import type { DaemonOperation } from "../lib/spinners.ts";
 import { useVisibleServices } from "./use-visible-services.ts";
 
-export type ActiveArea = "developer" | "services" | "provisioner";
+export type ActiveArea = "developer" | "services" | "bootstrap";
 
 function initialAutoInstallState(): {
   shouldAutoInstall: boolean;
@@ -24,7 +24,7 @@ export function useConsoleApp() {
   const { exit } = useApp();
   const initialAutoInstall = initialAutoInstallState();
   const [activeArea, setActiveArea] = useState<ActiveArea>(
-    initialAutoInstall.shouldAutoInstall ? "provisioner" : "developer",
+    initialAutoInstall.shouldAutoInstall ? "bootstrap" : "developer",
   );
   const [provisioning, setProvisioning] = useState(initialAutoInstall.shouldAutoInstall);
   const [selectedServiceIndex, setSelectedServiceIndex] = useState(
@@ -43,7 +43,7 @@ export function useConsoleApp() {
     if (index >= 0) {
       setSelectedServiceIndex(index);
     }
-    setActiveArea("provisioner");
+    setActiveArea("bootstrap");
     setProvisioning(true);
     setInstallFinished(false);
     setDaemonOperation("install");
@@ -72,24 +72,23 @@ export function useConsoleApp() {
     switch (action) {
       case "install":
       case "repair":
-        setActiveArea("provisioner");
+        setActiveArea("bootstrap");
         setProvisioning(true);
         setOpenServiceId(null);
         startDaemonInstall();
         return;
-      case "restart":
-        setActiveArea("services");
-        setOpenServiceId(null);
-        setInstallFinished(false);
-        setDaemonOperation("restart");
-        return;
       case "purge":
-        setActiveArea("services");
+        setActiveArea("developer");
         setOpenServiceId(null);
         setDaemonOperation("purge");
         return;
     }
   }, [startDaemonInstall]);
+
+  const handleDaemonRestart = useCallback(() => {
+    setInstallFinished(false);
+    setDaemonOperation("restart");
+  }, []);
 
   const handleInstallFinished = useCallback((success: boolean) => {
     setInstallFinished(true);
@@ -169,8 +168,10 @@ export function useConsoleApp() {
     handleProvisioningDone,
     handleInstallFinished,
     handleRestartDone,
+    handleDaemonRestart,
     handlePurgeDone,
     handleCloseService,
     setSelectedServiceIndex,
+    refreshServices,
   };
 }

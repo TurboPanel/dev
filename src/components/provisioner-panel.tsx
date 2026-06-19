@@ -212,7 +212,7 @@ export function ProvisionerPanel({
   return (
     <Box flexDirection="column" width={width} height={height}>
       <Text color="cyan" bold>
-        Provisioning development environment
+        Bootstrapping development environment
       </Text>
       <Box flexDirection="column" marginTop={1} flexGrow={1} minHeight={0}>
         <AnsibleTaskList

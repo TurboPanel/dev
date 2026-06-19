@@ -2,117 +2,75 @@ import React from "react";
 import { Box, Text } from "ink";
 import figlet from "figlet";
 import Gradient, { type GradientName } from "ink-gradient";
-import BigText, { type BigTextProps } from "ink-big-text";
 
-type AsciiTitleConfig = {
-  kind: "ascii";
-  text: string;
-  font: string;
-  gradient: GradientName;
-};
+const TITLE_GRADIENT: GradientName = "atlas";
+const TITLE_FONTS = ["Calvin S", "Small"] as const;
+const MIN_TITLE_WIDTH = 12;
 
-type BigTextTitleConfig = {
-  kind: "bigText";
-  text: string;
-  font: NonNullable<BigTextProps["font"]>;
-  gradient: GradientName;
-};
+function trimBlankLines(text: string): string {
+  const lines = text
+    .split("\n")
+    .map((line) => line.replace(/\r$/, ""));
 
-type ServiceTitleConfig = AsciiTitleConfig | BigTextTitleConfig;
+  let start = 0;
+  let end = lines.length;
 
-const SERVICE_TITLES: Record<string, ServiceTitleConfig> = {
-  daemon: {
-    kind: "ascii",
-    text: "Daemon",
-    font: "Slant Relief",
-    gradient: "vice",
-  },
-  instance: {
-    kind: "bigText",
-    text: "instance",
-    font: "simple",
-    gradient: "morning",
-  },
-  ui: {
-    kind: "bigText",
-    text: "UI",
-    font: "block",
-    gradient: "instagram",
-  },
-  website: {
-    kind: "ascii",
-    text: "Website",
-    font: "Small Slant",
-    gradient: "summer",
-  },
-};
-
-const ASCII_FALLBACK_FONT = "Small Slant";
-const MIN_TITLE_WIDTH = 18;
-
-function asciiArt(text: string, font: string, maxWidth: number): string | null {
-  const tryFont = (fontName: string): string | null => {
-    try {
-      const art = figlet.textSync(text, {
-        font: fontName,
-        horizontalLayout: "fitted",
-      });
-      const lineWidth = Math.max(...art.split("\n").map((line) => line.length), 0);
-      if (lineWidth > maxWidth) {
-        return null;
-      }
-      return art;
-    } catch {
-      return null;
-    }
-  };
-
-  return tryFont(font) ?? (font !== ASCII_FALLBACK_FONT ? tryFont(ASCII_FALLBACK_FONT) : null);
-}
-
-function AsciiTitle({
-  config,
-  maxWidth,
-}: {
-  config: AsciiTitleConfig;
-  maxWidth: number;
-}) {
-  const art = asciiArt(config.text, config.font, maxWidth);
-  if (!art) {
-    return <Text bold>{config.text}</Text>;
+  while (start < end && lines[start].trim() === "") {
+    start += 1;
+  }
+  while (end > start && lines[end - 1].trim() === "") {
+    end -= 1;
   }
 
+  return lines.slice(start, end).join("\n");
+}
+
+function renderTitleArt(text: string, maxWidth: number): string | null {
+  for (const font of TITLE_FONTS) {
+    try {
+      const art = trimBlankLines(
+        figlet.textSync(text, {
+          font,
+          horizontalLayout: "fitted",
+        }),
+      );
+      if (art.length === 0) {
+        continue;
+      }
+
+      const lineWidth = Math.max(...art.split("\n").map((line) => line.length), 0);
+      if (lineWidth <= maxWidth) {
+        return art;
+      }
+    } catch {
+      // try next font
+    }
+  }
+
+  return null;
+}
+
+function GradientLabel({ text }: { text: string }) {
   return (
-    <Gradient name={config.gradient}>
-      <Text>{art}</Text>
+    <Gradient name={TITLE_GRADIENT}>
+      <Text bold>{text}</Text>
     </Gradient>
   );
 }
 
-function BigTextTitle({
-  config,
-  maxWidth,
-}: {
-  config: BigTextTitleConfig;
-  maxWidth: number;
-}) {
-  if (maxWidth < MIN_TITLE_WIDTH) {
-    return <Text bold>{config.text}</Text>;
-  }
+function GradientArt({ art }: { art: string }) {
+  const lines = art.split("\n");
 
   return (
-    <Gradient name={config.gradient}>
-      <BigText
-        text={config.text}
-        font={config.font}
-        maxLength={maxWidth}
-      />
+    <Gradient name={TITLE_GRADIENT}>
+      {lines.map((line, index) => (
+        <Text key={index} wrap="truncate">{line}</Text>
+      ))}
     </Gradient>
   );
 }
 
 export function ServiceTitle({
-  serviceId,
   label,
   width,
 }: {
@@ -121,19 +79,19 @@ export function ServiceTitle({
   width: number;
 }) {
   const maxWidth = Math.max(1, width - 2);
-  const config = SERVICE_TITLES[serviceId];
 
-  if (!config) {
-    return <Text bold>{label}</Text>;
+  if (maxWidth < MIN_TITLE_WIDTH) {
+    return <GradientLabel text={label} />;
+  }
+
+  const art = renderTitleArt(label, maxWidth);
+  if (!art) {
+    return <GradientLabel text={label} />;
   }
 
   return (
     <Box flexDirection="column" width={maxWidth}>
-      {config.kind === "ascii" ? (
-        <AsciiTitle config={config} maxWidth={maxWidth} />
-      ) : (
-        <BigTextTitle config={config} maxWidth={maxWidth} />
-      )}
+      <GradientArt art={art} />
     </Box>
   );
 }

@@ -1,9 +1,19 @@
+import { spawnSync } from "node:child_process";
 import type { DevServiceStatus } from "../dev-services.ts";
 import { isDaemonSystemdInstalled } from "../dev-services.ts";
-import { DAEMON_REPO_DIR } from "./paths.ts";
+import {
+  DAEMON_REPO_DIR,
+  DENO_LEGACY_RUNTIME_DIR,
+  RUNTIMES_DIR,
+  TURBOPANEL_ROOT,
+} from "./paths.ts";
 import { type InstallOutputHandler, runCaptured } from "./install-output.ts";
 
 export type DaemonActionId = "install" | "repair" | "restart" | "purge";
+
+const DAEMON_UNIT = "turbopanel-daemon";
+const DEFAULT_WAIT_TIMEOUT_MS = 120_000;
+const DEFAULT_WAIT_POLL_MS = 500;
 
 export const DAEMON_ACTION_LABELS: Record<DaemonActionId, string> = {
   install: "Install",
@@ -21,14 +31,57 @@ export function daemonMenuActions(status: DevServiceStatus): DaemonActionId[] {
   if (status === "pending" || status === "stopped" || status === "starting") {
     actions.push("repair");
   }
-  if (isDaemonSystemdInstalled()) {
-    actions.push("restart");
-  }
-  actions.push("purge");
   return actions;
 }
 
-export async function restartDaemon(
+export function developerMenuActions(status: DevServiceStatus | undefined): DaemonActionId[] {
+  if (!status || status === "uninstalled") {
+    return [];
+  }
+
+  return ["purge"];
+}
+
+export function canRestartDaemon(): boolean {
+  return isDaemonSystemdInstalled();
+}
+
+export function isDaemonServiceActive(): boolean {
+  const result = spawnSync("systemctl", ["is-active", DAEMON_UNIT], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "ignore"],
+  });
+  return (result.stdout ?? "").trim() === "active";
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export async function waitForDaemonRunning(
+  options: {
+    timeoutMs?: number;
+    pollMs?: number;
+    onPoll?: (elapsedMs: number) => void;
+  } = {},
+): Promise<boolean> {
+  const timeoutMs = options.timeoutMs ?? DEFAULT_WAIT_TIMEOUT_MS;
+  const pollMs = options.pollMs ?? DEFAULT_WAIT_POLL_MS;
+  const started = Date.now();
+
+  while (Date.now() - started < timeoutMs) {
+    if (isDaemonServiceActive()) {
+      return true;
+    }
+    options.onPoll?.(Date.now() - started);
+    await sleep(pollMs);
+  }
+
+  return isDaemonServiceActive();
+}
+
+/** Queue a daemon restart without blocking until the service is active again. */
+export async function requestDaemonRestart(
   onOutput?: InstallOutputHandler,
 ): Promise<void> {
   const lines: string[] = [];
@@ -38,7 +91,7 @@ export async function restartDaemon(
   };
 
   const code = await runCaptured(
-    ["sudo", "systemctl", "restart", "turbopanel-daemon"],
+    ["sudo", "systemctl", "restart", "--no-block", DAEMON_UNIT],
     append,
   );
   if (code !== 0) {
@@ -46,15 +99,39 @@ export async function restartDaemon(
   }
 }
 
+/** @deprecated Use {@link requestDaemonRestart} — blocks until systemd reports active. */
+export async function restartDaemon(
+  onOutput?: InstallOutputHandler,
+): Promise<void> {
+  await requestDaemonRestart(onOutput);
+  const running = await waitForDaemonRunning();
+  if (!running) {
+    throw new Error("Daemon did not become active after restart");
+  }
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, "'\\''")}'`;
+}
+
 export async function purgeDaemon(
   onOutput?: InstallOutputHandler,
 ): Promise<void> {
+  const pathsToRemove = [
+    DAEMON_REPO_DIR,
+    RUNTIMES_DIR,
+    `${TURBOPANEL_ROOT}/.cache`,
+    `${TURBOPANEL_ROOT}/.ansible`,
+    `${TURBOPANEL_ROOT}/.local`,
+    DENO_LEGACY_RUNTIME_DIR,
+  ].map(shellQuote);
+
   const command = [
     "systemctl stop turbopanel-daemon 2>/dev/null || true",
     "systemctl disable turbopanel-daemon 2>/dev/null || true",
     "rm -f /etc/systemd/system/turbopanel-daemon.service",
     "systemctl daemon-reload",
-    `rm -rf '${DAEMON_REPO_DIR.replace(/'/g, "'\\''")}'`,
+    ...pathsToRemove.map((path) => `rm -rf ${path}`),
   ].join(" && ");
 
   const code = await runCaptured(["sudo", "bash", "-c", command], onOutput);

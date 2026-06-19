@@ -1,7 +1,7 @@
 import React, { type ReactNode } from "react";
 import { Box } from "ink";
 import { StatusBar } from "./status-bar.tsx";
-import { BORDER_COLOR, DARK_GREY } from "../theme.ts";
+import { BORDER_COLOR } from "../theme.ts";
 
 export function MainPanel({
   width,
@@ -24,10 +24,8 @@ export function MainPanel({
         flexDirection="column"
         flexGrow={1}
         minHeight={0}
-        backgroundColor={DARK_GREY}
         borderStyle="round"
         borderColor={BORDER_COLOR}
-        borderBackgroundColor={DARK_GREY}
         borderLeft
         borderRight
         borderTop={false}
