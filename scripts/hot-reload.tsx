@@ -18,7 +18,7 @@ async function loadAppModule(server: ViteDevServer): Promise<AppModule> {
   return await server.ssrLoadModule(`${ENTRY}?t=${Date.now()}`) as AppModule;
 }
 
-function DevApp({
+function HotReloadApp({
   server,
   initialModule,
 }: {
@@ -97,7 +97,7 @@ const server = await createServer({
 const initialModule = await loadAppModule(server);
 
 const { waitUntilExit } = render(
-  <DevApp server={server} initialModule={initialModule} />,
+  <HotReloadApp server={server} initialModule={initialModule} />,
   {
     alternateScreen: true,
     exitOnCtrlC: true,

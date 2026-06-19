@@ -8,7 +8,7 @@
   "packageManager": "pnpm@11.8.0",
   "scripts": {
     "dev": "vite-node src/tui.tsx",
-    "dev:watch": "vite-node scripts/dev-console.tsx"
+    "dev:watch": "vite-node scripts/hot-reload.tsx"
   },
   "dependencies": {
     "ink": "^7.0.2",

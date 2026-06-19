@@ -2,7 +2,7 @@
 
 ## What this repo is
 
-`turbopanel-dev` is the **TurboPanel development console** — a minimal terminal UI built on [Ink](https://github.com/vadimdemedes/ink) 7, run on **Node** via **Vite (`vite-node`)**. Watch mode uses a custom Vite dev runner (`scripts/dev-console.tsx`) that keeps the Ink process mounted and reloads changed `src/` modules. It is installed via a one-liner into `./turbopanel-dev` relative to the user's current directory.
+`turbopanel-dev` is the **TurboPanel development console** — a minimal terminal UI built on [Ink](https://github.com/vadimdemedes/ink) 7, run on **Node** via **Vite (`vite-node`)**. Watch mode uses a custom Vite dev runner (`scripts/hot-reload.tsx`) that keeps the Ink process mounted and reloads changed `src/` modules. It is installed via a one-liner into `./turbopanel-dev` relative to the user's current directory.
 
 **This repo runs on Node, not Deno.** Deno is still installed by the dev environment because the **daemon** and **instance** run on it — but the console itself is a Node/pnpm/Vite project.
 
@@ -42,9 +42,9 @@ Node is a pinned `nodejs.org` tarball installed into `/usr/local`. Deno is a pin
 | `curl -fsSL https://develop.trbp.nl \| sh` | Clone/update `./turbopanel-dev` via SSH, then launch the TUI. |
 | `sh scripts/develop.sh` | Same when run from inside the repo to update the checkout. |
 | `./console` | Ensure pinned Node + Deno (sudo on first run), `pnpm install`, launch `src/tui.tsx` via `vite-node`. |
-| `./console --watch` | Same, but use `scripts/dev-console.tsx` for live reload on `src/` changes. |
+| `./console --watch` | Same, but use `scripts/hot-reload.tsx` for live reload on `src/` changes. |
 | `pnpm dev` | Run `src/tui.tsx` directly via `vite-node` (requires Node on PATH). |
-| `pnpm dev:watch` | Run `scripts/dev-console.tsx`, which keeps Ink mounted and rerenders on `src/` changes. |
+| `pnpm dev:watch` | Run `scripts/hot-reload.tsx`, which keeps Ink mounted and rerenders on `src/` changes. |
 
 **Typical flow:**
 
@@ -57,7 +57,7 @@ curl -fsSL https://develop.trbp.nl | sh
 ## Responsibilities
 
 - **`scripts/develop.sh`** — clones/updates **only** `turbopanel-dev` via `git@github.com:turbopanel/turbopanel-dev.git`. Requires **`curl`**, **`sudo`**, and a **sudo-capable development user** before it runs (`scripts/lib/dev-prerequisites.sh`). On first run, prompts for git `user.name` and `user.email`, generates `~/.ssh/id_ed25519` if missing, configures SSH commit signing, and verifies GitHub SSH before cloning. May use sudo for `git` / `openssh-client` apt installs. Uses `tp_is_interactive()` so `curl | sh` works when a controlling terminal is available (`/dev/tty`).
-- **`console`** — runs the prerequisite check, ensures pinned **Node** (`/usr/local/bin/node`, runs this repo) and pinned **Deno** (`/usr/local/bin/deno`, for daemon/instance) are installed, enables Corepack/pnpm, runs `pnpm install`, and launches the Ink TUI via `vite-node`. Add `--watch` to use `scripts/dev-console.tsx`, which keeps the Ink process alive and rerenders when imported `src/` modules change. When stdin/stdout/stderr are not TTYs (e.g. after `exec` from a piped bootstrap), reattaches stdio to `/dev/tty` when `tp_is_interactive()` succeeds.
+- **`console`** — runs the prerequisite check, ensures pinned **Node** (`/usr/local/bin/node`, runs this repo) and pinned **Deno** (`/usr/local/bin/deno`, for daemon/instance) are installed, enables Corepack/pnpm, runs `pnpm install`, and launches the Ink TUI via `vite-node`. Add `--watch` to use `scripts/hot-reload.tsx`, which keeps the Ink process alive and rerenders when imported `src/` modules change. When stdin/stdout/stderr are not TTYs (e.g. after `exec` from a piped bootstrap), reattaches stdio to `/dev/tty` when `tp_is_interactive()` succeeds.
 - **`src/tui.tsx`** — minimal Ink app: full-height shell with a one-row `MenuBar`, a bordered `MainPanel`, and a one-row `StatusBar`. `← →` switches areas; Ctrl-C exits. Uses `alternateScreen`. No stack orchestration or platform install yet — restore from `temp/legacy-src/` as features return.
 
 ## Node app
@@ -72,7 +72,7 @@ src/
     └── status-bar.tsx    # bottom row: key hints
 ```
 
-- Run via `vite-node` (Node). Normal mode enters through `src/tui.tsx`; watch mode enters through `scripts/dev-console.tsx`, which hot-loads `src/app.tsx` through the Vite module graph and rerenders the existing Ink instance. Keep interactive shell state in `scripts/dev-console.tsx` or another stable runtime layer if it must survive UI edits.
+- Run via `vite-node` (Node). Normal mode enters through `src/tui.tsx`; watch mode enters through `scripts/hot-reload.tsx`, which hot-loads `src/app.tsx` through the Vite module graph and rerenders the existing Ink instance. Keep interactive shell state in `scripts/hot-reload.tsx` or another stable runtime layer if it must survive UI edits.
 - The `@turbopanel/components/` import alias is defined in **both** `vite.config.ts` (`resolve.alias`) and `tsconfig.json` (`paths`) — keep them in sync.
 - Keep the CLI **simple**. Platform repo install, service monitoring, and stack actions belong in the Ink app when rebuilt — not new shell scripts.
 

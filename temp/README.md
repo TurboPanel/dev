@@ -15,7 +15,7 @@ The console now runs on **Node via Vite (`vite-node`)**, not Deno. (Deno is stil
 |------|---------|
 | `src/tui.tsx` | Ink entrypoint — full-height shell (menu bar / bordered panel / status bar) |
 | `src/components/` | `MenuBar`, `AreaTabs`, `MainPanel`, `StatusBar` |
-| `./console` | Prerequisite check, pinned Node + Deno install, `pnpm install`, launch via `vite-node` (`--watch` uses `scripts/dev-console.tsx` for live reload) |
+| `./console` | Prerequisite check, pinned Node + Deno install, `pnpm install`, launch via `vite-node` (`--watch` uses `scripts/hot-reload.tsx` for live reload) |
 | `scripts/develop.sh` | Clone/update checkout, then `exec ./console` |
 | `package.json` / `vite.config.ts` / `tsconfig.json` | Node/pnpm/Vite project config (`pnpm dev`, `pnpm dev:watch`) |
 

@@ -77,7 +77,7 @@ fi
 
 if [ -n "$CONSOLE_WATCH" ]; then
   tp_info "Launching console UI (Fast Refresh — edits hot-reload)…"
-  exec "$PNPM_BIN" exec vite-node scripts/dev-console.tsx
+  exec "$PNPM_BIN" exec vite-node scripts/hot-reload.tsx
 fi
 
 tp_info "Launching console UI…"
