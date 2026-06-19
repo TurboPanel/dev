@@ -213,26 +213,79 @@ tp_install_node_runtime() {
   fi
 }
 
+tp_read_pnpm_version() {
+  _rpv_package_json=$1
+  if [ ! -f "$_rpv_package_json" ]; then
+    tp_error "package.json not found at ${_rpv_package_json}"
+    exit 1
+  fi
+
+  _rpv_pm=$(grep '"packageManager"' "$_rpv_package_json" 2>/dev/null \
+    | head -1 \
+    | sed -n 's/.*"packageManager"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+
+  case $_rpv_pm in
+    pnpm@*)
+      printf '%s' "${_rpv_pm#pnpm@}"
+      return 0
+      ;;
+  esac
+
+  tp_error "package.json must define \"packageManager\": \"pnpm@x.y.z\""
+  exit 1
+}
+
 tp_corepack_bin() {
   printf '%s' "$(dirname "$NODE_BIN")/corepack"
 }
 
+tp_corepack_env() {
+  COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+  export COREPACK_ENABLE_DOWNLOAD_PROMPT
+}
+
+tp_run_corepack() {
+  tp_corepack_env
+  if [ "$(id -u)" -eq 0 ] || tp_can_write_path "$(dirname "$NODE_BIN")"; then
+    "$@"
+    return $?
+  fi
+  if ! command -v sudo >/dev/null 2>&1; then
+    tp_error "Corepack requires write access to $(dirname "$NODE_BIN"), but sudo is not installed."
+    exit 1
+  fi
+  sudo env COREPACK_ENABLE_DOWNLOAD_PROMPT=0 "$@"
+}
+
+tp_pnpm_installed_version() {
+  [ -x "$PNPM_BIN" ] || return 1
+  tp_corepack_env
+  "$PNPM_BIN" --version 2>/dev/null
+}
+
 tp_ensure_corepack_pnpm() {
+  _ecp_repo_root=$1
   _ecp_corepack=$(tp_corepack_bin)
   if [ ! -x "$_ecp_corepack" ]; then
     tp_error "corepack not found at ${_ecp_corepack} (expected from the Node install)."
     exit 1
   fi
-  # Install pnpm/yarn shims next to node. pnpm's exact version is pinned by the
-  # "packageManager" field in hmr/package.json and fetched by Corepack on demand.
-  if [ "$(id -u)" -eq 0 ] || tp_can_write_path "$(dirname "$NODE_BIN")"; then
-    "$_ecp_corepack" enable pnpm
-  else
-    sudo "$_ecp_corepack" enable pnpm
+
+  _ecp_pnpm_version=$(tp_read_pnpm_version "$_ecp_repo_root/package.json")
+
+  tp_info "Ensuring pnpm v${_ecp_pnpm_version} (Corepack)…"
+  tp_run_corepack "$_ecp_corepack" enable
+  tp_run_corepack "$_ecp_corepack" prepare "pnpm@${_ecp_pnpm_version}" --activate
+
+  _ecp_installed=$(tp_pnpm_installed_version) || true
+  if [ "$_ecp_installed" != "$_ecp_pnpm_version" ]; then
+    tp_error "pnpm install failed — expected v${_ecp_pnpm_version}, got ${_ecp_installed:-<missing>}"
+    exit 1
   fi
+
+  tp_success "pnpm v${_ecp_pnpm_version} ready"
 }
 
 tp_ensure_node_runtime() {
   tp_install_node_runtime
-  tp_ensure_corepack_pnpm
 }

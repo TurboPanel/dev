@@ -79,7 +79,7 @@ src/
 ## Shell libraries
 
 - **`scripts/lib/privileges.sh`** — POSIX sudo re-exec helpers (`tp_ensure_privileges`), logging helpers, `tp_is_interactive()` (stdin TTY or readable/writable `/dev/tty`).
-- **`scripts/lib/paths.sh`** — `/opt/turbopanel` path constants; pinned `NODE_VERSION` + `NODE_PREFIX`/`NODE_BIN`, `PNPM_VERSION`, and `DENO_VERSION`/`DENO_BIN`.
+- **`scripts/lib/paths.sh`** — `/opt/turbopanel` path constants; pinned `NODE_VERSION` + `NODE_PREFIX`/`NODE_BIN`, `PNPM_BIN`, and `DENO_VERSION`/`DENO_BIN`.
 - **`scripts/lib/packages.sh`** — apt prerequisite checks: `tp_ensure_deno_prerequisites` (curl/unzip/sha256sum) and `tp_ensure_node_prerequisites` (curl/tar/xz-utils/sha256sum).
 - **`scripts/lib/runtime.sh`** — pinned **Node** install from the `nodejs.org` tarball into `/usr/local` plus Corepack/pnpm (`tp_ensure_node_runtime`), and pinned **Deno** install to `/usr/local/bin` (`tp_ensure_deno_runtime`).
 - **`scripts/lib/dev-identity.sh`** — resolve dev user from process UID (`tp_resolve_dev_identity`).
@@ -95,7 +95,7 @@ src/
 - **`console` owns the runtimes** (Node for this repo, Deno for daemon/instance) and starting the TUI.
 - **`turbopanel-dev` installs to `./turbopanel-dev`** in the user's cwd.
 - Developer identity (`TURBOPANEL_DEV_USER`, `TURBOPANEL_DEV_UID`, `TURBOPANEL_DEV_GID`) is resolved from the **process UID** via `getent passwd` (`tp_resolve_dev_identity()` in `scripts/lib/dev-identity.sh`). **`USER` / `LOGNAME` are never trusted.** Unresolved identities and `root` are rejected; the only root exception is a validated `SUDO_USER` passwd entry when the console runs under `sudo`.
-- Node is pinned in `scripts/lib/paths.sh` (`NODE_VERSION`), downloaded from `nodejs.org`, installed to `/usr/local` (override prefix with `NODE_PREFIX=`). pnpm is pinned by `packageManager` in `package.json` and the `PNPM_VERSION` reference in `paths.sh`.
+- Node is pinned in `scripts/lib/paths.sh` (`NODE_VERSION`), downloaded from `nodejs.org`, installed to `/usr/local` (override prefix with `NODE_PREFIX=`). pnpm is pinned solely by `packageManager` in `package.json` and provisioned via Corepack.
 - Deno is pinned in `scripts/lib/paths.sh` (`DENO_VERSION`), installed to `/usr/local/bin/deno` (override with `DENO_BIN=`). It is **not** used to run this repo.
 - Do not commit secrets or environment-specific config.
 
@@ -111,6 +111,6 @@ The pre-refactor console lives under `temp/legacy-src/` (Ink screens, hooks, lib
 - Do not hardcode developer UID/GID — always read from `tp_resolve_dev_identity()` / `tp_require_dev_identity()` in shell scripts.
 - Do not reintroduce `pull.sh`.
 - Do not clone `turbopanel-dev` into `/opt/turbopanel/platform`.
-- Do not bump the pinned Node, pnpm, or Deno versions without updating `scripts/lib/paths.sh` (and `package.json`'s `packageManager` for pnpm) and docs.
+- Do not bump the pinned Node or Deno versions without updating `scripts/lib/paths.sh` and docs. Bump pnpm by updating `packageManager` in `package.json` only.
 - Do not commit directly to `trunk` — use a feature branch and open a PR.
 - Do not update `AGENTS.md` to describe deleted multi-screen features as if they still exist — document the minimal `src/tui.tsx` flow until those features are reintroduced.

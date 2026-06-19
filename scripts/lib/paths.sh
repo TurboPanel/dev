@@ -18,6 +18,5 @@ NODE_VERSION=24.17.0
 NODE_PREFIX=${NODE_PREFIX:-/usr/local}
 NODE_BIN=${NODE_BIN:-$NODE_PREFIX/bin/node}
 NODE_RELEASE_BASE=https://nodejs.org/dist
-# pnpm is provisioned via Corepack (bundled with Node) and pinned by the
-# "packageManager" field in hmr/package.json; this is the expected version.
-PNPM_VERSION=11.8.0
+# pnpm is provisioned via Corepack; version comes from package.json "packageManager".
+PNPM_BIN=${PNPM_BIN:-$(dirname "$NODE_BIN")/pnpm}

@@ -58,6 +58,7 @@ tp_ensure_dev_prerequisites
 
 tp_info "Checking Node runtime…"
 tp_ensure_node_runtime
+tp_ensure_corepack_pnpm "$SCRIPT_DIR"
 
 # Deno is not used to run this repo, but the daemon and instance do — install it
 # here so the rest of the platform can rely on the pinned runtime being present.
@@ -70,15 +71,16 @@ cd "$SCRIPT_DIR"
 
 tp_info "Installing JS dependencies…"
 if [ -f pnpm-lock.yaml ]; then
-  "$PNPM_BIN" install --frozen-lockfile || "$PNPM_BIN" install
+  COREPACK_ENABLE_DOWNLOAD_PROMPT=0 "$PNPM_BIN" install --frozen-lockfile \
+    || COREPACK_ENABLE_DOWNLOAD_PROMPT=0 "$PNPM_BIN" install
 else
-  "$PNPM_BIN" install
+  COREPACK_ENABLE_DOWNLOAD_PROMPT=0 "$PNPM_BIN" install
 fi
 
 if [ -n "$CONSOLE_WATCH" ]; then
   tp_info "Launching console UI (Fast Refresh — edits hot-reload)…"
-  exec "$PNPM_BIN" exec vite-node scripts/hot-reload.tsx
+  exec env COREPACK_ENABLE_DOWNLOAD_PROMPT=0 "$PNPM_BIN" exec vite-node scripts/hot-reload.tsx
 fi
 
 tp_info "Launching console UI…"
-exec "$PNPM_BIN" exec vite-node "$TUI_ENTRY"
+exec env COREPACK_ENABLE_DOWNLOAD_PROMPT=0 "$PNPM_BIN" exec vite-node "$TUI_ENTRY"
