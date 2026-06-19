@@ -1,2 +1,3 @@
 .deno/
+node_modules/
 .cursor/debug-*.log

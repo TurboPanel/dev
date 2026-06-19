@@ -25,9 +25,6 @@ tp_ensure_deno_prerequisites() {
   if ! command -v unzip >/dev/null 2>&1; then
     _missing="${_missing} unzip"
   fi
-  if ! command -v sha256sum >/dev/null 2>&1; then
-    _missing="${_missing} coreutils"
-  fi
   if [ -z "$_missing" ]; then
     return 0
   fi
@@ -41,10 +38,6 @@ tp_ensure_deno_prerequisites() {
   fi
   if ! command -v unzip >/dev/null 2>&1; then
     tp_error "unzip is still not available after install."
-    exit 1
-  fi
-  if ! command -v sha256sum >/dev/null 2>&1; then
-    tp_error "sha256sum is still not available after install."
     exit 1
   fi
 

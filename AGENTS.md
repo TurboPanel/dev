@@ -2,139 +2,73 @@
 
 ## What this repo is
 
-`turbopanel-dev` is the **TurboPanel development console** — a Deno CLI with an Ink-style terminal UI (`@deno-ink/core`). It is installed via a one-liner into `./turbopanel-dev` relative to the user's current directory. The console orchestrates development from that checkout.
+`turbopanel-dev` is the **TurboPanel development console** — a Deno CLI with a minimal terminal UI built on [Ink](https://github.com/vadimdemedes/ink) 7 (`npm:ink`). It is installed via a one-liner into `./turbopanel-dev` relative to the user's current directory.
 
 **Target host:** Debian 13 (Vagrant support planned).
 
 **Bootstrap URL:** https://develop.trbp.nl → `scripts/develop.sh` on the `trunk` branch. When piped (`curl … | sh`), `$0` is `sh` so local `scripts/lib/` is not on disk yet — the script downloads those libs from `raw.githubusercontent.com` (override with `TURBOPANEL_DEV_LIB_BASE`) before clone.
 
+The previous multi-screen console (Status / Instance / Developer areas, stack actions, Ansible task list) was archived under `temp/legacy-src/` during a rewrite. The current entrypoint is a minimal launcher only.
+
 ## Filesystem layout
 
 ```
 ~/…/turbopanel-dev/       # ./turbopanel-dev from scripts/develop.sh (user's cwd)
-├── console               # runtime install + launch console
-├── scripts/develop.sh    # clone/update this repo only
+├── console               # Deno install + launch TUI
+├── scripts/develop.sh    # clone/update + exec ./console
 ├── deno.json
-└── src/
+├── src/tui.tsx           # Ink entrypoint (minimal success screen)
+└── temp/legacy-src/      # archived pre-refactor console (reference only)
+/usr/local/bin/deno        # pinned console Deno (installed by ./console)
 /opt/turbopanel/
-├── platform/             # daemon (from console); instance/ui installed by daemon via Ansible
-└── runtimes/
-    └── deno/
-        └── 2.8.3/
-            └── deno          ← no v-prefix, no bin/ subdir
+├── platform/             # daemon and other platform repos (installed by daemon via Ansible)
+└── runtimes/             # uv/python/ansible (daemon); not console Deno
 ```
 
-`uv`, `python`, and `ansible` also live under `runtimes/` (installed by the daemon on first **Start dev stack**); each tool follows `runtimes/<tool>/<version>/` with a `current` symlink.
+Console Deno is a pinned GitHub release installed to `/usr/local/bin/deno`.
 
 ## Entry points
 
 | Script | Purpose |
 |--------|---------|
-| `curl -fsSL https://develop.trbp.nl \| sh` | Clone/update `./turbopanel-dev` via SSH. |
+| `curl -fsSL https://develop.trbp.nl \| sh` | Clone/update `./turbopanel-dev` via SSH, then launch the TUI. |
 | `sh scripts/develop.sh` | Same when run from inside the repo to update the checkout. |
-| `./console` | Install Deno runtime if missing (sudo), cache deps, launch Ink console (`deno task dev`). |
-| Start dev stack (console action) | Writes daemon `.env`, bootstraps orchestration, installs systemd unit, tails journals. |
+| `./console` | Install pinned Deno to `/usr/local/bin` if missing (sudo), cache deps, launch `src/tui.tsx`. |
+| `deno task dev` | Run `src/tui.tsx` directly (requires Deno on PATH). |
 
 **Typical flow:**
 
 ```bash
 curl -fsSL https://develop.trbp.nl | sh
-cd turbopanel-dev
-./console
 ```
+
+(`develop.sh` clones/updates the checkout and `exec`s `./console`.)
 
 ## Responsibilities
 
-- **`scripts/develop.sh`** — clones/updates **only** `turbopanel-dev` via `git@github.com:turbopanel/turbopanel-dev.git`. Requires **`curl`**, **`sudo`**, and a **sudo-capable development user** before it runs (`scripts/lib/dev-prerequisites.sh`). On first run, prompts for git `user.name` and `user.email`, generates `~/.ssh/id_ed25519` if missing, configures SSH commit signing, and verifies GitHub SSH before cloning. May use sudo for `git` / `openssh-client` apt installs.
-- **`console`** — runs the same prerequisite check, then ensures Deno is installed under `/opt/turbopanel/runtimes` (sudo on first run), caches dependencies, starts the console.
-- **Ink console** — installs the **daemon** repo only via SSH; writes developer identity (`TURBOPANEL_DEV_USER/UID/GID`) into the daemon `.env`; runs `scripts/bootstrap-orchestration.ts` (Deno) to install the shared uv/Python/Ansible runtime under `/opt/turbopanel/runtimes/`, then installs `turbopanel-daemon.service`. Dev host access (sudoers fragment, ACLs, group membership) is applied by the `dev-host-access` Ansible role during **Start dev stack**; the `dev-host-access.sh` shell script has been removed. The daemon installs everything else via Ansible.
+- **`scripts/develop.sh`** — clones/updates **only** `turbopanel-dev` via `git@github.com:turbopanel/turbopanel-dev.git`. Requires **`curl`**, **`sudo`**, and a **sudo-capable development user** before it runs (`scripts/lib/dev-prerequisites.sh`). On first run, prompts for git `user.name` and `user.email`, generates `~/.ssh/id_ed25519` if missing, configures SSH commit signing, and verifies GitHub SSH before cloning. May use sudo for `git` / `openssh-client` apt installs. Uses `tp_is_interactive()` so `curl | sh` works when a controlling terminal is available (`/dev/tty`).
+- **`console`** — runs the same prerequisite check, ensures the pinned Deno release is installed at `/usr/local/bin/deno` (sudo on first run), caches dependencies for `src/tui.tsx`, starts the Ink TUI. When stdin/stdout/stderr are not TTYs (e.g. after `exec` from a piped bootstrap), reattaches stdio to `/dev/tty` when `tp_is_interactive()` succeeds.
+- **`src/tui.tsx`** — minimal Ink app: confirms install/launch succeeded and tells the user to press Ctrl-C to exit. Uses `alternateScreen`. No stack orchestration, area navigation, or platform install yet — restore from `temp/legacy-src/` as features return.
 
 ## Deno app
 
-Ink console layout: **menu bar** (top) · **screen** (flex-grow main) · **status bar** (bottom). Always fills the terminal (`fullScreen`).
-
 ```
 src/
-├── main.tsx              # entry; lazy-loads app, boot screen
-├── app.tsx               # root state, input routing, composes shell + screens
-├── components/
-│   ├── layout/           # app-shell, menu-bar, status-bar
-│   ├── developer-panels.tsx
-│   ├── action-menu.tsx, area-tabs.tsx, runtime-badge.tsx, status-line.tsx
-│   ├── ansible-task-list.tsx
-├── screens/
-│   ├── boot-screen.tsx
-│   ├── main-screen.tsx   # routes Status / Instance / Developer areas
-│   ├── status-screen.tsx, instance-screen.tsx, developer-screen.tsx
-│   ├── task-run-screen.tsx
-├── sections/             # developer sub-panels (fleet, shell, database, …)
-├── hooks/                # use-developer-state, use-stack-status, use-ansible-events.ts
-└── lib/                  # paths, instance-client, daemon-lifecycle, stack-status, daemon-orchestration.ts, …
+└── tui.tsx               # entry; render + minimal App component
 ```
 
-**Ansible task list.** Stack actions that drive Ansible (Start dev stack, Switch build mode, Reset dev environment, etc.) run in-process while Ink is mounted. The console dynamically imports the daemon's `src/orchestration/ansible-events.ts` wrapper from the daemon checkout once it is installed, subscribes to structured task events (`play-start`, `task-start`, `task-ok|changed|failed|skipped`, `recap`), and renders them as a live `<AnsibleTaskList>` inside `task-run-screen.tsx`. Raw `runAfterExit` shell hand-offs for Ansible actions have been removed. `followLogs` (`journalctl -f`) remains a deliberate fullscreen terminal takeover.
+`deno.json` exports `./src/tui.tsx` and defines tasks `dev`, `console:watch`, and `cache` against that file.
 
-Import aliases in `deno.json`: `@turbopanel/components/`, `@turbopanel/screens/`, `@turbopanel/hooks/`, `@turbopanel/lib/`, `@turbopanel/sections/`.
-
-Keep the CLI **simple**. Platform repo install, service monitoring, and updates belong in the Ink app — not new shell scripts.
-
-## Developer console
-
-The developer console is not a separate Ink view — it is part of `./console`. Use **←** / **→** to switch areas in the menu bar:
-
-| Area | Contents |
-|------|----------|
-| **Status** | Runtime, platform checkout, dev stack units |
-| **Instance** | Runtime mode (Deno/Workers), instance unit status, switch action |
-| **Developer** | Fleet, services, shell, database, … (when `instance.sock` is present) |
-
-Stack actions (install daemon, start stack, follow logs, runtime switch, build mode, reset dev environment, quit) live in the **m** menu (status bar expands while open).
-
-Only one area is visible at a time — header + main + footer always fit one terminal screen.
-
-In the **Developer** area: **↑↓** picks a section, **Enter** opens it, **Esc** returns to the section list. Section panels then own their own keys (↑↓ actions in Fleet, `i` to type in Shell, etc.).
-
-### Sections
-
-| Section | Purpose | Keys |
-|---------|---------|------|
-| Fleet | Health, connected nodes, upgrade/sync/tunnel actions | ↑↓ actions · Enter |
-| Services | systemd units, Postgres container, socket presence | (polls every 5 s) |
-| Network | Interface IP addresses | Enter fetch |
-| Shell | Remote commands on target | type command · Enter run |
-| Connectivity | WS event log + broadcast ping | b or Enter broadcast |
-| Database | Postgres test, Drizzle Studio | ↑↓ actions · Enter |
-| Servers | Register servers, assign orgs | a/e/o · ↑↓ select |
-
-Navigate sections with **↑↓**, **Enter** to open, **Esc** to return to the list. **t** cycles daemon target (`all servers` or per-host). **← →** switches areas (menu bar). **m** opens the action menu. **q** / **Esc** (when not inside a section) quits the console.
-
-### Instance runtime env vars
-
-`TURBOPANEL_INSTANCE_RUNTIME` in the daemon `.env` selects how the instance runs locally:
-
-| Value | Behaviour |
-|-------|-----------|
-| `deno` (default) | `turbopanel-instance` systemd unit + Unix socket at `/run/turbopanel/instance.sock` |
-| `workers` | Stops the systemd unit, re-runs Postgres with TCP (`postgres_expose_port=true` on `127.0.0.1:5432`), and expects `pnpm dev` in `platform/instance` manually |
-
-Workers mode has no Redis. `ensureWorkersDevVars()` writes both `CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE` (for the Hyperdrive runtime binding) and `TURBOPANEL_DATABASE_URL` (for `drizzle-kit migrate`) to `instance/.env`. Switch via the **Instance** area in the console.
-
-### API client (`src/instance-client.ts`)
-
-Single choke-point for `/api/developer/v1/*` and `/api/health`:
-
-1. **Primary:** raw HTTP/1.1 over Unix socket `/run/turbopanel/instance.sock`
-2. **Fallback:** `https://localhost:8443` with platform CA from `/opt/turbopanel/platform/instance/certs/ca.crt` (or permissive TLS if CA missing)
-
-### Polling (`src/use-developer-state.ts`)
-
-Polls every 2 s (same endpoints as the retired Expo `DeveloperProvider`): `/api/health`, `/api/developer/v1/daemon/connections`, `…/events`, `…/commands`.
+Keep the CLI **simple**. Platform repo install, service monitoring, and stack actions belong in the Ink app when rebuilt — not new shell scripts.
 
 ## Shell libraries
 
-- **`scripts/lib/privileges.sh`** — POSIX sudo re-exec helpers (`tp_ensure_privileges`).
-- **`scripts/lib/paths.sh`** — `/opt/turbopanel` path constants.
-- **`scripts/lib/runtime.sh`** — Deno runtime install (`tp_ensure_deno_runtime`).
+- **`scripts/lib/privileges.sh`** — POSIX sudo re-exec helpers (`tp_ensure_privileges`), logging helpers, `tp_is_interactive()` (stdin TTY or readable/writable `/dev/tty`).
+- **`scripts/lib/paths.sh`** — `/opt/turbopanel` path constants, pinned Deno version.
+- **`scripts/lib/runtime.sh`** — pinned Deno install to `/usr/local/bin` (`tp_ensure_deno_runtime`).
+- **`scripts/lib/dev-identity.sh`** — resolve dev user from process UID (`tp_resolve_dev_identity`).
+- **`scripts/lib/dev-prerequisites.sh`** — curl/sudo/dev-user checks shared by `develop.sh` and `./console`. When sudo still requires a password, optionally prompts to install `/etc/sudoers.d/turbopanel-dev-nopasswd` (full `NOPASSWD` for the dev user on local dev hosts). Set `TURBOPANEL_DEV_SKIP_NOPASSWD_SUDO=1` to skip the prompt.
+- **`scripts/lib/git-github-ssh.sh`** — git identity prompts, SSH key generation, GitHub verification (used by `develop.sh`).
 
 ## Key conventions
 
@@ -142,21 +76,23 @@ Polls every 2 s (same endpoints as the retired Expo `DeveloperProvider`): `/api/
 - Shell scripts are **POSIX `sh`** — no bashisms.
 - Git clones use **SSH** (`git@github.com:turbopanel/...`), not HTTPS.
 - **`scripts/develop.sh` only installs this repo** — no runtime, no platform repos.
-- **`console` owns the Deno runtime** and starting the console.
+- **`console` owns the Deno runtime** and starting the TUI.
 - **`turbopanel-dev` installs to `./turbopanel-dev`** in the user's cwd.
-- The console installs **only** the daemon repo. All other platform repos (instance, ui, website) are installed by the daemon via Ansible (`instance-dev-install.yml`).
-- Developer identity (`TURBOPANEL_DEV_USER`, `TURBOPANEL_DEV_UID`, `TURBOPANEL_DEV_GID`) is resolved from the **process UID** via `getent passwd` (`resolveDevIdentity()` in `src/paths.ts`, `tp_resolve_dev_identity()` in `scripts/lib/dev-identity.sh`). **`USER` / `LOGNAME` are never trusted.** Unresolved identities and `root` are rejected; the only root exception is a validated `SUDO_USER` passwd entry when the console runs under `sudo`. The dev stack refuses to write `TURBOPANEL_DEV_*` or run Ansible when identity cannot be resolved cleanly.
-- Do not add PATH symlinks, `env.sh`, or profile hooks — `console` runs Deno from `/opt/turbopanel/runtimes/deno/<DENO_VERSION>/deno` directly (no `v` prefix, no `bin/` subdir). No `/usr/local/bin/deno` link is created.
+- Developer identity (`TURBOPANEL_DEV_USER`, `TURBOPANEL_DEV_UID`, `TURBOPANEL_DEV_GID`) is resolved from the **process UID** via `getent passwd` (`tp_resolve_dev_identity()` in `scripts/lib/dev-identity.sh`). **`USER` / `LOGNAME` are never trusted.** Unresolved identities and `root` are rejected; the only root exception is a validated `SUDO_USER` passwd entry when the console runs under `sudo`.
+- Console Deno is pinned in `scripts/lib/paths.sh`, downloaded from GitHub releases, and installed to `/usr/local/bin/deno` (override with `DENO_BIN=`). `./scripts/deno.sh` invokes that binary.
 - Do not commit secrets or environment-specific config.
+
+## Legacy archive
+
+The pre-refactor console lives under `temp/legacy-src/` (Ink screens, hooks, lib, orchestration glue) and `temp/legacy-scripts/` (patches, orchestration runner). See `temp/README.md`. Do not treat archived paths as the live layout.
 
 ## What agents must NOT do
 
 - Do not add Deno install, dependency caching, or sudo to `scripts/develop.sh`.
-- Do not add platform repo cloning to shell scripts — that belongs in the console.
-- Do not add instance/ui/website repo cloning to the console — the daemon owns those via Ansible.
-- Do not hardcode developer UID/GID — always read from `resolveDevIdentity()` (or `getDevUser()`/`getDevUid()`/`getDevGid()` wrappers) in `src/paths.ts`, or `tp_require_dev_identity()` in shell scripts.
+- Do not add platform repo cloning to shell scripts — that belongs in the TUI when rebuilt.
+- Do not hardcode developer UID/GID — always read from `tp_resolve_dev_identity()` / `tp_require_dev_identity()` in shell scripts (or the archived `resolveDevIdentity()` in `temp/legacy-src/lib/paths.ts` when porting TS back).
 - Do not reintroduce `pull.sh`.
 - Do not clone `turbopanel-dev` into `/opt/turbopanel/platform`.
-- Do not add PATH symlinks, `env.sh`, or profile hooks — `console` runs Deno from `/opt/turbopanel/runtimes/deno/<DENO_VERSION>/deno` directly.
-- Do not bump the pinned Deno version without updating `scripts/lib/paths.sh`, `src/paths.ts`, and docs. The next `./console` run installs the new version and removes older bare-version directories under `/opt/turbopanel/runtimes/deno`.
+- Do not bump the pinned Deno version without updating `scripts/lib/paths.sh` and docs. The next `./console` run installs the new release to `/usr/local/bin/deno` and removes a legacy `/opt/turbopanel/runtimes/deno` tree when present.
 - Do not commit directly to `trunk` — use a feature branch and open a PR.
+- Do not update `AGENTS.md` to describe deleted multi-screen features as if they still exist — document the minimal `src/tui.tsx` flow until those features are reintroduced.

@@ -39,28 +39,6 @@ tp_is_interactive() {
   [ -r /dev/tty ] && [ -w /dev/tty ] 2>/dev/null
 }
 
-# Read y/n from the controlling terminal. Default n unless the second argument is y.
-tp_read_tty_yn() {
-  _rty_prompt=$1
-  _rty_default=${2:-n}
-  if [ "$_rty_default" = y ]; then
-    printf '%s [Y/n]: ' "$_rty_prompt" >/dev/tty
-  else
-    printf '%s [y/N]: ' "$_rty_prompt" >/dev/tty
-  fi
-  IFS= read -r _rty_answer </dev/tty || true
-  _rty_answer=$(tp_trim_whitespace "$_rty_answer")
-  case $_rty_answer in
-    y|Y|yes|Yes|YES) return 0 ;;
-    n|N|no|No|NO) return 1 ;;
-    '')
-      [ "$_rty_default" = y ]
-      return $?
-      ;;
-    *) return 1 ;;
-  esac
-}
-
 tp_trim_whitespace() {
   _tw=$1
   while [ -n "$_tw" ]; do

@@ -40,16 +40,12 @@ esac
 if [ -z "$_tp_install_lib_dir" ]; then
   _tp_lib_base=${TURBOPANEL_DEV_LIB_BASE:-https://raw.githubusercontent.com/turbopanel/turbopanel-dev/trunk/scripts/lib}
   _tp_install_lib_dir=$(mktemp -d)
-  for _tp_lib in privileges.sh dev-identity.sh dev-prerequisites.sh git-github-ssh.sh; do
+  for _tp_lib in privileges.sh git-github-ssh.sh; do
     curl -fsSL "$_tp_lib_base/$_tp_lib" -o "$_tp_install_lib_dir/$_tp_lib"
   done
 fi
 # shellcheck source=scripts/lib/privileges.sh
 . "$_tp_install_lib_dir/privileges.sh"
-# shellcheck source=scripts/lib/dev-identity.sh
-. "$_tp_install_lib_dir/dev-identity.sh"
-# shellcheck source=scripts/lib/dev-prerequisites.sh
-. "$_tp_install_lib_dir/dev-prerequisites.sh"
 # shellcheck source=scripts/lib/git-github-ssh.sh
 . "$_tp_install_lib_dir/git-github-ssh.sh"
 
@@ -128,18 +124,18 @@ clone_or_update_repo() {
   tp_success "Updated ${REPO_NAME}"
 }
 
-if ! tp_is_interactive; then
-  tp_error "Run in an interactive terminal (curl -fsSL https://develop.trbp.nl | sh)."
-  exit 1
-fi
-
-tp_ensure_dev_prerequisites
 ensure_git
 tp_ensure_github_ssh "$REPO_SLUG"
 
 REPO_DIR=$(resolve_repo_dir)
 clone_or_update_repo "$REPO_DIR"
 
-tp_success "TurboPanel dev checkout ready at ${REPO_DIR}"
-cd "$REPO_DIR"
-exec ./console
+echo
+tp_success "TurboPanel dev checkout ready!"
+echo
+echo "  ${REPO_DIR}"
+echo
+tp_info "Start the developer console:"
+echo "  cd ${REPO_DIR}"
+echo "  ./console"
+echo

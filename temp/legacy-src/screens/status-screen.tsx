@@ -1,5 +1,5 @@
 import React from "react";
-import { Box, Text } from "@deno-ink/core";
+import { Box, Text } from "ink";
 import { RuntimeBadge } from "@turbopanel/components/runtime-badge.tsx";
 import {
   DENO_VERSION,
@@ -43,7 +43,7 @@ export function StatusScreen({
         label="Deno runtime"
         ok={runtimeReady}
         detail={runtimeReady
-          ? `v${DENO_VERSION} at /usr/local/bin`
+          ? `v${DENO_VERSION} at /opt/turbopanel/runtimes`
           : "run ./console"}
       />
 

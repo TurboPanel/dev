@@ -2,11 +2,12 @@
 # Start the TurboPanel developer console.
 #
 # 1. Load shared helpers (paths, sudo, apt packages, Deno install)
-# 2. Install or upgrade Deno under /opt/turbopanel/runtimes when the pinned version changes
-# 3. Cache JS dependencies and launch src/main.tsx
+# 2. Install or upgrade the pinned Deno release to /usr/local/bin when needed
+# 3. Cache JS dependencies and launch src/tui.tsx
 set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
+TUI_ENTRY=src/tui.tsx
 
 # Shared shell libraries (see scripts/lib/)
 . "$SCRIPT_DIR/scripts/lib/privileges.sh"  # tp_info, tp_error, sudo helpers
@@ -16,10 +17,15 @@ SCRIPT_DIR=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
 . "$SCRIPT_DIR/scripts/lib/dev-identity.sh" # tp_resolve_dev_identity
 . "$SCRIPT_DIR/scripts/lib/dev-prerequisites.sh"  # tp_ensure_dev_prerequisites
 
-if [ ! -t 0 ] || [ ! -t 1 ]; then
-  tp_error "The developer console needs an interactive terminal."
-  echo "Run ./console directly in a terminal — not through a pipe or redirect." >&2
-  exit 1
+# curl | sh leaves stdin on a pipe; attach stdio to the controlling terminal when available.
+if [ ! -t 0 ] || [ ! -t 1 ] || [ ! -t 2 ]; then
+  if tp_is_interactive; then
+    exec </dev/tty >/dev/tty 2>/dev/tty
+  else
+    tp_error "The developer console needs an interactive terminal."
+    echo "Run ./console directly in a terminal — not through a pipe or redirect." >&2
+    exit 1
+  fi
 fi
 
 tp_ensure_dev_prerequisites
@@ -27,14 +33,14 @@ tp_ensure_dev_prerequisites
 tp_info "Checking Deno runtime…"
 tp_ensure_deno_runtime
 
-if "$DENO_BIN" cache --frozen "$SCRIPT_DIR/src/main.tsx" 2>/dev/null; then
+if "$DENO_BIN" cache --frozen "$SCRIPT_DIR/$TUI_ENTRY" 2>/dev/null; then
   tp_info "Dependencies ready"
 else
   tp_info "Caching JS dependencies (first run may take a minute)…"
-  "$DENO_BIN" cache "$SCRIPT_DIR/src/main.tsx"
+  "$DENO_BIN" cache "$SCRIPT_DIR/$TUI_ENTRY"
 fi
 
 tp_info "Launching console UI…"
 
 cd "$SCRIPT_DIR"
-exec "$DENO_BIN" run --allow-all src/main.tsx
+exec "$DENO_BIN" run --allow-all "$TUI_ENTRY"

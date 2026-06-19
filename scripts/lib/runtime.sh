@@ -1,75 +1,27 @@
-# Install the pinned Deno runtime under /opt/turbopanel/runtimes.
+# Install the pinned Deno release to /usr/local/bin (GitHub release zip).
 # Bump DENO_VERSION in paths.sh (and src/paths.ts); ./console installs or
-# upgrades on the next run and removes older version directories.
+# upgrades on the next run.
 # Source after privileges.sh, paths.sh, and packages.sh.
 
+tp_deno_linux_asset() {
+  case $(uname -m) in
+    aarch64|arm64) printf '%s' 'aarch64-unknown-linux-gnu' ;;
+    x86_64|amd64) printf '%s' 'x86_64-unknown-linux-gnu' ;;
+    *)
+      tp_error "Unsupported Linux architecture for Deno: $(uname -m)"
+      exit 1
+      ;;
+  esac
+}
+
+tp_deno_installed_version() {
+  [ -x "$DENO_BIN" ] || return 1
+  "$DENO_BIN" --version 2>/dev/null | head -1 | awk '{print $2}'
+}
+
 tp_deno_runtime_usable() {
-  [ -x "$DENO_BIN" ]
-}
-
-tp_deno_runtime_present() {
-  if tp_deno_runtime_usable; then
-    return 0
-  fi
-  if [ "$(id -u)" -eq 0 ]; then
-    [ -x "$DENO_BIN" ]
-    return $?
-  fi
-  command -v sudo >/dev/null 2>&1 && sudo test -x "$DENO_BIN" 2>/dev/null
-}
-
-# After Ansible creates turbopanel:turbopanel (750) under /opt/turbopanel, the
-# invoking developer still needs to execute the console-owned Deno binary.
-tp_fix_deno_runtime_access() {
-  if ! tp_resolve_dev_identity; then
-    return 1
-  fi
-  _dev_user=$TP_DEV_USER
-  if ! command -v sudo >/dev/null 2>&1; then
-    return 1
-  fi
-  if ! sudo test -x "$DENO_BIN" 2>/dev/null; then
-    return 1
-  fi
-
-  # Open the full path chain: /opt/turbopanel → runtimes → deno/<version>/deno.
-  # chmod o+x on intermediate dirs; chmod -R o+rx on the versioned runtime tree.
-  sudo chmod o+x "$TURBOPANEL_ROOT" 2>/dev/null || true
-  sudo chmod o+x "$TURBOPANEL_RUNTIMES_DIR" 2>/dev/null || true
-  sudo chmod -R o+rx "$DENO_RUNTIME_ROOT" 2>/dev/null || true
-
-  if command -v setfacl >/dev/null 2>&1; then
-    sudo setfacl -m "u:${_dev_user}:rx" "$TURBOPANEL_ROOT" 2>/dev/null || true
-    sudo setfacl -m "u:${_dev_user}:rx" "$TURBOPANEL_RUNTIMES_DIR" 2>/dev/null || true
-    sudo setfacl -R -m "u:${_dev_user}:rx" "$DENO_RUNTIME_ROOT" 2>/dev/null || true
-    sudo setfacl -R -d -m "u:${_dev_user}:rx" "$DENO_RUNTIME_ROOT" 2>/dev/null || true
-  fi
-
-  tp_deno_runtime_usable
-}
-
-tp_repoint_deno_current() {
-  if [ "$(id -u)" -eq 0 ] || tp_can_write_path "$DENO_RUNTIME_ROOT" 2>/dev/null; then
-    ln -sfn "$DENO_VERSION_DIR" "$DENO_RUNTIME_ROOT/current"
-    return 0
-  fi
-  command -v sudo >/dev/null 2>&1 && \
-    sudo ln -sfn "$DENO_VERSION_DIR" "$DENO_RUNTIME_ROOT/current"
-}
-
-tp_install_deno_runtime_body() {
-  _tmp="$DENO_RUNTIME_ROOT/.install"
-  rm -rf "$_tmp"
-  mkdir -p "$_tmp"
-  DENO_INSTALL="$_tmp" \
-    curl -fsSL https://deno.land/install.sh | sh -s "v${DENO_VERSION}" -- -y --no-modify-path
-  mkdir -p "$DENO_VERSION_DIR"
-  mv "$_tmp/bin/deno" "$DENO_BIN"
-  rm -rf "$_tmp"
-  if getent passwd turbopanel >/dev/null 2>&1; then
-    chown -R turbopanel:turbopanel "$DENO_RUNTIME_ROOT" 2>/dev/null || true
-  fi
-  tp_repoint_deno_current
+  _tdu_version=$(tp_deno_installed_version) || return 1
+  [ "$_tdu_version" = "$DENO_VERSION" ]
 }
 
 tp_remove_path() {
@@ -85,96 +37,75 @@ tp_remove_path() {
   sudo rm -rf "$_rp_path"
 }
 
-tp_cleanup_old_deno_runtimes() {
-  _old_dir=
-  _base=
-  if [ ! -d "$DENO_RUNTIME_ROOT" ]; then
+tp_cleanup_legacy_deno_runtime() {
+  if [ ! -d "$DENO_LEGACY_RUNTIME_ROOT" ]; then
     return 0
   fi
-  for _old_dir in "$DENO_RUNTIME_ROOT"/*; do
-    [ -d "$_old_dir" ] || continue
-    _base=${_old_dir##*/}
-    case "$_base" in
-      current|.install) continue ;;
-    esac
-    [ "$_old_dir" = "$DENO_VERSION_DIR" ] && continue
-    tp_info "Removing outdated Deno ${_base}"
-    tp_remove_path "$_old_dir" || tp_warn "Could not remove ${_old_dir}"
-  done
+  tp_info "Removing legacy Deno runtime at ${DENO_LEGACY_RUNTIME_ROOT}"
+  tp_remove_path "$DENO_LEGACY_RUNTIME_ROOT" || tp_warn "Could not remove ${DENO_LEGACY_RUNTIME_ROOT}"
 }
 
-tp_other_deno_versions_present() {
-  _old_dir=
-  _base=
-  if [ ! -d "$DENO_RUNTIME_ROOT" ]; then
-    return 1
-  fi
-  for _old_dir in "$DENO_RUNTIME_ROOT"/*; do
-    [ -d "$_old_dir" ] || continue
-    _base=${_old_dir##*/}
-    case "$_base" in
-      current|.install) continue ;;
-    esac
-    [ "$_old_dir" = "$DENO_VERSION_DIR" ] && continue
+tp_install_deno_binary() {
+  _idb_src=$1
+  if [ "$(id -u)" -eq 0 ]; then
+    install -m 755 "$_idb_src" "$DENO_BIN"
     return 0
-  done
-  return 1
+  fi
+  if tp_can_write_path "$DENO_BIN" 2>/dev/null || tp_can_write_path "$(dirname "$DENO_BIN")"; then
+    install -m 755 "$_idb_src" "$DENO_BIN"
+    return 0
+  fi
+  if ! command -v sudo >/dev/null 2>&1; then
+    tp_error "Installing Deno to ${DENO_BIN} requires root privileges, but sudo is not installed."
+    exit 1
+  fi
+  tp_info "Administrator privileges required to install Deno to ${DENO_BIN}"
+  sudo install -m 755 "$_idb_src" "$DENO_BIN"
+}
+
+tp_download_deno_release() {
+  _ddr_asset=$(tp_deno_linux_asset)
+  _ddr_zip_name=deno-${_ddr_asset}.zip
+  _ddr_version_tag=v${DENO_VERSION}
+  _ddr_base=${DENO_RELEASE_BASE}/${_ddr_version_tag}
+  _ddr_tmp=$(mktemp -d)
+  _ddr_zip=$_ddr_tmp/$_ddr_zip_name
+
+  curl -fsSL "${_ddr_base}/${_ddr_zip_name}" -o "$_ddr_zip"
+  curl -fsSL "${_ddr_base}/${_ddr_zip_name}.sha256sum" -o "$_ddr_tmp/${_ddr_zip_name}.sha256sum"
+  (
+    cd "$_ddr_tmp" || exit 1
+    sha256sum -c "${_ddr_zip_name}.sha256sum"
+  )
+  unzip -qo "$_ddr_zip" -d "$_ddr_tmp"
+  chmod +x "$_ddr_tmp/deno"
+  tp_install_deno_binary "$_ddr_tmp/deno"
+  rm -rf "$_ddr_tmp"
 }
 
 tp_install_deno_runtime() {
   if tp_deno_runtime_usable; then
-    tp_repoint_deno_current || true
-    tp_cleanup_old_deno_runtimes
-    return 0
-  fi
-
-  if tp_deno_runtime_present && tp_fix_deno_runtime_access; then
-    tp_repoint_deno_current || true
-    tp_cleanup_old_deno_runtimes
+    tp_cleanup_legacy_deno_runtime
     return 0
   fi
 
   _upgrading=0
-  if tp_other_deno_versions_present; then
+  if [ -x "$DENO_BIN" ]; then
     _upgrading=1
   fi
 
   tp_ensure_deno_prerequisites
 
   if [ "$_upgrading" -eq 1 ]; then
-    tp_info "Upgrading Deno to v${DENO_VERSION}"
+    tp_info "Upgrading Deno to v${DENO_VERSION} at ${DENO_BIN}"
   else
-    tp_info "Installing Deno v${DENO_VERSION} to ${DENO_VERSION_DIR}"
+    tp_info "Installing Deno v${DENO_VERSION} to ${DENO_BIN}"
   fi
 
-  if [ "$(id -u)" -eq 0 ] || tp_can_write_path "$TURBOPANEL_ROOT"; then
-    tp_install_deno_runtime_body
-  else
-    if ! command -v sudo >/dev/null 2>&1; then
-      tp_error "Write access to ${TURBOPANEL_ROOT} requires root privileges, but sudo is not installed."
-      exit 1
-    fi
-    tp_info "Administrator privileges required for ${TURBOPANEL_ROOT}"
-    _tmp="$DENO_RUNTIME_ROOT/.install"
-    sudo rm -rf "$_tmp"
-    sudo mkdir -p "$_tmp" "$DENO_VERSION_DIR"
-    sudo env DENO_INSTALL="$_tmp" sh -c \
-      "curl -fsSL https://deno.land/install.sh | sh -s v${DENO_VERSION} -- -y --no-modify-path"
-    sudo mv "$_tmp/bin/deno" "$DENO_BIN"
-    sudo rm -rf "$_tmp"
-    if getent passwd turbopanel >/dev/null 2>&1; then
-      sudo chown -R turbopanel:turbopanel "$DENO_RUNTIME_ROOT" 2>/dev/null || true
-    fi
-    tp_repoint_deno_current || true
-    tp_fix_deno_runtime_access || true
-  fi
+  tp_download_deno_release
 
   if ! tp_deno_runtime_usable; then
-    tp_fix_deno_runtime_access || true
-  fi
-
-  if ! tp_deno_runtime_usable; then
-    tp_error "Deno install failed — expected ${DENO_BIN}"
+    tp_error "Deno install failed — expected v${DENO_VERSION} at ${DENO_BIN}"
     exit 1
   fi
 
@@ -184,7 +115,7 @@ tp_install_deno_runtime() {
     tp_success "Deno v${DENO_VERSION} installed"
   fi
 
-  tp_cleanup_old_deno_runtimes
+  tp_cleanup_legacy_deno_runtime
 }
 
 tp_ensure_deno_runtime() {

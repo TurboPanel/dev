@@ -10,7 +10,7 @@ export const ANSIBLE_COLLECTIONS_PATH =
 export const INSTANCE_DIR = `${TURBOPANEL_PLATFORM}/instance`;
 export const DENO_VERSION = "2.8.3";
 export const DENO_BIN =
-  Deno.env.get("DENO_BIN")?.trim() || "/usr/local/bin/deno";
+  `${TURBOPANEL_ROOT}/runtimes/deno/${DENO_VERSION}/deno`;
 export const WRANGLER_DEV_PORT = 18787;
 export const WEBSITE_DEV_PORT = 19820;
 export const WEBSITE_DEV_URL = `http://localhost:${WEBSITE_DEV_PORT}`;
@@ -190,21 +190,5 @@ export function checkPlatformRepos(): RepoStatus[] {
 }
 
 export function denoRuntimeInstalled(): boolean {
-  if (!pathExists(DENO_BIN)) {
-    return false;
-  }
-  try {
-    const proc = new Deno.Command(DENO_BIN, {
-      args: ["--version"],
-      stdout: "piped",
-      stderr: "null",
-    }).outputSync();
-    if (!proc.success) {
-      return false;
-    }
-    const firstLine = new TextDecoder().decode(proc.stdout).split("\n")[0] ?? "";
-    return firstLine.includes(` ${DENO_VERSION}`);
-  } catch {
-    return false;
-  }
+  return pathExists(DENO_BIN);
 }
