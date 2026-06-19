@@ -1,0 +1,20 @@
+---
+# Ensure the turbopanel service user exists before dev-stack steps that chown
+# or sudo -u turbopanel (GitHub SSH, orchestration runner). Full converge still
+# runs turbopanel-user again idempotently in instance-dev-install.yml.
+- name: Ensure turbopanel service user for co-located dev
+  hosts: localhost
+  connection: local
+  become: true
+  gather_facts: false
+
+  vars:
+    turbopanel_install_root: /opt/turbopanel
+    turbopanel_runtimes_dir: "{{ turbopanel_install_root }}/runtimes"
+    turbopanel_user: turbopanel
+    turbopanel_group: turbopanel
+    turbopanel_uid: 9999
+    turbopanel_gid: 9999
+
+  roles:
+    - role: turbopanel-user

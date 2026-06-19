@@ -1,4 +1,5 @@
 import {
+  ANSIBLE_PLAYBOOK_BIN,
   CADDY_HTTPS,
   DAEMON_ENV_PATH,
   DevIdentityError,
@@ -12,7 +13,9 @@ import {
 } from "@turbopanel/lib/paths.ts";
 import { daemonEnvAssignments } from "@turbopanel/lib/daemon-env.ts";
 import { ensureWebsiteSystemdUnit } from "@turbopanel/lib/ensure-website-systemd.ts";
+import { ensureUiServiceRuntimeDirs } from "@turbopanel/lib/ensure-ui-service.ts";
 import {
+  ansiblePlaybookEnv,
   ensureOrchestrationRunnerInstalled,
   runBuildTogglePrivileged,
   runInstanceDevInstallPrivileged,
@@ -28,6 +31,28 @@ import {
 const TURBOPANEL_USER = "turbopanel";
 const TURBOPANEL_GROUP = "turbopanel";
 const DAEMON_DIR = platformRepoPath("daemon");
+const INSTANCE_REPO_TASKS =
+  `${DAEMON_DIR}/orchestration/roles/instance-repo/tasks/main.yml`;
+const UI_REPO_TASKS =
+  `${DAEMON_DIR}/orchestration/roles/ui-repo/tasks/main.yml`;
+const WEBSITE_REPO_TASKS =
+  `${DAEMON_DIR}/orchestration/roles/website-repo/tasks/main.yml`;
+const TURBOPANEL_USER_SETUP_PLAYBOOK = new URL(
+  "../../scripts/patches/turbopanel-user-setup.yml",
+  import.meta.url,
+).pathname;
+const INSTANCE_REPO_PATCH = new URL(
+  "../../scripts/patches/instance-repo-tasks-main.yml",
+  import.meta.url,
+).pathname;
+const UI_REPO_PATCH = new URL(
+  "../../scripts/patches/ui-repo-tasks-main.yml",
+  import.meta.url,
+).pathname;
+const WEBSITE_REPO_PATCH = new URL(
+  "../../scripts/patches/website-repo-tasks-main.yml",
+  import.meta.url,
+).pathname;
 const STACK_WAIT_MS = 120_000;
 const STACK_POLL_MS = 3_000;
 
@@ -377,6 +402,111 @@ export function writeBuildMode(
   });
 }
 
+async function ensureTurbopanelUser(): Promise<void> {
+  if (turbopanelUserExists()) {
+    return;
+  }
+
+  const envAssignments = Object.entries(ansiblePlaybookEnv()).map(
+    ([key, value]) => `${key}=${value}`,
+  );
+  const code = await runSudo([
+    "env",
+    ...envAssignments,
+    ANSIBLE_PLAYBOOK_BIN,
+    "-i",
+    "localhost,",
+    "-c",
+    "local",
+    TURBOPANEL_USER_SETUP_PLAYBOOK,
+  ]);
+  if (code !== 0 || !turbopanelUserExists()) {
+    throw new Error("Failed to create turbopanel system user");
+  }
+}
+
+async function ensureDaemonCheckoutOwnership(): Promise<void> {
+  if (!turbopanelUserExists()) {
+    return;
+  }
+
+  const code = await runSudo([
+    "chown",
+    "-R",
+    `${TURBOPANEL_USER}:${TURBOPANEL_GROUP}`,
+    platformRepoPath("daemon"),
+  ]);
+  if (code !== 0) {
+    throw new Error("Failed to align daemon checkout ownership with turbopanel user");
+  }
+}
+
+async function alignDevStackOwnership(): Promise<void> {
+  await ensureTurbopanelRuntimesOwnership();
+  await ensureDaemonCheckoutOwnership();
+}
+
+async function prepareCheckoutPlaceholdersForClone(): Promise<void> {
+  const script = [
+    `set -eu`,
+    `stamp='.turbopanel-checkout-stamp'`,
+    `for dir in instance ui website; do`,
+    `  path="/opt/turbopanel/platform/$dir"`,
+    `  [ -e "$path/.git" ] && continue`,
+    `  [ ! -d "$path" ] && continue`,
+    `  real_count=$(find "$path" -mindepth 1 -maxdepth 1 ! -name "$stamp" -print 2>/dev/null | wc -l | tr -d ' ')`,
+    `  [ "$real_count" = 0 ] && rm -rf "$path"`,
+    `done`,
+  ].join("\n");
+  const code = await runSudo(["bash", "-c", script]);
+  if (code !== 0) {
+    throw new Error("Failed to clear checkout placeholders before Ansible converge");
+  }
+}
+
+async function applyAnsibleRolePatch(
+  patchPath: string,
+  targetPath: string,
+  label: string,
+): Promise<void> {
+  let patch = "";
+  try {
+    patch = Deno.readTextFileSync(patchPath);
+  } catch {
+    throw new Error(`Missing ${label} Ansible patch in turbopanel-dev checkout`);
+  }
+
+  const tmp = Deno.makeTempFileSync({ prefix: `${label}-patch-` });
+  try {
+    Deno.writeTextFileSync(tmp, patch);
+    const code = await runSudo(["cp", tmp, targetPath]);
+    if (code !== 0) {
+      throw new Error(`Failed to patch ${label} Ansible role`);
+    }
+    await runSudo([
+      "chown",
+      `${TURBOPANEL_USER}:${TURBOPANEL_GROUP}`,
+      targetPath,
+    ]);
+  } finally {
+    Deno.removeSync(tmp);
+  }
+}
+
+async function ensurePlatformRepoCloneFixes(): Promise<void> {
+  await applyAnsibleRolePatch(
+    INSTANCE_REPO_PATCH,
+    INSTANCE_REPO_TASKS,
+    "instance-repo",
+  );
+  await applyAnsibleRolePatch(UI_REPO_PATCH, UI_REPO_TASKS, "ui-repo");
+  await applyAnsibleRolePatch(
+    WEBSITE_REPO_PATCH,
+    WEBSITE_REPO_TASKS,
+    "website-repo",
+  );
+}
+
 async function ensureTurbopanelRuntimesOwnership(): Promise<void> {
   if (!turbopanelUserExists()) {
     return;
@@ -608,6 +738,14 @@ export async function startDevStack(handlers?: {
   await bootstrapOrchestration();
   onStep?.("Bootstrap orchestration", "ok");
 
+  onStep?.("Ensure turbopanel service user", "running");
+  await ensureTurbopanelUser();
+  onStep?.("Ensure turbopanel service user", "ok");
+
+  onStep?.("Align platform ownership", "running");
+  await alignDevStackOwnership();
+  onStep?.("Align platform ownership", "ok");
+
   onStep?.("Configure turbopanel GitHub SSH", "running");
   await ensureTurbopanelGithubAccess();
   onStep?.("Configure turbopanel GitHub SSH", "ok");
@@ -615,6 +753,14 @@ export async function startDevStack(handlers?: {
   onStep?.("Install orchestration runner", "running");
   await ensureOrchestrationRunnerInstalled();
   onStep?.("Install orchestration runner", "ok");
+
+  onStep?.("Patch platform-repo clone logic", "running");
+  await ensurePlatformRepoCloneFixes();
+  onStep?.("Patch platform-repo clone logic", "ok");
+
+  onStep?.("Clear checkout placeholders", "running");
+  await prepareCheckoutPlaceholdersForClone();
+  onStep?.("Clear checkout placeholders", "ok");
 
   onStep?.("Converge dev stack (Ansible)", "running");
   try {
@@ -638,6 +784,17 @@ export async function startDevStack(handlers?: {
   onStep?.("Restart dev stack services", "running");
   await restartDevStackServices();
   onStep?.("Restart dev stack services", "ok");
+
+  if (readInstanceRuntime() === "deno" && readBuildMode().uiMode === "dev") {
+    onStep?.("Prepare UI service", "running");
+    await ensureUiServiceRuntimeDirs();
+    const uiRestart = await runSudo(["systemctl", "restart", "turbopanel-ui"]);
+    if (uiRestart !== 0) {
+      onStep?.("Prepare UI service", "failed");
+      throw new Error("failed to restart turbopanel-ui after preparing runtime dirs");
+    }
+    onStep?.("Prepare UI service", "ok");
+  }
 
   await waitForDevStack(onStep);
 }
