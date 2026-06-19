@@ -24,10 +24,10 @@ export async function switchInstanceRuntime(
   await bootstrapOrchestration();
   await runPostgresSetupWithExpose(target === "workers", onEvent);
   await runInstanceLaunchRefresh(target, onEvent);
+  await ensureWebsiteSystemdUnit();
 
   if (target === "workers") {
     await ensureWorkersDevVars();
-    await ensureWebsiteSystemdUnit();
     const code = await runSudo(["systemctl", "restart", "turbopanel-instance"]);
     if (code !== 0) {
       throw new Error("failed to start turbopanel-instance (Workers/wrangler)");

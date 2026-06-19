@@ -1,5 +1,4 @@
 import { runInherit } from "@turbopanel/lib/platform-install.ts";
-import { readInstanceRuntime } from "@turbopanel/lib/daemon-lifecycle.ts";
 
 const WEBSITE_UNIT = "/etc/systemd/system/turbopanel-website.service";
 const REPAIR_SCRIPT = "scripts/repair-website-systemd.sh";
@@ -13,9 +12,8 @@ export function websiteSystemdUnitPresent(): boolean {
   }
 }
 
-/** Install turbopanel-website.service when Workers dev stack predates Ansible support. */
+/** Install turbopanel-website.service when Ansible has not yet converged the unit. */
 export async function ensureWebsiteSystemdUnit(): Promise<void> {
-  if (readInstanceRuntime() !== "workers") return;
   if (websiteSystemdUnitPresent()) return;
 
   console.log("→ Installing turbopanel-website.service (Next.js on :19820)...");

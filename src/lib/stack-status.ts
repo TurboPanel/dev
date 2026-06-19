@@ -12,24 +12,41 @@ export type StackUnitStatus = {
   detail: string;
 };
 
-const STACK_UNITS_BASE: Array<{ unit: string; label: string }> = [
+const STACK_UNITS: Array<{ unit: string; label: string }> = [
   { unit: "turbopanel-daemon", label: "daemon" },
   { unit: "turbopanel-instance", label: "instance" },
   { unit: "turbopanel-caddy", label: "caddy" },
   { unit: "turbopanel-ui", label: "ui (Expo)" },
+  { unit: "turbopanel-website", label: "website (Next.js)" },
 ];
 
 function stackUnitsForRuntime(): Array<{ unit: string; label: string }> {
-  if (readInstanceRuntime() === "workers") {
-    return [
-      ...STACK_UNITS_BASE,
-      { unit: "turbopanel-website", label: "website (Next.js)" },
-    ];
-  }
-  return STACK_UNITS_BASE;
+  return STACK_UNITS;
 }
 
 const INSTANCE_SOCKET = "/run/turbopanel/instance.sock";
+
+function unitLoadState(unit: string): string {
+  const proc = new Deno.Command("systemctl", {
+    args: ["show", unit, "--property=LoadState", "--value"],
+    stdout: "piped",
+    stderr: "null",
+  }).outputSync();
+  return new TextDecoder().decode(proc.stdout).trim();
+}
+
+function websiteUnitDetail(active: boolean | null, detail: string): string {
+  const url = `http://127.0.0.1:${WEBSITE_DEV_PORT}`;
+  if (active === true) {
+    return checkWebsiteDevHealth()
+      ? `active — ${url}`
+      : `active — ${url} (not responding)`;
+  }
+  if (active === null) {
+    return "not installed — run Start dev stack";
+  }
+  return `${detail} — run Start dev stack`;
+}
 
 function systemctlIsActive(unit: string): { active: boolean | null; detail: string } {
   const proc = new Deno.Command("systemctl", {
@@ -132,8 +149,18 @@ export function fetchStackStatus(): StackUnitStatus[] {
 
   const units = stackUnitsForRuntime().map(({ unit, label }, index) => {
     const text = lines[index]?.trim() ?? "";
+    const loadState = unitLoadState(unit);
+    if (loadState === "not-found") {
+      const detail = unit === "turbopanel-website"
+        ? websiteUnitDetail(null, "not installed")
+        : "not installed";
+      return { unit, label, active: null, detail };
+    }
     const { active, detail } = parseIsActiveLine(text);
-    return { unit, label, active, detail };
+    const resolvedDetail = unit === "turbopanel-website"
+      ? websiteUnitDetail(active, detail)
+      : detail;
+    return { unit, label, active, detail: resolvedDetail };
   });
 
   return units;

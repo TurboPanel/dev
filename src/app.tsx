@@ -16,6 +16,7 @@ import {
   readBuildMode,
   startDevStack,
   switchBuildMode,
+  ensureDevPlatformAccess,
 } from "@turbopanel/lib/daemon-lifecycle.ts";
 import {
   switchInstanceRuntime,
@@ -75,6 +76,7 @@ export function App() {
   const [taskRun, setTaskRun] = useState<TaskRunState | null>(null);
   const [resetPrompt, setResetPrompt] = useState<ResetPromptState>(null);
   const [envRefresh, setEnvRefresh] = useState(0);
+  const [platformDirectAccess, setPlatformDirectAccess] = useState(true);
   const ansible = useAnsibleEvents();
 
   const daemonStatus = useMemo(
@@ -83,6 +85,16 @@ export function App() {
   );
   const runtimeReady = useMemo(() => denoRuntimeInstalled(), [envRefresh]);
   const daemonPresent = daemonStatus.present;
+
+  useEffect(() => {
+    if (!daemonPresent) {
+      return;
+    }
+    void ensureDevPlatformAccess()
+      .then(() => setPlatformDirectAccess(true))
+      .catch(() => setPlatformDirectAccess(false));
+  }, [daemonPresent]);
+
   const stackUnits = useStackStatus(daemonPresent);
   const instanceRuntime = useMemo(() => readInstanceRuntime(), [envRefresh]);
   const developerUnlocked = useMemo(() => {
@@ -370,7 +382,7 @@ export function App() {
         runtimeReady={runtimeReady}
         daemonStatus={daemonStatus}
         daemonPresent={daemonPresent}
-        platformDirectAccess={false}
+        platformDirectAccess={platformDirectAccess}
         stackUnits={stackUnits}
         developerUnlocked={developerUnlocked}
         stackHealthy={stackHealthy}

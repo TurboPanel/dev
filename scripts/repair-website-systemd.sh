@@ -1,6 +1,6 @@
 #!/bin/sh
 # Install or repair turbopanel-website.service (Next.js docs on :19820).
-# Matches instance-launch turbopanel-website.service.j2 for Workers co-located dev.
+# Matches instance-launch turbopanel-website.service.j2 for co-located dev.
 set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname "$0")" && pwd)

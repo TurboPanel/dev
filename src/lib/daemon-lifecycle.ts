@@ -53,6 +53,36 @@ const WEBSITE_REPO_PATCH = new URL(
   "../../scripts/patches/website-repo-tasks-main.yml",
   import.meta.url,
 ).pathname;
+const DEV_HOST_ACCESS_TASKS =
+  `${DAEMON_DIR}/orchestration/roles/dev-host-access/tasks/main.yml`;
+const DEV_HOST_ACCESS_PATCH = new URL(
+  "../../scripts/patches/dev-host-access-tasks-main.yml",
+  import.meta.url,
+).pathname;
+const INSTANCE_DEV_INSTALL_PLAYBOOK =
+  `${DAEMON_DIR}/orchestration/playbooks/instance-dev-install.yml`;
+const INSTANCE_DEV_INSTALL_PATCH = new URL(
+  "../../scripts/patches/instance-dev-install.yml",
+  import.meta.url,
+).pathname;
+const INSTANCE_LAUNCH_TASKS =
+  `${DAEMON_DIR}/orchestration/roles/instance-launch/tasks/main.yml`;
+const INSTANCE_LAUNCH_PATCH = new URL(
+  "../../scripts/patches/instance-launch-tasks-main.yml",
+  import.meta.url,
+).pathname;
+const CHECKOUT_PERMISSIONS_TASKS =
+  `${DAEMON_DIR}/orchestration/roles/instance-launch/tasks/checkout-permissions.yml`;
+const CHECKOUT_PERMISSIONS_PATCH = new URL(
+  "../../scripts/patches/checkout-permissions.yml",
+  import.meta.url,
+).pathname;
+const DEV_PERMISSIONS_TASKS =
+  `${DAEMON_DIR}/orchestration/roles/dev-permissions/tasks/main.yml`;
+const DEV_PERMISSIONS_PATCH = new URL(
+  "../../scripts/patches/dev-permissions-tasks-main.yml",
+  import.meta.url,
+).pathname;
 const STACK_WAIT_MS = 120_000;
 const STACK_POLL_MS = 3_000;
 
@@ -493,7 +523,28 @@ async function applyAnsibleRolePatch(
   }
 }
 
+async function ensurePlatformGitOwnership(): Promise<void> {
+  const script = [
+    `set -eu`,
+    `platform=${shellQuote(TURBOPANEL_PLATFORM)}`,
+    `for dir in daemon instance ui website; do`,
+    `  gitdir="$platform/$dir/.git"`,
+    `  [ -d "$gitdir" ] || continue`,
+    `  chown -R ${TURBOPANEL_USER}:${TURBOPANEL_GROUP} "$gitdir"`,
+    `done`,
+  ].join("\n");
+  const code = await runSudo(["bash", "-c", script]);
+  if (code !== 0) {
+    throw new Error("Failed to reclaim platform checkout git metadata for turbopanel");
+  }
+}
+
 async function ensurePlatformRepoCloneFixes(): Promise<void> {
+  await applyAnsibleRolePatch(
+    INSTANCE_DEV_INSTALL_PATCH,
+    INSTANCE_DEV_INSTALL_PLAYBOOK,
+    "instance-dev-install",
+  );
   await applyAnsibleRolePatch(
     INSTANCE_REPO_PATCH,
     INSTANCE_REPO_TASKS,
@@ -505,6 +556,68 @@ async function ensurePlatformRepoCloneFixes(): Promise<void> {
     WEBSITE_REPO_TASKS,
     "website-repo",
   );
+  await applyAnsibleRolePatch(
+    DEV_PERMISSIONS_PATCH,
+    DEV_PERMISSIONS_TASKS,
+    "dev-permissions",
+  );
+  await applyAnsibleRolePatch(
+    INSTANCE_LAUNCH_PATCH,
+    INSTANCE_LAUNCH_TASKS,
+    "instance-launch",
+  );
+  await applyAnsibleRolePatch(
+    CHECKOUT_PERMISSIONS_PATCH,
+    CHECKOUT_PERMISSIONS_TASKS,
+    "checkout-permissions",
+  );
+  await applyAnsibleRolePatch(
+    DEV_HOST_ACCESS_PATCH,
+    DEV_HOST_ACCESS_TASKS,
+    "dev-host-access",
+  );
+}
+
+export async function ensureDevPlatformAccess(): Promise<void> {
+  const dev = requireDevIdentity();
+  const script = [
+    `set -eu`,
+    `dev=${shellQuote(dev.user)}`,
+    `root=${shellQuote(TURBOPANEL_ROOT)}`,
+    `platform=${shellQuote(TURBOPANEL_PLATFORM)}`,
+    `if ! getent group turbopanel | grep -Eq ":$dev$|:.*[,:]$dev(,|$)"; then`,
+    `  usermod -aG turbopanel "$dev"`,
+    `fi`,
+    `if command -v setfacl >/dev/null 2>&1; then`,
+    `  setfacl -m u:$dev:rx "$root"`,
+    `  setfacl -d -m u:$dev:rx "$root"`,
+    `  setfacl -m u:$dev:rwx "$platform"`,
+    `  setfacl -d -m u:$dev:rwx "$platform"`,
+    `  for dir in daemon instance ui website; do`,
+    `    gitdir="$platform/$dir/.git"`,
+    `    [ -d "$gitdir" ] || continue`,
+    `    setfacl -R -m u:$dev:rwx "$gitdir"`,
+    `    setfacl -R -d -m u:$dev:rwx "$gitdir"`,
+    `  done`,
+    `else`,
+    `  chmod g+rx "$platform"`,
+    `fi`,
+  ].join("\n");
+  const code = await runSudo(["bash", "-c", script]);
+  if (code !== 0) {
+    throw new Error("Failed to ensure dev user can access platform checkouts");
+  }
+
+  const verify = new Deno.Command("bash", {
+    args: ["-c", `ls ${shellQuote(TURBOPANEL_PLATFORM)} >/dev/null 2>&1`],
+    stdout: "null",
+    stderr: "null",
+  }).outputSync();
+  if (!verify.success) {
+    throw new Error(
+      "Dev user still cannot access /opt/turbopanel/platform after ACL apply",
+    );
+  }
 }
 
 async function ensureTurbopanelRuntimesOwnership(): Promise<void> {
@@ -622,6 +735,22 @@ export async function startUpdateServer(): Promise<
   return { pid: child.pid, url: `http://${lanIp}:8444` };
 }
 
+async function restartUnitIfLoaded(unit: string): Promise<void> {
+  const proc = new Deno.Command("systemctl", {
+    args: ["show", unit, "--property=LoadState", "--value"],
+    stdout: "piped",
+    stderr: "null",
+  }).outputSync();
+  const loadState = new TextDecoder().decode(proc.stdout).trim();
+  if (loadState === "not-found" || loadState === "") {
+    return;
+  }
+  const code = await runSudo(["systemctl", "restart", unit]);
+  if (code !== 0) {
+    throw new Error(`failed to restart ${unit}`);
+  }
+}
+
 async function restartDevStackServices(): Promise<void> {
   const runtime = readInstanceRuntime();
   await runSudo(["systemctl", "daemon-reload"]);
@@ -632,18 +761,20 @@ async function restartDevStackServices(): Promise<void> {
       "turbopanel-daemon",
       "turbopanel-website",
     ] as const) {
-      const code = await runSudo(["systemctl", "restart", unit]);
-      if (code !== 0) {
-        throw new Error(`failed to restart ${unit}`);
-      }
+      await restartUnitIfLoaded(unit);
     }
-    await runSudo(["systemctl", "restart", "turbopanel-ui"]);
+    await restartUnitIfLoaded("turbopanel-ui");
     return;
   }
-  // Deno mode: instance-dev-install already converged instance/caddy units.
-  const code = await runSudo(["systemctl", "restart", "turbopanel-daemon"]);
-  if (code !== 0) {
-    throw new Error("failed to restart turbopanel-daemon");
+  // Deno mode: instance-dev-install converges instance/caddy/ui/website units.
+  for (const unit of [
+    "turbopanel-instance",
+    "turbopanel-caddy",
+    "turbopanel-ui",
+    "turbopanel-website",
+    "turbopanel-daemon",
+  ] as const) {
+    await restartUnitIfLoaded(unit);
   }
 }
 
@@ -762,6 +893,10 @@ export async function startDevStack(handlers?: {
   await prepareCheckoutPlaceholdersForClone();
   onStep?.("Clear checkout placeholders", "ok");
 
+  onStep?.("Reclaim checkout git metadata", "running");
+  await ensurePlatformGitOwnership();
+  onStep?.("Reclaim checkout git metadata", "ok");
+
   onStep?.("Converge dev stack (Ansible)", "running");
   try {
     await runInstanceDevInstallPrivileged(onEvent);
@@ -771,11 +906,18 @@ export async function startDevStack(handlers?: {
     throw err;
   }
 
-  if (readInstanceRuntime() === "workers") {
-    onStep?.("Install website systemd unit", "running");
-    await ensureWebsiteSystemdUnit();
-    onStep?.("Install website systemd unit", "ok");
+  onStep?.("Ensure dev platform access", "running");
+  try {
+    await ensureDevPlatformAccess();
+    onStep?.("Ensure dev platform access", "ok");
+  } catch (err) {
+    onStep?.("Ensure dev platform access", "failed");
+    throw err;
   }
+
+  onStep?.("Install website systemd unit", "running");
+  await ensureWebsiteSystemdUnit();
+  onStep?.("Install website systemd unit", "ok");
 
   onStep?.("Install daemon systemd unit", "running");
   await installDaemonSystemd();
