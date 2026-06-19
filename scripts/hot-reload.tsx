@@ -1,8 +1,9 @@
 import { fileURLToPath } from "node:url";
 import React, { useEffect, useState } from "react";
-import { render, useInput, useWindowSize } from "ink";
+import { render, useWindowSize } from "ink";
 import { createServer, normalizePath, type ViteDevServer } from "vite";
 import type { AppView as AppViewComponent, AREAS as AppAreas } from "../src/app.tsx";
+import { useConsoleApp } from "../src/hooks/use-console-app.ts";
 
 type AppModule = {
   AppView: typeof AppViewComponent;
@@ -26,18 +27,8 @@ function HotReloadApp({
   initialModule: AppModule;
 }) {
   const { columns, rows } = useWindowSize();
-  const [activeIndex, setActiveIndex] = useState(0);
   const [appModule, setAppModule] = useState(initialModule);
-
-  useInput((_input, key) => {
-    const areas = appModule.AREAS;
-    if (key.leftArrow) {
-      setActiveIndex((index) => Math.max(0, index - 1));
-    }
-    if (key.rightArrow) {
-      setActiveIndex((index) => Math.min(areas.length - 1, index + 1));
-    }
-  });
+  const consoleApp = useConsoleApp(appModule.AREAS);
 
   useEffect(() => {
     let timeout: NodeJS.Timeout | undefined;
@@ -50,7 +41,6 @@ function HotReloadApp({
           const nextModule = await loadAppModule(server);
           if (!disposed) setAppModule(nextModule);
         } catch (error) {
-          // Keep the current UI mounted while the user fixes a syntax/runtime error.
           process.stderr.write(`${String(error)}\n`);
         }
       }, 50);
@@ -79,7 +69,25 @@ function HotReloadApp({
   }, [server]);
 
   const AppView = appModule.AppView;
-  return <AppView activeIndex={activeIndex} columns={columns} rows={rows} />;
+  return (
+    <AppView
+      activeIndex={consoleApp.activeIndex}
+      columns={columns}
+      rows={rows}
+      selectedServiceIndex={consoleApp.selectedServiceIndex}
+      visibleServices={consoleApp.visibleServices}
+      openServiceId={consoleApp.openServiceId}
+      daemonOperation={consoleApp.daemonOperation}
+      installFinished={consoleApp.installFinished}
+      onDaemonOperationDone={consoleApp.handleDaemonOperationDone}
+      onInstallFinished={consoleApp.handleInstallFinished}
+      onPurgeDone={consoleApp.handlePurgeDone}
+      onOpenService={consoleApp.handleOpenService}
+      onCloseService={consoleApp.handleCloseService}
+      onDaemonAction={consoleApp.openServiceId === "daemon" ? consoleApp.handleDaemonAction : undefined}
+      onSelectedServiceIndexChange={consoleApp.setSelectedServiceIndex}
+    />
+  );
 }
 
 const server = await createServer({
@@ -101,6 +109,7 @@ const { waitUntilExit } = render(
   {
     alternateScreen: true,
     exitOnCtrlC: true,
+    patchConsole: true,
   },
 );
 

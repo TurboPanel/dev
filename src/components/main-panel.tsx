@@ -1,12 +1,15 @@
 import React, { type ReactNode } from "react";
 import { Box } from "ink";
-import { ACTIVE_TAB_BG, DARK_GREY } from "../theme.ts";
+import { StatusBar } from "./status-bar.tsx";
+import { BORDER_COLOR, DARK_GREY } from "../theme.ts";
 
 export function MainPanel({
   width,
+  status,
   children,
 }: {
   width: number;
+  status: string;
   children: ReactNode;
 }) {
   return (
@@ -16,18 +19,25 @@ export function MainPanel({
       flexShrink={1}
       minHeight={0}
       width={width}
-      backgroundColor={DARK_GREY}
-      borderStyle="round"
-      borderColor={ACTIVE_TAB_BG}
-      borderBackgroundColor={DARK_GREY}
-      borderLeft
-      borderRight
-      borderTop={false}
-      borderBottom={false}
     >
-      <Box flexDirection="column" flexGrow={1} paddingX={1}>
-        {children}
+      <Box
+        flexDirection="column"
+        flexGrow={1}
+        minHeight={0}
+        backgroundColor={DARK_GREY}
+        borderStyle="round"
+        borderColor={BORDER_COLOR}
+        borderBackgroundColor={DARK_GREY}
+        borderLeft
+        borderRight
+        borderTop={false}
+        borderBottom={false}
+      >
+        <Box flexDirection="column" flexGrow={1} minHeight={0} paddingX={1}>
+          {children}
+        </Box>
       </Box>
+      <StatusBar width={width} status={status} />
     </Box>
   );
 }

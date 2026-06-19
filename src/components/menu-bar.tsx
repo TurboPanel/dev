@@ -1,6 +1,6 @@
 import React from "react";
 import { Box, Text } from "ink";
-import { ACTIVE_TAB_BG, MENU_BLUE, ON_MENU } from "../theme.ts";
+import { ACTIVE_TAB_BG, BORDER_COLOR, MENU_BLUE, ON_MENU } from "../theme.ts";
 
 export type AreaTab = { id: string; label: string; emoji: string };
 
@@ -123,7 +123,7 @@ export function MenuBar({
 
       <Box flexDirection="row" width={columns} height={1}>
         <Box width={activeTabStart}>
-          <Text color={ACTIVE_TAB_BG}>
+          <Text color={BORDER_COLOR}>
             {"╭" + "─".repeat(Math.max(0, activeTabStart - 1))}
           </Text>
         </Box>
@@ -139,7 +139,7 @@ export function MenuBar({
           </Text>
         </Box>
         <Box width={rightWidth}>
-          <Text color={ACTIVE_TAB_BG}>
+          <Text color={BORDER_COLOR}>
             {rightWidth > 0
               ? "─".repeat(Math.max(0, rightWidth - 1)) + "╮"
               : "╮"}

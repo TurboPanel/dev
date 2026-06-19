@@ -11,6 +11,12 @@ importers:
       ink:
         specifier: ^7.0.2
         version: 7.1.0(@types/react@19.2.17)(react@19.2.7)
+      ink-scroll-list:
+        specifier: ^0.4.1
+        version: 0.4.1(ink@7.1.0(@types/react@19.2.17)(react@19.2.7))(react@19.2.7)
+      ink-spinner:
+        specifier: ^5.0.0
+        version: 5.0.0(ink@7.1.0(@types/react@19.2.17)(react@19.2.7))(react@19.2.7)
       react:
         specifier: ^19.2.0
         version: 19.2.7
@@ -341,6 +347,10 @@ packages:
     resolution: {integrity: sha512-VGtlMu3x/4DOtIUwEkRezxUZ2lBacNJCHash0N0WeZDBS+7Ux1dm3XWAgWYxLJFMMdOeXMHXorshEFhbMSGelg==}
     engines: {node: ^12.20.0 || ^14.13.1 || >=16.0.0}
 
+  cli-spinners@2.9.2:
+    resolution: {integrity: sha512-ywqV+5MmyL4E7ybXgKys4DugZbX0FC6LnwrhjuykIjnK9k8OQacQ7axGKnjDXWNhns0xot3bZI5h55H8yo9cJg==}
+    engines: {node: '>=6'}
+
   cli-truncate@6.0.0:
     resolution: {integrity: sha512-3+YKIUFsohD9MIoOFPFBldjAlnfCmCDcqe6aYGFqlDTRKg80p4wg35L+j83QQ63iOlKRccEkbn8IuM++HsgEjA==}
     engines: {node: '>=22'}
@@ -418,6 +428,25 @@ packages:
   indent-string@5.0.0:
     resolution: {integrity: sha512-m6FAo/spmsW2Ab2fU35JTYwtOKa2yAwXSwgjSv1TJzh4Mh7mC3lzAOVLBprb72XsTrgkEIsl7YrFNAiDiRhIGg==}
     engines: {node: '>=12'}
+
+  ink-scroll-list@0.4.1:
+    resolution: {integrity: sha512-2GcjnBXRe0sTSMC03SCKX6IkNAsYYgcpvAN+ggAiaqeg+s+qA9Ls0iVTOmB+Ize/9AVts8xloG4aRcrOy/7Xxg==}
+    peerDependencies:
+      ink: '>=6'
+      react: '>=19'
+
+  ink-scroll-view@0.3.7:
+    resolution: {integrity: sha512-lUBLxSbVry/+UtJhuvRu6wumP43+ScVp69J7e+hmYwz1kTkahWfkVwWOu7Mn1DMPb8AU8bnsmEsr6kvSJvnaRw==}
+    peerDependencies:
+      ink: ^5 || ^6 || ^7
+      react: ^18 || ^19
+
+  ink-spinner@5.0.0:
+    resolution: {integrity: sha512-EYEasbEjkqLGyPOUc8hBJZNuC5GvXGMLu0w5gdTNskPc7Izc5vO3tdQEYnzvshucyGCBXc86ig0ujXPMWaQCdA==}
+    engines: {node: '>=14.16'}
+    peerDependencies:
+      ink: '>=4.0.0'
+      react: '>=18.0.0'
 
   ink@7.1.0:
     resolution: {integrity: sha512-VWE6/yeLtFCJBNLflyI2OSylyXK1Rc24LuXup8Qt+icwkmmycFNdbn8IkSp6Frc0h1iA0NOvvi1ajW44U/w3Qg==}
@@ -1036,6 +1065,8 @@ snapshots:
     dependencies:
       restore-cursor: 4.0.0
 
+  cli-spinners@2.9.2: {}
+
   cli-truncate@6.0.0:
     dependencies:
       slice-ansi: 9.0.0
@@ -1081,6 +1112,23 @@ snapshots:
   get-east-asian-width@1.6.0: {}
 
   indent-string@5.0.0: {}
+
+  ink-scroll-list@0.4.1(ink@7.1.0(@types/react@19.2.17)(react@19.2.7))(react@19.2.7):
+    dependencies:
+      ink: 7.1.0(@types/react@19.2.17)(react@19.2.7)
+      ink-scroll-view: 0.3.7(ink@7.1.0(@types/react@19.2.17)(react@19.2.7))(react@19.2.7)
+      react: 19.2.7
+
+  ink-scroll-view@0.3.7(ink@7.1.0(@types/react@19.2.17)(react@19.2.7))(react@19.2.7):
+    dependencies:
+      ink: 7.1.0(@types/react@19.2.17)(react@19.2.7)
+      react: 19.2.7
+
+  ink-spinner@5.0.0(ink@7.1.0(@types/react@19.2.17)(react@19.2.7))(react@19.2.7):
+    dependencies:
+      cli-spinners: 2.9.2
+      ink: 7.1.0(@types/react@19.2.17)(react@19.2.7)
+      react: 19.2.7
 
   ink@7.1.0(@types/react@19.2.17)(react@19.2.7):
     dependencies:
