@@ -1,21 +1,47 @@
 #!/bin/sh
-# Start the TurboPanel developer console.
+# Start the TurboPanel developer console (Node + Vite).
 #
-# 1. Load shared helpers (paths, sudo, apt packages, Deno install)
-# 2. Install or upgrade the pinned Deno release to /usr/local/bin when needed
-# 3. Cache JS dependencies and launch src/tui.tsx
+# 1. Load shared helpers (paths, sudo, apt packages, runtime installers)
+# 2. Ensure pinned Node (runs this repo) and pinned Deno (used by daemon/instance) are installed
+# 3. Install JS dependencies with pnpm and launch the Ink TUI via vite-node
 set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
 TUI_ENTRY=src/tui.tsx
+CONSOLE_WATCH=
 
 # Shared shell libraries (see scripts/lib/)
 . "$SCRIPT_DIR/scripts/lib/privileges.sh"  # tp_info, tp_error, sudo helpers
-. "$SCRIPT_DIR/scripts/lib/paths.sh"       # DENO_BIN, /opt/turbopanel paths
-. "$SCRIPT_DIR/scripts/lib/packages.sh"    # apt install curl/unzip if needed
-. "$SCRIPT_DIR/scripts/lib/runtime.sh"      # tp_ensure_deno_runtime
+. "$SCRIPT_DIR/scripts/lib/paths.sh"       # NODE_BIN/DENO_BIN, /opt/turbopanel paths
+. "$SCRIPT_DIR/scripts/lib/packages.sh"    # apt install curl/tar/xz if needed
+. "$SCRIPT_DIR/scripts/lib/runtime.sh"      # tp_ensure_node_runtime, tp_ensure_deno_runtime
 . "$SCRIPT_DIR/scripts/lib/dev-identity.sh" # tp_resolve_dev_identity
 . "$SCRIPT_DIR/scripts/lib/dev-prerequisites.sh"  # tp_ensure_dev_prerequisites
+
+for _tp_arg in "$@"; do
+  case $_tp_arg in
+    --watch|-w)
+      CONSOLE_WATCH=1
+      ;;
+    -h|--help)
+      cat <<EOF
+Usage: ./console [--watch]
+
+  --watch, -w   Hot-reload the TUI (Vite Fast Refresh) when source files change
+EOF
+      exit 0
+      ;;
+    *)
+      tp_error "Unknown option: $_tp_arg"
+      echo "Run ./console --help for usage." >&2
+      exit 1
+      ;;
+  esac
+done
+
+if [ -n "${TURBOPANEL_CONSOLE_WATCH:-}" ]; then
+  CONSOLE_WATCH=1
+fi
 
 # curl | sh leaves stdin on a pipe; attach stdio to the controlling terminal when available.
 if [ ! -t 0 ] || [ ! -t 1 ] || [ ! -t 2 ]; then
@@ -30,17 +56,29 @@ fi
 
 tp_ensure_dev_prerequisites
 
-tp_info "Checking Deno runtime…"
+tp_info "Checking Node runtime…"
+tp_ensure_node_runtime
+
+# Deno is not used to run this repo, but the daemon and instance do — install it
+# here so the rest of the platform can rely on the pinned runtime being present.
+tp_info "Checking Deno runtime (for daemon/instance)…"
 tp_ensure_deno_runtime
 
-if "$DENO_BIN" cache --frozen "$SCRIPT_DIR/$TUI_ENTRY" 2>/dev/null; then
-  tp_info "Dependencies ready"
+PNPM_BIN=$(dirname "$NODE_BIN")/pnpm
+
+cd "$SCRIPT_DIR"
+
+tp_info "Installing JS dependencies…"
+if [ -f pnpm-lock.yaml ]; then
+  "$PNPM_BIN" install --frozen-lockfile || "$PNPM_BIN" install
 else
-  tp_info "Caching JS dependencies (first run may take a minute)…"
-  "$DENO_BIN" cache "$SCRIPT_DIR/$TUI_ENTRY"
+  "$PNPM_BIN" install
+fi
+
+if [ -n "$CONSOLE_WATCH" ]; then
+  tp_info "Launching console UI (Fast Refresh — edits hot-reload)…"
+  exec "$PNPM_BIN" exec vite-node scripts/dev-console.tsx
 fi
 
 tp_info "Launching console UI…"
-
-cd "$SCRIPT_DIR"
-exec "$DENO_BIN" run --allow-all "$TUI_ENTRY"
+exec "$PNPM_BIN" exec vite-node "$TUI_ENTRY"

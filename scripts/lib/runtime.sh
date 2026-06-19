@@ -121,3 +121,118 @@ tp_install_deno_runtime() {
 tp_ensure_deno_runtime() {
   tp_install_deno_runtime
 }
+
+# --- Node (dev-only) ---------------------------------------------------------
+# Pinned Node from the official nodejs.org tarball, installed into NODE_PREFIX
+# (default /usr/local). Provides node + npm + corepack for the Ink HMR dev loop
+# and the future website repo. Production services run on Deno, not Node.
+
+tp_node_linux_asset() {
+  case $(uname -m) in
+    aarch64|arm64) printf '%s' 'arm64' ;;
+    x86_64|amd64) printf '%s' 'x64' ;;
+    *)
+      tp_error "Unsupported Linux architecture for Node: $(uname -m)"
+      exit 1
+      ;;
+  esac
+}
+
+tp_node_installed_version() {
+  [ -x "$NODE_BIN" ] || return 1
+  "$NODE_BIN" --version 2>/dev/null | sed 's/^v//'
+}
+
+tp_node_runtime_usable() {
+  _tnu_version=$(tp_node_installed_version) || return 1
+  [ "$_tnu_version" = "$NODE_VERSION" ]
+}
+
+tp_install_node_tree() {
+  _int_src_dir=$1
+  if [ "$(id -u)" -eq 0 ] || tp_can_write_path "$NODE_PREFIX"; then
+    cp -R "$_int_src_dir"/bin "$_int_src_dir"/include "$_int_src_dir"/lib "$_int_src_dir"/share "$NODE_PREFIX"/
+    return 0
+  fi
+  if ! command -v sudo >/dev/null 2>&1; then
+    tp_error "Installing Node to ${NODE_PREFIX} requires root privileges, but sudo is not installed."
+    exit 1
+  fi
+  tp_info "Administrator privileges required to install Node to ${NODE_PREFIX}"
+  sudo cp -R "$_int_src_dir"/bin "$_int_src_dir"/include "$_int_src_dir"/lib "$_int_src_dir"/share "$NODE_PREFIX"/
+}
+
+tp_download_node_release() {
+  _dnr_arch=$(tp_node_linux_asset)
+  _dnr_name=node-v${NODE_VERSION}-linux-${_dnr_arch}
+  _dnr_tarball=${_dnr_name}.tar.xz
+  _dnr_base=${NODE_RELEASE_BASE}/v${NODE_VERSION}
+  _dnr_tmp=$(mktemp -d)
+
+  curl -fsSL "${_dnr_base}/${_dnr_tarball}" -o "$_dnr_tmp/$_dnr_tarball"
+  curl -fsSL "${_dnr_base}/SHASUMS256.txt" -o "$_dnr_tmp/SHASUMS256.txt"
+  (
+    cd "$_dnr_tmp" || exit 1
+    grep " ${_dnr_tarball}\$" SHASUMS256.txt > "${_dnr_tarball}.sha256"
+    sha256sum -c "${_dnr_tarball}.sha256"
+  )
+  tar -xJf "$_dnr_tmp/$_dnr_tarball" -C "$_dnr_tmp"
+  tp_install_node_tree "$_dnr_tmp/$_dnr_name"
+  rm -rf "$_dnr_tmp"
+}
+
+tp_install_node_runtime() {
+  if tp_node_runtime_usable; then
+    return 0
+  fi
+
+  _node_upgrading=0
+  if [ -x "$NODE_BIN" ]; then
+    _node_upgrading=1
+  fi
+
+  tp_ensure_node_prerequisites  # curl, tar, xz-utils, sha256sum
+
+  if [ "$_node_upgrading" -eq 1 ]; then
+    tp_info "Upgrading Node to v${NODE_VERSION} at ${NODE_BIN}"
+  else
+    tp_info "Installing Node v${NODE_VERSION} to ${NODE_BIN}"
+  fi
+
+  tp_download_node_release
+
+  if ! tp_node_runtime_usable; then
+    tp_error "Node install failed — expected v${NODE_VERSION} at ${NODE_BIN}"
+    exit 1
+  fi
+
+  if [ "$_node_upgrading" -eq 1 ]; then
+    tp_success "Node upgraded to v${NODE_VERSION}"
+  else
+    tp_success "Node v${NODE_VERSION} installed"
+  fi
+}
+
+tp_corepack_bin() {
+  printf '%s' "$(dirname "$NODE_BIN")/corepack"
+}
+
+tp_ensure_corepack_pnpm() {
+  _ecp_corepack=$(tp_corepack_bin)
+  if [ ! -x "$_ecp_corepack" ]; then
+    tp_error "corepack not found at ${_ecp_corepack} (expected from the Node install)."
+    exit 1
+  fi
+  # Install pnpm/yarn shims next to node. pnpm's exact version is pinned by the
+  # "packageManager" field in hmr/package.json and fetched by Corepack on demand.
+  if [ "$(id -u)" -eq 0 ] || tp_can_write_path "$(dirname "$NODE_BIN")"; then
+    "$_ecp_corepack" enable pnpm
+  else
+    sudo "$_ecp_corepack" enable pnpm
+  fi
+}
+
+tp_ensure_node_runtime() {
+  tp_install_node_runtime
+  tp_ensure_corepack_pnpm
+}
