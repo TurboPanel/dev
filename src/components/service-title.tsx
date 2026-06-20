@@ -25,6 +25,16 @@ function trimBlankLines(text: string): string {
   return lines.slice(start, end).join("\n");
 }
 
+export function measureTitleArtRows(label: string, width: number): number {
+  const maxWidth = Math.max(1, width - 2);
+  if (maxWidth < MIN_TITLE_WIDTH) {
+    return 1;
+  }
+
+  const art = renderTitleArt(label, maxWidth);
+  return art ? art.split("\n").length : 1;
+}
+
 function renderTitleArt(text: string, maxWidth: number): string | null {
   for (const font of TITLE_FONTS) {
     try {
@@ -90,7 +100,7 @@ export function ServiceTitle({
   }
 
   return (
-    <Box flexDirection="column" width={maxWidth}>
+    <Box flexDirection="column" width={maxWidth} marginTop={1}>
       <GradientArt art={art} />
     </Box>
   );

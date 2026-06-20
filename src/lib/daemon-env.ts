@@ -126,3 +126,27 @@ export function writeDaemonInstanceEnv(extra?: Record<string, string>): void {
     ...extra,
   });
 }
+
+function parseEnvEntries(content: string): Map<string, string> {
+  const entries = new Map<string, string>();
+  for (const line of content.split("\n")) {
+    const match = line.match(/^([A-Z_][A-Z0-9_]*)=(.*)$/);
+    if (match) {
+      entries.set(match[1]!, match[2]!);
+    }
+  }
+  return entries;
+}
+
+function readDaemonEnvEntries(): Map<string, string> {
+  return parseEnvEntries(readEnvFile(DAEMON_ENV_PATH));
+}
+
+export function readInstanceRuntime(): "deno" | "workers" {
+  const runtime = readDaemonEnvEntries().get("TURBOPANEL_INSTANCE_RUNTIME");
+  return runtime === "workers" ? "workers" : "deno";
+}
+
+export function isDevInstanceEnabled(): boolean {
+  return readDaemonEnvEntries().get(INSTANCE_OPT_IN_KEY) === "1";
+}

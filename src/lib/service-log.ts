@@ -28,6 +28,12 @@ const SERVICE_UNITS: Record<string, string> = {
   instance: "turbopanel-instance",
   ui: "turbopanel-ui",
   website: "turbopanel-website",
+  cache: "turbopanel-redis",
+  queue: "turbopanel-rabbitmq",
+};
+
+const DOCKER_LOG_CONTAINERS: Record<string, string> = {
+  db: "turbopaneldb",
 };
 
 export function serviceSystemdUnit(serviceId: string): string | null {
@@ -97,6 +103,33 @@ function tailJournal(unit: string, maxLines: number): string[] {
   return [];
 }
 
+function tailDockerLogs(container: string, maxLines: number): string[] {
+  const dockerArgs = [
+    "logs",
+    "--tail",
+    String(maxLines),
+    container,
+  ];
+  const attempts: string[][] = [
+    ["sudo", "-n", ...dockerArgs],
+    dockerArgs,
+  ];
+
+  for (const cmd of attempts) {
+    const result = spawnSync(cmd[0]!, cmd.slice(1), {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    if (result.status === 0) {
+      return (result.stdout ?? "")
+        .split("\n")
+        .filter((line) => line.trim().length > 0);
+    }
+  }
+
+  return [];
+}
+
 export function readServiceLogTail(
   serviceId: string,
   maxLines = 500,
@@ -112,8 +145,15 @@ export function readServiceLogTail(
     collected.push(...tailJournal(unit, maxLines));
   }
 
+  const dockerContainer = DOCKER_LOG_CONTAINERS[serviceId];
+  if (dockerContainer) {
+    collected.push(...tailDockerLogs(dockerContainer, maxLines));
+  }
+
   if (collected.length === 0) {
-    const hint = unit
+    const hint = dockerContainer
+      ? `No logs yet — docker logs ${dockerContainer}`
+      : unit
       ? `No logs yet — journalctl -u ${unit} (sudo may be required)`
       : "No logs available for this service";
     return [parseServiceLine(hint)];

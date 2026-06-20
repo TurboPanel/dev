@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import { spawnSync } from "node:child_process";
+import { isDevInstanceEnabled, readInstanceRuntime } from "./lib/daemon-env.ts";
 import { DAEMON_REPO_DIR, platformRepoPath } from "./lib/paths.ts";
 
 export type DevServiceStatus =
@@ -17,6 +18,8 @@ export type DevService = {
 };
 
 const DAEMON_UNIT = "turbopanel-daemon";
+const POSTGRES_CONTAINER = "turbopaneldb";
+const POSTGRES_SOCKET = "/var/run/turbopanel/postgres/.s.PGSQL.5432";
 
 const DOWNSTREAM_SERVICE_DEFS = [
   {
@@ -37,6 +40,16 @@ const DOWNSTREAM_SERVICE_DEFS = [
     unit: "turbopanel-website",
     repoDir: platformRepoPath("website"),
   },
+] as const;
+
+const ANCILLARY_DENO_DEFS = [
+  { id: "db", label: "db", kind: "postgres" as const },
+  { id: "cache", label: "cache", unit: "turbopanel-redis" },
+  { id: "queue", label: "queue", unit: "turbopanel-rabbitmq" },
+] as const;
+
+const ANCILLARY_WORKERS_DEFS = [
+  { id: "db", label: "db", kind: "postgres" as const },
 ] as const;
 
 function systemctlProperty(unit: string, property: string): string | null {
@@ -80,6 +93,56 @@ function isRepoInstalled(repoDir: string): boolean {
     // Platform checkout may be turbopanel-owned and not visible to the dev user.
     return false;
   }
+}
+
+function dockerContainerRunning(name: string): boolean | null {
+  const result = spawnSync(
+    "docker",
+    ["inspect", "-f", "{{.State.Running}}", name],
+    { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
+  );
+  if (result.status !== 0) {
+    return null;
+  }
+  const value = (result.stdout ?? "").trim();
+  if (value === "true") {
+    return true;
+  }
+  if (value === "false") {
+    return false;
+  }
+  return null;
+}
+
+function dockerContainerExists(name: string): boolean {
+  return dockerContainerRunning(name) !== null;
+}
+
+function postgresSocketReady(): boolean {
+  try {
+    return existsSync(POSTGRES_SOCKET);
+  } catch {
+    return false;
+  }
+}
+
+function postgresStatus(): DevServiceStatus {
+  if (postgresSocketReady()) {
+    return "running";
+  }
+
+  const running = dockerContainerRunning(POSTGRES_CONTAINER);
+  if (running === true) {
+    return "running";
+  }
+  if (running === false) {
+    return "stopped";
+  }
+  if (dockerContainerExists(POSTGRES_CONTAINER)) {
+    return "stopped";
+  }
+
+  return "uninstalled";
 }
 
 function systemdServiceStatus(unit: string): DevServiceStatus | null {
@@ -145,6 +208,49 @@ function downstreamServices(): DevService[] {
     }));
 }
 
+function shouldShowAncillaryServices(): boolean {
+  if (isDevInstanceEnabled()) {
+    return true;
+  }
+  if (dockerContainerExists(POSTGRES_CONTAINER)) {
+    return true;
+  }
+  if (isSystemdUnitInstalled("turbopanel-redis")) {
+    return true;
+  }
+  if (isSystemdUnitInstalled("turbopanel-rabbitmq")) {
+    return true;
+  }
+  return downstreamServices().length > 0;
+}
+
+function ancillaryServices(): DevService[] {
+  if (!shouldShowAncillaryServices()) {
+    return [];
+  }
+
+  const defs = readInstanceRuntime() === "workers"
+    ? ANCILLARY_WORKERS_DEFS
+    : ANCILLARY_DENO_DEFS;
+
+  return defs.map((def) => {
+    if ("kind" in def) {
+      return {
+        id: def.id,
+        label: def.label,
+        status: postgresStatus(),
+      };
+    }
+
+    const status = systemdServiceStatus(def.unit);
+    return {
+      id: def.id,
+      label: def.label,
+      status: status ?? "uninstalled",
+    };
+  });
+}
+
 export function isDaemonInstallable(status: DevServiceStatus): boolean {
   return status !== "running";
 }
@@ -156,5 +262,5 @@ export function getVisibleServices(): DevService[] {
     status: daemonStatus(),
   };
 
-  return [daemon, ...downstreamServices()];
+  return [daemon, ...downstreamServices(), ...ancillaryServices()];
 }

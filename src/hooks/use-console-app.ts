@@ -35,7 +35,6 @@ export function useConsoleApp() {
     initialAutoInstall.shouldAutoInstall ? "install" : null,
   );
   const [installFinished, setInstallFinished] = useState(false);
-  const [openServiceId, setOpenServiceId] = useState<string | null>(null);
   const { services: visibleServices, refresh: refreshServices } = useVisibleServices();
   const autoInstallStarted = useRef(initialAutoInstall.shouldAutoInstall);
 
@@ -65,26 +64,16 @@ export function useConsoleApp() {
     }
   }, [visibleServices, daemonOperation, startDaemonInstall]);
 
-  const handleOpenService = useCallback((serviceId: string) => {
-    const index = visibleServices.findIndex((service) => service.id === serviceId);
-    if (index >= 0) {
-      setSelectedServiceIndex(index);
-    }
-    setOpenServiceId(serviceId);
-  }, [visibleServices]);
-
   const handleDaemonAction = useCallback(async (action: DaemonActionId) => {
     switch (action) {
       case "install":
       case "repair":
         setActiveArea("bootstrap");
         setProvisioning(true);
-        setOpenServiceId(null);
         startDaemonInstall();
         return;
       case "purge":
         setActiveArea("developer");
-        setOpenServiceId(null);
         setDaemonOperation("purge");
         return;
       case "start-dev-env": {
@@ -97,7 +86,6 @@ export function useConsoleApp() {
         setInstallFinished(false);
         setActiveArea("bootstrap");
         setProvisioning(true);
-        setOpenServiceId(null);
         setDaemonOperation("dev-env");
         return;
       }
@@ -126,7 +114,7 @@ export function useConsoleApp() {
 
   const handleProvisioningDone = useCallback(() => {
     setProvisioning(false);
-    setActiveArea("developer");
+    setActiveArea("services");
     setDaemonOperation(null);
     setInstallFinished(false);
     refreshServices();
@@ -142,27 +130,14 @@ export function useConsoleApp() {
     exit();
   }, [exit]);
 
-  const handleCloseService = useCallback(() => {
-    setOpenServiceId(null);
-  }, []);
-
   useEffect(() => {
     setSelectedServiceIndex((index) =>
       Math.min(index, Math.max(0, visibleServices.length - 1)),
     );
   }, [visibleServices]);
 
-  useEffect(() => {
-    if (!openServiceId) {
-      return;
-    }
-    if (!visibleServices.some((service) => service.id === openServiceId)) {
-      setOpenServiceId(null);
-    }
-  }, [openServiceId, visibleServices]);
-
   useInput((_input, key) => {
-    if (provisioning || openServiceId || daemonOperation) {
+    if (provisioning || daemonOperation) {
       return;
     }
 
@@ -174,22 +149,22 @@ export function useConsoleApp() {
     }
   });
 
+  const selectedService = visibleServices[selectedServiceIndex] ?? null;
+
   return {
     activeArea,
     provisioning,
     selectedServiceIndex,
+    selectedService,
     visibleServices,
-    openServiceId,
     daemonOperation,
     installFinished,
-    handleOpenService,
     handleDaemonAction,
     handleProvisioningDone,
     handleInstallFinished,
     handleRestartDone,
     handleDaemonRestart,
     handlePurgeDone,
-    handleCloseService,
     setSelectedServiceIndex,
     refreshServices,
   };

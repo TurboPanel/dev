@@ -6,31 +6,29 @@ import { BORDER_COLOR } from "../theme.ts";
 
 export function statusHints(
   activeAreaId: string,
-  openServiceId?: string | null,
+  selectedServiceId?: string | null,
   installFinished?: boolean,
   daemonOperation?: DaemonOperation | null,
 ): string {
   if (activeAreaId === "services") {
-    if (openServiceId === "daemon") {
-      if (daemonOperation === "restart") {
-        return installFinished
-          ? "Enter OK · Ctrl-C exit"
-          : "↑ ↓ Yes/No · Enter select · Esc cancel · Ctrl-C exit";
-      }
-      const restartHint = canRestartDaemon() ? " · R restart" : "";
-      return `Esc back · Tab focus · ↑↓ scroll log · L level${restartHint} · Enter run · Ctrl-C exit`;
+    if (daemonOperation === "restart") {
+      return installFinished
+        ? "Enter OK · Ctrl-C exit"
+        : "↑ ↓ Yes/No · Enter select · Esc cancel · Ctrl-C exit";
     }
-    return openServiceId
-      ? "Esc back · ↑ ↓ scroll log · Ctrl-C exit"
-      : "← → switch tabs · ↑ ↓ select service · Enter focus log · Ctrl-C exit";
+    if (selectedServiceId === "daemon") {
+      const restartHint = canRestartDaemon() ? " · R restart" : "";
+      return `← → tabs · ↑↓ select · Tab log · ↑↓ scroll · L level${restartHint} · Enter run · Ctrl-C exit`;
+    }
+    return "← → tabs · ↑↓ select · Tab log · ↑↓ scroll · Ctrl-C exit";
   }
   if (activeAreaId === "developer") {
     return "↑ ↓ choose action · Enter run · ← → switch tabs · Ctrl-C exit";
   }
   if (activeAreaId === "bootstrap") {
     return installFinished
-      ? "Press any key to continue · Ctrl-C exit"
-      : "Bootstrapping development environment · Ctrl-C exit";
+      ? "Finishing install · Ctrl-C exit"
+      : "Installing development environment · Ctrl-C exit";
   }
   return "← → switch tabs · Ctrl-C exit";
 }

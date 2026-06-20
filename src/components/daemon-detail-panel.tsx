@@ -9,7 +9,7 @@ import {
 import { useDaemonLog } from "../hooks/use-daemon-log.ts";
 import { LIST_SELECT_BG, LIST_SELECT_FG } from "../theme.ts";
 import { DaemonLogView } from "./daemon-log-view.tsx";
-import { ServiceTitle } from "./service-title.tsx";
+import { measureTitleArtRows, ServiceTitle } from "./service-title.tsx";
 
 type DetailFocus = "actions" | "log";
 type LogLevelFilter = "all" | DaemonLogLevel;
@@ -22,6 +22,7 @@ export function DaemonDetailPanel({
   height,
   onDaemonAction,
   suspended = false,
+  logInputActive = false,
 }: {
   service: DevService;
   actions: DaemonActionId[];
@@ -29,6 +30,7 @@ export function DaemonDetailPanel({
   height: number;
   onDaemonAction?: (action: DaemonActionId) => void | Promise<void>;
   suspended?: boolean;
+  logInputActive?: boolean;
 }) {
   const logLines = useDaemonLog();
   const focusTargets = useMemo((): DetailFocus[] => {
@@ -66,7 +68,10 @@ export function DaemonDetailPanel({
   }, [filteredLogLines]);
 
   const innerWidth = Math.max(1, width - 2);
-  const logHeight = Math.max(3, height - 7 - actions.length);
+  const titleRows = measureTitleArtRows(service.label, innerWidth);
+  const staticHeaderRows = titleRows + 3;
+  const actionsRows = actions.length > 0 ? actions.length + 1 : 0;
+  const logHeight = Math.max(3, height - staticHeaderRows - actionsRows - 2);
 
   useInput((_input, key) => {
     if (suspended) {
@@ -90,7 +95,7 @@ export function DaemonDetailPanel({
       return;
     }
 
-    if (focus === "log") {
+    if (focus === "log" && logInputActive) {
       const lastIndex = Math.max(0, filteredLogLines.length - 1);
       if (key.upArrow) {
         setLogScrollIndex((index) => Math.max(0, index - 1));
@@ -101,7 +106,7 @@ export function DaemonDetailPanel({
       return;
     }
 
-    if (focus === "actions") {
+    if (focus === "actions" && logInputActive) {
       const lastAction = actions.length - 1;
       if (key.upArrow) {
         setSelectedActionIndex((index) => Math.max(0, index - 1));
@@ -148,7 +153,7 @@ export function DaemonDetailPanel({
           width={innerWidth}
           height={logHeight}
           selectedIndex={logScrollIndex}
-          focused={focus === "log"}
+          focused={focus === "log" && logInputActive}
         />
       </Box>
 

@@ -15,15 +15,13 @@ function App() {
       columns={columns}
       rows={rows}
       selectedServiceIndex={consoleApp.selectedServiceIndex}
+      selectedServiceId={consoleApp.selectedService?.id ?? null}
       visibleServices={consoleApp.visibleServices}
-      openServiceId={consoleApp.openServiceId}
       daemonOperation={consoleApp.daemonOperation}
       onProvisioningDone={consoleApp.handleProvisioningDone}
       onInstallFinished={consoleApp.handleInstallFinished}
       onRestartDone={consoleApp.handleRestartDone}
       onPurgeDone={consoleApp.handlePurgeDone}
-      onOpenService={consoleApp.handleOpenService}
-      onCloseService={consoleApp.handleCloseService}
       onDaemonAction={consoleApp.handleDaemonAction}
       onDeveloperDaemonAction={consoleApp.handleDaemonAction}
       onDaemonRestart={consoleApp.handleDaemonRestart}

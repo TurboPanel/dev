@@ -182,6 +182,11 @@ export function ProvisionerPanel({
 
         await installDaemonSystemd(appendOutput, emitStep);
         if (cancelled) return;
+
+        currentStep = DEV_ENV_CONVERGE_STEP;
+        await installDevEnvironment(trackBootstrapEvent, appendOutput, trackDevEnvStep);
+        if (cancelled) return;
+
         setDone(true);
       } catch (caught) {
         if (cancelled) return;
@@ -267,8 +272,14 @@ export function ProvisionerPanel({
     trackDevEnvStep,
   ]);
 
+  useEffect(() => {
+    if (done && error === null) {
+      onDone();
+    }
+  }, [done, error, onDone]);
+
   useInput(() => {
-    if (finished) {
+    if (finished && error !== null) {
       onDone();
     }
   });
@@ -279,7 +290,7 @@ export function ProvisionerPanel({
 
   const successMessage = phase === "dev-env"
     ? "Development environment running"
-    : "Daemon installed — press any key to continue";
+    : "Development environment ready";
 
   return (
     <Box flexDirection="column" width={width} height={height}>
@@ -313,7 +324,7 @@ export function ProvisionerPanel({
           <Text color="green">{successMessage}</Text>
         </Box>
       )}
-      {finished && (
+      {finished && error !== null && (
         <Box marginTop={1}>
           <Text dimColor>Press any key to continue</Text>
         </Box>

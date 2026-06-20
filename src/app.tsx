@@ -30,9 +30,6 @@ function MainContent({
   height,
   selectedServiceIndex,
   visibleServices,
-  openServiceId,
-  onOpenService,
-  onCloseService,
   onDaemonAction,
   onDeveloperDaemonAction,
   onDaemonRestart,
@@ -49,10 +46,7 @@ function MainContent({
   height: number;
   selectedServiceIndex: number;
   visibleServices: DevService[];
-  openServiceId?: string | null;
   daemonOperation?: DaemonOperation | null;
-  onOpenService?: (serviceId: string) => void;
-  onCloseService?: () => void;
   onDaemonAction?: (action: DaemonActionId) => void | Promise<void>;
   onDeveloperDaemonAction?: (action: DaemonActionId) => void | Promise<void>;
   onDaemonRestart?: () => void;
@@ -94,10 +88,7 @@ function MainContent({
           height={height}
           services={visibleServices}
           selectedIndex={selectedServiceIndex}
-          openServiceId={openServiceId}
           daemonOperation={daemonOperation}
-          onOpenService={onOpenService}
-          onCloseService={onCloseService}
           onDaemonAction={onDaemonAction}
           onDaemonRestart={onDaemonRestart}
           onSelectedIndexChange={onSelectedServiceIndexChange}
@@ -118,15 +109,13 @@ export function AppView({
   columns,
   rows,
   selectedServiceIndex,
+  selectedServiceId,
   visibleServices,
-  openServiceId,
   daemonOperation,
   onProvisioningDone,
   onInstallFinished,
   onRestartDone,
   onPurgeDone,
-  onOpenService,
-  onCloseService,
   onDaemonAction,
   onDeveloperDaemonAction,
   onDaemonRestart,
@@ -139,15 +128,13 @@ export function AppView({
   columns: number;
   rows: number;
   selectedServiceIndex: number;
+  selectedServiceId?: string | null;
   visibleServices: DevService[];
-  openServiceId?: string | null;
   daemonOperation?: DaemonOperation | null;
   onProvisioningDone?: () => void;
   onInstallFinished?: (success: boolean) => void;
   onRestartDone?: () => void;
   onPurgeDone?: () => void;
-  onOpenService?: (serviceId: string) => void;
-  onCloseService?: () => void;
   onDaemonAction?: (action: DaemonActionId) => void | Promise<void>;
   onDeveloperDaemonAction?: (action: DaemonActionId) => void | Promise<void>;
   onDaemonRestart?: () => void;
@@ -160,7 +147,7 @@ export function AppView({
   const contentHeight = rows - MENU_ROWS - STATUS_ROWS;
   const status = statusHints(
     activeArea,
-    openServiceId,
+    selectedServiceId,
     installFinished,
     daemonOperation,
   );
@@ -186,14 +173,11 @@ export function AppView({
           height={contentHeight}
           selectedServiceIndex={selectedServiceIndex}
           visibleServices={visibleServices}
-          openServiceId={openServiceId}
           daemonOperation={daemonOperation}
           onProvisioningDone={onProvisioningDone}
           onInstallFinished={onInstallFinished}
           onRestartDone={onRestartDone}
           onPurgeDone={onPurgeDone}
-          onOpenService={onOpenService}
-          onCloseService={onCloseService}
           onDaemonAction={onDaemonAction}
           onDeveloperDaemonAction={onDeveloperDaemonAction}
           onDaemonRestart={onDaemonRestart}
