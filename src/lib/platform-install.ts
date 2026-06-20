@@ -16,6 +16,7 @@ import {
   type InstallOutputHandler,
   runCaptured,
 } from "./install-output.ts";
+import { ensureTurbopanelGithubAccess } from "./turbopanel-github-access.ts";
 
 const BRANCH = "trunk";
 const TURBOPANEL_USER = "turbopanel";
@@ -296,6 +297,10 @@ export async function installDaemon(
 ): Promise<void> {
   await ensureGit(onStep, onOutput);
   await ensurePlatformDir(onStep, onOutput);
+
+  if (turbopanelUserExists()) {
+    await ensureTurbopanelGithubAccess(onOutput);
+  }
 
   const { dir, repo } = DAEMON_REPO;
   await cloneOrUpdateRepo(dir, repo, onStep, onOutput);

@@ -16,6 +16,7 @@ import {
   type InstallOutputHandler,
   sanitizeInstallOutput,
 } from "./install-output.ts";
+import { ensureTurbopanelGithubAccess } from "./turbopanel-github-access.ts";
 import {
   ensureDaemonSystemdDockerAccess,
   ensureDevPlatformAccess,
@@ -148,6 +149,7 @@ export async function installDevEnvironment(
   await ensureDevPlatformAccess(onOutput);
   if (turbopanelUserExists()) {
     await ensureTurbopanelStateOwnership(onOutput);
+    await ensureTurbopanelGithubAccess(onOutput);
   }
 
   onStep?.(DEV_ENV_CONVERGE_STEP, "running");
