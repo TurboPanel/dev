@@ -6,8 +6,8 @@ import {
   type DaemonActionId,
 } from "../lib/daemon-actions.ts";
 import type { DaemonLogLine } from "../lib/daemon-log.ts";
-import { followLogScrollIndex } from "../lib/log-lines-equal.ts";
 import type { ConsoleLogLine } from "../lib/service-restart.ts";
+import { useLogScroll } from "../hooks/use-log-scroll.ts";
 import { useDaemonLog } from "../hooks/use-daemon-log.ts";
 import { LIST_SELECT_BG, LIST_SELECT_FG } from "../theme.ts";
 import { DaemonLogView } from "./daemon-log-view.tsx";
@@ -56,7 +56,6 @@ export function DaemonDetailPanel({
 
   const [focus, setFocus] = useState<DetailFocus>(focusTargets[0] ?? "log");
   const [selectedActionIndex, setSelectedActionIndex] = useState(0);
-  const [logScrollIndex, setLogScrollIndex] = useState(0);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
 
   useEffect(() => {
@@ -69,15 +68,18 @@ export function DaemonDetailPanel({
     setSelectedActionIndex(0);
   }, [actions.length]);
 
-  useEffect(() => {
-    setLogScrollIndex((index) => followLogScrollIndex(index, logLines.length));
-  }, [logLines]);
-
   const innerWidth = Math.max(1, width - 2);
   const titleRows = measureTitleArtRows(service.label, innerWidth);
   const staticHeaderRows = titleRows;
   const actionsRows = actions.length > 0 ? actions.length + 1 : 0;
   const logHeight = Math.max(3, height - staticHeaderRows - actionsRows - 2);
+  const logFocused = focus === "log" && logInputActive;
+  const { scrollIndex: logScrollIndex, handleLogKey } = useLogScroll({
+    lineCount: logLines.length,
+    viewportHeight: logHeight,
+    focused: logFocused,
+    resetKey: service.id,
+  });
 
   useInput((_input, key) => {
     if (key.tab) {
@@ -89,14 +91,8 @@ export function DaemonDetailPanel({
       return;
     }
 
-    if (focus === "log" && logInputActive) {
-      const lastIndex = Math.max(0, logLines.length - 1);
-      if (key.upArrow) {
-        setLogScrollIndex((index) => Math.max(0, index - 1));
-      }
-      if (key.downArrow) {
-        setLogScrollIndex((index) => Math.min(lastIndex, index + 1));
-      }
+    if (logFocused) {
+      handleLogKey(key);
       return;
     }
 
@@ -141,7 +137,7 @@ export function DaemonDetailPanel({
           width={innerWidth}
           height={logHeight}
           selectedIndex={logScrollIndex}
-          focused={focus === "log" && logInputActive}
+          focused={logFocused}
         />
       </Box>
 

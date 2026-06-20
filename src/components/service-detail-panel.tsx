@@ -1,8 +1,8 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo } from "react";
 import { Box, useInput } from "ink";
 import type { DevService } from "../dev-services.ts";
-import { followLogScrollIndex } from "../lib/log-lines-equal.ts";
 import type { ConsoleLogLine } from "../lib/service-restart.ts";
+import { useLogScroll } from "../hooks/use-log-scroll.ts";
 import { useServiceLog } from "../hooks/use-service-log.ts";
 import { InstanceTitleHeader, instanceTitleHeaderRows } from "./instance-title-header.tsx";
 import { PlainLogView } from "./plain-log-view.tsx";
@@ -29,7 +29,6 @@ export function ServiceDetailPanel({
     ],
     [fileLogLines, logOverlayLines],
   );
-  const [logScrollIndex, setLogScrollIndex] = useState(0);
   const innerWidth = Math.max(1, width - 2);
   const isInstance = service.id === "instance";
   const titleRows = isInstance
@@ -37,19 +36,15 @@ export function ServiceDetailPanel({
     : measureTitleArtRows(service.label, innerWidth);
   const staticHeaderRows = titleRows;
   const logHeight = Math.max(3, height - staticHeaderRows - 2);
-
-  useEffect(() => {
-    setLogScrollIndex((index) => followLogScrollIndex(index, logLines.length));
-  }, [logLines]);
+  const { scrollIndex: logScrollIndex, handleLogKey } = useLogScroll({
+    lineCount: logLines.length,
+    viewportHeight: logHeight,
+    focused,
+    resetKey: service.id,
+  });
 
   useInput((_input, key) => {
-    const lastIndex = Math.max(0, logLines.length - 1);
-    if (key.upArrow) {
-      setLogScrollIndex((index) => Math.max(0, index - 1));
-    }
-    if (key.downArrow) {
-      setLogScrollIndex((index) => Math.min(lastIndex, index + 1));
-    }
+    handleLogKey(key);
   }, { isActive: focused });
 
   return (

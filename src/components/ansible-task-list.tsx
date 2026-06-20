@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Box, Text } from "ink";
+import { ScrollList } from "ink-scroll-list";
 import { ansibleSpinnerFrames } from "../lib/spinners.ts";
 
 export type AnsibleTaskRow = {
@@ -66,10 +67,12 @@ function TaskRow({
   task,
   columns,
   dimmed = false,
+  focused = false,
 }: {
   task: AnsibleTaskRow;
   columns: number;
   dimmed?: boolean;
+  focused?: boolean;
 }) {
   const { glyph, color } = statusGlyph(task.status);
   const indent = indentForDepth(task.depth);
@@ -80,20 +83,22 @@ function TaskRow({
   const label = truncateLabel(task.label, labelWidth);
 
   const runningColor = task.depth >= 2 ? "yellow" : "cyan";
+  const isRunning = task.status === "running";
+  const showDimmed = dimmed && !isRunning && task.status !== "failed";
 
   return (
     <Box flexDirection="row">
       <Text>{indent}</Text>
-      {task.status === "running" ? (
-        <RunningGlyph depth={task.depth} dimmed={dimmed} />
+      {isRunning ? (
+        <RunningGlyph depth={task.depth} dimmed={showDimmed} />
       ) : (
-        <Text color={dimmed ? "gray" : color}>{glyph}</Text>
+        <Text color={showDimmed ? "gray" : color}>{glyph}</Text>
       )}
       <Text> </Text>
       <Text
-        color={task.status === "running" && !dimmed ? runningColor : undefined}
-        dimColor={dimmed || task.status !== "running"}
-        bold={task.status === "running" && !dimmed}
+        color={isRunning && !showDimmed ? runningColor : undefined}
+        dimColor={showDimmed || !isRunning}
+        bold={isRunning && (focused || !showDimmed)}
       >
         {label}
       </Text>
@@ -102,39 +107,50 @@ function TaskRow({
 }
 
 export function AnsibleTaskList({
-  steps,
-  activePlay,
-  recentTasks,
-  hiddenTaskCount,
+  visibleTasks,
+  hiddenCount,
+  followIndex,
+  height,
   recap,
   error,
   errorLogPath,
   columns,
 }: {
-  steps: AnsibleTaskRow[];
-  activePlay: AnsibleTaskRow | null;
-  recentTasks: AnsibleTaskRow[];
-  hiddenTaskCount: number;
+  visibleTasks: AnsibleTaskRow[];
+  hiddenCount: number;
+  followIndex: number;
+  height: number;
   recap: string | null;
   error: string | null;
   errorLogPath?: string | null;
   columns: number;
 }) {
+  const scrollHeight = Math.max(1, height);
+  const scrollIndex = visibleTasks.length === 0
+    ? 0
+    : Math.min(followIndex, visibleTasks.length - 1);
+
   return (
     <Box flexDirection="column" flexGrow={1} flexShrink={1} minHeight={0}>
-      <Box flexDirection="column" flexShrink={1} minHeight={0}>
-        {steps.map((task) => (
-          <TaskRow key={task.id} task={task} columns={columns} />
-        ))}
-        {activePlay && (
-          <TaskRow key={activePlay.id} task={activePlay} columns={columns} />
+      <Box flexDirection="column" flexShrink={1} minHeight={0} height={scrollHeight}>
+        {hiddenCount > 0 && (
+          <Text dimColor>… {hiddenCount} earlier tasks</Text>
         )}
-        {hiddenTaskCount > 0 && (
-          <Text dimColor>… {hiddenTaskCount} earlier tasks</Text>
-        )}
-        {recentTasks.map((task) => (
-          <TaskRow key={task.id} task={task} columns={columns} />
-        ))}
+        <ScrollList
+          height={hiddenCount > 0 ? Math.max(1, scrollHeight - 1) : scrollHeight}
+          selectedIndex={scrollIndex}
+          scrollAlignment="bottom"
+        >
+          {visibleTasks.map((task, index) => (
+            <TaskRow
+              key={task.id}
+              task={task}
+              columns={columns}
+              dimmed={index < scrollIndex - 1}
+              focused={index === scrollIndex}
+            />
+          ))}
+        </ScrollList>
       </Box>
       <Box flexShrink={0} flexDirection="column" marginTop={1}>
         {recap && <Text dimColor>{recap}</Text>}

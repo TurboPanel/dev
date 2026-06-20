@@ -299,10 +299,10 @@ export function ProvisionerPanel({
       </Text>
       <Box flexDirection="column" marginTop={1} flexGrow={1} minHeight={0}>
         <AnsibleTaskList
-          steps={view.steps}
-          activePlay={view.activePlay}
-          recentTasks={view.recentTasks}
-          hiddenTaskCount={view.hiddenTaskCount}
+          visibleTasks={view.visibleTasks}
+          hiddenCount={view.hiddenCount}
+          followIndex={view.followIndex}
+          height={taskRowBudget}
           recap={recap}
           error={error}
           errorLogPath={errorLogPath}

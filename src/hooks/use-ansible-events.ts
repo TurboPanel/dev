@@ -62,32 +62,67 @@ function completeRunning(
 }
 
 export type AnsibleTaskView = {
-  steps: AnsibleTaskRow[];
-  activePlay: AnsibleTaskRow | null;
-  recentTasks: AnsibleTaskRow[];
-  hiddenTaskCount: number;
+  visibleTasks: AnsibleTaskRow[];
+  hiddenCount: number;
+  followIndex: number;
 };
 
-/** Fit console steps + pinned play + a tail of Ansible tasks into a row budget. */
+function pinnedIndices(tasks: AnsibleTaskRow[]): number[] {
+  const indices: number[] = [];
+  for (let index = 0; index < tasks.length; index += 1) {
+    const status = tasks[index]!.status;
+    if (status === "running" || status === "failed") {
+      indices.push(index);
+    }
+  }
+  return indices;
+}
+
+/** Slide a row budget over the chronological task list, keeping active work in view. */
 export function buildAnsibleTaskView(
   tasks: AnsibleTaskRow[],
   maxRows: number,
 ): AnsibleTaskView {
-  const steps = tasks.filter((task) => task.depth === 0);
-  const plays = tasks.filter((task) => task.depth === 1);
-  const ansibleTasks = tasks.filter((task) => task.depth === 2);
+  if (tasks.length === 0) {
+    return { visibleTasks: [], hiddenCount: 0, followIndex: 0 };
+  }
 
-  const activePlay =
-    [...plays].reverse().find((play) => play.status === "running") ??
-    [...plays].reverse().find((play) => play.status === "failed") ??
-    null;
+  const budget = Math.max(1, maxRows);
+  const needsHidden = tasks.length > budget;
+  const windowRows = needsHidden ? Math.max(1, budget - 1) : budget;
 
-  const reserved = steps.length + (activePlay ? 1 : 0);
-  const recentBudget = Math.max(0, maxRows - reserved);
-  const hiddenTaskCount = Math.max(0, ansibleTasks.length - recentBudget);
-  const recentTasks = ansibleTasks.slice(-recentBudget);
+  const pinned = pinnedIndices(tasks);
+  const focusIndex = pinned.length > 0
+    ? pinned[pinned.length - 1]!
+    : tasks.length - 1;
 
-  return { steps, activePlay, recentTasks, hiddenTaskCount };
+  let start = Math.max(0, focusIndex - windowRows + 1);
+  let end = start + windowRows;
+
+  if (pinned.length > 0) {
+    start = Math.min(start, pinned[0]!);
+    end = Math.max(end, pinned[pinned.length - 1]! + 1);
+  }
+
+  if (end - start > windowRows) {
+    start = Math.max(0, end - windowRows);
+  }
+  if (end > tasks.length) {
+    end = tasks.length;
+    start = Math.max(0, end - windowRows);
+  }
+
+  const visibleTasks = tasks.slice(start, end);
+  const followIndex = Math.min(
+    Math.max(0, focusIndex - start),
+    Math.max(0, visibleTasks.length - 1),
+  );
+
+  return {
+    visibleTasks,
+    hiddenCount: start,
+    followIndex,
+  };
 }
 
 export function useAnsibleEvents() {
@@ -111,9 +146,17 @@ export function useAnsibleEvents() {
     id?: string,
   ) => {
     const stepId = id ?? `step:${label}`;
-    setTasks((current) =>
-      upsertTask(current, { id: stepId, label, status, depth: 0 })
-    );
+    setTasks((current) => {
+      let next = current;
+      if (status === "running") {
+        next = current.map((task) =>
+          task.depth === 0 && task.status === "running" && task.id !== stepId
+            ? { ...task, status: "ok" as const }
+            : task
+        );
+      }
+      return upsertTask(next, { id: stepId, label, status, depth: 0 });
+    });
   }, []);
 
   const onEvent = useCallback((event: unknown) => {
