@@ -9,6 +9,7 @@ export const ANSIBLE_COLLECTIONS_PATH =
 export const DENO_VERSION = "2.8.3";
 export const SYSTEM_DENO_BIN = "/usr/local/bin/deno";
 export const DAEMON_REPO_DIR = `${TURBOPANEL_PLATFORM}/daemon`;
+export const DAEMON_ENV_PATH = `${DAEMON_REPO_DIR}/.env`;
 export const DAEMON_BOOTSTRAP_SCRIPT =
   `${DAEMON_REPO_DIR}/scripts/bootstrap-orchestration.ts`;
 export const DAEMON_ORCHESTRATION_SCRIPT =

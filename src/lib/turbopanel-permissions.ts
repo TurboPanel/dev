@@ -221,12 +221,74 @@ export async function ensureDaemonSystemdDockerAccess(
   return changed;
 }
 
+/** Add the invoking dev user to the docker group when Docker is installed. */
+export async function ensureDevUserDockerAccess(
+  onOutput?: InstallOutputHandler,
+): Promise<boolean> {
+  const dev = tryResolveDevIdentity();
+  if (!dev || !dockerIsPresent()) {
+    return false;
+  }
+
+  const script = [
+    "set -eu",
+    `dev=${shellQuote(dev.user)}`,
+    'getent group docker >/dev/null 2>&1 || exit 0',
+    'members="$(getent group docker | cut -d: -f4 | tr "," " ")"',
+    "for member in $members; do",
+    '  [ "$member" = "$dev" ] && { echo unchanged; exit 0; }',
+    "done",
+    'usermod -aG docker "$dev"',
+    "echo changed",
+  ].join("\n");
+
+  const result = spawnSync("sudo", ["-n", "bash", "-c", script], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  const output = (result.stdout ?? "").trim();
+
+  if (result.status !== 0) {
+    onOutput?.((result.stderr ?? "").trim());
+    throw new Error("Failed to add dev user to docker group");
+  }
+
+  return output === "changed";
+}
+
+const PLATFORM_CHECKOUTS = ["daemon", "instance", "ui", "website"] as const;
+
+/** Re-apply group write ACLs so instance-owned services (Expo) can edit source files. */
+export async function ensurePlatformCheckoutGroupAccess(
+  onOutput?: InstallOutputHandler,
+): Promise<void> {
+  const checkoutPaths = PLATFORM_CHECKOUTS.map(
+    (dir) => `${TURBOPANEL_PLATFORM}/${dir}`,
+  );
+  const script = [
+    "set -eu",
+    'if ! command -v setfacl >/dev/null 2>&1; then exit 0; fi',
+    `for dir in ${checkoutPaths.map(shellQuote).join(" ")}; do`,
+    '  [ -d "$dir" ] || continue',
+    `  setfacl -R -m g:${TURBOPANEL_GROUP}:rwx "$dir" 2>/dev/null || true`,
+    `  find "$dir" -type d -exec setfacl -d -m g:${TURBOPANEL_GROUP}:rwx {} + 2>/dev/null || true`,
+    "done",
+  ].join("\n");
+
+  const code = await runCaptured(["sudo", "-n", "bash", "-c", script], onOutput);
+  if (code !== 0) {
+    onOutput?.("Warning: could not re-apply platform checkout group ACLs");
+  }
+}
+
 /** Best-effort dev ACL refresh on console launch; never blocks the TUI. */
 export function refreshDevPermissionsQuietly(): void {
   void (async () => {
     try {
       await ensureDevPlatformAccess();
       await ensureTurbopanelStateOwnership(undefined);
+      await ensurePlatformCheckoutGroupAccess();
+      await ensureDevUserDockerAccess();
       await ensureDaemonSystemdDockerAccess();
     } catch {
       // Best-effort refresh; never block the TUI.

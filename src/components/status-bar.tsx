@@ -21,8 +21,8 @@ export function statusHints(
       return `Esc back · Tab focus · ↑↓ scroll log · L level${restartHint} · Enter run · Ctrl-C exit`;
     }
     return openServiceId
-      ? "Esc back · ↑ ↓ choose action · Enter run · Ctrl-C exit"
-      : "← → switch tabs · ↑ ↓ select service · Enter open · Ctrl-C exit";
+      ? "Esc back · ↑ ↓ scroll log · Ctrl-C exit"
+      : "← → switch tabs · ↑ ↓ select service · Enter focus log · Ctrl-C exit";
   }
   if (activeAreaId === "developer") {
     return "↑ ↓ choose action · Enter run · ← → switch tabs · Ctrl-C exit";

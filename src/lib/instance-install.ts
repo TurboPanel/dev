@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { writeDaemonEnv } from "./daemon-env.ts";
 import { requestDaemonRestart } from "./daemon-actions.ts";
 import { orchestrationActionCommand } from "./daemon-exec.ts";
 import { resolveDevIdentity } from "./dev-identity.ts";
@@ -14,19 +15,41 @@ import type { InstallStepHandler } from "./platform-install.ts";
 import {
   captureChildEnv,
   type InstallOutputHandler,
+  runCaptured,
   sanitizeInstallOutput,
 } from "./install-output.ts";
 import { ensureTurbopanelGithubAccess } from "./turbopanel-github-access.ts";
 import {
   ensureDaemonSystemdDockerAccess,
   ensureDevPlatformAccess,
+  ensureDevUserDockerAccess,
+  ensurePlatformCheckoutGroupAccess,
   ensureTurbopanelStateOwnership,
   resetTurbopanelUserCache,
   turbopanelUserExists,
 } from "./turbopanel-permissions.ts";
 
 const TURBOPANEL_USER = "turbopanel";
+const TURBOPANEL_GROUP = "turbopanel";
 const DAEMON_DIR = DAEMON_REPO_DIR;
+
+async function ensureDaemonGitMetadataForAnsible(
+  onOutput?: InstallOutputHandler,
+): Promise<void> {
+  const code = await runCaptured(
+    [
+      "sudo",
+      "-n",
+      "bash",
+      "-c",
+      `chown -R '${TURBOPANEL_USER}:${TURBOPANEL_GROUP}' '${DAEMON_DIR}/.git' 2>/dev/null || true`,
+    ],
+    onOutput,
+  );
+  if (code !== 0) {
+    throw new Error("Failed to reclaim daemon .git metadata for Ansible git tasks");
+  }
+}
 
 export const DEV_ENV_CONVERGE_STEP = "Converge development environment (Ansible)";
 
@@ -150,6 +173,8 @@ export async function installDevEnvironment(
   if (turbopanelUserExists()) {
     await ensureTurbopanelStateOwnership(onOutput);
     await ensureTurbopanelGithubAccess(onOutput);
+    await ensureDaemonGitMetadataForAnsible(onOutput);
+    writeDaemonEnv();
   }
 
   onStep?.(DEV_ENV_CONVERGE_STEP, "running");
@@ -160,6 +185,10 @@ export async function installDevEnvironment(
     onStep?.(DEV_ENV_CONVERGE_STEP, "failed");
     throw error;
   }
+
+  await ensurePlatformCheckoutGroupAccess(onOutput);
+  await ensureDevUserDockerAccess(onOutput);
+  await requestDaemonRestart(onOutput);
 
   const dockerAccessChanged = await ensureDaemonSystemdDockerAccess(onOutput);
   if (dockerAccessChanged) {

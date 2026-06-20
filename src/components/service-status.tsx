@@ -54,6 +54,14 @@ export function ServiceStatusIndicator({
 
   if (status === "pending") {
     return (
+      <Text color={muted ? undefined : STATUS_PENDING} dimColor={muted} bold={highlighted}>
+        ✗
+      </Text>
+    );
+  }
+
+  if (status === "failed") {
+    return (
       <Text color={muted ? undefined : STATUS_UNINSTALLED} dimColor={muted} bold={highlighted}>
         ✗
       </Text>

@@ -21,6 +21,7 @@ import {
   resetTurbopanelUserCache,
   turbopanelUserExists,
 } from "./turbopanel-permissions.ts";
+import { writeDaemonEnv } from "./daemon-env.ts";
 const TURBOPANEL_USER = "turbopanel";
 const DAEMON_DIR = DAEMON_REPO_DIR;
 
@@ -167,6 +168,10 @@ export async function installDaemonSystemd(
   resetTurbopanelUserCache();
   await ensureDevPlatformAccess(onOutput);
   await ensureTurbopanelStateOwnership(onOutput);
+
+  if (turbopanelUserExists()) {
+    writeDaemonEnv();
+  }
 
   const command =
     `cd ${shellQuote(DAEMON_DIR)} && exec bash ${shellQuote("scripts/install-daemon-systemd.sh")}`;

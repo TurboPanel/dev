@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo } from "react";
 import { Box, Text, useInput } from "ink";
 import { ScrollList } from "ink-scroll-list";
 import type { DevService } from "../dev-services.ts";
@@ -20,6 +20,7 @@ const STATUS_WIDTH = 1;
 const LIST_LEADING_WIDTH = STATUS_WIDTH + LIST_GAP;
 const LIST_TRAILING_WIDTH = LIST_PADDING_RIGHT;
 const SERVICE_LIST_BORDER_COLUMNS = 2;
+const MIN_DETAIL_WIDTH = 28;
 
 export function serviceListWidth(services: DevService[]): number {
   const longestLabel = services.reduce(
@@ -33,6 +34,18 @@ export function serviceListWidth(services: DevService[]): number {
     LIST_TRAILING_WIDTH +
     SERVICE_LIST_BORDER_COLUMNS
   );
+}
+
+function resolvePaneWidths(
+  width: number,
+  services: DevService[],
+): { leftWidth: number; detailWidth: number } {
+  const preferredLeft = serviceListWidth(services);
+  const leftWidth = Math.min(preferredLeft, Math.max(8, width - MIN_DETAIL_WIDTH));
+  return {
+    leftWidth,
+    detailWidth: Math.max(0, width - leftWidth),
+  };
 }
 
 export function ServicesPanel({
@@ -66,12 +79,14 @@ export function ServicesPanel({
   onInstallFinished?: (success: boolean) => void;
   onRefreshServices?: () => void;
 }) {
-  const leftWidth = serviceListWidth(services);
+  const { leftWidth, detailWidth } = resolvePaneWidths(width, services);
+  const selectedService = services[selectedIndex] ?? null;
   const openService = openServiceId
     ? services.find((service) => service.id === openServiceId) ?? null
     : null;
-  const detailWidth = Math.max(0, width - leftWidth);
+  const detailService = openService ?? selectedService;
   const inDetail = openServiceId !== null;
+  const logFocused = inDetail && openService?.id !== "daemon";
   const openServiceIndex = openServiceId
     ? services.findIndex((service) => service.id === openServiceId)
     : -1;
@@ -79,22 +94,9 @@ export function ServicesPanel({
     ? openServiceIndex
     : selectedIndex;
   const daemonActions = useMemo(
-    () => (openService?.id === "daemon" ? daemonMenuActions(openService.status) : []),
-    [openService],
+    () => (detailService?.id === "daemon" ? daemonMenuActions(detailService.status) : []),
+    [detailService],
   );
-  const [selectedActionIndex, setSelectedActionIndex] = useState(0);
-  const [actionMessage, setActionMessage] = useState<string | null>(null);
-
-  useEffect(() => {
-    setSelectedActionIndex(0);
-    setActionMessage(null);
-  }, [openServiceId]);
-
-  useEffect(() => {
-    if (selectedActionIndex >= daemonActions.length) {
-      setSelectedActionIndex(Math.max(0, daemonActions.length - 1));
-    }
-  }, [daemonActions.length, selectedActionIndex]);
 
   useInput((_input, key) => {
     if (daemonOperation) {
@@ -104,26 +106,6 @@ export function ServicesPanel({
     if (inDetail && openService?.id !== "daemon") {
       if (key.escape && onCloseService) {
         onCloseService();
-        return;
-      }
-
-      const lastAction = daemonActions.length - 1;
-      if (key.upArrow) {
-        setSelectedActionIndex((index) => Math.max(0, index - 1));
-        setActionMessage(null);
-      }
-      if (key.downArrow) {
-        setSelectedActionIndex((index) => Math.min(lastAction, index + 1));
-        setActionMessage(null);
-      }
-      if (key.return && daemonActions.length > 0 && onDaemonAction) {
-        const action = daemonActions[selectedActionIndex];
-        if (action) {
-          void Promise.resolve(onDaemonAction(action)).catch((error: unknown) => {
-            const message = error instanceof Error ? error.message : String(error);
-            setActionMessage(message);
-          });
-        }
       }
       return;
     }
@@ -178,6 +160,7 @@ export function ServicesPanel({
             const focused = !inDetail && index === selectedIndex;
             const opened = inDetail && isOpen;
             const dimmed = inDetail && !isOpen;
+            const previewing = !inDetail && index === selectedIndex;
             const rowBackground = opened
               ? LIST_OPEN_BG
               : focused
@@ -205,14 +188,14 @@ export function ServicesPanel({
               >
                 <ServiceStatusIndicator
                   status={service.status}
-                  dimmed={dimmed}
-                  highlighted={opened}
+                  dimmed={dimmed && !previewing}
+                  highlighted={opened || previewing}
                   operation={daemonOp}
                 />
                 <Text
                   color={rowForeground}
-                  bold={focused || opened}
-                  dimColor={dimmed}
+                  bold={focused || opened || previewing}
+                  dimColor={dimmed && !previewing}
                 >
                   {service.label}
                 </Text>
@@ -221,10 +204,10 @@ export function ServicesPanel({
           })}
         </ScrollList>
       </Box>
-      {openService?.id === "daemon" && detailWidth > 0 && (
+      {detailService?.id === "daemon" && detailWidth > 0 && (
         <Box width={detailWidth} height={height} position="relative">
           <DaemonDetailPanel
-            service={openService}
+            service={detailService}
             actions={daemonActions}
             width={detailWidth}
             height={height}
@@ -242,14 +225,12 @@ export function ServicesPanel({
           )}
         </Box>
       )}
-      {openService && openService.id !== "daemon" && detailWidth > 0 && !daemonOperation && (
+      {detailService && detailService.id !== "daemon" && detailWidth > 0 && !daemonOperation && (
         <ServiceDetailPanel
-          service={openService}
-          actions={daemonActions}
-          selectedActionIndex={selectedActionIndex}
+          service={detailService}
           width={detailWidth}
           height={height}
-          message={actionMessage}
+          focused={logFocused}
         />
       )}
     </Box>

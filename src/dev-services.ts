@@ -5,6 +5,7 @@ import { DAEMON_REPO_DIR, platformRepoPath } from "./lib/paths.ts";
 export type DevServiceStatus =
   | "running"
   | "starting"
+  | "failed"
   | "stopped"
   | "pending"
   | "uninstalled";
@@ -93,11 +94,12 @@ function systemdServiceStatus(unit: string): DevServiceStatus | null {
     return "running";
   }
 
-  if (
-    activeState === "failed" ||
-    (activeState === "activating" && subState === "auto-restart")
-  ) {
-    return "pending";
+  if (activeState === "failed") {
+    return "failed";
+  }
+
+  if (activeState === "activating" && subState === "auto-restart") {
+    return "starting";
   }
 
   if (activeState === "activating" || activeState === "reloading") {
