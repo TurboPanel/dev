@@ -2,71 +2,39 @@ import React from "react";
 import { Text } from "ink";
 import type { DevServiceStatus } from "../dev-services.ts";
 import type { DaemonOperation } from "../lib/spinners.ts";
-import { STATUS_PENDING, STATUS_RUNNING, STATUS_UNINSTALLED } from "../theme.ts";
+import { BORDER_COLOR, STATUS_PENDING, STATUS_RUNNING, STATUS_UNINSTALLED } from "../theme.ts";
 import { OperationSpinner } from "./operation-spinner.tsx";
 
 export function ServiceStatusIndicator({
   status,
-  dimmed = false,
-  highlighted = false,
   operation,
 }: {
   status: DevServiceStatus;
-  dimmed?: boolean;
-  highlighted?: boolean;
   operation?: DaemonOperation | null;
 }) {
-  const muted = dimmed && !highlighted;
-
   if (operation) {
-    return (
-      <OperationSpinner
-        operation={operation}
-        dimmed={muted}
-        highlighted={highlighted}
-      />
-    );
+    return <OperationSpinner operation={operation} />;
   }
 
   if (status === "running") {
-    return (
-      <Text color={muted ? undefined : STATUS_RUNNING} dimColor={muted} bold={highlighted}>
-        ✓
-      </Text>
-    );
+    return <Text color={STATUS_RUNNING}>✓</Text>;
   }
 
   if (status === "starting") {
-    return (
-      <Text color={muted ? undefined : STATUS_PENDING} dimColor={muted} bold={highlighted}>
-        •
-      </Text>
-    );
+    return <Text color={STATUS_PENDING}>•</Text>;
   }
 
   if (status === "uninstalled") {
-    return (
-      <Text color={muted ? undefined : STATUS_UNINSTALLED} dimColor={muted} bold={highlighted}>
-        ✗
-      </Text>
-    );
+    return <Text color={STATUS_UNINSTALLED}>✗</Text>;
   }
 
   if (status === "pending") {
-    return (
-      <Text color={muted ? undefined : STATUS_PENDING} dimColor={muted} bold={highlighted}>
-        ✗
-      </Text>
-    );
+    return <Text color={STATUS_PENDING}>✗</Text>;
   }
 
   if (status === "failed") {
-    return (
-      <Text color={muted ? undefined : STATUS_UNINSTALLED} dimColor={muted} bold={highlighted}>
-        ✗
-      </Text>
-    );
+    return <Text color={STATUS_UNINSTALLED}>✗</Text>;
   }
 
-  return <Text dimColor={!highlighted} bold={highlighted}>○</Text>;
+  return <Text color={BORDER_COLOR}>○</Text>;
 }

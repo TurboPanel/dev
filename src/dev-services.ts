@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { isDevInstanceEnabled, readInstanceRuntime } from "./lib/daemon-env.ts";
 import { DAEMON_REPO_DIR, platformRepoPath } from "./lib/paths.ts";
+import { spawnAsTurbopanel, spawnDocker } from "./lib/docker-access.ts";
 
 export type DevServiceStatus =
   | "running"
@@ -95,16 +96,8 @@ function isRepoInstalled(repoDir: string): boolean {
   }
 }
 
-function dockerContainerRunning(name: string): boolean | null {
-  const result = spawnSync(
-    "docker",
-    ["inspect", "-f", "{{.State.Running}}", name],
-    { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
-  );
-  if (result.status !== 0) {
-    return null;
-  }
-  const value = (result.stdout ?? "").trim();
+function parseDockerRunningOutput(stdout: string | undefined): boolean | null {
+  const value = (stdout ?? "").trim();
   if (value === "true") {
     return true;
   }
@@ -114,16 +107,34 @@ function dockerContainerRunning(name: string): boolean | null {
   return null;
 }
 
+function dockerContainerRunning(name: string): boolean | null {
+  const result = spawnDocker([
+    "inspect",
+    "-f",
+    "{{.State.Running}}",
+    name,
+  ]);
+  if (!result) {
+    return null;
+  }
+  return parseDockerRunningOutput(result.stdout);
+}
+
 function dockerContainerExists(name: string): boolean {
   return dockerContainerRunning(name) !== null;
 }
 
 function postgresSocketReady(): boolean {
   try {
-    return existsSync(POSTGRES_SOCKET);
+    if (existsSync(POSTGRES_SOCKET)) {
+      return true;
+    }
   } catch {
-    return false;
+    // The postgres socket dir is not traversable by the dev user.
   }
+
+  const sudoResult = spawnAsTurbopanel(["test", "-S", POSTGRES_SOCKET]);
+  return sudoResult?.status === 0;
 }
 
 function postgresStatus(): DevServiceStatus {

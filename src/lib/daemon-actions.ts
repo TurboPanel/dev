@@ -27,12 +27,8 @@ export const DAEMON_ACTION_LABELS: Record<DaemonActionId, string> = {
   "start-dev-env": "Start development environment",
 };
 
-export function daemonMenuActions(status: DevServiceStatus): DaemonActionId[] {
-  if (status === "uninstalled") {
-    return [];
-  }
-
-  return ["repair"];
+export function daemonMenuActions(_status: DevServiceStatus): DaemonActionId[] {
+  return [];
 }
 
 export function developerMenuActions(status: DevServiceStatus | undefined): DaemonActionId[] {

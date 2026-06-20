@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Box, Text, useInput } from "ink";
 import type { DevService } from "../dev-services.ts";
-import type { DaemonLogLevel } from "../lib/daemon-log.ts";
 import {
   DAEMON_ACTION_LABELS,
   type DaemonActionId,
@@ -12,8 +11,6 @@ import { DaemonLogView } from "./daemon-log-view.tsx";
 import { measureTitleArtRows, ServiceTitle } from "./service-title.tsx";
 
 type DetailFocus = "actions" | "log";
-type LogLevelFilter = "all" | DaemonLogLevel;
-const LOG_LEVEL_FILTERS: LogLevelFilter[] = ["all", "debug", "info", "warn", "error"];
 
 export function DaemonDetailPanel({
   service,
@@ -44,14 +41,7 @@ export function DaemonDetailPanel({
   const [focus, setFocus] = useState<DetailFocus>(focusTargets[0] ?? "log");
   const [selectedActionIndex, setSelectedActionIndex] = useState(0);
   const [logScrollIndex, setLogScrollIndex] = useState(0);
-  const [logLevelFilter, setLogLevelFilter] = useState<LogLevelFilter>("all");
   const [actionMessage, setActionMessage] = useState<string | null>(null);
-  const filteredLogLines = useMemo(() => {
-    if (logLevelFilter === "all") {
-      return logLines;
-    }
-    return logLines.filter((line) => line.level === logLevelFilter);
-  }, [logLines, logLevelFilter]);
 
   useEffect(() => {
     if (!focusTargets.includes(focus)) {
@@ -64,25 +54,17 @@ export function DaemonDetailPanel({
   }, [actions.length]);
 
   useEffect(() => {
-    setLogScrollIndex(Math.max(0, filteredLogLines.length - 1));
-  }, [filteredLogLines]);
+    setLogScrollIndex(Math.max(0, logLines.length - 1));
+  }, [logLines]);
 
   const innerWidth = Math.max(1, width - 2);
   const titleRows = measureTitleArtRows(service.label, innerWidth);
-  const staticHeaderRows = titleRows + 3;
+  const staticHeaderRows = titleRows;
   const actionsRows = actions.length > 0 ? actions.length + 1 : 0;
   const logHeight = Math.max(3, height - staticHeaderRows - actionsRows - 2);
 
   useInput((_input, key) => {
     if (suspended) {
-      return;
-    }
-    if (_input === "l" || _input === "L") {
-      setLogLevelFilter((current) => {
-        const idx = LOG_LEVEL_FILTERS.indexOf(current);
-        const next = LOG_LEVEL_FILTERS[(idx + 1) % LOG_LEVEL_FILTERS.length];
-        return next;
-      });
       return;
     }
 
@@ -96,7 +78,7 @@ export function DaemonDetailPanel({
     }
 
     if (focus === "log" && logInputActive) {
-      const lastIndex = Math.max(0, filteredLogLines.length - 1);
+      const lastIndex = Math.max(0, logLines.length - 1);
       if (key.upArrow) {
         setLogScrollIndex((index) => Math.max(0, index - 1));
       }
@@ -141,15 +123,9 @@ export function DaemonDetailPanel({
         width={innerWidth}
       />
 
-      <Box marginTop={1}>
-        <Text dimColor>
-          Log level: {logLevelFilter.toUpperCase()} (L to change)
-        </Text>
-      </Box>
-
-      <Box marginTop={1} flexGrow={1} minHeight={0}>
+      <Box flexGrow={1} minHeight={0}>
         <DaemonLogView
-          lines={filteredLogLines}
+          lines={logLines}
           width={innerWidth}
           height={logHeight}
           selectedIndex={logScrollIndex}

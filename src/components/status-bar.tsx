@@ -18,7 +18,7 @@ export function statusHints(
     }
     if (selectedServiceId === "daemon") {
       const restartHint = canRestartDaemon() ? " · R restart" : "";
-      return `← → tabs · ↑↓ select · Tab log · ↑↓ scroll · L level${restartHint} · Enter run · Ctrl-C exit`;
+      return `← → tabs · ↑↓ select · Tab log · ↑↓ scroll${restartHint} · Ctrl-C exit`;
     }
     return "← → tabs · ↑↓ select · Tab log · ↑↓ scroll · Ctrl-C exit";
   }

@@ -1,26 +1,10 @@
 import React, { useEffect, useState } from "react";
-import { Box, Text, useInput } from "ink";
+import { Box, useInput } from "ink";
 import type { DevService } from "../dev-services.ts";
 import { useServiceLog } from "../hooks/use-service-log.ts";
-import { serviceSystemdUnit } from "../lib/service-log.ts";
 import { PlainLogView } from "./plain-log-view.tsx";
-
-function statusLabel(status: DevService["status"]): string {
-  switch (status) {
-    case "running":
-      return "running";
-    case "starting":
-      return "starting";
-    case "failed":
-      return "failed";
-    case "stopped":
-      return "stopped";
-    case "pending":
-      return "needs setup";
-    case "uninstalled":
-      return "not installed";
-  }
-}
+import { InstanceRuntimeBadge, INSTANCE_RUNTIME_BADGE_WIDTH } from "./instance-runtime-badge.tsx";
+import { measureTitleArtRows, ServiceTitle } from "./service-title.tsx";
 
 export function ServiceDetailPanel({
   service,
@@ -36,9 +20,13 @@ export function ServiceDetailPanel({
   const logLines = useServiceLog(service.id);
   const [logScrollIndex, setLogScrollIndex] = useState(0);
   const innerWidth = Math.max(1, width - 2);
-  const headerRows = 2;
-  const logHeight = Math.max(3, height - headerRows);
-  const unit = serviceSystemdUnit(service.id);
+  const isInstance = service.id === "instance";
+  const titleWidth = isInstance
+    ? Math.max(12, innerWidth - INSTANCE_RUNTIME_BADGE_WIDTH)
+    : innerWidth;
+  const titleRows = measureTitleArtRows(service.label, titleWidth);
+  const staticHeaderRows = titleRows;
+  const logHeight = Math.max(3, height - staticHeaderRows - 2);
 
   useEffect(() => {
     setLogScrollIndex(Math.max(0, logLines.length - 1));
@@ -63,13 +51,20 @@ export function ServiceDetailPanel({
       paddingTop={0}
       paddingBottom={1}
     >
-      <Text bold>{service.label}</Text>
-      <Text dimColor>
-        Status: {statusLabel(service.status)}
-        {unit ? ` · ${unit}` : ""}
-      </Text>
+      <Box flexDirection="row" width={innerWidth} alignItems="flex-start">
+        <ServiceTitle
+          serviceId={service.id}
+          label={service.label}
+          width={titleWidth}
+        />
+        {isInstance ? (
+          <Box marginLeft={1}>
+            <InstanceRuntimeBadge />
+          </Box>
+        ) : null}
+      </Box>
 
-      <Box marginTop={1} flexGrow={1} minHeight={0}>
+      <Box flexGrow={1} minHeight={0}>
         <PlainLogView
           lines={logLines}
           width={innerWidth}

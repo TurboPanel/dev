@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { STRUCTURED_TEXT_WITH_TIME_RE } from "./daemon-log.ts";
+import { dockerOutputLines, spawnDocker } from "./docker-access.ts";
 import {
   DAEMON_ERR_LOG_PATH,
   DAEMON_LOG_PATH,
@@ -34,6 +35,7 @@ const SERVICE_UNITS: Record<string, string> = {
 
 const DOCKER_LOG_CONTAINERS: Record<string, string> = {
   db: "turbopaneldb",
+  queue: "turbopanelq",
 };
 
 export function serviceSystemdUnit(serviceId: string): string | null {
@@ -104,50 +106,29 @@ function tailJournal(unit: string, maxLines: number): string[] {
 }
 
 function tailDockerLogs(container: string, maxLines: number): string[] {
-  const dockerArgs = [
-    "logs",
-    "--tail",
-    String(maxLines),
-    container,
-  ];
-  const attempts: string[][] = [
-    ["sudo", "-n", ...dockerArgs],
-    dockerArgs,
-  ];
-
-  for (const cmd of attempts) {
-    const result = spawnSync(cmd[0]!, cmd.slice(1), {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    if (result.status === 0) {
-      return (result.stdout ?? "")
-        .split("\n")
-        .filter((line) => line.trim().length > 0);
-    }
+  const result = spawnDocker(["logs", "--tail", String(maxLines), container]);
+  if (!result) {
+    return [];
   }
-
-  return [];
+  return dockerOutputLines(result);
 }
 
 export function readServiceLogTail(
   serviceId: string,
   maxLines = 500,
 ): ServiceLogLine[] {
-  const unit = serviceSystemdUnit(serviceId);
+  const dockerContainer = DOCKER_LOG_CONTAINERS[serviceId];
+  const unit = dockerContainer ? null : serviceSystemdUnit(serviceId);
   const collected: string[] = [];
 
   for (const path of FILE_LOG_SOURCES[serviceId] ?? []) {
     collected.push(...tailFile(path, maxLines));
   }
 
-  if (unit) {
-    collected.push(...tailJournal(unit, maxLines));
-  }
-
-  const dockerContainer = DOCKER_LOG_CONTAINERS[serviceId];
   if (dockerContainer) {
     collected.push(...tailDockerLogs(dockerContainer, maxLines));
+  } else if (unit) {
+    collected.push(...tailJournal(unit, maxLines));
   }
 
   if (collected.length === 0) {

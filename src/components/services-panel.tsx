@@ -8,17 +8,17 @@ import {
   type DaemonActionId,
 } from "../lib/daemon-actions.ts";
 import type { DaemonOperation } from "../lib/spinners.ts";
-import { BORDER_COLOR, LIST_FOCUS_BG, LIST_FOCUS_FG } from "../theme.ts";
+import { BORDER_COLOR } from "../theme.ts";
 import { DaemonDetailPanel } from "./daemon-detail-panel.tsx";
 import { RestartDaemonModal } from "./restart-daemon-modal.tsx";
 import { ServiceDetailPanel } from "./service-detail-panel.tsx";
 import { ServiceStatusIndicator } from "./service-status.tsx";
 
-const LIST_PADDING_RIGHT = 1;
-const LIST_GAP = 1;
+const ARROW_WIDTH = 1;
 const STATUS_WIDTH = 1;
-const LIST_LEADING_WIDTH = STATUS_WIDTH + LIST_GAP;
-const LIST_TRAILING_WIDTH = LIST_PADDING_RIGHT;
+const LIST_PADDING_RIGHT = 1;
+const LIST_LEADING_WIDTH = ARROW_WIDTH;
+const LIST_TRAILING_WIDTH = STATUS_WIDTH + LIST_PADDING_RIGHT;
 const SERVICE_LIST_BORDER_COLUMNS = 2;
 const MIN_DETAIL_WIDTH = 28;
 
@@ -138,16 +138,16 @@ export function ServicesPanel({
             return (
               <Box
                 key={service.id}
-                width={Math.max(1, leftWidth - 2)}
-                backgroundColor={focused ? LIST_FOCUS_BG : undefined}
+                width={Math.max(1, leftWidth - 1)}
                 flexDirection="row"
-                gap={LIST_GAP}
+                justifyContent="space-between"
                 paddingRight={LIST_PADDING_RIGHT}
               >
+                <Text dimColor={!focused} wrap="truncate">
+                  {focused ? "›" : " "}{service.label}
+                </Text>
                 <ServiceStatusIndicator
                   status={service.status}
-                  dimmed={!focused}
-                  highlighted={focused}
                   operation={
                     service.id === "daemon" &&
                     daemonOperation &&
@@ -156,13 +156,6 @@ export function ServicesPanel({
                       : null
                   }
                 />
-                <Text
-                  color={focused ? LIST_FOCUS_FG : undefined}
-                  bold={focused}
-                  dimColor={!focused}
-                >
-                  {service.label}
-                </Text>
               </Box>
             );
           })}
