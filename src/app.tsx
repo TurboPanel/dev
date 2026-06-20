@@ -8,6 +8,9 @@ import { ServicesPanel } from "@turbopanel/components/services-panel.tsx";
 import { statusHints } from "@turbopanel/components/status-bar.tsx";
 import type { DevService } from "./dev-services.ts";
 import type { DaemonActionId } from "./lib/daemon-actions.ts";
+import type { ServiceActionId } from "./lib/service-actions.ts";
+import type { PendingRestart, ServiceOperation } from "./hooks/use-console-app.ts";
+import type { ConsoleLogLine } from "./lib/service-restart.ts";
 import type { DaemonOperation } from "./lib/spinners.ts";
 
 export const AREAS: AreaTab[] = [
@@ -30,16 +33,22 @@ function MainContent({
   height,
   selectedServiceIndex,
   visibleServices,
-  onDaemonAction,
-  onDeveloperDaemonAction,
-  onDaemonRestart,
-  onSelectedServiceIndexChange,
   onProvisioningDone,
   onInstallFinished,
-  onRestartDone,
   onPurgeDone,
   onRefreshServices,
   daemonOperation,
+  serviceOperation,
+  onServiceAction,
+  onDaemonAction,
+  onDeveloperDaemonAction,
+  onSelectedServiceIndexChange,
+  pendingRestart,
+  restartInProgress,
+  restartOverlayServiceId,
+  restartLogOverlay,
+  onConfirmRestart,
+  onCancelRestart,
 }: {
   activeArea: string;
   width: number;
@@ -47,15 +56,21 @@ function MainContent({
   selectedServiceIndex: number;
   visibleServices: DevService[];
   daemonOperation?: DaemonOperation | null;
+  serviceOperation?: ServiceOperation | null;
+  onServiceAction?: (serviceId: string, action: ServiceActionId) => void | Promise<void>;
   onDaemonAction?: (action: DaemonActionId) => void | Promise<void>;
   onDeveloperDaemonAction?: (action: DaemonActionId) => void | Promise<void>;
-  onDaemonRestart?: () => void;
   onSelectedServiceIndexChange?: (index: number) => void;
   onProvisioningDone?: () => void;
   onInstallFinished?: (success: boolean) => void;
-  onRestartDone?: () => void;
   onPurgeDone?: () => void;
   onRefreshServices?: () => void;
+  pendingRestart?: PendingRestart | null;
+  restartInProgress?: string | null;
+  restartOverlayServiceId?: string | null;
+  restartLogOverlay?: ConsoleLogLine[];
+  onConfirmRestart?: () => void;
+  onCancelRestart?: () => void;
 }) {
   const daemon = visibleServices.find((service) => service.id === "daemon");
 
@@ -90,11 +105,16 @@ function MainContent({
           selectedIndex={selectedServiceIndex}
           daemonOperation={daemonOperation}
           onDaemonAction={onDaemonAction}
-          onDaemonRestart={onDaemonRestart}
           onSelectedIndexChange={onSelectedServiceIndexChange}
-          onRestartDone={onRestartDone}
-          onInstallFinished={onInstallFinished}
           onRefreshServices={onRefreshServices}
+          serviceOperation={serviceOperation}
+          onServiceAction={onServiceAction}
+          pendingRestart={pendingRestart}
+          restartInProgress={restartInProgress}
+          restartOverlayServiceId={restartOverlayServiceId}
+          restartLogOverlay={restartLogOverlay}
+          onConfirmRestart={onConfirmRestart}
+          onCancelRestart={onCancelRestart}
         />
       );
     default:
@@ -114,13 +134,19 @@ export function AppView({
   daemonOperation,
   onProvisioningDone,
   onInstallFinished,
-  onRestartDone,
   onPurgeDone,
   onDaemonAction,
   onDeveloperDaemonAction,
-  onDaemonRestart,
   onSelectedServiceIndexChange,
   onRefreshServices,
+  serviceOperation,
+  onServiceAction,
+  pendingRestart,
+  restartInProgress,
+  restartOverlayServiceId,
+  restartLogOverlay,
+  onConfirmRestart,
+  onCancelRestart,
 }: {
   activeArea: string;
   provisioning: boolean;
@@ -131,15 +157,21 @@ export function AppView({
   selectedServiceId?: string | null;
   visibleServices: DevService[];
   daemonOperation?: DaemonOperation | null;
+  serviceOperation?: ServiceOperation | null;
+  onServiceAction?: (serviceId: string, action: ServiceActionId) => void | Promise<void>;
   onProvisioningDone?: () => void;
   onInstallFinished?: (success: boolean) => void;
-  onRestartDone?: () => void;
   onPurgeDone?: () => void;
   onDaemonAction?: (action: DaemonActionId) => void | Promise<void>;
   onDeveloperDaemonAction?: (action: DaemonActionId) => void | Promise<void>;
-  onDaemonRestart?: () => void;
   onSelectedServiceIndexChange?: (index: number) => void;
   onRefreshServices?: () => void;
+  pendingRestart?: PendingRestart | null;
+  restartInProgress?: string | null;
+  restartOverlayServiceId?: string | null;
+  restartLogOverlay?: ConsoleLogLine[];
+  onConfirmRestart?: () => void;
+  onCancelRestart?: () => void;
 }) {
   const activeIndex = AREAS.findIndex((area) => area.id === activeArea);
   const menuActiveIndex = activeIndex >= 0 ? activeIndex : 0;
@@ -149,7 +181,8 @@ export function AppView({
     activeArea,
     selectedServiceId,
     installFinished,
-    daemonOperation,
+    pendingRestart,
+    restartInProgress,
   );
 
   return (
@@ -176,13 +209,19 @@ export function AppView({
           daemonOperation={daemonOperation}
           onProvisioningDone={onProvisioningDone}
           onInstallFinished={onInstallFinished}
-          onRestartDone={onRestartDone}
           onPurgeDone={onPurgeDone}
           onDaemonAction={onDaemonAction}
           onDeveloperDaemonAction={onDeveloperDaemonAction}
-          onDaemonRestart={onDaemonRestart}
           onSelectedServiceIndexChange={onSelectedServiceIndexChange}
           onRefreshServices={onRefreshServices}
+          serviceOperation={serviceOperation}
+          onServiceAction={onServiceAction}
+          pendingRestart={pendingRestart}
+          restartInProgress={restartInProgress}
+          restartOverlayServiceId={restartOverlayServiceId}
+          restartLogOverlay={restartLogOverlay}
+          onConfirmRestart={onConfirmRestart}
+          onCancelRestart={onCancelRestart}
         />
       </MainPanel>
     </Box>

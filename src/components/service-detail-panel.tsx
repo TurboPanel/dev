@@ -1,9 +1,11 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Box, useInput } from "ink";
 import type { DevService } from "../dev-services.ts";
+import { followLogScrollIndex } from "../lib/log-lines-equal.ts";
+import type { ConsoleLogLine } from "../lib/service-restart.ts";
 import { useServiceLog } from "../hooks/use-service-log.ts";
+import { InstanceTitleHeader, instanceTitleHeaderRows } from "./instance-title-header.tsx";
 import { PlainLogView } from "./plain-log-view.tsx";
-import { InstanceRuntimeBadge, INSTANCE_RUNTIME_BADGE_WIDTH } from "./instance-runtime-badge.tsx";
 import { measureTitleArtRows, ServiceTitle } from "./service-title.tsx";
 
 export function ServiceDetailPanel({
@@ -11,25 +13,33 @@ export function ServiceDetailPanel({
   width,
   height,
   focused = false,
+  logOverlayLines = [],
 }: {
   service: DevService;
   width: number;
   height: number;
   focused?: boolean;
+  logOverlayLines?: ConsoleLogLine[];
 }) {
-  const logLines = useServiceLog(service.id);
+  const fileLogLines = useServiceLog(service.id);
+  const logLines = useMemo(
+    () => [
+      ...fileLogLines,
+      ...logOverlayLines.map((line) => ({ text: line.text, time: line.time })),
+    ],
+    [fileLogLines, logOverlayLines],
+  );
   const [logScrollIndex, setLogScrollIndex] = useState(0);
   const innerWidth = Math.max(1, width - 2);
   const isInstance = service.id === "instance";
-  const titleWidth = isInstance
-    ? Math.max(12, innerWidth - INSTANCE_RUNTIME_BADGE_WIDTH)
-    : innerWidth;
-  const titleRows = measureTitleArtRows(service.label, titleWidth);
+  const titleRows = isInstance
+    ? instanceTitleHeaderRows(service.label, innerWidth)
+    : measureTitleArtRows(service.label, innerWidth);
   const staticHeaderRows = titleRows;
   const logHeight = Math.max(3, height - staticHeaderRows - 2);
 
   useEffect(() => {
-    setLogScrollIndex(Math.max(0, logLines.length - 1));
+    setLogScrollIndex((index) => followLogScrollIndex(index, logLines.length));
   }, [logLines]);
 
   useInput((_input, key) => {
@@ -51,18 +61,15 @@ export function ServiceDetailPanel({
       paddingTop={0}
       paddingBottom={1}
     >
-      <Box flexDirection="row" width={innerWidth} alignItems="flex-start">
+      {isInstance ? (
+        <InstanceTitleHeader label={service.label} width={innerWidth} />
+      ) : (
         <ServiceTitle
           serviceId={service.id}
           label={service.label}
-          width={titleWidth}
+          width={innerWidth}
         />
-        {isInstance ? (
-          <Box marginLeft={1}>
-            <InstanceRuntimeBadge />
-          </Box>
-        ) : null}
-      </Box>
+      )}
 
       <Box flexGrow={1} minHeight={0}>
         <PlainLogView

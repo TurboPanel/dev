@@ -5,6 +5,9 @@ import {
   DAEMON_ACTION_LABELS,
   type DaemonActionId,
 } from "../lib/daemon-actions.ts";
+import type { DaemonLogLine } from "../lib/daemon-log.ts";
+import { followLogScrollIndex } from "../lib/log-lines-equal.ts";
+import type { ConsoleLogLine } from "../lib/service-restart.ts";
 import { useDaemonLog } from "../hooks/use-daemon-log.ts";
 import { LIST_SELECT_BG, LIST_SELECT_FG } from "../theme.ts";
 import { DaemonLogView } from "./daemon-log-view.tsx";
@@ -12,24 +15,37 @@ import { measureTitleArtRows, ServiceTitle } from "./service-title.tsx";
 
 type DetailFocus = "actions" | "log";
 
+function overlayToDaemonLines(lines: ConsoleLogLine[]): DaemonLogLine[] {
+  return lines.map((line) => ({
+    time: line.time,
+    level: "info" as const,
+    component: "console",
+    message: line.text,
+  }));
+}
+
 export function DaemonDetailPanel({
   service,
   actions,
   width,
   height,
   onDaemonAction,
-  suspended = false,
   logInputActive = false,
+  logOverlayLines = [],
 }: {
   service: DevService;
   actions: DaemonActionId[];
   width: number;
   height: number;
   onDaemonAction?: (action: DaemonActionId) => void | Promise<void>;
-  suspended?: boolean;
   logInputActive?: boolean;
+  logOverlayLines?: ConsoleLogLine[];
 }) {
-  const logLines = useDaemonLog();
+  const fileLogLines = useDaemonLog();
+  const logLines = useMemo(
+    () => [...fileLogLines, ...overlayToDaemonLines(logOverlayLines)],
+    [fileLogLines, logOverlayLines],
+  );
   const focusTargets = useMemo((): DetailFocus[] => {
     const targets: DetailFocus[] = ["log"];
     if (actions.length > 0) {
@@ -54,7 +70,7 @@ export function DaemonDetailPanel({
   }, [actions.length]);
 
   useEffect(() => {
-    setLogScrollIndex(Math.max(0, logLines.length - 1));
+    setLogScrollIndex((index) => followLogScrollIndex(index, logLines.length));
   }, [logLines]);
 
   const innerWidth = Math.max(1, width - 2);
@@ -64,10 +80,6 @@ export function DaemonDetailPanel({
   const logHeight = Math.max(3, height - staticHeaderRows - actionsRows - 2);
 
   useInput((_input, key) => {
-    if (suspended) {
-      return;
-    }
-
     if (key.tab) {
       const currentIndex = focusTargets.indexOf(focus);
       const next = focusTargets[(currentIndex + 1) % focusTargets.length];

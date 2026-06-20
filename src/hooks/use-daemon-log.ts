@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { daemonLogLinesEqual } from "../lib/log-lines-equal.ts";
 import {
   type DaemonLogLine,
   readDaemonLogTail,
@@ -13,7 +14,10 @@ export function useDaemonLog(): DaemonLogLine[] {
   );
 
   useEffect(() => {
-    const refresh = () => setLines(readDaemonLogTail(MAX_LINES));
+    const refresh = () => {
+      const next = readDaemonLogTail(MAX_LINES);
+      setLines((current) => (daemonLogLinesEqual(current, next) ? current : next));
+    };
     refresh();
     const id = setInterval(refresh, POLL_MS);
     return () => clearInterval(id);

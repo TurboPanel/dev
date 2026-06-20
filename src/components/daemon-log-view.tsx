@@ -1,6 +1,7 @@
 import React from "react";
 import { Box, Text } from "ink";
 import { ScrollList } from "ink-scroll-list";
+import { daemonLogLineKey } from "../lib/log-lines-equal.ts";
 import {
   type DaemonLogLevel,
   type DaemonLogLine,
@@ -98,10 +99,10 @@ export function DaemonLogView({
       flexGrow={1}
       minHeight={0}
     >
-      <ScrollList height={height} selectedIndex={scrollIndex}>
+      <ScrollList height={height} selectedIndex={scrollIndex} scrollAlignment="bottom">
         {lines.map((line, index) => (
           <LogRow
-            key={`${index}:${line.component}:${line.message.slice(0, 24)}`}
+            key={daemonLogLineKey(line, index)}
             line={line}
             width={width}
             dim={index !== scrollIndex}

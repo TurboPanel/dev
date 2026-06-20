@@ -98,7 +98,7 @@ function orchestrationSudoArgs(command: string): string[] {
   return ["-n", ...envArgs];
 }
 
-async function runOrchestrationAction(
+export async function runOrchestrationAction(
   actionArgs: string[],
   onEvent: (event: unknown) => void,
   onOutput?: InstallOutputHandler,

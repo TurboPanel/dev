@@ -5,6 +5,7 @@ import {
   formatLogDisplayTime,
   LOG_TIME_WIDTH,
 } from "../lib/daemon-log.ts";
+import { serviceLogLineKey } from "../lib/log-lines-equal.ts";
 import type { ServiceLogLine } from "../lib/service-log.ts";
 import { LOG_TIME } from "../theme.ts";
 
@@ -43,7 +44,7 @@ export function PlainLogView({
       flexGrow={1}
       minHeight={0}
     >
-      <ScrollList height={height} selectedIndex={scrollIndex}>
+      <ScrollList height={height} selectedIndex={scrollIndex} scrollAlignment="bottom">
         {lines.map((line, index) => {
           const dim = index !== scrollIndex;
           const bold = focused && index === scrollIndex;
@@ -55,7 +56,7 @@ export function PlainLogView({
 
           return (
             <Text
-              key={`${index}:${line.text.slice(0, 24)}`}
+              key={serviceLogLineKey(line, index)}
               bold={bold}
               wrap="truncate"
             >

@@ -8,10 +8,16 @@ import { OperationSpinner } from "./operation-spinner.tsx";
 export function ServiceStatusIndicator({
   status,
   operation,
+  busy = false,
 }: {
   status: DevServiceStatus;
   operation?: DaemonOperation | null;
+  busy?: boolean;
 }) {
+  if (busy) {
+    return <OperationSpinner operation="install" />;
+  }
+
   if (operation) {
     return <OperationSpinner operation={operation} />;
   }

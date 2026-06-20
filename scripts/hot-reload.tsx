@@ -82,13 +82,19 @@ function HotReloadApp({
       daemonOperation={consoleApp.daemonOperation}
       onProvisioningDone={consoleApp.handleProvisioningDone}
       onInstallFinished={consoleApp.handleInstallFinished}
-      onRestartDone={consoleApp.handleRestartDone}
       onPurgeDone={consoleApp.handlePurgeDone}
       onDaemonAction={consoleApp.handleDaemonAction}
       onDeveloperDaemonAction={consoleApp.handleDaemonAction}
-      onDaemonRestart={consoleApp.handleDaemonRestart}
       onSelectedServiceIndexChange={consoleApp.setSelectedServiceIndex}
       onRefreshServices={consoleApp.refreshServices}
+      serviceOperation={consoleApp.serviceOperation}
+      onServiceAction={consoleApp.handleServiceAction}
+      pendingRestart={consoleApp.pendingRestart}
+      restartInProgress={consoleApp.restartInProgress}
+      restartOverlayServiceId={consoleApp.restartOverlayServiceId}
+      restartLogOverlay={consoleApp.restartLogOverlay}
+      onConfirmRestart={consoleApp.confirmServiceRestart}
+      onCancelRestart={consoleApp.cancelServiceRestart}
     />
   );
 }

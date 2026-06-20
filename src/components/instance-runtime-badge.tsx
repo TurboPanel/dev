@@ -1,23 +1,21 @@
 import React from "react";
 import { Text } from "ink";
-import { readInstanceRuntime } from "../lib/daemon-env.ts";
-
-export const INSTANCE_RUNTIME_BADGE_WIDTH = 10;
+import { useInstanceRuntime } from "../hooks/use-instance-runtime.ts";
 
 export function InstanceRuntimeBadge() {
-  const runtime = readInstanceRuntime();
+  const runtime = useInstanceRuntime();
 
   if (runtime === "workers") {
     return (
-      <Text>
-        ☁️ Workers
+      <Text wrap="truncate">
+        ☁️ Worker
       </Text>
     );
   }
 
   return (
-    <Text>
-      🦕 Dino
+    <Text wrap="truncate">
+      🦕 Deno
     </Text>
   );
 }

@@ -3,14 +3,21 @@ import { Box, Text, useInput } from "ink";
 import { ScrollList } from "ink-scroll-list";
 import type { DevService } from "../dev-services.ts";
 import {
-  canRestartDaemon,
   daemonMenuActions,
   type DaemonActionId,
 } from "../lib/daemon-actions.ts";
+import { readInstanceRuntime } from "../lib/daemon-env.ts";
+import type { PendingRestart, ServiceOperation } from "../hooks/use-console-app.ts";
+import {
+  canRunServiceAction,
+  serviceActionForKey,
+  type ServiceActionId,
+} from "../lib/service-actions.ts";
+import type { ConsoleLogLine } from "../lib/service-restart.ts";
 import type { DaemonOperation } from "../lib/spinners.ts";
 import { BORDER_COLOR } from "../theme.ts";
 import { DaemonDetailPanel } from "./daemon-detail-panel.tsx";
-import { RestartDaemonModal } from "./restart-daemon-modal.tsx";
+import { RestartServiceModal } from "./restart-service-modal.tsx";
 import { ServiceDetailPanel } from "./service-detail-panel.tsx";
 import { ServiceStatusIndicator } from "./service-status.tsx";
 
@@ -54,24 +61,34 @@ export function ServicesPanel({
   services,
   selectedIndex,
   onDaemonAction,
-  onDaemonRestart,
   onSelectedIndexChange,
-  onRestartDone,
-  onInstallFinished,
   onRefreshServices,
   daemonOperation,
+  serviceOperation,
+  onServiceAction,
+  pendingRestart,
+  restartInProgress,
+  restartOverlayServiceId,
+  restartLogOverlay,
+  onConfirmRestart,
+  onCancelRestart,
 }: {
   width: number;
   height: number;
   services: DevService[];
   selectedIndex: number;
   daemonOperation?: DaemonOperation | null;
+  serviceOperation?: ServiceOperation | null;
+  onServiceAction?: (serviceId: string, action: ServiceActionId) => void | Promise<void>;
   onDaemonAction?: (action: DaemonActionId) => void | Promise<void>;
-  onDaemonRestart?: () => void;
   onSelectedIndexChange?: (index: number) => void;
-  onRestartDone?: () => void;
-  onInstallFinished?: (success: boolean) => void;
   onRefreshServices?: () => void;
+  pendingRestart?: PendingRestart | null;
+  restartInProgress?: string | null;
+  restartOverlayServiceId?: string | null;
+  restartLogOverlay?: ConsoleLogLine[];
+  onConfirmRestart?: () => void;
+  onCancelRestart?: () => void;
 }) {
   const { leftWidth, detailWidth } = resolvePaneWidths(width, services);
   const selectedService = services[selectedIndex] ?? null;
@@ -81,12 +98,25 @@ export function ServicesPanel({
     [selectedService],
   );
 
+  const overlayForService = (serviceId: string): ConsoleLogLine[] => {
+    if (restartOverlayServiceId !== serviceId) {
+      return [];
+    }
+    return restartLogOverlay ?? [];
+  };
+
   useEffect(() => {
     setLogFocused(false);
   }, [selectedIndex]);
 
+  useEffect(() => {
+    if (restartInProgress) {
+      onRefreshServices?.();
+    }
+  }, [restartInProgress, onRefreshServices]);
+
   useInput((_input, key) => {
-    if (daemonOperation === "restart") {
+    if (pendingRestart || restartInProgress || serviceOperation) {
       return;
     }
 
@@ -109,13 +139,15 @@ export function ServicesPanel({
       return;
     }
 
-    if (
-      selectedService?.id === "daemon" &&
-      (_input === "r" || _input === "R") &&
-      canRestartDaemon() &&
-      onDaemonRestart
-    ) {
-      onDaemonRestart();
+    if (selectedService && onServiceAction) {
+      const runtime = readInstanceRuntime();
+      const action = serviceActionForKey(selectedService.id, _input, runtime);
+      if (
+        action &&
+        canRunServiceAction(selectedService.id, action, selectedService.status, runtime)
+      ) {
+        void Promise.resolve(onServiceAction(selectedService.id, action));
+      }
     }
   });
 
@@ -135,6 +167,7 @@ export function ServicesPanel({
         <ScrollList height={height} selectedIndex={selectedIndex}>
           {services.map((service, index) => {
             const focused = index === selectedIndex;
+            const restarting = restartInProgress === service.id;
             return (
               <Box
                 key={service.id}
@@ -149,11 +182,15 @@ export function ServicesPanel({
                 <ServiceStatusIndicator
                   status={service.status}
                   operation={
-                    service.id === "daemon" &&
-                    daemonOperation &&
-                    daemonOperation !== "restart"
+                    service.id === "daemon" && daemonOperation
                       ? daemonOperation
+                      : restarting
+                      ? "restart"
                       : null
+                  }
+                  busy={
+                    serviceOperation?.serviceId === service.id &&
+                    serviceOperation.action !== "restart"
                   }
                 />
               </Box>
@@ -169,27 +206,39 @@ export function ServicesPanel({
             width={detailWidth}
             height={height}
             onDaemonAction={onDaemonAction}
-            suspended={daemonOperation === "restart"}
-            logInputActive={logFocused}
+            logInputActive={logFocused && !pendingRestart && !restartInProgress}
+            logOverlayLines={overlayForService("daemon")}
           />
-          {daemonOperation === "restart" && onRestartDone && (
-            <RestartDaemonModal
+          {pendingRestart?.serviceId === "daemon" && onConfirmRestart && onCancelRestart && (
+            <RestartServiceModal
               width={detailWidth}
               height={height}
-              onDone={onRestartDone}
-              onReady={onInstallFinished}
-              onRefresh={onRefreshServices}
+              serviceLabel={pendingRestart.label}
+              onConfirm={onConfirmRestart}
+              onCancel={onCancelRestart}
             />
           )}
         </Box>
       )}
       {selectedService && selectedService.id !== "daemon" && detailWidth > 0 && !daemonOperation && (
-        <ServiceDetailPanel
-          service={selectedService}
-          width={detailWidth}
-          height={height}
-          focused={logFocused}
-        />
+        <Box width={detailWidth} height={height} position="relative">
+          <ServiceDetailPanel
+            service={selectedService}
+            width={detailWidth}
+            height={height}
+            focused={logFocused && !pendingRestart && !restartInProgress}
+            logOverlayLines={overlayForService(selectedService.id)}
+          />
+          {pendingRestart?.serviceId === selectedService.id && onConfirmRestart && onCancelRestart && (
+            <RestartServiceModal
+              width={detailWidth}
+              height={height}
+              serviceLabel={pendingRestart.label}
+              onConfirm={onConfirmRestart}
+              onCancel={onCancelRestart}
+            />
+          )}
+        </Box>
       )}
     </Box>
   );

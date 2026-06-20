@@ -2,11 +2,32 @@ import { useApp, useInput } from "ink";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getVisibleServices } from "../dev-services.ts";
 import type { DaemonActionId } from "../lib/daemon-actions.ts";
+import {
+  canRunServiceAction,
+  runServiceAction,
+  serviceActionForKey,
+  type ServiceActionId,
+} from "../lib/service-actions.ts";
+import {
+  type ConsoleLogLine,
+  watchServiceRestart,
+} from "../lib/service-restart.ts";
+import { readInstanceRuntime } from "../lib/daemon-env.ts";
 import type { DaemonOperation } from "../lib/spinners.ts";
 import { refreshDevPermissionsQuietly } from "../lib/turbopanel-permissions.ts";
 import { useVisibleServices } from "./use-visible-services.ts";
 
 export type ActiveArea = "developer" | "services" | "bootstrap";
+
+export type ServiceOperation = {
+  serviceId: string;
+  action: ServiceActionId;
+};
+
+export type PendingRestart = {
+  serviceId: string;
+  label: string;
+};
 
 function initialAutoInstallState(): {
   shouldAutoInstall: boolean;
@@ -35,6 +56,11 @@ export function useConsoleApp() {
     initialAutoInstall.shouldAutoInstall ? "install" : null,
   );
   const [installFinished, setInstallFinished] = useState(false);
+  const [serviceOperation, setServiceOperation] = useState<ServiceOperation | null>(null);
+  const [pendingRestart, setPendingRestart] = useState<PendingRestart | null>(null);
+  const [restartInProgress, setRestartInProgress] = useState<string | null>(null);
+  const [restartOverlayServiceId, setRestartOverlayServiceId] = useState<string | null>(null);
+  const [restartLogOverlay, setRestartLogOverlay] = useState<ConsoleLogLine[]>([]);
   const { services: visibleServices, refresh: refreshServices } = useVisibleServices();
   const autoInstallStarted = useRef(initialAutoInstall.shouldAutoInstall);
 
@@ -92,10 +118,76 @@ export function useConsoleApp() {
     }
   }, [startDaemonInstall, visibleServices]);
 
-  const handleDaemonRestart = useCallback(() => {
-    setInstallFinished(false);
-    setDaemonOperation("restart");
+  const requestServiceRestart = useCallback((serviceId: string) => {
+    const service = visibleServices.find((entry) => entry.id === serviceId);
+    if (!service) {
+      return;
+    }
+    setPendingRestart({ serviceId, label: service.label });
+  }, [visibleServices]);
+
+  const cancelServiceRestart = useCallback(() => {
+    setPendingRestart(null);
   }, []);
+
+  const performServiceRestart = useCallback(async (serviceId: string) => {
+    const service = visibleServices.find((entry) => entry.id === serviceId);
+    if (!service) {
+      return;
+    }
+
+    setRestartInProgress(serviceId);
+    setRestartOverlayServiceId(serviceId);
+    setRestartLogOverlay([]);
+
+    const appendLog = (line: ConsoleLogLine) => {
+      setRestartLogOverlay((current) => [...current, line]);
+    };
+
+    try {
+      await watchServiceRestart(serviceId, service.label, appendLog);
+    } finally {
+      setRestartInProgress(null);
+      refreshServices();
+    }
+  }, [refreshServices, visibleServices]);
+
+  const confirmServiceRestart = useCallback(() => {
+    if (!pendingRestart) {
+      return;
+    }
+    const { serviceId } = pendingRestart;
+    setPendingRestart(null);
+    void performServiceRestart(serviceId);
+  }, [pendingRestart, performServiceRestart]);
+
+  const handleServiceAction = useCallback(async (
+    serviceId: string,
+    action: ServiceActionId,
+  ) => {
+    if (action === "restart") {
+      requestServiceRestart(serviceId);
+      return;
+    }
+
+    const service = visibleServices.find((entry) => entry.id === serviceId);
+    if (!service) {
+      return;
+    }
+
+    const runtime = readInstanceRuntime();
+    if (!canRunServiceAction(serviceId, action, service.status, runtime)) {
+      return;
+    }
+
+    setServiceOperation({ serviceId, action });
+    try {
+      await runServiceAction(serviceId, action);
+      refreshServices();
+    } finally {
+      setServiceOperation(null);
+    }
+  }, [refreshServices, requestServiceRestart, visibleServices]);
 
   const handleInstallFinished = useCallback((success: boolean) => {
     setInstallFinished(true);
@@ -120,12 +212,6 @@ export function useConsoleApp() {
     refreshServices();
   }, [refreshServices]);
 
-  const handleRestartDone = useCallback(() => {
-    setDaemonOperation(null);
-    setInstallFinished(false);
-    refreshServices();
-  }, [refreshServices]);
-
   const handlePurgeDone = useCallback(() => {
     exit();
   }, [exit]);
@@ -137,7 +223,7 @@ export function useConsoleApp() {
   }, [visibleServices]);
 
   useInput((_input, key) => {
-    if (provisioning || daemonOperation) {
+    if (provisioning || daemonOperation || serviceOperation || pendingRestart || restartInProgress) {
       return;
     }
 
@@ -158,13 +244,19 @@ export function useConsoleApp() {
     selectedService,
     visibleServices,
     daemonOperation,
+    serviceOperation,
+    pendingRestart,
+    restartInProgress,
+    restartOverlayServiceId,
+    restartLogOverlay,
     installFinished,
     handleDaemonAction,
     handleProvisioningDone,
     handleInstallFinished,
-    handleRestartDone,
-    handleDaemonRestart,
+    handleServiceAction,
     handlePurgeDone,
+    confirmServiceRestart,
+    cancelServiceRestart,
     setSelectedServiceIndex,
     refreshServices,
   };

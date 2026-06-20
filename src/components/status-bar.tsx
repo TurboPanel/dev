@@ -1,26 +1,43 @@
 import React from "react";
 import { Box, Text } from "ink";
-import { canRestartDaemon } from "../lib/daemon-actions.ts";
-import type { DaemonOperation } from "../lib/spinners.ts";
+import { readInstanceRuntime } from "../lib/daemon-env.ts";
+import { isManagedService } from "../lib/service-actions.ts";
 import { BORDER_COLOR } from "../theme.ts";
+
+import type { PendingRestart } from "../hooks/use-console-app.ts";
+
+function serviceActionHints(selectedServiceId?: string | null): string {
+  if (!selectedServiceId || !isManagedService(selectedServiceId)) {
+    return "";
+  }
+
+  const parts = ["R restart", "X disable", "E enable"];
+  if (selectedServiceId === "instance") {
+    if (readInstanceRuntime() === "deno") {
+      parts.push("W worker");
+    } else {
+      parts.push("D deno");
+    }
+  }
+  return ` · ${parts.join(" · ")}`;
+}
 
 export function statusHints(
   activeAreaId: string,
   selectedServiceId?: string | null,
   installFinished?: boolean,
-  daemonOperation?: DaemonOperation | null,
+  pendingRestart?: PendingRestart | null,
+  restartInProgress?: string | null,
 ): string {
   if (activeAreaId === "services") {
-    if (daemonOperation === "restart") {
-      return installFinished
-        ? "Enter OK · Ctrl-C exit"
-        : "↑ ↓ Yes/No · Enter select · Esc cancel · Ctrl-C exit";
+    if (pendingRestart) {
+      return "↑ ↓ Yes/No · Enter select · Esc cancel · Ctrl-C exit";
     }
-    if (selectedServiceId === "daemon") {
-      const restartHint = canRestartDaemon() ? " · R restart" : "";
-      return `← → tabs · ↑↓ select · Tab log · ↑↓ scroll${restartHint} · Ctrl-C exit`;
+    if (restartInProgress) {
+      return `Restarting ${restartInProgress} · watch logs · Ctrl-C exit`;
     }
-    return "← → tabs · ↑↓ select · Tab log · ↑↓ scroll · Ctrl-C exit";
+    const actionHints = serviceActionHints(selectedServiceId);
+    return `← → tabs · ↑↓ select · Tab log · ↑↓ scroll${actionHints} · Ctrl-C exit`;
   }
   if (activeAreaId === "developer") {
     return "↑ ↓ choose action · Enter run · ← → switch tabs · Ctrl-C exit";
