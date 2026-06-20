@@ -82,7 +82,7 @@ export function DaemonDetailPanel({
   }, [actions.length]);
 
   const innerWidth = Math.max(1, width - 2);
-  const titleRows = runtimeTitleHeaderRows(service.label, innerWidth);
+  const titleRows = runtimeTitleHeaderRows(service.label, innerWidth, undefined, service.id);
   const staticHeaderRows = titleRows;
   const actionsRows = actions.length > 0 ? actions.length + 1 : 0;
   const logHeight = Math.max(1, height - staticHeaderRows - actionsRows);

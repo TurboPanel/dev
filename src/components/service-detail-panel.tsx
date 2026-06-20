@@ -79,6 +79,7 @@ export function ServiceDetailPanel({
       service.label,
       innerWidth,
       pinnedBadge?.badgeReserve,
+      service.id,
     )
     : measureTitleArtRows(service.label, innerWidth);
   const staticHeaderRows = titleRows;

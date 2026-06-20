@@ -8,7 +8,7 @@ import {
 
 export const DEFAULT_CADDY_PORT = 8443;
 export const DEFAULT_WEBSITE_PORT = 19820;
-export const DEFAULT_MAILPIT_WEB_PORT = 19826;
+export const DEFAULT_MAILPIT_WEB_PORT = 8025;
 export const DEFAULT_RABBITMQ_MGMT_PORT = 15672;
 
 const PORT_ENV_KEYS: Record<string, string> = {
