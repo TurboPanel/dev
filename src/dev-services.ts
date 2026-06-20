@@ -20,6 +20,7 @@ export type DevService = {
 
 const DAEMON_UNIT = "turbopanel-daemon";
 const POSTGRES_CONTAINER = "turbopaneldb";
+const MAILPIT_CONTAINER = "turbopanelmailpit";
 const POSTGRES_SOCKET = "/var/run/turbopanel/postgres/.s.PGSQL.5432";
 
 const DOWNSTREAM_SERVICE_DEFS = [
@@ -27,6 +28,12 @@ const DOWNSTREAM_SERVICE_DEFS = [
     id: "instance",
     label: "instance",
     unit: "turbopanel-instance",
+    repoDir: platformRepoPath("instance"),
+  },
+  {
+    id: "dbstudio",
+    label: "dbstudio",
+    unit: "turbopanel-dbstudio",
     repoDir: platformRepoPath("instance"),
   },
   {
@@ -45,6 +52,7 @@ const DOWNSTREAM_SERVICE_DEFS = [
 
 const ANCILLARY_DENO_DEFS = [
   { id: "db", label: "db", kind: "postgres" as const },
+  { id: "mailpit", label: "mailpit", kind: "mailpit" as const },
   { id: "cache", label: "cache", unit: "turbopanel-redis" },
   { id: "queue", label: "queue", unit: "turbopanel-rabbitmq" },
 ] as const;
@@ -156,6 +164,21 @@ function postgresStatus(): DevServiceStatus {
   return "uninstalled";
 }
 
+function mailpitStatus(): DevServiceStatus {
+  const running = dockerContainerRunning(MAILPIT_CONTAINER);
+  if (running === true) {
+    return "running";
+  }
+  if (running === false) {
+    return "stopped";
+  }
+  if (dockerContainerExists(MAILPIT_CONTAINER)) {
+    return "stopped";
+  }
+
+  return "uninstalled";
+}
+
 function systemdServiceStatus(unit: string): DevServiceStatus | null {
   if (!isSystemdUnitInstalled(unit)) {
     return null;
@@ -211,7 +234,12 @@ function daemonStatus(): DevServiceStatus {
 
 function downstreamServices(): DevService[] {
   return DOWNSTREAM_SERVICE_DEFS
-    .filter(({ unit, repoDir }) => isSystemdUnitInstalled(unit) || isRepoInstalled(repoDir))
+    .filter(({ id, unit, repoDir }) => {
+      if (id === "dbstudio") {
+        return isSystemdUnitInstalled(unit);
+      }
+      return isSystemdUnitInstalled(unit) || isRepoInstalled(repoDir);
+    })
     .map(({ id, label, unit, repoDir }) => ({
       id,
       label,
@@ -232,6 +260,9 @@ function shouldShowAncillaryServices(): boolean {
   if (isSystemdUnitInstalled("turbopanel-rabbitmq")) {
     return true;
   }
+  if (dockerContainerExists(MAILPIT_CONTAINER)) {
+    return true;
+  }
   return downstreamServices().length > 0;
 }
 
@@ -245,11 +276,19 @@ function ancillaryServices(): DevService[] {
     : ANCILLARY_DENO_DEFS;
 
   return defs.map((def) => {
-    if ("kind" in def) {
+    if ("kind" in def && def.kind === "postgres") {
       return {
         id: def.id,
         label: def.label,
         status: postgresStatus(),
+      };
+    }
+
+    if ("kind" in def && def.kind === "mailpit") {
+      return {
+        id: def.id,
+        label: def.label,
+        status: mailpitStatus(),
       };
     }
 

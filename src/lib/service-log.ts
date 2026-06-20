@@ -21,6 +21,10 @@ export const SERVICE_FILE_LOG_PATHS: Record<string, string[]> = {
     `${INSTANCE_LOG_DIR}/instance.err.log`,
     `${INSTANCE_LOG_DIR}/instance.log`,
   ],
+  dbstudio: [
+    `${INSTANCE_LOG_DIR}/dbstudio.err.log`,
+    `${INSTANCE_LOG_DIR}/dbstudio.log`,
+  ],
   daemon: [DAEMON_ERR_LOG_PATH, DAEMON_LOG_PATH],
   ui: [`${UI_LOG_DIR}/ui.err.log`, `${UI_LOG_DIR}/ui.log`],
 };
@@ -29,14 +33,17 @@ const FILE_LOG_SOURCES = SERVICE_FILE_LOG_PATHS;
 
 const SERVICE_UNITS: Record<string, string> = {
   instance: "turbopanel-instance",
+  dbstudio: "turbopanel-dbstudio",
   ui: "turbopanel-ui",
   website: "turbopanel-website",
   cache: "turbopanel-redis",
   queue: "turbopanel-rabbitmq",
+  mailpit: "turbopanel-mailpit",
 };
 
 const DOCKER_LOG_CONTAINERS: Record<string, string> = {
   db: "turbopaneldb",
+  mailpit: "turbopanelmailpit",
   queue: "turbopanelq",
 };
 

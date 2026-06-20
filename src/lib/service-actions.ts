@@ -2,36 +2,52 @@ import { spawnSync } from "node:child_process";
 import type { DevServiceStatus } from "../dev-services.ts";
 import { spawnDocker } from "./docker-access.ts";
 import { type InstallOutputHandler, runCaptured } from "./install-output.ts";
+import { openServiceInBrowser } from "./service-open.ts";
+import { serviceSupportsOpen } from "./service-urls.ts";
 
 export type ServiceActionId =
   | "restart"
   | "disable"
   | "enable"
+  | "open"
   | "switch-workers"
   | "switch-deno";
 
 const SYSTEMD_UNITS: Record<string, string> = {
   daemon: "turbopanel-daemon",
   instance: "turbopanel-instance",
+  dbstudio: "turbopanel-dbstudio",
   ui: "turbopanel-ui",
   website: "turbopanel-website",
   cache: "turbopanel-redis",
   queue: "turbopanel-rabbitmq",
-  db: "turbopanel-postgres",
+  mailpit: "turbopanel-mailpit",
 };
 
 const DOCKER_CONTAINERS: Record<string, string> = {
   db: "turbopaneldb",
+  mailpit: "turbopanelmailpit",
+};
+
+const OPEN_START_UNITS: Record<string, string> = {
+  instance: "turbopanel-caddy",
+  ui: "turbopanel-caddy",
+  website: "turbopanel-website",
+  dbstudio: "turbopanel-dbstudio",
+  queue: "turbopanel-rabbitmq",
+  mailpit: "turbopanel-mailpit",
 };
 
 const MANAGED_SERVICE_IDS = new Set([
   "daemon",
   "instance",
+  "dbstudio",
   "ui",
   "website",
   "db",
   "cache",
   "queue",
+  "mailpit",
 ]);
 
 function systemctlProperty(unit: string, property: string): string | null {
@@ -121,6 +137,9 @@ export function serviceActionForKey(
   if (normalized === "e") {
     return "enable";
   }
+  if (normalized === "o" && serviceSupportsOpen(serviceId)) {
+    return "open";
+  }
   if (serviceId === "instance" && instanceRuntime === "deno" && normalized === "w") {
     return "switch-workers";
   }
@@ -145,6 +164,16 @@ export function canRunServiceAction(
   if (action === "switch-deno") {
     return serviceId === "instance" && instanceRuntime === "workers";
   }
+  if (action === "open") {
+    if (!serviceSupportsOpen(serviceId)) {
+      return false;
+    }
+    const startUnit = OPEN_START_UNITS[serviceId];
+    if (startUnit && isSystemdUnitInstalled(startUnit)) {
+      return true;
+    }
+    return resolveDockerContainer(serviceId) !== null;
+  }
   if (!isManagedService(serviceId)) {
     return false;
   }
@@ -162,6 +191,24 @@ export async function runServiceAction(
   action: ServiceActionId,
   onOutput?: InstallOutputHandler,
 ): Promise<void> {
+  if (action === "open") {
+    await openServiceInBrowser(
+      serviceId,
+      async () => {
+        const unit = OPEN_START_UNITS[serviceId];
+        if (!unit) {
+          throw new Error(`No start unit configured for ${serviceId}`);
+        }
+        if (!isSystemdUnitInstalled(unit)) {
+          throw new Error(`${unit} is not installed`);
+        }
+        await runSystemctl(["start", unit], onOutput);
+      },
+      onOutput,
+    );
+    return;
+  }
+
   if (action === "switch-workers" || action === "switch-deno") {
     const { switchInstanceRuntime } = await import("./instance-runtime.ts");
     await switchInstanceRuntime(

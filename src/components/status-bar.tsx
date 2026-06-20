@@ -2,6 +2,7 @@ import React from "react";
 import { Box, Text } from "ink";
 import { readInstanceRuntime } from "../lib/daemon-env.ts";
 import { isManagedService } from "../lib/service-actions.ts";
+import { serviceSupportsOpen } from "../lib/service-urls.ts";
 import { BORDER_COLOR } from "../theme.ts";
 
 import type { PendingRestart } from "../hooks/use-console-app.ts";
@@ -12,6 +13,9 @@ function serviceActionHints(selectedServiceId?: string | null): string {
   }
 
   const parts = ["R restart", "X disable", "E enable"];
+  if (serviceSupportsOpen(selectedServiceId)) {
+    parts.push("O open");
+  }
   if (selectedServiceId === "instance") {
     if (readInstanceRuntime() === "deno") {
       parts.push("W worker");
