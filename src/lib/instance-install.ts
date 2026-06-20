@@ -53,7 +53,10 @@ async function ensurePlatformGitMetadataForAnsible(
       "-n",
       "bash",
       "-c",
-      `for gitdir in ${gitPaths}; do [ -d "$gitdir" ] && chown -R '${TURBOPANEL_USER}:${TURBOPANEL_GROUP}' "$gitdir"; done`,
+      `for gitdir in ${gitPaths}; do ` +
+      `[ -d "$gitdir" ] || continue; ` +
+      `chown -R '${TURBOPANEL_USER}:${TURBOPANEL_GROUP}' "$gitdir" || exit 1; ` +
+      `done`,
     ],
     onOutput,
   );
