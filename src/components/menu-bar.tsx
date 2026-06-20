@@ -1,6 +1,6 @@
 import React from "react";
 import { Box, Text } from "ink";
-import { ACTIVE_TAB_BG, BORDER_COLOR, MENU_BLUE, ON_MENU } from "../theme.ts";
+import { ACTIVE_TAB_BG, BORDER_COLOR, MENU_BAR_BG, MENU_BAR_FG, ON_MENU } from "../theme.ts";
 
 export type AreaTab = { id: string; label: string; emoji: string };
 
@@ -116,7 +116,7 @@ export function MenuBar({
         height={1}
         width={columns}
         alignItems="center"
-        backgroundColor={MENU_BLUE}
+        backgroundColor={MENU_BAR_BG}
       >
         <Box paddingLeft={PADDING_LEFT}>
           <Text bold color={ON_MENU}>
@@ -140,7 +140,7 @@ export function MenuBar({
           justifyContent="center"
           alignItems="center"
         >
-          <Text bold color={MENU_BLUE}>
+          <Text bold color={MENU_BAR_FG}>
             {activeArea.label}
           </Text>
         </Box>

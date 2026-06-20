@@ -100,7 +100,7 @@ export function ServiceTitle({
   }
 
   return (
-    <Box flexDirection="column" width={maxWidth} marginTop={1}>
+    <Box flexDirection="column" width={maxWidth}>
       <GradientArt art={art} />
     </Box>
   );

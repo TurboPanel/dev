@@ -11,8 +11,8 @@ import type { DaemonActionId } from "./lib/daemon-actions.ts";
 import type { DaemonOperation } from "./lib/spinners.ts";
 
 export const AREAS: AreaTab[] = [
+  { id: "services", label: "Services", emoji: "📦" },
   { id: "developer", label: "Developer", emoji: "💻" },
-  { id: "services", label: "Services", emoji: "⚙" },
 ];
 
 export const BOOTSTRAP_AREA: AreaTab = {

@@ -25,7 +25,7 @@ export function useConsoleApp() {
   const { exit } = useApp();
   const initialAutoInstall = initialAutoInstallState();
   const [activeArea, setActiveArea] = useState<ActiveArea>(
-    initialAutoInstall.shouldAutoInstall ? "bootstrap" : "developer",
+    initialAutoInstall.shouldAutoInstall ? "bootstrap" : "services",
   );
   const [provisioning, setProvisioning] = useState(initialAutoInstall.shouldAutoInstall);
   const [selectedServiceIndex, setSelectedServiceIndex] = useState(
@@ -142,10 +142,10 @@ export function useConsoleApp() {
     }
 
     if (key.leftArrow) {
-      setActiveArea((area) => (area === "services" ? "developer" : area));
+      setActiveArea((area) => (area === "developer" ? "services" : area));
     }
     if (key.rightArrow) {
-      setActiveArea((area) => (area === "developer" ? "services" : area));
+      setActiveArea((area) => (area === "services" ? "developer" : area));
     }
   });
 

@@ -1,4 +1,6 @@
 export const MENU_BLUE = "blue";
+export const MENU_BAR_BG = "gray";
+export const MENU_BAR_FG = "black";
 export const ON_MENU = "white";
 export const ACTIVE_TAB_BG = "white";
 export const LIST_SELECT_BG = "white";
