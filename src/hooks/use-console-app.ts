@@ -34,11 +34,10 @@ function initialAutoInstallState(): {
   selectedServiceIndex: number;
 } {
   const services = getVisibleServices();
-  const daemonIndex = services.findIndex((service) => service.id === "daemon");
-  const daemon = daemonIndex >= 0 ? services[daemonIndex] : undefined;
+  const daemon = services.find((service) => service.id === "daemon");
   return {
     shouldAutoInstall: daemon?.status === "uninstalled",
-    selectedServiceIndex: daemonIndex >= 0 ? daemonIndex : 0,
+    selectedServiceIndex: 0,
   };
 }
 

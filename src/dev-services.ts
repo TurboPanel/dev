@@ -318,5 +318,13 @@ export function getVisibleServices(): DevService[] {
     status: daemonStatus(),
   };
 
-  return [daemon, ...downstreamServices(), ...ancillaryServices()];
+  const downstream = downstreamServices();
+  const instance = downstream.find((service) => service.id === "instance");
+  const restDownstream = downstream.filter((service) => service.id !== "instance");
+
+  if (instance) {
+    return [instance, daemon, ...restDownstream, ...ancillaryServices()];
+  }
+
+  return [daemon, ...downstream, ...ancillaryServices()];
 }
