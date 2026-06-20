@@ -17,6 +17,10 @@
     },
   ],
   "settings": {
+    "ansible.ansible.path": "/opt/turbopanel/runtimes/ansible/current/bin/ansible",
+    "ansible.python.interpreterPath": "/opt/turbopanel/runtimes/ansible/current/bin/python3",
+    "ansible.validation.lint.enabled": true,
+    "ansible.validation.lint.path": "/opt/turbopanel/runtimes/ansible/current/bin/ansible-lint",
     "deno.path": "/usr/local/bin/deno",
     "deno.enablePaths": ["/opt/turbopanel/platform/daemon"],
     "remote.restoreForwardedPorts": true,
@@ -40,6 +44,7 @@
   },
   "extensions": {
     "recommendations": [
+      "redhat.ansible",
       "sonarsource.sonarlint-vscode",
       "denoland.vscode-deno",
       "esbenp.prettier-vscode",
