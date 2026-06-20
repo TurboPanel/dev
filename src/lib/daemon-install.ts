@@ -1,4 +1,4 @@
-import { spawn, spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { bootstrapOrchestrationCommand, ensureBootstrapDeno } from "./daemon-exec.ts";
 import {
   ANSIBLE_COLLECTIONS_PATH,
@@ -15,26 +15,18 @@ import {
   runCaptured,
   sanitizeInstallOutput,
 } from "./install-output.ts";
+import {
+  ensureDevPlatformAccess,
+  ensureTurbopanelStateOwnership,
+  resetTurbopanelUserCache,
+  turbopanelUserExists,
+} from "./turbopanel-permissions.ts";
 
 const TURBOPANEL_USER = "turbopanel";
-const TURBOPANEL_GROUP = "turbopanel";
 const DAEMON_DIR = DAEMON_REPO_DIR;
-
-let turbopanelUserExistsCache: boolean | null = null;
 
 function shellQuote(value: string): string {
   return `'${value.replace(/'/g, "'\\''")}'`;
-}
-
-function turbopanelUserExists(): boolean {
-  if (turbopanelUserExistsCache !== null) {
-    return turbopanelUserExistsCache;
-  }
-  const result = spawnSync("getent", ["passwd", TURBOPANEL_USER], {
-    stdio: "ignore",
-  });
-  turbopanelUserExistsCache = result.status === 0;
-  return turbopanelUserExistsCache;
 }
 
 function bootstrapEnv(): string[] {
@@ -49,35 +41,6 @@ function bootstrapEnv(): string[] {
   ];
 }
 
-async function ensureTurbopanelOwnership(
-  onOutput?: InstallOutputHandler,
-): Promise<void> {
-  if (!turbopanelUserExists()) {
-    return;
-  }
-
-  const ownedPaths = [
-    RUNTIMES_DIR,
-    `${TURBOPANEL_ROOT}/.cache`,
-    `${TURBOPANEL_ROOT}/.ansible`,
-    `${TURBOPANEL_ROOT}/.local`,
-  ];
-
-  for (const path of ownedPaths) {
-    const prepareCode = await runCaptured([
-      "sudo",
-      "-n",
-      "sh",
-      "-c",
-      `mkdir -p ${shellQuote(path)} && chown -R ${shellQuote(`${TURBOPANEL_USER}:${TURBOPANEL_GROUP}`)} ${shellQuote(path)}`,
-    ], onOutput);
-
-    if (prepareCode !== 0) {
-      throw new Error(`Failed to set ownership on ${path}`);
-    }
-  }
-}
-
 function bootstrapSudoArgs(command: string): string[] {
   const envArgs = ["env", ...bootstrapEnv(), "bash", "-c", command];
   if (turbopanelUserExists()) {
@@ -87,24 +50,32 @@ function bootstrapSudoArgs(command: string): string[] {
   return ["-n", ...envArgs];
 }
 
+async function prepareBootstrapEnvironment(
+  onOutput?: InstallOutputHandler,
+): Promise<void> {
+  await ensureDevPlatformAccess(onOutput);
+  if (turbopanelUserExists()) {
+    await ensureTurbopanelStateOwnership(onOutput);
+  }
+}
+
 export async function bootstrapOrchestration(
   onEvent: (event: unknown) => void,
   onOutput?: InstallOutputHandler,
 ): Promise<void> {
-  if (turbopanelUserExists()) {
-    await ensureTurbopanelOwnership(onOutput);
-  }
+  await prepareBootstrapEnvironment(onOutput);
 
   await ensureBootstrapDeno(onOutput);
 
   if (turbopanelUserExists()) {
-    await ensureTurbopanelOwnership(onOutput);
+    await ensureTurbopanelStateOwnership(onOutput);
   }
 
   const bootstrapInvocation = bootstrapOrchestrationCommand();
   const command =
     `cd ${shellQuote(DAEMON_DIR)} && exec ${bootstrapInvocation}`;
   const args = bootstrapSudoArgs(command);
+  const bootstrapRanAsRoot = !turbopanelUserExists();
 
   await new Promise<void>((resolve, reject) => {
     const child = spawn("sudo", args, {
@@ -159,11 +130,14 @@ export async function bootstrapOrchestration(
         handleLine(stdoutBuffer);
       }
       if (code === 0) {
-        if (!turbopanelUserExists()) {
-          void ensureTurbopanelOwnership(onOutput).then(resolve).catch(reject);
-          return;
-        }
-        resolve();
+        resetTurbopanelUserCache();
+        const finalize = async () => {
+          await ensureDevPlatformAccess(onOutput);
+          if (turbopanelUserExists() || bootstrapRanAsRoot) {
+            await ensureTurbopanelStateOwnership(onOutput);
+          }
+        };
+        void finalize().then(resolve).catch(reject);
         return;
       }
 
@@ -191,6 +165,10 @@ export async function installDaemonSystemd(
   onStep?.("Install turbopanel-daemon systemd unit", "running");
   onStep?.("Enable and start turbopanel-daemon", "running");
 
+  resetTurbopanelUserCache();
+  await ensureDevPlatformAccess(onOutput);
+  await ensureTurbopanelStateOwnership(onOutput);
+
   const command =
     `cd ${shellQuote(DAEMON_DIR)} && exec bash ${shellQuote("scripts/install-daemon-systemd.sh")}`;
 
@@ -203,6 +181,6 @@ export async function installDaemonSystemd(
   }
 
   onStep?.("Install turbopanel-daemon systemd unit", "ok");
+  await ensureTurbopanelStateOwnership(onOutput);
   onStep?.("Enable and start turbopanel-daemon", "ok");
-  await ensureTurbopanelOwnership(onOutput);
 }

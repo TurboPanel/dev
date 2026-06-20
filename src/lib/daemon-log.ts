@@ -1,9 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
-import { DAEMON_LOG_PATH } from "./paths.ts";
+import { DAEMON_ERR_LOG_PATH, DAEMON_LOG_PATH } from "./paths.ts";
 import { sanitizeInstallOutput } from "./install-output.ts";
-
-const LOG_PATHS = [DAEMON_LOG_PATH];
 
 /** Legacy stderr noise before structured logging (skip when tailing old err.log). */
 function isLegacyNoiseLine(raw: string): boolean {
@@ -200,15 +198,23 @@ function collapseConsecutiveLines(lines: DaemonLogLine[]): DaemonLogLine[] {
   return collapsed;
 }
 
-function tailLines(path: string, maxLines: number): string[] {
+type TailResult = {
+  lines: string[];
+  readable: boolean;
+};
+
+function tailLines(path: string, maxLines: number): TailResult {
   try {
     if (existsSync(path)) {
       const text = readFileSync(path, "utf8");
-      return text
-        .split("\n")
-        .map((line) => sanitizeInstallOutput(line))
-        .filter((line) => line.trim().length > 0)
-        .slice(-maxLines);
+      return {
+        readable: true,
+        lines: text
+          .split("\n")
+          .map((line) => sanitizeInstallOutput(line))
+          .filter((line) => line.trim().length > 0)
+          .slice(-maxLines),
+      };
     }
   } catch {
     // Unreadable to the dev user — fall back to sudo tail below.
@@ -220,26 +226,24 @@ function tailLines(path: string, maxLines: number): string[] {
     { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
   );
 
-  if (result.status !== 0 || !result.stdout) {
-    return [];
+  if (result.status !== 0 || result.stdout === undefined) {
+    return { readable: false, lines: [] };
   }
 
-  return result.stdout
-    .split("\n")
-    .map((line) => sanitizeInstallOutput(line))
-    .filter((line) => line.trim().length > 0);
+  return {
+    readable: true,
+    lines: result.stdout
+      .split("\n")
+      .map((line) => sanitizeInstallOutput(line))
+      .filter((line) => line.trim().length > 0),
+  };
 }
 
-export function readDaemonLogTail(maxLines = 500): DaemonLogLine[] {
-  const rawLines: string[] = [];
-
-  for (const path of LOG_PATHS) {
-    rawLines.push(...tailLines(path, maxLines));
-  }
-
-  const lines = rawLines.filter((line) => !isLegacyNoiseLine(line));
-
-  if (lines.length === 0) {
+function emptyLogHints(
+  stdout: TailResult,
+  stderr: TailResult,
+): DaemonLogLine[] {
+  if (!stdout.readable && !stderr.readable) {
     return [
       structuredLine(
         "",
@@ -254,6 +258,34 @@ export function readDaemonLogTail(maxLines = 500): DaemonLogLine[] {
         "Ensure passwordless sudo is enabled for tail, or ask an admin for log access.",
       ),
     ];
+  }
+
+  return [
+    structuredLine(
+      "",
+      "warn",
+      "console",
+      "Daemon stdout log is empty — the service may be crash-looping before structured logging starts",
+    ),
+    structuredLine(
+      "",
+      "info",
+      "console",
+      stderr.readable
+        ? "Showing stderr from daemon.err.log — fix permission or startup errors below"
+        : "Check /var/log/turbopanel/daemon/daemon.err.log for startup errors",
+    ),
+  ];
+}
+
+export function readDaemonLogTail(maxLines = 500): DaemonLogLine[] {
+  const stdout = tailLines(DAEMON_LOG_PATH, maxLines);
+  const stderr = tailLines(DAEMON_ERR_LOG_PATH, maxLines);
+  const rawLines = stdout.lines.length > 0 ? stdout.lines : stderr.lines;
+  const lines = rawLines.filter((line) => !isLegacyNoiseLine(line));
+
+  if (lines.length === 0) {
+    return emptyLogHints(stdout, stderr);
   }
 
   const parsed = lines.map((line) => parseDaemonLogLine(line));

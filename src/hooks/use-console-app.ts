@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { getVisibleServices } from "../dev-services.ts";
 import type { DaemonActionId } from "../lib/daemon-actions.ts";
 import type { DaemonOperation } from "../lib/spinners.ts";
+import { refreshDevPermissionsQuietly } from "../lib/turbopanel-permissions.ts";
 import { useVisibleServices } from "./use-visible-services.ts";
 
 export type ActiveArea = "developer" | "services" | "bootstrap";
@@ -48,6 +49,10 @@ export function useConsoleApp() {
     setInstallFinished(false);
     setDaemonOperation("install");
   }, [visibleServices]);
+
+  useEffect(() => {
+    refreshDevPermissionsQuietly();
+  }, []);
 
   useEffect(() => {
     if (autoInstallStarted.current || daemonOperation) {
