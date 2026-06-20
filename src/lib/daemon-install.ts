@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from "node:child_process";
-import { bootstrapOrchestrationCommand } from "./daemon-exec.ts";
+import { bootstrapOrchestrationCommand, ensureBootstrapDeno } from "./daemon-exec.ts";
 import {
   ANSIBLE_COLLECTIONS_PATH,
   DAEMON_REPO_DIR,
@@ -64,15 +64,15 @@ async function ensureTurbopanelOwnership(
   ];
 
   for (const path of ownedPaths) {
-    const code = await runCaptured([
+    const prepareCode = await runCaptured([
       "sudo",
-      "chown",
-      "-R",
-      `${TURBOPANEL_USER}:${TURBOPANEL_GROUP}`,
-      path,
+      "-n",
+      "sh",
+      "-c",
+      `mkdir -p ${shellQuote(path)} && chown -R ${shellQuote(`${TURBOPANEL_USER}:${TURBOPANEL_GROUP}`)} ${shellQuote(path)}`,
     ], onOutput);
 
-    if (code !== 0) {
+    if (prepareCode !== 0) {
       throw new Error(`Failed to set ownership on ${path}`);
     }
   }
@@ -91,6 +91,12 @@ export async function bootstrapOrchestration(
   onEvent: (event: unknown) => void,
   onOutput?: InstallOutputHandler,
 ): Promise<void> {
+  if (turbopanelUserExists()) {
+    await ensureTurbopanelOwnership(onOutput);
+  }
+
+  await ensureBootstrapDeno(onOutput);
+
   if (turbopanelUserExists()) {
     await ensureTurbopanelOwnership(onOutput);
   }

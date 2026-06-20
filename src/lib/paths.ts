@@ -6,6 +6,10 @@ export const PYTHON_INSTALL_DIR = `${RUNTIMES_DIR}/python`;
 export const ANSIBLE_COLLECTIONS_PATH =
   `${RUNTIMES_DIR}/ansible/galaxy-collections`;
 export const DENO_LEGACY_RUNTIME_DIR = `${RUNTIMES_DIR}/deno`;
+/** Must match daemon orchestration/roles/deno-runtime/defaults/main.yml deno_version. */
+export const DENO_VERSION = "2.8.3";
+export const DENO_PINNED_BIN =
+  `${DENO_LEGACY_RUNTIME_DIR}/${DENO_VERSION}/deno`;
 export const PLATFORM_DENO_BIN = `${DENO_LEGACY_RUNTIME_DIR}/current/deno`;
 export const DAEMON_REPO_DIR = `${TURBOPANEL_PLATFORM}/daemon`;
 export const DAEMON_BOOTSTRAP_SCRIPT =

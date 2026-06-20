@@ -153,6 +153,7 @@ export function ProvisionerPanel({
         emitStep(currentStep, "ok");
 
         bootstrapPhase.current = "uv";
+        currentStep = BOOTSTRAP_UV;
         emitStep(BOOTSTRAP_UV, "running");
         await bootstrapOrchestration(trackBootstrapEvent, trackBootstrapOutput);
         if (cancelled) return;
