@@ -30,6 +30,11 @@
         "protocol": "http",
         "onAutoForward": "silent",
       },
+      "8025": {
+        "label": "Mailpit",
+        "protocol": "http",
+        "onAutoForward": "silent",
+      },
       "8443": {
         "label": "Instance HTTPS",
         "protocol": "https",

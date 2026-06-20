@@ -19,13 +19,12 @@ import { BORDER_COLOR } from "../theme.ts";
 import { DaemonDetailPanel } from "./daemon-detail-panel.tsx";
 import { RestartServiceModal } from "./restart-service-modal.tsx";
 import { ServiceDetailPanel } from "./service-detail-panel.tsx";
-import { ServiceStatusIndicator } from "./service-status.tsx";
+import { serviceStatusColor } from "./service-status.tsx";
 
 const ARROW_WIDTH = 1;
-const STATUS_WIDTH = 1;
 const LIST_PADDING_RIGHT = 1;
 const LIST_LEADING_WIDTH = ARROW_WIDTH;
-const LIST_TRAILING_WIDTH = STATUS_WIDTH + LIST_PADDING_RIGHT;
+const LIST_TRAILING_WIDTH = LIST_PADDING_RIGHT;
 const SERVICE_LIST_BORDER_COLUMNS = 2;
 const MIN_DETAIL_WIDTH = 28;
 
@@ -170,31 +169,27 @@ export function ServicesPanel({
           {services.map((service, index) => {
             const focused = index === selectedIndex;
             const restarting = restartInProgress === service.id;
+            const labelColor = serviceStatusColor(service.status, {
+              operation:
+                service.id === "daemon" && daemonOperation
+                  ? daemonOperation
+                  : restarting
+                  ? "restart"
+                  : null,
+              busy:
+                serviceOperation?.serviceId === service.id &&
+                serviceOperation.action !== "restart",
+            });
             return (
               <Box
                 key={service.id}
                 width={Math.max(1, leftWidth - 1)}
                 flexDirection="row"
-                justifyContent="space-between"
                 paddingRight={LIST_PADDING_RIGHT}
               >
-                <Text dimColor={!focused} wrap="truncate">
+                <Text color={labelColor} dimColor={!focused} wrap="truncate">
                   {focused ? "›" : " "}{service.label}
                 </Text>
-                <ServiceStatusIndicator
-                  status={service.status}
-                  operation={
-                    service.id === "daemon" && daemonOperation
-                      ? daemonOperation
-                      : restarting
-                      ? "restart"
-                      : null
-                  }
-                  busy={
-                    serviceOperation?.serviceId === service.id &&
-                    serviceOperation.action !== "restart"
-                  }
-                />
               </Box>
             );
           })}

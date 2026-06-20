@@ -1,46 +1,34 @@
-import React from "react";
-import { Text } from "ink";
 import type { DevServiceStatus } from "../dev-services.ts";
 import type { DaemonOperation } from "../lib/spinners.ts";
-import { BORDER_COLOR, STATUS_PENDING, STATUS_RUNNING, STATUS_UNINSTALLED } from "../theme.ts";
-import { OperationSpinner } from "./operation-spinner.tsx";
+import {
+  BORDER_COLOR,
+  MENU_BLUE,
+  STATUS_PENDING,
+  STATUS_RUNNING,
+  STATUS_UNINSTALLED,
+} from "../theme.ts";
 
-export function ServiceStatusIndicator({
-  status,
-  operation,
-  busy = false,
-}: {
-  status: DevServiceStatus;
-  operation?: DaemonOperation | null;
-  busy?: boolean;
-}) {
-  if (busy) {
-    return <OperationSpinner operation="install" />;
+export function serviceStatusColor(
+  status: DevServiceStatus,
+  options?: {
+    operation?: DaemonOperation | null;
+    busy?: boolean;
+  },
+): string {
+  if (options?.busy || options?.operation) {
+    return options?.operation === "purge" ? STATUS_UNINSTALLED : MENU_BLUE;
   }
 
-  if (operation) {
-    return <OperationSpinner operation={operation} />;
+  switch (status) {
+    case "running":
+      return STATUS_RUNNING;
+    case "starting":
+    case "pending":
+      return STATUS_PENDING;
+    case "failed":
+    case "uninstalled":
+      return STATUS_UNINSTALLED;
+    case "stopped":
+      return BORDER_COLOR;
   }
-
-  if (status === "running") {
-    return <Text color={STATUS_RUNNING}>✓</Text>;
-  }
-
-  if (status === "starting") {
-    return <Text color={STATUS_PENDING}>•</Text>;
-  }
-
-  if (status === "uninstalled") {
-    return <Text color={STATUS_UNINSTALLED}>✗</Text>;
-  }
-
-  if (status === "pending") {
-    return <Text color={STATUS_PENDING}>✗</Text>;
-  }
-
-  if (status === "failed") {
-    return <Text color={STATUS_UNINSTALLED}>✗</Text>;
-  }
-
-  return <Text color={BORDER_COLOR}>○</Text>;
 }
