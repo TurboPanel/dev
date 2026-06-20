@@ -14,6 +14,7 @@ const TURBOPANEL_GROUP = "turbopanel";
 const STATE_DIRS = [".cache", ".ansible", ".local"] as const;
 
 let turbopanelUserExistsCache: boolean | null = null;
+let aclToolEnsured = false;
 
 function shellQuote(value: string): string {
   return `'${value.replace(/'/g, "'\\''")}'`;
@@ -32,6 +33,41 @@ export function turbopanelUserExists(): boolean {
   });
   turbopanelUserExistsCache = result.status === 0;
   return turbopanelUserExistsCache;
+}
+
+function setfaclAvailable(): boolean {
+  return spawnSync("sh", ["-c", "command -v setfacl >/dev/null 2>&1"], {
+    stdio: "ignore",
+  }).status === 0;
+}
+
+/** Install the acl package when setfacl is missing (required for dev-user path ACLs). */
+async function ensureAclTool(onOutput?: InstallOutputHandler): Promise<void> {
+  if (aclToolEnsured || setfaclAvailable()) {
+    aclToolEnsured = true;
+    return;
+  }
+
+  onOutput?.("Install acl (setfacl)");
+  const code = await runCaptured(
+    [
+      "sudo",
+      "-n",
+      "sh",
+      "-c",
+      "DEBIAN_FRONTEND=noninteractive apt-get install -y acl",
+    ],
+    onOutput,
+  );
+
+  if (code !== 0 || !setfaclAvailable()) {
+    onOutput?.(
+      "Warning: could not install acl; platform access may require a new login",
+    );
+    return;
+  }
+
+  aclToolEnsured = true;
 }
 
 function buildStateOwnershipScript(devUser: string | null): string {
@@ -118,7 +154,9 @@ function buildDevPlatformAccessScript(devUser: string): string {
     '    setfacl -R -d -m u:$dev:rwx "$gitdir"',
     "  done",
     "else",
-    '  chmod g+rx "$platform" 2>/dev/null || true',
+    "  # Without setfacl, allow traverse without an active turbopanel group session.",
+    '  chmod o+x "$root" 2>/dev/null || true',
+    '  chmod o+rx "$platform" 2>/dev/null || true',
     "fi",
   ].join("\n");
 }
@@ -133,20 +171,14 @@ export async function ensureTurbopanelStateOwnership(
     return;
   }
 
+  await ensureAclTool(onOutput);
+
   const dev = tryResolveDevIdentity();
   const script = buildStateOwnershipScript(dev?.user ?? null);
   const code = await runCaptured(["sudo", "-n", "bash", "-c", script], onOutput);
 
   if (code !== 0) {
     throw new Error("Failed to align /opt/turbopanel ownership with turbopanel user");
-  }
-
-  if (!spawnSync("sh", ["-c", "command -v setfacl >/dev/null 2>&1"], {
-    stdio: "ignore",
-  }).status) {
-    onOutput?.(
-      "Install the acl package (apt install acl) to enable co-located dev ACLs",
-    );
   }
 }
 
@@ -158,6 +190,8 @@ export async function ensureDevPlatformAccess(
   if (!dev) {
     return;
   }
+
+  await ensureAclTool(onOutput);
 
   const script = buildDevPlatformAccessScript(dev.user);
   const code = await runCaptured(["sudo", "-n", "bash", "-c", script], onOutput);
