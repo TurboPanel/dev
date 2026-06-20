@@ -5,6 +5,7 @@ import {
   TURBOPANEL_ROOT,
 } from "./paths.ts";
 import { tryResolveDevIdentity } from "./dev-identity.ts";
+import { agentDebugLog, probeCacheOwnership } from "./debug-agent-log.ts";
 import { type InstallOutputHandler, runCaptured } from "./install-output.ts";
 
 const TURBOPANEL_USER = "turbopanel";
@@ -119,14 +120,50 @@ function buildDevPlatformAccessScript(devUser: string): string {
 /** Reclaim turbopanel-owned runtime state and apply setgid + default ACLs for co-located dev. */
 export async function ensureTurbopanelStateOwnership(
   onOutput?: InstallOutputHandler,
+  caller = "unknown",
 ): Promise<void> {
+  // #region agent log
+  agentDebugLog(
+    "turbopanel-permissions.ts:ensureTurbopanelStateOwnership:enter",
+    "ownership fix starting",
+    {
+      caller,
+      turbopanelExists: turbopanelUserExists(),
+      cacheBefore: probeCacheOwnership(),
+    },
+    "H1",
+  );
+  // #endregion
+
   if (!turbopanelUserExists()) {
+    // #region agent log
+    agentDebugLog(
+      "turbopanel-permissions.ts:ensureTurbopanelStateOwnership:skip",
+      "skipped — turbopanel user missing",
+      { caller },
+      "H1",
+    );
+    // #endregion
     return;
   }
 
   const dev = tryResolveDevIdentity();
   const script = buildStateOwnershipScript(dev?.user ?? null);
   const code = await runCaptured(["sudo", "-n", "bash", "-c", script], onOutput);
+
+  // #region agent log
+  agentDebugLog(
+    "turbopanel-permissions.ts:ensureTurbopanelStateOwnership:exit",
+    "ownership fix finished",
+    {
+      caller,
+      exitCode: code,
+      devUser: dev?.user ?? null,
+      cacheAfter: probeCacheOwnership(),
+    },
+    code === 0 ? "H3" : "H2",
+  );
+  // #endregion
 
   if (code !== 0) {
     throw new Error("Failed to align /opt/turbopanel ownership with turbopanel user");
@@ -162,9 +199,19 @@ export function refreshDevPermissionsQuietly(): void {
   void (async () => {
     try {
       await ensureDevPlatformAccess();
-      await ensureTurbopanelStateOwnership();
-    } catch {
-      // Non-fatal — install/repair paths run the same helpers with surfaced errors.
+      await ensureTurbopanelStateOwnership(undefined, "refreshDevPermissionsQuietly");
+    } catch (error) {
+      // #region agent log
+      agentDebugLog(
+        "turbopanel-permissions.ts:refreshDevPermissionsQuietly",
+        "quiet refresh failed",
+        {
+          error: error instanceof Error ? error.message : String(error),
+          cacheAfter: probeCacheOwnership(),
+        },
+        "H5",
+      );
+      // #endregion
     }
   })();
 }

@@ -21,6 +21,7 @@ import {
   resetTurbopanelUserCache,
   turbopanelUserExists,
 } from "./turbopanel-permissions.ts";
+import { agentDebugLog, probeCacheOwnership } from "./debug-agent-log.ts";
 
 const TURBOPANEL_USER = "turbopanel";
 const DAEMON_DIR = DAEMON_REPO_DIR;
@@ -55,7 +56,7 @@ async function prepareBootstrapEnvironment(
 ): Promise<void> {
   await ensureDevPlatformAccess(onOutput);
   if (turbopanelUserExists()) {
-    await ensureTurbopanelStateOwnership(onOutput);
+    await ensureTurbopanelStateOwnership(onOutput, "prepareBootstrapEnvironment");
   }
 }
 
@@ -68,7 +69,7 @@ export async function bootstrapOrchestration(
   await ensureBootstrapDeno(onOutput);
 
   if (turbopanelUserExists()) {
-    await ensureTurbopanelStateOwnership(onOutput);
+    await ensureTurbopanelStateOwnership(onOutput, "bootstrapOrchestration:pre-run");
   }
 
   const bootstrapInvocation = bootstrapOrchestrationCommand();
@@ -76,6 +77,19 @@ export async function bootstrapOrchestration(
     `cd ${shellQuote(DAEMON_DIR)} && exec ${bootstrapInvocation}`;
   const args = bootstrapSudoArgs(command);
   const bootstrapRanAsRoot = !turbopanelUserExists();
+
+  // #region agent log
+  agentDebugLog(
+    "daemon-install.ts:bootstrapOrchestration:pre-run",
+    "starting bootstrap orchestration",
+    {
+      bootstrapRanAsRoot,
+      turbopanelExists: turbopanelUserExists(),
+      cacheBefore: probeCacheOwnership(),
+    },
+    "H1",
+  );
+  // #endregion
 
   await new Promise<void>((resolve, reject) => {
     const child = spawn("sudo", args, {
@@ -132,10 +146,35 @@ export async function bootstrapOrchestration(
       if (code === 0) {
         resetTurbopanelUserCache();
         const finalize = async () => {
+          // #region agent log
+          agentDebugLog(
+            "daemon-install.ts:bootstrapOrchestration:finalize:enter",
+            "bootstrap succeeded — running post ownership",
+            {
+              bootstrapRanAsRoot,
+              turbopanelExists: turbopanelUserExists(),
+              cacheBefore: probeCacheOwnership(),
+            },
+            "H3",
+          );
+          // #endregion
           await ensureDevPlatformAccess(onOutput);
           if (turbopanelUserExists() || bootstrapRanAsRoot) {
-            await ensureTurbopanelStateOwnership(onOutput);
+            await ensureTurbopanelStateOwnership(
+              onOutput,
+              "bootstrapOrchestration:finalize",
+            );
           }
+          // #region agent log
+          agentDebugLog(
+            "daemon-install.ts:bootstrapOrchestration:finalize:exit",
+            "post-bootstrap ownership complete",
+            {
+              cacheAfter: probeCacheOwnership(),
+            },
+            "H3",
+          );
+          // #endregion
         };
         void finalize().then(resolve).catch(reject);
         return;
@@ -167,7 +206,16 @@ export async function installDaemonSystemd(
 
   resetTurbopanelUserCache();
   await ensureDevPlatformAccess(onOutput);
-  await ensureTurbopanelStateOwnership(onOutput);
+  await ensureTurbopanelStateOwnership(onOutput, "installDaemonSystemd:pre-start");
+
+  // #region agent log
+  agentDebugLog(
+    "daemon-install.ts:installDaemonSystemd:pre-start",
+    "ownership applied before systemd install",
+    { cacheAfter: probeCacheOwnership() },
+    "H2",
+  );
+  // #endregion
 
   const command =
     `cd ${shellQuote(DAEMON_DIR)} && exec bash ${shellQuote("scripts/install-daemon-systemd.sh")}`;
@@ -181,6 +229,16 @@ export async function installDaemonSystemd(
   }
 
   onStep?.("Install turbopanel-daemon systemd unit", "ok");
-  await ensureTurbopanelStateOwnership(onOutput);
+  await ensureTurbopanelStateOwnership(onOutput, "installDaemonSystemd:post-start");
+
+  // #region agent log
+  agentDebugLog(
+    "daemon-install.ts:installDaemonSystemd:post-start",
+    "systemd install finished",
+    { cacheAfter: probeCacheOwnership() },
+    "H3",
+  );
+  // #endregion
+
   onStep?.("Enable and start turbopanel-daemon", "ok");
 }
