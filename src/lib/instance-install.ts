@@ -8,6 +8,7 @@ import {
   DAEMON_REPO_DIR,
   PYTHON_INSTALL_DIR,
   RUNTIMES_DIR,
+  TURBOPANEL_PLATFORM,
   TURBOPANEL_ROOT,
   UV_CACHE_DIR,
 } from "./paths.ts";
@@ -32,22 +33,28 @@ import {
 const TURBOPANEL_USER = "turbopanel";
 const TURBOPANEL_GROUP = "turbopanel";
 const DAEMON_DIR = DAEMON_REPO_DIR;
+const PLATFORM_CHECKOUT_DIRS = ["daemon", "instance", "ui", "website"] as const;
 
-async function ensureDaemonGitMetadataForAnsible(
+/** Reclaim platform checkout .git metadata so Ansible git tasks run as turbopanel. */
+async function ensurePlatformGitMetadataForAnsible(
   onOutput?: InstallOutputHandler,
 ): Promise<void> {
+  const gitPaths = PLATFORM_CHECKOUT_DIRS
+    .map((dir) => `${TURBOPANEL_PLATFORM}/${dir}/.git`)
+    .map(shellQuote)
+    .join(" ");
   const code = await runCaptured(
     [
       "sudo",
       "-n",
       "bash",
       "-c",
-      `chown -R '${TURBOPANEL_USER}:${TURBOPANEL_GROUP}' '${DAEMON_DIR}/.git' 2>/dev/null || true`,
+      `for gitdir in ${gitPaths}; do [ -d "$gitdir" ] && chown -R '${TURBOPANEL_USER}:${TURBOPANEL_GROUP}' "$gitdir"; done`,
     ],
     onOutput,
   );
   if (code !== 0) {
-    throw new Error("Failed to reclaim daemon .git metadata for Ansible git tasks");
+    throw new Error("Failed to reclaim platform .git metadata for Ansible git tasks");
   }
 }
 
@@ -89,6 +96,32 @@ async function runOrchestrationAction(
   const invocation = orchestrationActionCommand(...actionArgs);
   const command = `cd ${shellQuote(DAEMON_DIR)} && exec ${invocation}`;
   const args = orchestrationSudoArgs(command);
+  let lastFailureMessage: string | null = null;
+
+  const trackEvent = (event: unknown) => {
+    if (typeof event === "object" && event !== null) {
+      const record = event as Record<string, unknown>;
+      if (record._event === "v2_runner_on_failed" || record._event === "v2_runner_on_unreachable") {
+        const hosts = record.hosts as Record<string, Record<string, unknown>> | undefined;
+        const messages: string[] = [];
+        if (hosts) {
+          for (const result of Object.values(hosts)) {
+            const msg = result.msg;
+            if (typeof msg === "string" && msg.length > 0) {
+              messages.push(msg);
+            }
+          }
+        }
+        const task = record.task as { name?: string } | undefined;
+        const taskName = task?.name?.trim();
+        const detail = messages.join("; ");
+        lastFailureMessage = taskName && detail
+          ? `${taskName}: ${detail}`
+          : taskName || detail || "Ansible task failed";
+      }
+    }
+    onEvent(event);
+  };
 
   await new Promise<void>((resolve, reject) => {
     const child = spawn("sudo", args, {
@@ -107,7 +140,7 @@ async function runOrchestrationAction(
       if (trimmed.length === 0) return;
       stdoutTail = trimmed;
       try {
-        onEvent(JSON.parse(trimmed));
+        trackEvent(JSON.parse(trimmed));
       } catch {
         onOutput?.(trimmed);
       }
@@ -158,7 +191,7 @@ async function runOrchestrationAction(
         }
       }
 
-      const message = stderrTail || stdoutTail || "Orchestration action failed";
+      const message = lastFailureMessage || stderrTail || stdoutTail || "Orchestration action failed";
       reject(new Error(message));
     });
   });
@@ -173,7 +206,7 @@ export async function installDevEnvironment(
   if (turbopanelUserExists()) {
     await ensureTurbopanelStateOwnership(onOutput);
     await ensureTurbopanelGithubAccess(onOutput);
-    await ensureDaemonGitMetadataForAnsible(onOutput);
+    await ensurePlatformGitMetadataForAnsible(onOutput);
     writeDaemonEnv();
   }
 

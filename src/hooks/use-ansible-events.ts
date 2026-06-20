@@ -203,15 +203,14 @@ export function useAnsibleEvents() {
       }
 
       const message = hosts ? hostMessages(hosts) : "task failed";
-      setTasks((current) => {
-        const withTask = upsertTask(current, {
+      setTasks((current) =>
+        upsertTask(current, {
           id,
           label: taskLabel(rawName),
           status: "failed",
           depth: 2,
-        });
-        return completeRunning(withTask, "failed");
-      });
+        })
+      );
       setError(message);
       void writeTaskErrorLog({
         title: "Ansible converge",

@@ -412,7 +412,7 @@ function emptyLogHints(
         now,
         "warn",
         "console",
-        "No daemon logs readable — expected /var/log/turbopanel/daemon/daemon.log",
+        `No daemon logs readable — expected ${DAEMON_LOG_PATH}`,
       ),
       structuredLine(
         now,
@@ -436,7 +436,7 @@ function emptyLogHints(
       "console",
       stderr.readable
         ? "Showing stderr from daemon.err.log — fix permission or startup errors below"
-        : "Check /var/log/turbopanel/daemon/daemon.err.log for startup errors",
+        : `Check ${DAEMON_ERR_LOG_PATH} for startup errors`,
     ),
   ];
 }

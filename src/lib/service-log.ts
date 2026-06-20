@@ -1,19 +1,23 @@
 import { existsSync, readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
+import {
+  DAEMON_ERR_LOG_PATH,
+  DAEMON_LOG_PATH,
+  platformRepoPath,
+} from "./paths.ts";
 
 export type ServiceLogLine = {
   text: string;
 };
 
+const INSTANCE_LOG_DIR = `${platformRepoPath("instance")}/logs`;
+
 const FILE_LOG_SOURCES: Record<string, string[]> = {
   instance: [
-    "/var/log/turbopanel/instance/instance.err.log",
-    "/var/log/turbopanel/instance/instance.log",
+    `${INSTANCE_LOG_DIR}/instance.err.log`,
+    `${INSTANCE_LOG_DIR}/instance.log`,
   ],
-  daemon: [
-    "/var/log/turbopanel/daemon/daemon.err.log",
-    "/var/log/turbopanel/daemon/daemon.log",
-  ],
+  daemon: [DAEMON_ERR_LOG_PATH, DAEMON_LOG_PATH],
 };
 
 const SERVICE_UNITS: Record<string, string> = {

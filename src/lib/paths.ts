@@ -27,8 +27,8 @@ export const CONSOLE_LOG_DIR = `${TURBOPANEL_PLATFORM}/.local/console`;
 export const CONSOLE_LAST_TASK_ERROR_LOG =
   `${CONSOLE_LOG_DIR}/last-task-error.log`;
 
-export const DAEMON_LOG_PATH = "/var/log/turbopanel/daemon/daemon.log";
-export const DAEMON_ERR_LOG_PATH = "/var/log/turbopanel/daemon/daemon.err.log";
+export const DAEMON_LOG_PATH = `${DAEMON_REPO_DIR}/logs/daemon.log`;
+export const DAEMON_ERR_LOG_PATH = `${DAEMON_REPO_DIR}/logs/daemon.err.log`;
 
 export function sshRepoUrl(repo: string): string {
   return `git@github.com:${repo}.git`;
