@@ -5,8 +5,12 @@ import { DAEMON_ERR_LOG_PATH, DAEMON_LOG_PATH } from "./paths.ts";
 import { sanitizeInstallOutput } from "./install-output.ts";
 
 /** Legacy stderr noise before structured logging (skip when tailing old err.log). */
+function stripAnsi(text: string): string {
+  return text.replace(/\x1b\[[0-9;]*m/g, "");
+}
+
 function isLegacyNoiseLine(raw: string): boolean {
-  const trimmed = raw.trim();
+  const trimmed = stripAnsi(raw).trim();
   if (/^\d{4}-\d{2}-\d{2}T/.test(trimmed)) {
     return false;
   }
@@ -19,7 +23,9 @@ function isLegacyNoiseLine(raw: string): boolean {
   return (
     /^Warning/i.test(trimmed) ||
     /--env-file/.test(trimmed) ||
-    /^Python .* is already installed/i.test(trimmed)
+    /^Python .* is already installed/i.test(trimmed) ||
+    /^Download\s+https?:\/\//i.test(trimmed) ||
+    /^\[instance\] waiting for instance:/i.test(trimmed)
   );
 }
 

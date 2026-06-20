@@ -32,16 +32,7 @@ export function daemonMenuActions(status: DevServiceStatus): DaemonActionId[] {
     return [];
   }
 
-  const actions: DaemonActionId[] = [];
-  if (
-    status === "pending"
-    || status === "stopped"
-    || status === "starting"
-    || status === "failed"
-  ) {
-    actions.push("repair");
-  }
-  return actions;
+  return ["repair"];
 }
 
 export function developerMenuActions(status: DevServiceStatus | undefined): DaemonActionId[] {
@@ -49,17 +40,7 @@ export function developerMenuActions(status: DevServiceStatus | undefined): Daem
     return [];
   }
 
-  const actions: DaemonActionId[] = [];
-  if (
-    status === "pending"
-    || status === "stopped"
-    || status === "starting"
-    || status === "failed"
-  ) {
-    actions.push("repair");
-  }
-  actions.push("start-dev-env", "purge");
-  return actions;
+  return ["repair", "start-dev-env", "purge"];
 }
 
 export function canRestartDaemon(): boolean {

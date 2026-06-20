@@ -24,6 +24,7 @@ import {
 import { writeDaemonBaseEnv } from "./daemon-env.ts";
 const TURBOPANEL_USER = "turbopanel";
 const DAEMON_DIR = DAEMON_REPO_DIR;
+const SYSTEM_DENO_BIN = "/usr/local/bin/deno";
 
 function shellQuote(value: string): string {
   return `'${value.replace(/'/g, "'\\''")}'`;
@@ -163,6 +164,20 @@ export async function bootstrapOrchestration(
   });
 }
 
+async function cacheDaemonDenoModules(
+  onOutput?: InstallOutputHandler,
+): Promise<void> {
+  const command =
+    `cd ${shellQuote(DAEMON_DIR)} && exec ${SYSTEM_DENO_BIN} cache --quiet --config deno.json main.ts`;
+  const args = turbopanelUserExists()
+    ? ["-n", "-u", TURBOPANEL_USER, "env", `HOME=${TURBOPANEL_ROOT}`, "bash", "-c", command]
+    : ["-n", "bash", "-c", command];
+  const code = await runCaptured(["sudo", ...args], onOutput);
+  if (code !== 0) {
+    throw new Error("Failed to cache Deno dependencies for turbopanel-daemon");
+  }
+}
+
 export async function installDaemonSystemd(
   onOutput?: InstallOutputHandler,
   onStep?: InstallStepHandler,
@@ -191,6 +206,10 @@ export async function installDaemonSystemd(
   if (turbopanelUserExists()) {
     writeDaemonBaseEnv();
   }
+
+  onStep?.("Cache Deno dependencies", "running");
+  await cacheDaemonDenoModules(onOutput);
+  onStep?.("Cache Deno dependencies", "ok");
 
   // Stop if the install script started the daemon before runtimes ownership was reclaimed.
   await runCaptured(
