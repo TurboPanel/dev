@@ -3,7 +3,6 @@ import type { DevServiceStatus } from "../dev-services.ts";
 import { isDaemonSystemdInstalled } from "../dev-services.ts";
 import {
   DAEMON_REPO_DIR,
-  DENO_LEGACY_RUNTIME_DIR,
   RUNTIMES_DIR,
   TURBOPANEL_ROOT,
 } from "./paths.ts";
@@ -129,7 +128,6 @@ export async function purgeDaemon(
     `${TURBOPANEL_ROOT}/.cache`,
     `${TURBOPANEL_ROOT}/.ansible`,
     `${TURBOPANEL_ROOT}/.local`,
-    DENO_LEGACY_RUNTIME_DIR,
   ].map(shellQuote);
 
   const command = [

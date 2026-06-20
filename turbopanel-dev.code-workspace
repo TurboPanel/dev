@@ -17,6 +17,10 @@
     },
   ],
   "settings": {
+    "deno.path": "/usr/local/bin/deno",
+    "deno.enablePaths": [
+      "/opt/turbopanel/platform/daemon",
+    ],
     "remote.restoreForwardedPorts": true,
     "remote.portsAttributes": {
       "4983": {
