@@ -1,5 +1,7 @@
 import { spawn } from "node:child_process";
-import { bootstrapOrchestrationCommand, ensureBootstrapDeno } from "./daemon-exec.ts";
+import { requestDaemonRestart } from "./daemon-actions.ts";
+import { orchestrationActionCommand } from "./daemon-exec.ts";
+import { resolveDevIdentity } from "./dev-identity.ts";
 import {
   ANSIBLE_COLLECTIONS_PATH,
   DAEMON_REPO_DIR,
@@ -12,69 +14,57 @@ import type { InstallStepHandler } from "./platform-install.ts";
 import {
   captureChildEnv,
   type InstallOutputHandler,
-  runCaptured,
   sanitizeInstallOutput,
 } from "./install-output.ts";
 import {
+  ensureDaemonSystemdDockerAccess,
   ensureDevPlatformAccess,
   ensureTurbopanelStateOwnership,
   resetTurbopanelUserCache,
   turbopanelUserExists,
 } from "./turbopanel-permissions.ts";
+
 const TURBOPANEL_USER = "turbopanel";
 const DAEMON_DIR = DAEMON_REPO_DIR;
+
+export const DEV_ENV_CONVERGE_STEP = "Converge development environment (Ansible)";
 
 function shellQuote(value: string): string {
   return `'${value.replace(/'/g, "'\\''")}'`;
 }
 
-function bootstrapEnv(): string[] {
+function orchestrationEnv(): string[] {
+  const dev = resolveDevIdentity();
   return [
     `HOME=${TURBOPANEL_ROOT}`,
     `ANSIBLE_COLLECTIONS_PATH=${ANSIBLE_COLLECTIONS_PATH}`,
     `UV_PYTHON_INSTALL_DIR=${PYTHON_INSTALL_DIR}`,
     `UV_CACHE_DIR=${UV_CACHE_DIR}`,
+    `TURBOPANEL_DEV_USER=${dev.user}`,
+    `TURBOPANEL_DEV_UID=${dev.uid}`,
+    `TURBOPANEL_DEV_GID=${dev.gid}`,
     "UV_NO_MODIFY_PATH=1",
     "UV_PYTHON_DOWNLOADS=automatic",
     "UV_VENV_CLEAR=1",
   ];
 }
 
-function bootstrapSudoArgs(command: string): string[] {
-  const envArgs = ["env", ...bootstrapEnv(), "bash", "-c", command];
+function orchestrationSudoArgs(command: string): string[] {
+  const envArgs = ["env", ...orchestrationEnv(), "bash", "-c", command];
   if (turbopanelUserExists()) {
     return ["-n", "-u", TURBOPANEL_USER, ...envArgs];
   }
-  // Before Ansible creates turbopanel, bootstrap must install runtimes as root.
   return ["-n", ...envArgs];
 }
 
-async function prepareBootstrapEnvironment(
-  onOutput?: InstallOutputHandler,
-): Promise<void> {
-  await ensureDevPlatformAccess(onOutput);
-  if (turbopanelUserExists()) {
-    await ensureTurbopanelStateOwnership(onOutput);
-  }
-}
-
-export async function bootstrapOrchestration(
+async function runOrchestrationAction(
+  actionArgs: string[],
   onEvent: (event: unknown) => void,
   onOutput?: InstallOutputHandler,
 ): Promise<void> {
-  await prepareBootstrapEnvironment(onOutput);
-
-  await ensureBootstrapDeno(onOutput);
-
-  if (turbopanelUserExists()) {
-    await ensureTurbopanelStateOwnership(onOutput);
-  }
-
-  const bootstrapInvocation = bootstrapOrchestrationCommand();
-  const command =
-    `cd ${shellQuote(DAEMON_DIR)} && exec ${bootstrapInvocation}`;
-  const args = bootstrapSudoArgs(command);
-  const bootstrapRanAsRoot = !turbopanelUserExists();
+  const invocation = orchestrationActionCommand(...actionArgs);
+  const command = `cd ${shellQuote(DAEMON_DIR)} && exec ${invocation}`;
+  const args = orchestrationSudoArgs(command);
 
   await new Promise<void>((resolve, reject) => {
     const child = spawn("sudo", args, {
@@ -129,14 +119,7 @@ export async function bootstrapOrchestration(
         handleLine(stdoutBuffer);
       }
       if (code === 0) {
-        resetTurbopanelUserCache();
-        const finalize = async () => {
-          await ensureDevPlatformAccess(onOutput);
-          if (turbopanelUserExists() || bootstrapRanAsRoot) {
-            await ensureTurbopanelStateOwnership(onOutput);
-          }
-        };
-        void finalize().then(resolve).catch(reject);
+        resolve();
         return;
       }
 
@@ -151,41 +134,39 @@ export async function bootstrapOrchestration(
         }
       }
 
-      const message = stderrTail || stdoutTail || "Bootstrap orchestration failed";
+      const message = stderrTail || stdoutTail || "Orchestration action failed";
       reject(new Error(message));
     });
   });
 }
 
-export async function installDaemonSystemd(
+export async function installDevEnvironment(
+  onEvent: (event: unknown) => void,
   onOutput?: InstallOutputHandler,
   onStep?: InstallStepHandler,
 ): Promise<void> {
-  onStep?.("Install turbopanel-daemon systemd unit", "running");
-  onStep?.("Enable and start turbopanel-daemon", "running");
+  await ensureDevPlatformAccess(onOutput);
+  if (turbopanelUserExists()) {
+    await ensureTurbopanelStateOwnership(onOutput);
+  }
+
+  onStep?.(DEV_ENV_CONVERGE_STEP, "running");
+  try {
+    await runOrchestrationAction(["instance-dev-install"], onEvent, onOutput);
+    onStep?.(DEV_ENV_CONVERGE_STEP, "ok");
+  } catch (error) {
+    onStep?.(DEV_ENV_CONVERGE_STEP, "failed");
+    throw error;
+  }
+
+  const dockerAccessChanged = await ensureDaemonSystemdDockerAccess(onOutput);
+  if (dockerAccessChanged) {
+    await requestDaemonRestart(onOutput);
+  }
 
   resetTurbopanelUserCache();
   await ensureDevPlatformAccess(onOutput);
-  await ensureTurbopanelStateOwnership(onOutput);
-
-  const command =
-    `cd ${shellQuote(DAEMON_DIR)} && exec bash ${shellQuote("scripts/install-daemon-systemd.sh")}`;
-
-  const code = await runCaptured(["sudo", "bash", "-c", command], onOutput);
-
-  if (code !== 0) {
-    onStep?.("Install turbopanel-daemon systemd unit", "failed");
-    onStep?.("Enable and start turbopanel-daemon", "failed");
-    throw new Error("Install daemon systemd failed");
+  if (turbopanelUserExists()) {
+    await ensureTurbopanelStateOwnership(onOutput);
   }
-
-  onStep?.("Install turbopanel-daemon systemd unit", "ok");
-  await ensureTurbopanelStateOwnership(onOutput);
-
-  await runCaptured(
-    ["sudo", "-n", "systemctl", "restart", "turbopanel-daemon"],
-    onOutput,
-  );
-
-  onStep?.("Enable and start turbopanel-daemon", "ok");
 }

@@ -9,7 +9,12 @@ import {
 } from "./paths.ts";
 import { type InstallOutputHandler, runCaptured } from "./install-output.ts";
 
-export type DaemonActionId = "install" | "repair" | "restart" | "purge";
+export type DaemonActionId =
+  | "install"
+  | "repair"
+  | "restart"
+  | "purge"
+  | "start-dev-env";
 
 const DAEMON_UNIT = "turbopanel-daemon";
 const DEFAULT_WAIT_TIMEOUT_MS = 120_000;
@@ -20,6 +25,7 @@ export const DAEMON_ACTION_LABELS: Record<DaemonActionId, string> = {
   repair: "Repair install",
   restart: "Restart",
   purge: "Purge completely",
+  "start-dev-env": "Start development environment",
 };
 
 export function daemonMenuActions(status: DevServiceStatus): DaemonActionId[] {
@@ -39,7 +45,7 @@ export function developerMenuActions(status: DevServiceStatus | undefined): Daem
     return [];
   }
 
-  return ["purge"];
+  return ["start-dev-env", "purge"];
 }
 
 export function canRestartDaemon(): boolean {

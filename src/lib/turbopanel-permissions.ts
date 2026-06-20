@@ -5,7 +5,6 @@ import {
   TURBOPANEL_ROOT,
 } from "./paths.ts";
 import { tryResolveDevIdentity } from "./dev-identity.ts";
-import { agentDebugLog, probeCacheOwnership } from "./debug-agent-log.ts";
 import { type InstallOutputHandler, runCaptured } from "./install-output.ts";
 
 const TURBOPANEL_USER = "turbopanel";
@@ -120,52 +119,16 @@ function buildDevPlatformAccessScript(devUser: string): string {
 /** Reclaim turbopanel-owned runtime state and apply setgid + default ACLs for co-located dev. */
 export async function ensureTurbopanelStateOwnership(
   onOutput?: InstallOutputHandler,
-  caller = "unknown",
 ): Promise<void> {
   resetTurbopanelUserCache();
 
-  // #region agent log
-  agentDebugLog(
-    "turbopanel-permissions.ts:ensureTurbopanelStateOwnership:enter",
-    "ownership fix starting",
-    {
-      caller,
-      turbopanelExists: turbopanelUserExists(),
-      cacheBefore: probeCacheOwnership(),
-    },
-    "H1",
-  );
-  // #endregion
-
   if (!turbopanelUserExists()) {
-    // #region agent log
-    agentDebugLog(
-      "turbopanel-permissions.ts:ensureTurbopanelStateOwnership:skip",
-      "skipped — turbopanel user missing",
-      { caller },
-      "H1",
-    );
-    // #endregion
     return;
   }
 
   const dev = tryResolveDevIdentity();
   const script = buildStateOwnershipScript(dev?.user ?? null);
   const code = await runCaptured(["sudo", "-n", "bash", "-c", script], onOutput);
-
-  // #region agent log
-  agentDebugLog(
-    "turbopanel-permissions.ts:ensureTurbopanelStateOwnership:exit",
-    "ownership fix finished",
-    {
-      caller,
-      exitCode: code,
-      devUser: dev?.user ?? null,
-      cacheAfter: probeCacheOwnership(),
-    },
-    code === 0 ? "H3" : "H2",
-  );
-  // #endregion
 
   if (code !== 0) {
     throw new Error("Failed to align /opt/turbopanel ownership with turbopanel user");
@@ -196,24 +159,77 @@ export async function ensureDevPlatformAccess(
   }
 }
 
+function dockerIsPresent(): boolean {
+  if (spawnSync("getent", ["group", "docker"], { stdio: "ignore" }).status === 0) {
+    return true;
+  }
+  if (
+    spawnSync("test", ["-S", "/var/run/docker.sock"], { stdio: "ignore" })
+      .status === 0
+  ) {
+    return true;
+  }
+  return (
+    spawnSync("sh", ["-c", "command -v docker >/dev/null 2>&1"], {
+      stdio: "ignore",
+    }).status === 0
+  );
+}
+
+/** systemd runs with Group=turbopanel only — add docker supplementary group for socket access. */
+export async function ensureDaemonSystemdDockerAccess(
+  onOutput?: InstallOutputHandler,
+): Promise<boolean> {
+  resetTurbopanelUserCache();
+  if (!turbopanelUserExists()) {
+    return false;
+  }
+  if (!dockerIsPresent()) {
+    return false;
+  }
+
+  const dropInDir = "/etc/systemd/system/turbopanel-daemon.service.d";
+  const dropInFile = `${dropInDir}/docker-supplementary.conf`;
+  const script = [
+    "set -eu",
+    `dropin=${shellQuote(dropInFile)}`,
+    `dir=${shellQuote(dropInDir)}`,
+    "if [ -f \"$dropin\" ] && grep -q '^SupplementaryGroups=docker$' \"$dropin\"; then",
+    "  echo unchanged",
+    "  exit 0",
+    "fi",
+    "mkdir -p \"$dir\"",
+    "printf '%s\\n' '[Service]' 'SupplementaryGroups=docker' > \"$dropin\"",
+    "systemctl daemon-reload",
+    "echo changed",
+  ].join("\n");
+
+  const result = spawnSync("sudo", ["-n", "bash", "-c", script], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  const output = (result.stdout ?? "").trim();
+  const changed = output === "changed";
+
+  if (result.status !== 0) {
+    onOutput?.((result.stderr ?? "").trim());
+    throw new Error(
+      "Failed to configure docker supplementary group for turbopanel-daemon",
+    );
+  }
+
+  return changed;
+}
+
 /** Best-effort dev ACL refresh on console launch; never blocks the TUI. */
 export function refreshDevPermissionsQuietly(): void {
   void (async () => {
     try {
       await ensureDevPlatformAccess();
-      await ensureTurbopanelStateOwnership(undefined, "refreshDevPermissionsQuietly");
-    } catch (error) {
-      // #region agent log
-      agentDebugLog(
-        "turbopanel-permissions.ts:refreshDevPermissionsQuietly",
-        "quiet refresh failed",
-        {
-          error: error instanceof Error ? error.message : String(error),
-          cacheAfter: probeCacheOwnership(),
-        },
-        "H5",
-      );
-      // #endregion
+      await ensureTurbopanelStateOwnership(undefined);
+      await ensureDaemonSystemdDockerAccess();
+    } catch {
+      // Best-effort refresh; never block the TUI.
     }
   })();
 }

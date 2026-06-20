@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { DAEMON_ERR_LOG_PATH, DAEMON_LOG_PATH } from "./paths.ts";
 import { sanitizeInstallOutput } from "./install-output.ts";
@@ -18,8 +18,7 @@ function isLegacyNoiseLine(raw: string): boolean {
   return (
     /^Warning/i.test(trimmed) ||
     /--env-file/.test(trimmed) ||
-    /^Python .* is already installed/i.test(trimmed) ||
-    /^\[instance\] waiting/.test(trimmed)
+    /^Python .* is already installed/i.test(trimmed)
   );
 }
 
@@ -68,21 +67,35 @@ function waitingMessage(message: string): string {
     : message;
 }
 
-function structuredLine(
-  time: string,
-  level: DaemonLogLevel,
-  component: string,
-  message: string,
-  err?: string,
-): DaemonLogLine {
-  const resolvedTime = time.trim().length > 0 ? time : new Date().toISOString();
-  return {
-    time: resolvedTime,
-    level,
-    component,
-    message: waitingMessage(message),
-    err,
-  };
+function estimateTimeFromFilePosition(
+  offset: number,
+  size: number,
+  birthMs: number,
+  mtimeMs: number,
+): string {
+  if (size <= 0) {
+    return new Date(mtimeMs).toISOString();
+  }
+  const span = Math.max(mtimeMs - birthMs, 0);
+  const ratio = Math.min(Math.max(offset / size, 0), 1);
+  return new Date(birthMs + ratio * span).toISOString();
+}
+
+function enrichLineTimestamps(
+  lines: DaemonLogLine[],
+  meta: Pick<FileTailMeta, "path" | "birthMs" | "mtimeMs" | "size">,
+  offsets: number[],
+): DaemonLogLine[] {
+  return lines.map((line, index) => {
+    if (line.time.trim().length > 0) {
+      return line;
+    }
+    const offset = offsets[index] ?? meta.size;
+    return {
+      ...line,
+      time: cachedDerivedTimestamp(meta.path, offset, meta),
+    };
+  });
 }
 
 export const LOG_TIME_PLACEHOLDER = "──:──:──";
@@ -153,9 +166,17 @@ export function parseDaemonLogLine(raw: string): DaemonLogLine {
 
   if (
     trimmed === "waiting for instance" ||
-    /\[(?:daemon|instance)\] waiting for instance/.test(trimmed)
+    /^\[(?:daemon|instance)\] waiting for instance/.test(trimmed)
   ) {
     return structuredLine("", "info", "instance", "waiting for instance");
+  }
+
+  if (/^\[docker-monitor\] poll failed:/.test(trimmed)) {
+    return structuredLine("", "warn", "docker", "monitor poll failed (check Docker socket access)");
+  }
+
+  if (/^\[docker\] Docker socket not reachable/.test(trimmed)) {
+    return structuredLine("", "warn", "docker", "Docker socket not reachable yet");
   }
 
   if (
@@ -198,61 +219,203 @@ function collapseConsecutiveLines(lines: DaemonLogLine[]): DaemonLogLine[] {
   return collapsed;
 }
 
-type TailResult = {
-  lines: string[];
-  readable: boolean;
+type RawLogLine = {
+  text: string;
+  offset: number;
 };
 
-function tailLines(path: string, maxLines: number): TailResult {
+type FileTailMeta = {
+  path: string;
+  readable: boolean;
+  lines: RawLogLine[];
+  birthMs: number;
+  mtimeMs: number;
+  size: number;
+};
+
+const derivedTimestampCache = new Map<string, string>();
+const derivedTimestampFileSize = new Map<string, number>();
+
+function cachedDerivedTimestamp(
+  path: string,
+  offset: number,
+  meta: Pick<FileTailMeta, "birthMs" | "mtimeMs" | "size">,
+): string {
+  const previousSize = derivedTimestampFileSize.get(path);
+  if (previousSize !== undefined && meta.size < previousSize) {
+    for (const key of derivedTimestampCache.keys()) {
+      if (key.startsWith(`${path}:`)) {
+        derivedTimestampCache.delete(key);
+      }
+    }
+  }
+  derivedTimestampFileSize.set(path, meta.size);
+
+  const key = `${path}:${offset}`;
+  const cached = derivedTimestampCache.get(key);
+  if (cached) {
+    return cached;
+  }
+
+  const derived = estimateTimeFromFilePosition(
+    offset,
+    meta.size,
+    meta.birthMs,
+    meta.mtimeMs,
+  );
+  derivedTimestampCache.set(key, derived);
+  return derived;
+}
+
+function structuredLine(
+  time: string,
+  level: DaemonLogLevel,
+  component: string,
+  message: string,
+  err?: string,
+): DaemonLogLine {
+  return {
+    time: time.trim(),
+    level,
+    component,
+    message: waitingMessage(message),
+    err,
+  };
+}
+
+function fileStatMs(path: string): { birthMs: number; mtimeMs: number; size: number } | undefined {
+  try {
+    const st = statSync(path);
+    return {
+      birthMs: st.birthtimeMs || st.ctimeMs,
+      mtimeMs: st.mtimeMs,
+      size: st.size,
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+function sudoFileStatMs(path: string): { birthMs: number; mtimeMs: number; size: number } | undefined {
+  const result = spawnSync(
+    "sudo",
+    ["-n", "stat", "-c", "%W %Y %s", path],
+    { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
+  );
+  if (result.status !== 0 || !result.stdout) {
+    return undefined;
+  }
+  const [birthSec, mtimeSec, sizeText] = result.stdout.trim().split(/\s+/);
+  const birth = Number(birthSec);
+  const mtime = Number(mtimeSec);
+  const size = Number(sizeText);
+  if (!Number.isFinite(mtime) || !Number.isFinite(size)) {
+    return undefined;
+  }
+  return {
+    birthMs: birth > 0 ? birth * 1000 : mtime * 1000,
+    mtimeMs: mtime * 1000,
+    size,
+  };
+}
+
+function splitLinesWithOffsets(text: string): RawLogLine[] {
+  const lines: RawLogLine[] = [];
+  let offset = 0;
+  const parts = text.split("\n");
+  for (let i = 0; i < parts.length; i++) {
+    const part = parts[i];
+    const isLast = i === parts.length - 1;
+    if (!isLast || part.length > 0) {
+      lines.push({ text: part, offset });
+    }
+    offset += part.length + (isLast ? 0 : 1);
+  }
+  return lines;
+}
+
+function readLogFileText(path: string): string | undefined {
   try {
     if (existsSync(path)) {
-      const text = readFileSync(path, "utf8");
-      return {
-        readable: true,
-        lines: text
-          .split("\n")
-          .map((line) => sanitizeInstallOutput(line))
-          .filter((line) => line.trim().length > 0)
-          .slice(-maxLines),
-      };
+      return readFileSync(path, "utf8");
     }
   } catch {
-    // Unreadable to the dev user — fall back to sudo tail below.
+    // fall through to sudo cat
   }
 
   const result = spawnSync(
     "sudo",
-    ["-n", "tail", "-n", String(maxLines), path],
-    { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
+    ["-n", "cat", path],
+    { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], maxBuffer: 16 * 1024 * 1024 },
   );
-
   if (result.status !== 0 || result.stdout === undefined) {
-    return { readable: false, lines: [] };
+    return undefined;
+  }
+  return result.stdout;
+}
+
+function tailLinesWithMeta(path: string, maxLines: number): FileTailMeta {
+  const empty: FileTailMeta = {
+    path,
+    readable: false,
+    lines: [],
+    birthMs: 0,
+    mtimeMs: 0,
+    size: 0,
+  };
+
+  const stat = fileStatMs(path) ?? sudoFileStatMs(path);
+  const text = readLogFileText(path);
+  if (!stat || text === undefined) {
+    return empty;
   }
 
+  const lines = splitLinesWithOffsets(text)
+    .map((line) => ({
+      text: sanitizeInstallOutput(line.text),
+      offset: line.offset,
+    }))
+    .filter((line) => line.text.trim().length > 0)
+    .slice(-maxLines);
+
   return {
+    path,
     readable: true,
-    lines: result.stdout
-      .split("\n")
-      .map((line) => sanitizeInstallOutput(line))
-      .filter((line) => line.trim().length > 0),
+    lines,
+    birthMs: stat.birthMs,
+    mtimeMs: stat.mtimeMs,
+    size: stat.size,
   };
 }
 
+function parseTailedFile(meta: FileTailMeta): DaemonLogLine[] {
+  const filtered = meta.lines.filter((line) => !isLegacyNoiseLine(line.text));
+  if (filtered.length === 0) {
+    return [];
+  }
+  const parsed = filtered.map((line) => parseDaemonLogLine(line.text));
+  return enrichLineTimestamps(
+    parsed,
+    meta,
+    filtered.map((line) => line.offset),
+  );
+}
+
 function emptyLogHints(
-  stdout: TailResult,
-  stderr: TailResult,
+  stdout: FileTailMeta,
+  stderr: FileTailMeta,
 ): DaemonLogLine[] {
+  const now = new Date().toISOString();
   if (!stdout.readable && !stderr.readable) {
     return [
       structuredLine(
-        "",
+        now,
         "warn",
         "console",
         "No daemon logs readable — expected /var/log/turbopanel/daemon/daemon.log",
       ),
       structuredLine(
-        "",
+        now,
         "info",
         "console",
         "Ensure passwordless sudo is enabled for tail, or ask an admin for log access.",
@@ -262,13 +425,13 @@ function emptyLogHints(
 
   return [
     structuredLine(
-      "",
+      now,
       "warn",
       "console",
       "Daemon stdout log is empty — the service may be crash-looping before structured logging starts",
     ),
     structuredLine(
-      "",
+      now,
       "info",
       "console",
       stderr.readable
@@ -278,28 +441,49 @@ function emptyLogHints(
   ];
 }
 
+function collapseRepeatedStatus(lines: DaemonLogLine[]): DaemonLogLine[] {
+  const collapsed = collapseConsecutiveLines(lines);
+  const keep: DaemonLogLine[] = [];
+  let sawWaiting = false;
+  let sawDockerPoll = false;
+
+  for (const line of collapsed) {
+    if (line.component === "instance" && line.message === "waiting for instance") {
+      if (!sawWaiting) {
+        keep.push(line);
+        sawWaiting = true;
+      }
+      continue;
+    }
+    if (
+      line.component === "docker" &&
+      line.message === "monitor poll failed (check Docker socket access)"
+    ) {
+      if (!sawDockerPoll) {
+        keep.push(line);
+        sawDockerPoll = true;
+      }
+      continue;
+    }
+    keep.push(line);
+  }
+
+  return keep;
+}
+
 export function readDaemonLogTail(maxLines = 500): DaemonLogLine[] {
-  const stdout = tailLines(DAEMON_LOG_PATH, maxLines);
-  const stderr = tailLines(DAEMON_ERR_LOG_PATH, maxLines);
-  const rawLines = stdout.lines.length > 0 ? stdout.lines : stderr.lines;
-  const lines = rawLines.filter((line) => !isLegacyNoiseLine(line));
+  const stdoutBudget = Math.max(1, Math.round(maxLines * 0.8));
+  const stderrBudget = Math.max(1, maxLines - stdoutBudget);
+  const stdout = tailLinesWithMeta(DAEMON_LOG_PATH, stdoutBudget);
+  const stderr = tailLinesWithMeta(DAEMON_ERR_LOG_PATH, stderrBudget);
+  const lines = [
+    ...parseTailedFile(stdout),
+    ...parseTailedFile(stderr),
+  ];
 
   if (lines.length === 0) {
     return emptyLogHints(stdout, stderr);
   }
 
-  const parsed = lines.map((line) => parseDaemonLogLine(line));
-  parsed.sort((a, b) => {
-    if (a.time && b.time) {
-      return a.time.localeCompare(b.time);
-    }
-    if (a.time) {
-      return -1;
-    }
-    if (b.time) {
-      return 1;
-    }
-    return 0;
-  });
-  return collapseConsecutiveLines(parsed.slice(-maxLines));
+  return collapseRepeatedStatus(lines.slice(-maxLines));
 }

@@ -4,6 +4,7 @@ import {
   DAEMON_BOOTSTRAP_COMPILED,
   DAEMON_BOOTSTRAP_SCRIPT,
   DAEMON_DENO_CONFIG,
+  DAEMON_ORCHESTRATION_SCRIPT,
   DENO_PINNED_BIN,
   DENO_VERSION,
   PLATFORM_DENO_BIN,
@@ -150,6 +151,30 @@ export async function ensureBootstrapDeno(
   if (code !== 0 || !platformDenoInstalled()) {
     throw new Error("Failed to install Deno bootstrap runtime");
   }
+}
+
+function denoRunOrchestrationInvocation(denoBin: string, actionArgs: string[]): string {
+  return [
+    denoBin,
+    "run",
+    "--config",
+    DAEMON_DENO_CONFIG,
+    "--allow-read",
+    "--allow-run",
+    "--allow-env",
+    "--allow-write",
+    "--allow-net",
+    DAEMON_ORCHESTRATION_SCRIPT,
+    ...actionArgs,
+  ].map(shellQuote).join(" ");
+}
+
+/** Shell command to exec run-orchestration-action.ts for the current runtime contract. */
+export function orchestrationActionCommand(...actionArgs: string[]): string {
+  if (isProductionRuntime()) {
+    return denoRunOrchestrationInvocation(resolveProductionDenoBin(), actionArgs);
+  }
+  return denoRunOrchestrationInvocation(resolveBootstrapDenoBin(), actionArgs);
 }
 
 /** Shell command to exec bootstrap-orchestration for the current runtime contract. */

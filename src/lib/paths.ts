@@ -14,6 +14,8 @@ export const PLATFORM_DENO_BIN = `${DENO_LEGACY_RUNTIME_DIR}/current/deno`;
 export const DAEMON_REPO_DIR = `${TURBOPANEL_PLATFORM}/daemon`;
 export const DAEMON_BOOTSTRAP_SCRIPT =
   `${DAEMON_REPO_DIR}/scripts/bootstrap-orchestration.ts`;
+export const DAEMON_ORCHESTRATION_SCRIPT =
+  `${DAEMON_REPO_DIR}/scripts/run-orchestration-action.ts`;
 export const DAEMON_BOOTSTRAP_COMPILED =
   `${DAEMON_REPO_DIR}/dist/turbopanel-bootstrap-orchestration`;
 export const DAEMON_DENO_CONFIG = `${DAEMON_REPO_DIR}/deno.json`;

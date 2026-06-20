@@ -17,26 +17,6 @@ export type DevService = {
 
 const DAEMON_UNIT = "turbopanel-daemon";
 
-export function probeDaemonSystemd(): {
-  activeState: string | null;
-  subState: string | null;
-  result: string | null;
-  nRestarts: string | null;
-  mappedStatus: DevServiceStatus;
-} {
-  const activeState = systemctlProperty(DAEMON_UNIT, "ActiveState");
-  const subState = systemctlProperty(DAEMON_UNIT, "SubState");
-  const result = systemctlProperty(DAEMON_UNIT, "Result");
-  const nRestarts = systemctlProperty(DAEMON_UNIT, "NRestarts");
-  return {
-    activeState,
-    subState,
-    result,
-    nRestarts,
-    mappedStatus: systemdServiceStatus(DAEMON_UNIT) ?? "uninstalled",
-  };
-}
-
 const DOWNSTREAM_SERVICE_DEFS = [
   {
     id: "instance",
@@ -154,11 +134,13 @@ function daemonStatus(): DevServiceStatus {
 }
 
 function downstreamServices(): DevService[] {
-  return DOWNSTREAM_SERVICE_DEFS.map(({ id, label, unit, repoDir }) => ({
-    id,
-    label,
-    status: serviceStatus(unit, repoDir),
-  }));
+  return DOWNSTREAM_SERVICE_DEFS
+    .filter(({ unit, repoDir }) => isSystemdUnitInstalled(unit) || isRepoInstalled(repoDir))
+    .map(({ id, label, unit, repoDir }) => ({
+      id,
+      label,
+      status: serviceStatus(unit, repoDir),
+    }));
 }
 
 export function isDaemonInstallable(status: DevServiceStatus): boolean {
@@ -171,10 +153,6 @@ export function getVisibleServices(): DevService[] {
     label: "daemon",
     status: daemonStatus(),
   };
-
-  if (daemon.status !== "running") {
-    return [daemon];
-  }
 
   return [daemon, ...downstreamServices()];
 }

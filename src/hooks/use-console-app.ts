@@ -4,8 +4,6 @@ import { getVisibleServices } from "../dev-services.ts";
 import type { DaemonActionId } from "../lib/daemon-actions.ts";
 import type { DaemonOperation } from "../lib/spinners.ts";
 import { refreshDevPermissionsQuietly } from "../lib/turbopanel-permissions.ts";
-import { agentDebugLog, probeCacheOwnership } from "../lib/debug-agent-log.ts";
-import { probeDaemonSystemd } from "../dev-services.ts";
 import { useVisibleServices } from "./use-visible-services.ts";
 
 export type ActiveArea = "developer" | "services" | "bootstrap";
@@ -89,8 +87,22 @@ export function useConsoleApp() {
         setOpenServiceId(null);
         setDaemonOperation("purge");
         return;
+      case "start-dev-env": {
+        const daemon = visibleServices.find((service) => service.id === "daemon");
+        if (!daemon || daemon.status === "uninstalled") {
+          throw new Error(
+            "Install the daemon before starting the development environment.",
+          );
+        }
+        setInstallFinished(false);
+        setActiveArea("bootstrap");
+        setProvisioning(true);
+        setOpenServiceId(null);
+        setDaemonOperation("dev-env");
+        return;
+      }
     }
-  }, [startDaemonInstall]);
+  }, [startDaemonInstall, visibleServices]);
 
   const handleDaemonRestart = useCallback(() => {
     setInstallFinished(false);
@@ -98,18 +110,6 @@ export function useConsoleApp() {
   }, []);
 
   const handleInstallFinished = useCallback((success: boolean) => {
-    // #region agent log
-    agentDebugLog(
-      "use-console-app.ts:handleInstallFinished",
-      "install finished callback",
-      {
-        success,
-        systemd: probeDaemonSystemd(),
-        cache: probeCacheOwnership(),
-      },
-      "H4",
-    );
-    // #endregion
     setInstallFinished(true);
     refreshServices();
     if (success) {
@@ -125,24 +125,12 @@ export function useConsoleApp() {
   }, [refreshServices]);
 
   const handleProvisioningDone = useCallback(() => {
-    // #region agent log
-    agentDebugLog(
-      "use-console-app.ts:handleProvisioningDone",
-      "user continued after install",
-      {
-        systemd: probeDaemonSystemd(),
-        cache: probeCacheOwnership(),
-        visibleDaemonStatus: visibleServices.find((s) => s.id === "daemon")?.status,
-      },
-      "H4",
-    );
-    // #endregion
     setProvisioning(false);
     setActiveArea("developer");
     setDaemonOperation(null);
     setInstallFinished(false);
     refreshServices();
-  }, [refreshServices, visibleServices]);
+  }, [refreshServices]);
 
   const handleRestartDone = useCallback(() => {
     setDaemonOperation(null);

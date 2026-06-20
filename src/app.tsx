@@ -69,6 +69,7 @@ function MainContent({
     case "bootstrap":
       return (
         <ProvisionerPanel
+          phase={daemonOperation === "dev-env" ? "dev-env" : "daemon"}
           width={width}
           height={height}
           onDone={onProvisioningDone!}

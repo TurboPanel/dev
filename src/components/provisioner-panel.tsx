@@ -13,6 +13,10 @@ import {
   bootstrapOrchestration,
   installDaemonSystemd,
 } from "../lib/daemon-install.ts";
+import {
+  DEV_ENV_CONVERGE_STEP,
+  installDevEnvironment,
+} from "../lib/instance-install.ts";
 
 const OUTPUT_LOG_ROWS = 6;
 
@@ -28,15 +32,18 @@ function truncateLine(text: string, maxWidth: number): string {
 }
 
 type BootstrapPhase = "uv" | "python" | "ansible" | "converge";
+type ProvisionerPhase = "daemon" | "dev-env";
 
 export function ProvisionerPanel({
   width,
   height,
+  phase = "daemon",
   onDone,
   onInstallFinished,
 }: {
   width: number;
   height: number;
+  phase?: ProvisionerPhase;
   onDone: () => void;
   onInstallFinished?: (success: boolean) => void;
 }) {
@@ -124,6 +131,13 @@ export function ProvisionerPanel({
     }
   }, [emitStep, onEvent]);
 
+  const trackDevEnvStep = useCallback((
+    label: string,
+    status: "running" | "ok" | "failed",
+  ) => {
+    emitStep(label, status);
+  }, [emitStep]);
+
   const view = useMemo(
     () => buildAnsibleTaskView(tasks, taskRowBudget),
     [tasks, taskRowBudget],
@@ -142,6 +156,10 @@ export function ProvisionerPanel({
   }, [error, onInstallFinished]);
 
   useEffect(() => {
+    if (phase !== "daemon") {
+      return;
+    }
+
     let cancelled = false;
 
     void (async () => {
@@ -197,11 +215,56 @@ export function ProvisionerPanel({
   }, [
     appendOutput,
     emitStep,
+    phase,
     setDone,
     setError,
     setErrorLogPath,
     trackBootstrapEvent,
     trackBootstrapOutput,
+  ]);
+
+  useEffect(() => {
+    if (phase !== "dev-env") {
+      return;
+    }
+
+    let cancelled = false;
+
+    void (async () => {
+      const currentStep = DEV_ENV_CONVERGE_STEP;
+      try {
+        await installDevEnvironment(trackBootstrapEvent, appendOutput, trackDevEnvStep);
+        if (cancelled) return;
+        setDone(true);
+      } catch (caught) {
+        if (cancelled) return;
+        emitStep(currentStep, "failed");
+        const message = caught instanceof Error ? caught.message : String(caught);
+        const saved = await writeTaskErrorLog({
+          title: "Start development environment",
+          message: `step=${currentStep}\n${message}`,
+          tasks: [{ label: currentStep, status: "failed" }],
+          timestamp: new Date().toISOString(),
+        });
+        if (saved) {
+          setErrorLogPath(CONSOLE_LAST_TASK_ERROR_LOG);
+        }
+        setError(message);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    appendOutput,
+    emitStep,
+    phase,
+    setDone,
+    setError,
+    setErrorLogPath,
+    trackBootstrapEvent,
+    trackDevEnvStep,
   ]);
 
   useInput(() => {
@@ -210,10 +273,18 @@ export function ProvisionerPanel({
     }
   });
 
+  const title = phase === "dev-env"
+    ? "Starting development environment"
+    : "Bootstrapping development environment";
+
+  const successMessage = phase === "dev-env"
+    ? "Development environment running"
+    : "Daemon installed — press any key to continue";
+
   return (
     <Box flexDirection="column" width={width} height={height}>
       <Text color="cyan" bold>
-        Bootstrapping development environment
+        {title}
       </Text>
       <Box flexDirection="column" marginTop={1} flexGrow={1} minHeight={0}>
         <AnsibleTaskList
@@ -239,7 +310,7 @@ export function ProvisionerPanel({
       )}
       {finished && !error && (
         <Box marginTop={1}>
-          <Text color="green">Daemon installed and running</Text>
+          <Text color="green">{successMessage}</Text>
         </Box>
       )}
       {finished && (
