@@ -13,6 +13,7 @@ export type ServiceLogLine = {
 };
 
 const INSTANCE_LOG_DIR = `${platformRepoPath("instance")}/logs`;
+const UI_LOG_DIR = `${platformRepoPath("ui")}/logs`;
 
 const FILE_LOG_SOURCES: Record<string, string[]> = {
   instance: [
@@ -20,6 +21,7 @@ const FILE_LOG_SOURCES: Record<string, string[]> = {
     `${INSTANCE_LOG_DIR}/instance.log`,
   ],
   daemon: [DAEMON_ERR_LOG_PATH, DAEMON_LOG_PATH],
+  ui: [`${UI_LOG_DIR}/ui.err.log`, `${UI_LOG_DIR}/ui.log`],
 };
 
 const SERVICE_UNITS: Record<string, string> = {
