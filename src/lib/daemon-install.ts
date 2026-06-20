@@ -194,6 +194,12 @@ export async function installDaemonSystemd(
     writeDaemonBaseEnv();
   }
 
+  // Stop if the install script started the daemon before runtimes ownership was reclaimed.
+  await runCaptured(
+    ["sudo", "-n", "systemctl", "stop", "turbopanel-daemon"],
+    onOutput,
+  );
+
   const startCode = await runCaptured(
     ["sudo", "-n", "systemctl", "enable", "--now", "turbopanel-daemon"],
     onOutput,
