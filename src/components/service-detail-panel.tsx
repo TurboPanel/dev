@@ -14,12 +14,14 @@ export function ServiceDetailPanel({
   height,
   focused = false,
   logOverlayLines = [],
+  logFollowResetKey,
 }: {
   service: DevService;
   width: number;
   height: number;
   focused?: boolean;
   logOverlayLines?: ConsoleLogLine[];
+  logFollowResetKey?: number;
 }) {
   const fileLogLines = useServiceLog(service.id);
   const logLines = useMemo(
@@ -35,12 +37,13 @@ export function ServiceDetailPanel({
     ? instanceTitleHeaderRows(service.label, innerWidth)
     : measureTitleArtRows(service.label, innerWidth);
   const staticHeaderRows = titleRows;
-  const logHeight = Math.max(3, height - staticHeaderRows - 2);
+  const logHeight = Math.max(1, height - staticHeaderRows);
   const { scrollIndex: logScrollIndex, handleLogKey } = useLogScroll({
     lineCount: logLines.length,
     viewportHeight: logHeight,
     focused,
     resetKey: service.id,
+    followResetKey: logFollowResetKey,
   });
 
   useInput((_input, key) => {
@@ -54,7 +57,6 @@ export function ServiceDetailPanel({
       height={height}
       paddingX={1}
       paddingTop={0}
-      paddingBottom={1}
     >
       {isInstance ? (
         <InstanceTitleHeader label={service.label} width={innerWidth} />
@@ -66,7 +68,7 @@ export function ServiceDetailPanel({
         />
       )}
 
-      <Box flexGrow={1} minHeight={0}>
+      <Box flexGrow={1} minHeight={0} height={logHeight}>
         <PlainLogView
           lines={logLines}
           width={innerWidth}

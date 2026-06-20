@@ -70,6 +70,7 @@ export function ServicesPanel({
   restartInProgress,
   restartOverlayServiceId,
   restartLogOverlay,
+  logFollowResetKey,
   onConfirmRestart,
   onCancelRestart,
 }: {
@@ -87,6 +88,7 @@ export function ServicesPanel({
   restartInProgress?: string | null;
   restartOverlayServiceId?: string | null;
   restartLogOverlay?: ConsoleLogLine[];
+  logFollowResetKey?: number;
   onConfirmRestart?: () => void;
   onCancelRestart?: () => void;
 }) {
@@ -208,6 +210,7 @@ export function ServicesPanel({
             onDaemonAction={onDaemonAction}
             logInputActive={logFocused && !pendingRestart && !restartInProgress}
             logOverlayLines={overlayForService("daemon")}
+            logFollowResetKey={logFollowResetKey}
           />
           {pendingRestart?.serviceId === "daemon" && onConfirmRestart && onCancelRestart && (
             <RestartServiceModal
@@ -228,6 +231,7 @@ export function ServicesPanel({
             height={height}
             focused={logFocused && !pendingRestart && !restartInProgress}
             logOverlayLines={overlayForService(selectedService.id)}
+            logFollowResetKey={logFollowResetKey}
           />
           {pendingRestart?.serviceId === selectedService.id && onConfirmRestart && onCancelRestart && (
             <RestartServiceModal

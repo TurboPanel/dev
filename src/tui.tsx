@@ -31,6 +31,7 @@ function App() {
       restartInProgress={consoleApp.restartInProgress}
       restartOverlayServiceId={consoleApp.restartOverlayServiceId}
       restartLogOverlay={consoleApp.restartLogOverlay}
+      logFollowResetKey={consoleApp.logFollowResetKey}
       onConfirmRestart={consoleApp.confirmServiceRestart}
       onCancelRestart={consoleApp.cancelServiceRestart}
     />

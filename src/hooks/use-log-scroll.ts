@@ -11,11 +11,14 @@ export function useLogScroll({
   viewportHeight,
   focused,
   resetKey,
+  followResetKey,
 }: {
   lineCount: number;
   viewportHeight: number;
   focused: boolean;
   resetKey?: string | number;
+  /** Bumped after service restarts to re-pin the viewport to the log tail. */
+  followResetKey?: number;
 }) {
   const [scrollIndex, setScrollIndex] = useState(0);
   const [followTail, setFollowTail] = useState(true);
@@ -24,7 +27,7 @@ export function useLogScroll({
   useEffect(() => {
     setFollowTail(true);
     setScrollIndex(lastLogScrollIndex(lineCount));
-  }, [resetKey]);
+  }, [resetKey, followResetKey, lineCount]);
 
   useEffect(() => {
     if (focused && !wasFocusedRef.current) {

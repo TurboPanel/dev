@@ -24,13 +24,12 @@ export function PlainLogView({
   width,
   height,
   selectedIndex,
-  focused,
 }: {
   lines: ServiceLogLine[];
   width: number;
   height: number;
   selectedIndex: number;
-  focused: boolean;
+  focused?: boolean;
 }) {
   const scrollIndex = lines.length === 0
     ? 0
@@ -41,13 +40,10 @@ export function PlainLogView({
       width={width}
       height={height}
       flexDirection="column"
-      flexGrow={1}
       minHeight={0}
     >
       <ScrollList height={height} selectedIndex={scrollIndex} scrollAlignment="bottom">
         {lines.map((line, index) => {
-          const dim = index !== scrollIndex;
-          const bold = focused && index === scrollIndex;
           const showTime = line.time != null && line.time.length > 0;
           const maxMessageWidth = showTime
             ? Math.max(1, width - LOG_TIME_WIDTH - 1)
@@ -57,18 +53,17 @@ export function PlainLogView({
           return (
             <Text
               key={serviceLogLineKey(line, index)}
-              bold={bold}
               wrap="truncate"
             >
               {showTime ? (
                 <>
-                  <Text color={LOG_TIME} dimColor={dim}>
+                  <Text color={LOG_TIME}>
                     {formatLogDisplayTime(line.time!).padEnd(LOG_TIME_WIDTH)}{" "}
                   </Text>
-                  <Text dimColor={dim}>{message}</Text>
+                  <Text>{message}</Text>
                 </>
               ) : (
-                <Text dimColor={dim}>{message}</Text>
+                <Text>{message}</Text>
               )}
             </Text>
           );

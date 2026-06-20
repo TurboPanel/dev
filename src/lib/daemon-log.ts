@@ -220,6 +220,8 @@ function collapseConsecutiveLines(lines: DaemonLogLine[]): DaemonLogLine[] {
   for (const line of lines) {
     const key = collapseKey(line);
     if (lastKey === key) {
+      // Keep the newest timestamp when status lines repeat (e.g. docker-monitor polls).
+      collapsed[collapsed.length - 1] = line;
       continue;
     }
     lastKey = key;
@@ -403,12 +405,26 @@ function parseTailedFile(meta: FileTailMeta): DaemonLogLine[] {
   if (filtered.length === 0) {
     return [];
   }
-  const parsed = filtered.map((line) => parseDaemonLogLine(line.text));
+  const parsed = filtered
+    .map((line) => parseDaemonLogLine(line.text))
+    .filter((line) => !isDockerMonitorPollLine(line));
   return enrichLineTimestamps(
     parsed,
     meta,
     filtered.map((line) => line.offset),
   );
+}
+
+function isDockerMonitorPollLine(line: DaemonLogLine): boolean {
+  return (
+    line.component === "docker-monitor" &&
+    line.level === "info" &&
+    /^\d+ containers:/.test(line.message)
+  );
+}
+
+export function shouldHideDaemonLogLine(line: DaemonLogLine): boolean {
+  return isDockerMonitorPollLine(line);
 }
 
 function emptyLogHints(
@@ -496,6 +512,24 @@ function collapseRepeatedStatus(lines: DaemonLogLine[]): DaemonLogLine[] {
   }
 
   return keep;
+}
+
+export type DaemonLogFileStat = {
+  stdoutSize: number;
+  stdoutMtimeMs: number;
+  stderrSize: number;
+  stderrMtimeMs: number;
+};
+
+export function readDaemonLogFileStat(): DaemonLogFileStat {
+  const stdout = fileStatMs(DAEMON_LOG_PATH) ?? sudoFileStatMs(DAEMON_LOG_PATH);
+  const stderr = fileStatMs(DAEMON_ERR_LOG_PATH) ?? sudoFileStatMs(DAEMON_ERR_LOG_PATH);
+  return {
+    stdoutSize: stdout?.size ?? 0,
+    stdoutMtimeMs: stdout?.mtimeMs ?? 0,
+    stderrSize: stderr?.size ?? 0,
+    stderrMtimeMs: stderr?.mtimeMs ?? 0,
+  };
 }
 
 export function readDaemonLogTail(maxLines = 500): DaemonLogLine[] {

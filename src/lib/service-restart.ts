@@ -1,6 +1,8 @@
 import { spawnSync } from "node:child_process";
+import { LogFileTailer } from "./log-file-tail.ts";
 import { spawnDocker } from "./docker-access.ts";
 import { runCaptured } from "./install-output.ts";
+import { SERVICE_FILE_LOG_PATHS } from "./service-log.ts";
 
 const SYSTEMD_UNITS: Record<string, string> = {
   daemon: "turbopanel-daemon",
@@ -196,10 +198,22 @@ export async function watchServiceRestart(
   const name = restartDisplayName(serviceId, label);
   const target = serviceRestartTarget(serviceId);
   const wasActive = queryServiceActiveState(serviceId) === "active";
+  const logPaths = SERVICE_FILE_LOG_PATHS[serviceId];
+  const logTailer = logPaths && logPaths.length > 0
+    ? new LogFileTailer(logPaths)
+    : null;
+
+  const drainServiceLogs = () => {
+    logTailer?.drain((line) => {
+      onLog(consoleLogLine(line));
+    });
+  };
 
   await requestServiceRestart(serviceId, onLog);
+  drainServiceLogs();
 
   if (target?.kind === "docker") {
+    drainServiceLogs();
     const active = queryServiceActiveState(serviceId) === "active";
     if (active) {
       onLog(consoleLogLine(`[console] ${name} is active`));
@@ -215,9 +229,11 @@ export async function watchServiceRestart(
   let loggedStarting = false;
 
   while (Date.now() - started < timeoutMs) {
+    drainServiceLogs();
     const state = queryServiceActiveState(serviceId);
 
     if (
+      !logTailer &&
       target?.kind === "systemd" &&
       wasActive &&
       (state === "deactivating" || state === "inactive") &&
@@ -227,17 +243,18 @@ export async function watchServiceRestart(
       onLog(consoleLogLine(`[console] ${name} shutting down (systemd: ${state})`));
     }
 
-    if (wasActive && state === "inactive" && !loggedStopped) {
+    if (!logTailer && wasActive && state === "inactive" && !loggedStopped) {
       loggedStopped = true;
       onLog(consoleLogLine(`[console] ${name} stopped`));
     }
 
-    if (loggedStopped && state === "activating" && !loggedStarting) {
+    if (!logTailer && loggedStopped && state === "activating" && !loggedStarting) {
       loggedStarting = true;
       onLog(consoleLogLine(`[console] ${name} starting up (systemd: activating)`));
     }
 
     if (state === "active") {
+      drainServiceLogs();
       onLog(consoleLogLine(`[console] ${name} is active`));
       return true;
     }
@@ -245,6 +262,7 @@ export async function watchServiceRestart(
     await sleep(pollMs);
   }
 
+  drainServiceLogs();
   const finalState = queryServiceActiveState(serviceId);
   if (finalState === "active") {
     onLog(consoleLogLine(`[console] ${name} is active`));

@@ -5,7 +5,7 @@ import {
   DAEMON_ACTION_LABELS,
   type DaemonActionId,
 } from "../lib/daemon-actions.ts";
-import type { DaemonLogLine } from "../lib/daemon-log.ts";
+import { parseDaemonLogLine, shouldHideDaemonLogLine, type DaemonLogLine } from "../lib/daemon-log.ts";
 import type { ConsoleLogLine } from "../lib/service-restart.ts";
 import { useLogScroll } from "../hooks/use-log-scroll.ts";
 import { useDaemonLog } from "../hooks/use-daemon-log.ts";
@@ -16,12 +16,23 @@ import { measureTitleArtRows, ServiceTitle } from "./service-title.tsx";
 type DetailFocus = "actions" | "log";
 
 function overlayToDaemonLines(lines: ConsoleLogLine[]): DaemonLogLine[] {
-  return lines.map((line) => ({
-    time: line.time,
-    level: "info" as const,
-    component: "console",
-    message: line.text,
-  }));
+  const parsed: DaemonLogLine[] = [];
+  for (const line of lines) {
+    if (line.text.startsWith("[console]")) {
+      parsed.push({
+        time: line.time,
+        level: "info" as const,
+        component: "console",
+        message: line.text,
+      });
+      continue;
+    }
+    const entry = parseDaemonLogLine(line.text);
+    if (!shouldHideDaemonLogLine(entry)) {
+      parsed.push(entry);
+    }
+  }
+  return parsed;
 }
 
 export function DaemonDetailPanel({
@@ -32,6 +43,7 @@ export function DaemonDetailPanel({
   onDaemonAction,
   logInputActive = false,
   logOverlayLines = [],
+  logFollowResetKey,
 }: {
   service: DevService;
   actions: DaemonActionId[];
@@ -40,6 +52,7 @@ export function DaemonDetailPanel({
   onDaemonAction?: (action: DaemonActionId) => void | Promise<void>;
   logInputActive?: boolean;
   logOverlayLines?: ConsoleLogLine[];
+  logFollowResetKey?: number;
 }) {
   const fileLogLines = useDaemonLog();
   const logLines = useMemo(
@@ -72,13 +85,14 @@ export function DaemonDetailPanel({
   const titleRows = measureTitleArtRows(service.label, innerWidth);
   const staticHeaderRows = titleRows;
   const actionsRows = actions.length > 0 ? actions.length + 1 : 0;
-  const logHeight = Math.max(3, height - staticHeaderRows - actionsRows - 2);
+  const logHeight = Math.max(1, height - staticHeaderRows - actionsRows);
   const logFocused = focus === "log" && logInputActive;
   const { scrollIndex: logScrollIndex, handleLogKey } = useLogScroll({
     lineCount: logLines.length,
     viewportHeight: logHeight,
     focused: logFocused,
     resetKey: service.id,
+    followResetKey: logFollowResetKey,
   });
 
   useInput((_input, key) => {
@@ -123,7 +137,6 @@ export function DaemonDetailPanel({
       height={height}
       paddingX={1}
       paddingTop={0}
-      paddingBottom={1}
     >
       <ServiceTitle
         serviceId={service.id}
@@ -131,7 +144,7 @@ export function DaemonDetailPanel({
         width={innerWidth}
       />
 
-      <Box flexGrow={1} minHeight={0}>
+      <Box flexGrow={1} minHeight={0} height={logHeight}>
         <DaemonLogView
           lines={logLines}
           width={innerWidth}

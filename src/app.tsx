@@ -47,6 +47,7 @@ function MainContent({
   restartInProgress,
   restartOverlayServiceId,
   restartLogOverlay,
+  logFollowResetKey,
   onConfirmRestart,
   onCancelRestart,
 }: {
@@ -69,6 +70,7 @@ function MainContent({
   restartInProgress?: string | null;
   restartOverlayServiceId?: string | null;
   restartLogOverlay?: ConsoleLogLine[];
+  logFollowResetKey?: number;
   onConfirmRestart?: () => void;
   onCancelRestart?: () => void;
 }) {
@@ -113,6 +115,7 @@ function MainContent({
           restartInProgress={restartInProgress}
           restartOverlayServiceId={restartOverlayServiceId}
           restartLogOverlay={restartLogOverlay}
+          logFollowResetKey={logFollowResetKey}
           onConfirmRestart={onConfirmRestart}
           onCancelRestart={onCancelRestart}
         />
@@ -145,6 +148,7 @@ export function AppView({
   restartInProgress,
   restartOverlayServiceId,
   restartLogOverlay,
+  logFollowResetKey,
   onConfirmRestart,
   onCancelRestart,
 }: {
@@ -170,6 +174,7 @@ export function AppView({
   restartInProgress?: string | null;
   restartOverlayServiceId?: string | null;
   restartLogOverlay?: ConsoleLogLine[];
+  logFollowResetKey?: number;
   onConfirmRestart?: () => void;
   onCancelRestart?: () => void;
 }) {
@@ -220,6 +225,7 @@ export function AppView({
           restartInProgress={restartInProgress}
           restartOverlayServiceId={restartOverlayServiceId}
           restartLogOverlay={restartLogOverlay}
+          logFollowResetKey={logFollowResetKey}
           onConfirmRestart={onConfirmRestart}
           onCancelRestart={onCancelRestart}
         />

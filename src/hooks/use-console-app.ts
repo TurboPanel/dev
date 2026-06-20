@@ -61,6 +61,7 @@ export function useConsoleApp() {
   const [restartInProgress, setRestartInProgress] = useState<string | null>(null);
   const [restartOverlayServiceId, setRestartOverlayServiceId] = useState<string | null>(null);
   const [restartLogOverlay, setRestartLogOverlay] = useState<ConsoleLogLine[]>([]);
+  const [logFollowResetKey, setLogFollowResetKey] = useState(0);
   const { services: visibleServices, refresh: refreshServices } = useVisibleServices();
   const autoInstallStarted = useRef(initialAutoInstall.shouldAutoInstall);
 
@@ -148,6 +149,9 @@ export function useConsoleApp() {
       await watchServiceRestart(serviceId, service.label, appendLog);
     } finally {
       setRestartInProgress(null);
+      setRestartOverlayServiceId(null);
+      setRestartLogOverlay([]);
+      setLogFollowResetKey((key) => key + 1);
       refreshServices();
     }
   }, [refreshServices, visibleServices]);
@@ -249,6 +253,7 @@ export function useConsoleApp() {
     restartInProgress,
     restartOverlayServiceId,
     restartLogOverlay,
+    logFollowResetKey,
     installFinished,
     handleDaemonAction,
     handleProvisioningDone,

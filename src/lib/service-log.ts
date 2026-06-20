@@ -16,7 +16,7 @@ export type ServiceLogLine = {
 const INSTANCE_LOG_DIR = `${platformRepoPath("instance")}/logs`;
 const UI_LOG_DIR = `${platformRepoPath("ui")}/logs`;
 
-const FILE_LOG_SOURCES: Record<string, string[]> = {
+export const SERVICE_FILE_LOG_PATHS: Record<string, string[]> = {
   instance: [
     `${INSTANCE_LOG_DIR}/instance.err.log`,
     `${INSTANCE_LOG_DIR}/instance.log`,
@@ -24,6 +24,8 @@ const FILE_LOG_SOURCES: Record<string, string[]> = {
   daemon: [DAEMON_ERR_LOG_PATH, DAEMON_LOG_PATH],
   ui: [`${UI_LOG_DIR}/ui.err.log`, `${UI_LOG_DIR}/ui.log`],
 };
+
+const FILE_LOG_SOURCES = SERVICE_FILE_LOG_PATHS;
 
 const SERVICE_UNITS: Record<string, string> = {
   instance: "turbopanel-instance",

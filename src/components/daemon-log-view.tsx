@@ -46,13 +46,9 @@ function structuredPrefixWidth(line: DaemonLogLine): number {
 function LogRow({
   line,
   width,
-  dim,
-  bold,
 }: {
   line: DaemonLogLine;
   width: number;
-  dim: boolean;
-  bold: boolean;
 }) {
   const time = formatLogDisplayTime(line.time).padEnd(LOG_TIME_WIDTH);
   const level = line.level.toUpperCase().padEnd(5);
@@ -62,13 +58,13 @@ function LogRow({
   const err = line.err ? truncateText(line.err, maxMessageWidth) : undefined;
 
   return (
-    <Text bold={bold} wrap="truncate">
-      <Text color={LOG_TIME} dimColor={dim}>{time} </Text>
-      <Text color={levelColor(line.level)} dimColor={dim}>{level} </Text>
-      <Text color={LOG_COMPONENT} dimColor={dim}>{component} </Text>
-      <Text dimColor={dim}>{message}</Text>
+    <Text wrap="truncate">
+      <Text color={LOG_TIME}>{time} </Text>
+      <Text color={levelColor(line.level)}>{level} </Text>
+      <Text color={LOG_COMPONENT}>{component} </Text>
+      <Text>{message}</Text>
       {err && (
-        <Text color={LOG_WARN} dimColor={dim}> ({err})</Text>
+        <Text color={LOG_WARN}> ({err})</Text>
       )}
     </Text>
   );
@@ -79,13 +75,12 @@ export function DaemonLogView({
   width,
   height,
   selectedIndex,
-  focused,
 }: {
   lines: DaemonLogLine[];
   width: number;
   height: number;
   selectedIndex: number;
-  focused: boolean;
+  focused?: boolean;
 }) {
   const scrollIndex = lines.length === 0
     ? 0
@@ -96,7 +91,6 @@ export function DaemonLogView({
       width={width}
       height={height}
       flexDirection="column"
-      flexGrow={1}
       minHeight={0}
     >
       <ScrollList height={height} selectedIndex={scrollIndex} scrollAlignment="bottom">
@@ -105,8 +99,6 @@ export function DaemonLogView({
             key={daemonLogLineKey(line, index)}
             line={line}
             width={width}
-            dim={index !== scrollIndex}
-            bold={focused && index === scrollIndex}
           />
         ))}
       </ScrollList>
