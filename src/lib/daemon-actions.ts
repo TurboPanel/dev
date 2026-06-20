@@ -100,6 +100,25 @@ export async function waitForDaemonRunning(
   return isDaemonServiceActive();
 }
 
+/** First activation after opt-in — enable the unit and start it (not a restart). */
+export async function enableAndStartDaemon(
+  onOutput?: InstallOutputHandler,
+): Promise<void> {
+  const lines: string[] = [];
+  const append = (line: string) => {
+    lines.push(line);
+    onOutput?.(line);
+  };
+
+  const code = await runCaptured(
+    ["sudo", "-n", "systemctl", "enable", "--now", DAEMON_UNIT],
+    append,
+  );
+  if (code !== 0) {
+    throw new Error(lines.at(-1) ?? "Failed to enable and start turbopanel-daemon");
+  }
+}
+
 /** Queue a daemon restart without blocking until the service is active again. */
 export async function requestDaemonRestart(
   onOutput?: InstallOutputHandler,

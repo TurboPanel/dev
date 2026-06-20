@@ -168,7 +168,6 @@ export async function installDaemonSystemd(
   onStep?: InstallStepHandler,
 ): Promise<void> {
   onStep?.("Install turbopanel-daemon systemd unit", "running");
-  onStep?.("Enable and start turbopanel-daemon", "running");
 
   resetTurbopanelUserCache();
   await ensureDevPlatformAccess(onOutput);
@@ -181,7 +180,6 @@ export async function installDaemonSystemd(
 
   if (code !== 0) {
     onStep?.("Install turbopanel-daemon systemd unit", "failed");
-    onStep?.("Enable and start turbopanel-daemon", "failed");
     throw new Error("Install daemon systemd failed");
   }
 
@@ -194,23 +192,15 @@ export async function installDaemonSystemd(
     writeDaemonBaseEnv();
   }
 
-  // Stop if the install script started the daemon before runtimes ownership was reclaimed.
+  // Leave the unit installed but inactive until the developer opts in via Start dev stack.
   await runCaptured(
     ["sudo", "-n", "systemctl", "stop", "turbopanel-daemon"],
     onOutput,
   );
-
-  const startCode = await runCaptured(
-    ["sudo", "-n", "systemctl", "enable", "--now", "turbopanel-daemon"],
+  await runCaptured(
+    ["sudo", "-n", "systemctl", "disable", "turbopanel-daemon"],
     onOutput,
   );
-
-  if (startCode !== 0) {
-    onStep?.("Enable and start turbopanel-daemon", "failed");
-    throw new Error("Failed to start turbopanel-daemon");
-  }
-
-  onStep?.("Enable and start turbopanel-daemon", "ok");
 
   await ensureDevPlatformAccess(onOutput);
 }

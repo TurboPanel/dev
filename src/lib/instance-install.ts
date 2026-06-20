@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { writeDaemonInstanceEnv } from "./daemon-env.ts";
-import { requestDaemonRestart } from "./daemon-actions.ts";
+import { enableAndStartDaemon, requestDaemonRestart } from "./daemon-actions.ts";
 import { orchestrationActionCommand } from "./daemon-exec.ts";
 import { resolveDevIdentity } from "./dev-identity.ts";
 import {
@@ -224,7 +224,8 @@ export async function installDevEnvironment(
 
   await ensurePlatformCheckoutGroupAccess(onOutput);
   await ensureDevUserDockerAccess(onOutput);
-  await requestDaemonRestart(onOutput);
+
+  await enableAndStartDaemon(onOutput);
 
   const dockerAccessChanged = await ensureDaemonSystemdDockerAccess(onOutput);
   if (dockerAccessChanged) {
