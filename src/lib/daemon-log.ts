@@ -29,7 +29,7 @@ function isLegacyNoiseLine(raw: string): boolean {
   );
 }
 
-const STRUCTURED_TEXT_WITH_TIME_RE =
+export const STRUCTURED_TEXT_WITH_TIME_RE =
   /^(\d{4}-\d{2}-\d{2}T[\d:.]+Z)\s+(DEBUG|INFO|WARN|ERROR)\s+(\S+)\s{2,}(.*)$/;
 const STRUCTURED_TEXT_RE =
   /^(DEBUG|INFO|WARN|ERROR)\s+(\S+)\s{2,}(.*)$/;
@@ -97,6 +97,8 @@ function enrichLineTimestamps(
     if (line.time.trim().length > 0) {
       return line;
     }
+    // Legacy fallback for log lines written before structured logging was introduced;
+    // increasingly rare as old log files age out.
     const offset = offsets[index] ?? meta.size;
     return {
       ...line,
@@ -106,6 +108,7 @@ function enrichLineTimestamps(
 }
 
 export const LOG_TIME_PLACEHOLDER = "──:──:──";
+export const LOG_TIME_WIDTH = 8;
 
 export function formatLogDisplayTime(iso: string): string {
   if (!iso) {

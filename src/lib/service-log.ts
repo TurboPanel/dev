@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
+import { STRUCTURED_TEXT_WITH_TIME_RE } from "./daemon-log.ts";
 import {
   DAEMON_ERR_LOG_PATH,
   DAEMON_LOG_PATH,
@@ -8,6 +9,7 @@ import {
 
 export type ServiceLogLine = {
   text: string;
+  time?: string;
 };
 
 const INSTANCE_LOG_DIR = `${platformRepoPath("instance")}/logs`;
@@ -28,6 +30,15 @@ const SERVICE_UNITS: Record<string, string> = {
 
 export function serviceSystemdUnit(serviceId: string): string | null {
   return SERVICE_UNITS[serviceId] ?? null;
+}
+
+function parseServiceLine(text: string): ServiceLogLine {
+  const match = STRUCTURED_TEXT_WITH_TIME_RE.exec(text);
+  if (match) {
+    const time = match[1];
+    return { text: text.slice(time.length).trimStart(), time };
+  }
+  return { text };
 }
 
 function tailFile(path: string, maxLines: number): string[] {
@@ -103,8 +114,8 @@ export function readServiceLogTail(
     const hint = unit
       ? `No logs yet — journalctl -u ${unit} (sudo may be required)`
       : "No logs available for this service";
-    return [{ text: hint }];
+    return [parseServiceLine(hint)];
   }
 
-  return collected.slice(-maxLines).map((text) => ({ text }));
+  return collected.slice(-maxLines).map(parseServiceLine);
 }

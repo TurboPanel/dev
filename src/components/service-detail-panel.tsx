@@ -71,7 +71,7 @@ export function ServiceDetailPanel({
 
       <Box marginTop={1} flexGrow={1} minHeight={0}>
         <PlainLogView
-          lines={logLines.map((line) => line.text)}
+          lines={logLines}
           width={innerWidth}
           height={logHeight}
           selectedIndex={logScrollIndex}
