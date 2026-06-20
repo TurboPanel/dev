@@ -22,6 +22,7 @@ import {
   turbopanelUserExists,
 } from "./turbopanel-permissions.ts";
 import { agentDebugLog, probeCacheOwnership } from "./debug-agent-log.ts";
+import { probeDaemonSystemd } from "../dev-services.ts";
 
 const TURBOPANEL_USER = "turbopanel";
 const DAEMON_DIR = DAEMON_REPO_DIR;
@@ -231,12 +232,21 @@ export async function installDaemonSystemd(
   onStep?.("Install turbopanel-daemon systemd unit", "ok");
   await ensureTurbopanelStateOwnership(onOutput, "installDaemonSystemd:post-start");
 
+  await runCaptured(
+    ["sudo", "-n", "systemctl", "restart", "turbopanel-daemon"],
+    onOutput,
+  );
+
   // #region agent log
   agentDebugLog(
     "daemon-install.ts:installDaemonSystemd:post-start",
     "systemd install finished",
-    { cacheAfter: probeCacheOwnership() },
+    {
+      cacheAfter: probeCacheOwnership(),
+      systemd: probeDaemonSystemd(),
+    },
     "H3",
+    "post-fix",
   );
   // #endregion
 

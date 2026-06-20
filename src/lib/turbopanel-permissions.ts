@@ -69,7 +69,7 @@ function buildStateOwnershipScript(devUser: string | null): string {
     `group=${shellQuote(TURBOPANEL_GROUP)}`,
     `root=${shellQuote(TURBOPANEL_ROOT)}`,
     `runtimes=${shellQuote(RUNTIMES_DIR)}`,
-    'getent passwd "$owner" >/dev/null 2>&1 || exit 0',
+    'getent passwd "$owner" >/dev/null 2>&1 || exit 1',
     'chown "$owner:$group" "$root"',
     'if [ -d "$runtimes" ]; then chown -R "$owner:$group" "$runtimes"; fi',
     ...STATE_DIRS.map(
@@ -122,6 +122,8 @@ export async function ensureTurbopanelStateOwnership(
   onOutput?: InstallOutputHandler,
   caller = "unknown",
 ): Promise<void> {
+  resetTurbopanelUserCache();
+
   // #region agent log
   agentDebugLog(
     "turbopanel-permissions.ts:ensureTurbopanelStateOwnership:enter",
