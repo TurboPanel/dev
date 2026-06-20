@@ -205,4 +205,6 @@ export async function installDaemonSystemd(
   }
 
   onStep?.("Enable and start turbopanel-daemon", "ok");
+
+  await ensureDevPlatformAccess(onOutput);
 }

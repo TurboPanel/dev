@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
 import {
+  DAEMON_REPO_DIR,
   RUNTIMES_DIR,
   TURBOPANEL_PLATFORM,
   TURBOPANEL_ROOT,
@@ -84,12 +85,14 @@ function buildStateOwnershipScript(devUser: string | null): string {
 }
 
 function buildDevPlatformAccessScript(devUser: string): string {
+  const daemonCheckout = shellQuote(DAEMON_REPO_DIR);
   return [
     "set -eu",
     `dev=${shellQuote(devUser)}`,
     `root=${shellQuote(TURBOPANEL_ROOT)}`,
     `platform=${shellQuote(TURBOPANEL_PLATFORM)}`,
     `runtimes=${shellQuote(RUNTIMES_DIR)}`,
+    `daemonCheckout=${daemonCheckout}`,
     'if getent group turbopanel >/dev/null 2>&1; then',
     '  if ! getent group turbopanel | grep -Eq ":$dev$|:.*[,:]$dev(,|$)"; then',
     '    usermod -aG turbopanel "$dev"',
@@ -103,6 +106,10 @@ function buildDevPlatformAccessScript(devUser: string): string {
     '  if [ -d "$runtimes" ]; then',
     '    setfacl -m u:$dev:rx "$runtimes"',
     '    setfacl -d -m u:$dev:rx "$runtimes"',
+    "  fi",
+    '  if [ -d "$daemonCheckout" ]; then',
+    '    setfacl -R -m u:$dev:rwx "$daemonCheckout" 2>/dev/null || true',
+    '    find "$daemonCheckout" -type d -exec setfacl -d -m u:$dev:rwx {} + 2>/dev/null || true',
     "  fi",
     '  for dir in daemon instance ui website; do',
     '    gitdir="$platform/$dir/.git"',
