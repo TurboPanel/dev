@@ -66,8 +66,7 @@ function shellQuote(value: string): string {
 
 function orchestrationEnv(): string[] {
   const dev = resolveDevIdentity();
-  return [
-    `HOME=${TURBOPANEL_ROOT}`,
+  const env = [
     `ANSIBLE_COLLECTIONS_PATH=${ANSIBLE_COLLECTIONS_PATH}`,
     `UV_PYTHON_INSTALL_DIR=${PYTHON_INSTALL_DIR}`,
     `UV_CACHE_DIR=${UV_CACHE_DIR}`,
@@ -78,6 +77,10 @@ function orchestrationEnv(): string[] {
     "UV_PYTHON_DOWNLOADS=automatic",
     "UV_VENV_CLEAR=1",
   ];
+  if (turbopanelUserExists()) {
+    env.unshift(`HOME=${TURBOPANEL_ROOT}`);
+  }
+  return env;
 }
 
 function orchestrationSudoArgs(command: string): string[] {

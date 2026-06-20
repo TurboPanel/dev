@@ -30,8 +30,7 @@ function shellQuote(value: string): string {
 }
 
 function bootstrapEnv(): string[] {
-  return [
-    `HOME=${TURBOPANEL_ROOT}`,
+  const env = [
     `ANSIBLE_COLLECTIONS_PATH=${ANSIBLE_COLLECTIONS_PATH}`,
     `UV_PYTHON_INSTALL_DIR=${PYTHON_INSTALL_DIR}`,
     `UV_CACHE_DIR=${UV_CACHE_DIR}`,
@@ -39,6 +38,12 @@ function bootstrapEnv(): string[] {
     "UV_PYTHON_DOWNLOADS=automatic",
     "UV_VENV_CLEAR=1",
   ];
+  // Root bootstrap must not use /opt/turbopanel as HOME — Deno would cache as root
+  // under turbopanel's state dir and the daemon service cannot write those entries.
+  if (turbopanelUserExists()) {
+    env.unshift(`HOME=${TURBOPANEL_ROOT}`);
+  }
+  return env;
 }
 
 function bootstrapSudoArgs(command: string): string[] {
@@ -169,12 +174,8 @@ export async function installDaemonSystemd(
   await ensureDevPlatformAccess(onOutput);
   await ensureTurbopanelStateOwnership(onOutput);
 
-  if (turbopanelUserExists()) {
-    writeDaemonEnv();
-  }
-
   const command =
-    `cd ${shellQuote(DAEMON_DIR)} && exec bash ${shellQuote("scripts/install-daemon-systemd.sh")}`;
+    `cd ${shellQuote(DAEMON_DIR)} && TURBOPANEL_SKIP_DAEMON_START=1 exec bash ${shellQuote("scripts/install-daemon-systemd.sh")}`;
 
   const code = await runCaptured(["sudo", "bash", "-c", command], onOutput);
 
@@ -185,12 +186,23 @@ export async function installDaemonSystemd(
   }
 
   onStep?.("Install turbopanel-daemon systemd unit", "ok");
+
+  resetTurbopanelUserCache();
   await ensureTurbopanelStateOwnership(onOutput);
 
-  await runCaptured(
-    ["sudo", "-n", "systemctl", "restart", "turbopanel-daemon"],
+  if (turbopanelUserExists()) {
+    writeDaemonEnv();
+  }
+
+  const startCode = await runCaptured(
+    ["sudo", "-n", "systemctl", "enable", "--now", "turbopanel-daemon"],
     onOutput,
   );
+
+  if (startCode !== 0) {
+    onStep?.("Enable and start turbopanel-daemon", "failed");
+    throw new Error("Failed to start turbopanel-daemon");
+  }
 
   onStep?.("Enable and start turbopanel-daemon", "ok");
 }
