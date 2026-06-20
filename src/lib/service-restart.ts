@@ -7,17 +7,18 @@ import { SERVICE_FILE_LOG_PATHS } from "./service-log.ts";
 const SYSTEMD_UNITS: Record<string, string> = {
   daemon: "turbopanel-daemon",
   instance: "turbopanel-instance",
+  web: "turbopanel-caddy",
   dbstudio: "turbopanel-dbstudio",
   ui: "turbopanel-ui",
   website: "turbopanel-website",
   cache: "turbopanel-redis",
   queue: "turbopanel-rabbitmq",
-  mailpit: "turbopanel-mailpit",
+  smtp: "turbopanel-mailpit",
 };
 
 const DOCKER_CONTAINERS: Record<string, string> = {
   db: "turbopaneldb",
-  mailpit: "turbopanelmailpit",
+  smtp: "turbopanelmailpit",
 };
 
 export type ServiceActiveState =

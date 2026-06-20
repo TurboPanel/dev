@@ -19,11 +19,12 @@ export function useServiceLog(serviceId: string | null): ServiceLogLine[] {
       return;
     }
 
+    setLines(readServiceLogTail(serviceId, MAX_LINES));
+
     const refresh = () => {
       const next = readServiceLogTail(serviceId, MAX_LINES);
       setLines((current) => (serviceLogLinesEqual(current, next) ? current : next));
     };
-    refresh();
     const id = setInterval(refresh, POLL_MS);
     return () => clearInterval(id);
   }, [serviceId]);

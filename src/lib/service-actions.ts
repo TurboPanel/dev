@@ -16,38 +16,41 @@ export type ServiceActionId =
 const SYSTEMD_UNITS: Record<string, string> = {
   daemon: "turbopanel-daemon",
   instance: "turbopanel-instance",
+  web: "turbopanel-caddy",
   dbstudio: "turbopanel-dbstudio",
   ui: "turbopanel-ui",
   website: "turbopanel-website",
   cache: "turbopanel-redis",
   queue: "turbopanel-rabbitmq",
-  mailpit: "turbopanel-mailpit",
+  smtp: "turbopanel-mailpit",
 };
 
 const DOCKER_CONTAINERS: Record<string, string> = {
   db: "turbopaneldb",
-  mailpit: "turbopanelmailpit",
+  smtp: "turbopanelmailpit",
 };
 
 const OPEN_START_UNITS: Record<string, string> = {
   instance: "turbopanel-caddy",
+  web: "turbopanel-caddy",
   ui: "turbopanel-caddy",
   website: "turbopanel-website",
   dbstudio: "turbopanel-dbstudio",
   queue: "turbopanel-rabbitmq",
-  mailpit: "turbopanel-mailpit",
+  smtp: "turbopanel-mailpit",
 };
 
 const MANAGED_SERVICE_IDS = new Set([
   "daemon",
   "instance",
+  "web",
   "dbstudio",
   "ui",
   "website",
   "db",
   "cache",
   "queue",
-  "mailpit",
+  "smtp",
 ]);
 
 function systemctlProperty(unit: string, property: string): string | null {

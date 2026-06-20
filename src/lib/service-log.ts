@@ -33,17 +33,18 @@ const FILE_LOG_SOURCES = SERVICE_FILE_LOG_PATHS;
 
 const SERVICE_UNITS: Record<string, string> = {
   instance: "turbopanel-instance",
+  web: "turbopanel-caddy",
   dbstudio: "turbopanel-dbstudio",
   ui: "turbopanel-ui",
   website: "turbopanel-website",
   cache: "turbopanel-redis",
   queue: "turbopanel-rabbitmq",
-  mailpit: "turbopanel-mailpit",
+  smtp: "turbopanel-mailpit",
 };
 
 const DOCKER_LOG_CONTAINERS: Record<string, string> = {
   db: "turbopaneldb",
-  mailpit: "turbopanelmailpit",
+  smtp: "turbopanelmailpit",
   queue: "turbopanelq",
 };
 
@@ -128,15 +129,16 @@ export function readServiceLogTail(
 ): ServiceLogLine[] {
   const dockerContainer = DOCKER_LOG_CONTAINERS[serviceId];
   const unit = dockerContainer ? null : serviceSystemdUnit(serviceId);
+  const filePaths = FILE_LOG_SOURCES[serviceId] ?? [];
   const collected: string[] = [];
 
-  for (const path of FILE_LOG_SOURCES[serviceId] ?? []) {
+  for (const path of filePaths) {
     collected.push(...tailFile(path, maxLines));
   }
 
   if (dockerContainer) {
     collected.push(...tailDockerLogs(dockerContainer, maxLines));
-  } else if (unit) {
+  } else if (unit && collected.length === 0) {
     collected.push(...tailJournal(unit, maxLines));
   }
 

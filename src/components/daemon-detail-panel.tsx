@@ -11,7 +11,7 @@ import { useLogScroll } from "../hooks/use-log-scroll.ts";
 import { useDaemonLog } from "../hooks/use-daemon-log.ts";
 import { LIST_SELECT_BG, LIST_SELECT_FG } from "../theme.ts";
 import { DaemonLogView } from "./daemon-log-view.tsx";
-import { measureTitleArtRows, ServiceTitle } from "./service-title.tsx";
+import { RuntimeTitleHeader, runtimeTitleHeaderRows } from "./instance-title-header.tsx";
 
 type DetailFocus = "actions" | "log";
 
@@ -82,7 +82,7 @@ export function DaemonDetailPanel({
   }, [actions.length]);
 
   const innerWidth = Math.max(1, width - 2);
-  const titleRows = measureTitleArtRows(service.label, innerWidth);
+  const titleRows = runtimeTitleHeaderRows(service.label, innerWidth);
   const staticHeaderRows = titleRows;
   const actionsRows = actions.length > 0 ? actions.length + 1 : 0;
   const logHeight = Math.max(1, height - staticHeaderRows - actionsRows);
@@ -138,10 +138,11 @@ export function DaemonDetailPanel({
       paddingX={1}
       paddingTop={0}
     >
-      <ServiceTitle
+      <RuntimeTitleHeader
         serviceId={service.id}
         label={service.label}
         width={innerWidth}
+        runtime="deno"
       />
 
       <Box flexGrow={1} minHeight={0} height={logHeight}>

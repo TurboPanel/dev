@@ -31,6 +31,12 @@ const DOWNSTREAM_SERVICE_DEFS = [
     repoDir: platformRepoPath("instance"),
   },
   {
+    id: "web",
+    label: "web",
+    unit: "turbopanel-caddy",
+    repoDir: platformRepoPath("instance"),
+  },
+  {
     id: "dbstudio",
     label: "dbstudio",
     unit: "turbopanel-dbstudio",
@@ -52,7 +58,7 @@ const DOWNSTREAM_SERVICE_DEFS = [
 
 const ANCILLARY_DENO_DEFS = [
   { id: "db", label: "db", kind: "postgres" as const },
-  { id: "mailpit", label: "mailpit", kind: "mailpit" as const },
+  { id: "smtp", label: "smtp", kind: "mailpit" as const },
   { id: "cache", label: "cache", unit: "turbopanel-redis" },
   { id: "queue", label: "queue", unit: "turbopanel-rabbitmq" },
 ] as const;

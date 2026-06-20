@@ -83,10 +83,13 @@ function GradientArt({ art }: { art: string }) {
 export function ServiceTitle({
   label,
   width,
+  shrinkWrap = false,
 }: {
   serviceId: string;
   label: string;
   width: number;
+  /** Size to figlet art width instead of filling `width` (for inline badges). */
+  shrinkWrap?: boolean;
 }) {
   const maxWidth = Math.max(1, width - 2);
 
@@ -100,7 +103,7 @@ export function ServiceTitle({
   }
 
   return (
-    <Box flexDirection="column" width={maxWidth}>
+    <Box flexDirection="column" width={shrinkWrap ? undefined : maxWidth}>
       <GradientArt art={art} />
     </Box>
   );

@@ -4,9 +4,48 @@ import type { DevService } from "../dev-services.ts";
 import type { ConsoleLogLine } from "../lib/service-restart.ts";
 import { useLogScroll } from "../hooks/use-log-scroll.ts";
 import { useServiceLog } from "../hooks/use-service-log.ts";
-import { InstanceTitleHeader, instanceTitleHeaderRows } from "./instance-title-header.tsx";
+import { InstanceTitleHeader, RuntimeTitleHeader, runtimeTitleHeaderRows } from "./instance-title-header.tsx";
+import { POSTGRES_BADGE_RESERVE } from "../lib/postgres-runtime.ts";
+import {
+  stackBadgeReserveForRuntime,
+  type StackBadgeRuntime,
+} from "../lib/stack-versions.ts";
 import { PlainLogView } from "./plain-log-view.tsx";
 import { measureTitleArtRows, ServiceTitle } from "./service-title.tsx";
+
+const PINNED_SERVICE_BADGES: Partial<
+  Record<string, { runtime: StackBadgeRuntime; badgeReserve?: number }>
+> = {
+  web: {
+    runtime: "caddy",
+    badgeReserve: stackBadgeReserveForRuntime("caddy"),
+  },
+  dbstudio: {
+    runtime: "node",
+    badgeReserve: stackBadgeReserveForRuntime("node"),
+  },
+  ui: {
+    runtime: "expo",
+    badgeReserve: stackBadgeReserveForRuntime("expo"),
+  },
+  website: {
+    runtime: "next",
+    badgeReserve: stackBadgeReserveForRuntime("next", { serviceId: "website" }),
+  },
+  smtp: {
+    runtime: "mailpit",
+    badgeReserve: stackBadgeReserveForRuntime("mailpit"),
+  },
+  cache: {
+    runtime: "redis",
+    badgeReserve: stackBadgeReserveForRuntime("redis"),
+  },
+  queue: {
+    runtime: "rabbitmq",
+    badgeReserve: stackBadgeReserveForRuntime("rabbitmq"),
+  },
+  db: { runtime: "postgres", badgeReserve: POSTGRES_BADGE_RESERVE },
+};
 
 export function ServiceDetailPanel({
   service,
@@ -33,8 +72,14 @@ export function ServiceDetailPanel({
   );
   const innerWidth = Math.max(1, width - 2);
   const isInstance = service.id === "instance";
-  const titleRows = isInstance
-    ? instanceTitleHeaderRows(service.label, innerWidth)
+  const pinnedBadge = PINNED_SERVICE_BADGES[service.id];
+  const hasRuntimeBadge = isInstance || pinnedBadge !== undefined;
+  const titleRows = hasRuntimeBadge
+    ? runtimeTitleHeaderRows(
+      service.label,
+      innerWidth,
+      pinnedBadge?.badgeReserve,
+    )
     : measureTitleArtRows(service.label, innerWidth);
   const staticHeaderRows = titleRows;
   const logHeight = Math.max(1, height - staticHeaderRows);
@@ -60,6 +105,14 @@ export function ServiceDetailPanel({
     >
       {isInstance ? (
         <InstanceTitleHeader label={service.label} width={innerWidth} />
+      ) : pinnedBadge ? (
+        <RuntimeTitleHeader
+          serviceId={service.id}
+          label={service.label}
+          width={innerWidth}
+          runtime={pinnedBadge.runtime}
+          badgeReserve={pinnedBadge.badgeReserve}
+        />
       ) : (
         <ServiceTitle
           serviceId={service.id}

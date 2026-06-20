@@ -1,16 +1,55 @@
 import React from "react";
 import { Box } from "ink";
 import { InstanceRuntimeBadge } from "./instance-runtime-badge.tsx";
+import { INSTANCE_BADGE_RESERVE, type StackBadgeRuntime } from "../lib/stack-versions.ts";
 import { measureTitleArtRows, ServiceTitle } from "./service-title.tsx";
 
-const RUNTIME_BADGE_RESERVE = 12;
+const DEFAULT_BADGE_RESERVE = INSTANCE_BADGE_RESERVE;
 
-function titleWidthForBadge(width: number): number {
-  return Math.max(1, width - RUNTIME_BADGE_RESERVE);
+function titleWidthForBadge(width: number, badgeReserve: number): number {
+  return Math.max(1, width - badgeReserve);
+}
+
+export function runtimeTitleHeaderRows(
+  label: string,
+  width: number,
+  badgeReserve = DEFAULT_BADGE_RESERVE,
+): number {
+  return measureTitleArtRows(label, titleWidthForBadge(width, badgeReserve));
 }
 
 export function instanceTitleHeaderRows(label: string, width: number): number {
-  return measureTitleArtRows(label, titleWidthForBadge(width));
+  return runtimeTitleHeaderRows(label, width);
+}
+
+export function RuntimeTitleHeader({
+  serviceId,
+  label,
+  width,
+  runtime,
+  badgeReserve = DEFAULT_BADGE_RESERVE,
+}: {
+  serviceId: string;
+  label: string;
+  width: number;
+  runtime?: StackBadgeRuntime;
+  badgeReserve?: number;
+}) {
+  const titleWidth = titleWidthForBadge(width, badgeReserve);
+
+  return (
+    <Box flexDirection="row" width={width} alignItems="flex-end">
+      <ServiceTitle
+        serviceId={serviceId}
+        label={label}
+        width={titleWidth}
+        shrinkWrap
+      />
+      <Box marginLeft={1} marginBottom={1}>
+        <InstanceRuntimeBadge runtime={runtime} serviceId={serviceId} />
+      </Box>
+    </Box>
+  );
 }
 
 export function InstanceTitleHeader({
@@ -20,14 +59,7 @@ export function InstanceTitleHeader({
   label: string;
   width: number;
 }) {
-  const titleWidth = titleWidthForBadge(width);
-
   return (
-    <Box flexDirection="row" width={width} alignItems="flex-end">
-      <Box flexGrow={1}>
-        <ServiceTitle serviceId="instance" label={label} width={titleWidth} />
-      </Box>
-      <InstanceRuntimeBadge />
-    </Box>
+    <RuntimeTitleHeader serviceId="instance" label={label} width={width} />
   );
 }

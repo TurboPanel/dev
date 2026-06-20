@@ -226,6 +226,7 @@ export function ServicesPanel({
       {selectedService && selectedService.id !== "daemon" && detailWidth > 0 && !daemonOperation && (
         <Box width={detailWidth} height={height} position="relative">
           <ServiceDetailPanel
+            key={selectedService.id}
             service={selectedService}
             width={detailWidth}
             height={height}

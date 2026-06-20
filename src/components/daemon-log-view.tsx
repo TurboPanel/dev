@@ -1,6 +1,5 @@
 import React from "react";
-import { Box, Text } from "ink";
-import { ScrollList } from "ink-scroll-list";
+import { Text } from "ink";
 import { daemonLogLineKey } from "../lib/log-lines-equal.ts";
 import {
   type DaemonLogLevel,
@@ -13,6 +12,8 @@ import {
   LOG_TIME,
   LOG_WARN,
 } from "../theme.ts";
+import { logContentWidth } from "./log-scrollbar.tsx";
+import { ScrollableLogList } from "./scrollable-log-list.tsx";
 
 function truncateText(text: string, maxWidth: number): string {
   if (maxWidth < 4) {
@@ -75,6 +76,7 @@ export function DaemonLogView({
   width,
   height,
   selectedIndex,
+  focused = false,
 }: {
   lines: DaemonLogLine[];
   width: number;
@@ -85,23 +87,23 @@ export function DaemonLogView({
   const scrollIndex = lines.length === 0
     ? 0
     : Math.min(selectedIndex, lines.length - 1);
+  const contentWidth = logContentWidth(width, focused);
 
   return (
-    <Box
+    <ScrollableLogList
       width={width}
       height={height}
-      flexDirection="column"
-      minHeight={0}
+      selectedIndex={scrollIndex}
+      scrollAlignment="bottom"
+      focused={focused}
     >
-      <ScrollList height={height} selectedIndex={scrollIndex} scrollAlignment="bottom">
-        {lines.map((line, index) => (
-          <LogRow
-            key={daemonLogLineKey(line, index)}
-            line={line}
-            width={width}
-          />
-        ))}
-      </ScrollList>
-    </Box>
+      {lines.map((line, index) => (
+        <LogRow
+          key={daemonLogLineKey(line, index)}
+          line={line}
+          width={contentWidth}
+        />
+      ))}
+    </ScrollableLogList>
   );
 }

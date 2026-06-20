@@ -96,13 +96,14 @@ export function rabbitmqMgmtBrowserUrl(): string {
 export function serviceBrowserUrl(serviceId: string): string | null {
   switch (serviceId) {
     case "instance":
+    case "web":
     case "ui":
       return caddyBrowserUrl();
     case "website":
       return websiteBrowserUrl();
     case "dbstudio":
       return drizzleStudioBrowserUrl(DRIZZLE_STUDIO_PORT);
-    case "mailpit":
+    case "smtp":
       return mailpitBrowserUrl();
     case "queue":
       return rabbitmqMgmtBrowserUrl();

@@ -1,6 +1,5 @@
 import React from "react";
-import { Box, Text } from "ink";
-import { ScrollList } from "ink-scroll-list";
+import { Text } from "ink";
 import {
   formatLogDisplayTime,
   LOG_TIME_WIDTH,
@@ -8,6 +7,8 @@ import {
 import { serviceLogLineKey } from "../lib/log-lines-equal.ts";
 import type { ServiceLogLine } from "../lib/service-log.ts";
 import { LOG_TIME } from "../theme.ts";
+import { logContentWidth } from "./log-scrollbar.tsx";
+import { ScrollableLogList } from "./scrollable-log-list.tsx";
 
 function truncateText(text: string, maxWidth: number): string {
   if (maxWidth < 4) {
@@ -24,6 +25,7 @@ export function PlainLogView({
   width,
   height,
   selectedIndex,
+  focused = false,
 }: {
   lines: ServiceLogLine[];
   width: number;
@@ -34,41 +36,41 @@ export function PlainLogView({
   const scrollIndex = lines.length === 0
     ? 0
     : Math.min(selectedIndex, lines.length - 1);
+  const contentWidth = logContentWidth(width, focused);
 
   return (
-    <Box
+    <ScrollableLogList
       width={width}
       height={height}
-      flexDirection="column"
-      minHeight={0}
+      selectedIndex={scrollIndex}
+      scrollAlignment="bottom"
+      focused={focused}
     >
-      <ScrollList height={height} selectedIndex={scrollIndex} scrollAlignment="bottom">
-        {lines.map((line, index) => {
-          const showTime = line.time != null && line.time.length > 0;
-          const maxMessageWidth = showTime
-            ? Math.max(1, width - LOG_TIME_WIDTH - 1)
-            : Math.max(1, width);
-          const message = truncateText(line.text, maxMessageWidth);
+      {lines.map((line, index) => {
+        const showTime = line.time != null && line.time.length > 0;
+        const maxMessageWidth = showTime
+          ? Math.max(1, contentWidth - LOG_TIME_WIDTH - 1)
+          : Math.max(1, contentWidth);
+        const message = truncateText(line.text, maxMessageWidth);
 
-          return (
-            <Text
-              key={serviceLogLineKey(line, index)}
-              wrap="truncate"
-            >
-              {showTime ? (
-                <>
-                  <Text color={LOG_TIME}>
-                    {formatLogDisplayTime(line.time!).padEnd(LOG_TIME_WIDTH)}{" "}
-                  </Text>
-                  <Text>{message}</Text>
-                </>
-              ) : (
+        return (
+          <Text
+            key={serviceLogLineKey(line, index)}
+            wrap="truncate"
+          >
+            {showTime ? (
+              <>
+                <Text color={LOG_TIME}>
+                  {formatLogDisplayTime(line.time!).padEnd(LOG_TIME_WIDTH)}{" "}
+                </Text>
                 <Text>{message}</Text>
-              )}
-            </Text>
-          );
-        })}
-      </ScrollList>
-    </Box>
+              </>
+            ) : (
+              <Text>{message}</Text>
+            )}
+          </Text>
+        );
+      })}
+    </ScrollableLogList>
   );
 }
