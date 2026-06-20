@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { spawnSync } from "node:child_process";
+import { isDaemonServiceActive } from "./daemon-actions.ts";
 import { DAEMON_ERR_LOG_PATH, DAEMON_LOG_PATH } from "./paths.ts";
 import { sanitizeInstallOutput } from "./install-output.ts";
 
@@ -419,6 +420,23 @@ function emptyLogHints(
         "info",
         "console",
         "Ensure passwordless sudo is enabled for tail, or ask an admin for log access.",
+      ),
+    ];
+  }
+
+  if (!isDaemonServiceActive()) {
+    return [
+      structuredLine(
+        now,
+        "info",
+        "console",
+        "turbopanel-daemon is not running — logs appear once the service starts",
+      ),
+      structuredLine(
+        now,
+        "info",
+        "console",
+        "Install or repair the daemon, or run Start development environment from the Developer menu",
       ),
     ];
   }

@@ -192,15 +192,22 @@ export async function installDaemonSystemd(
     writeDaemonBaseEnv();
   }
 
-  // Leave the unit installed but inactive until the developer opts in via Start dev stack.
+  // Stop if the install script started the daemon before runtimes ownership was reclaimed.
   await runCaptured(
     ["sudo", "-n", "systemctl", "stop", "turbopanel-daemon"],
     onOutput,
   );
-  await runCaptured(
-    ["sudo", "-n", "systemctl", "disable", "turbopanel-daemon"],
+
+  onStep?.("Start turbopanel-daemon", "running");
+  const startCode = await runCaptured(
+    ["sudo", "-n", "systemctl", "enable", "--now", "turbopanel-daemon"],
     onOutput,
   );
+  if (startCode !== 0) {
+    onStep?.("Start turbopanel-daemon", "failed");
+    throw new Error("Failed to start turbopanel-daemon");
+  }
+  onStep?.("Start turbopanel-daemon", "ok");
 
   await ensureDevPlatformAccess(onOutput);
 }
