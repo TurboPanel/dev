@@ -281,15 +281,13 @@ export async function ensurePlatformCheckoutGroupAccess(
   }
 }
 
-/** Best-effort dev ACL refresh on console launch; never blocks the TUI. */
+/** Best-effort filesystem ACL refresh on console launch; never blocks the TUI. */
 export function refreshDevPermissionsQuietly(): void {
   void (async () => {
     try {
       await ensureDevPlatformAccess();
       await ensureTurbopanelStateOwnership(undefined);
       await ensurePlatformCheckoutGroupAccess();
-      await ensureDevUserDockerAccess();
-      await ensureDaemonSystemdDockerAccess();
     } catch {
       // Best-effort refresh; never block the TUI.
     }

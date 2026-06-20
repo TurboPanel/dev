@@ -21,7 +21,7 @@ import {
   resetTurbopanelUserCache,
   turbopanelUserExists,
 } from "./turbopanel-permissions.ts";
-import { writeDaemonEnv } from "./daemon-env.ts";
+import { writeDaemonBaseEnv } from "./daemon-env.ts";
 const TURBOPANEL_USER = "turbopanel";
 const DAEMON_DIR = DAEMON_REPO_DIR;
 
@@ -191,7 +191,7 @@ export async function installDaemonSystemd(
   await ensureTurbopanelStateOwnership(onOutput);
 
   if (turbopanelUserExists()) {
-    writeDaemonEnv();
+    writeDaemonBaseEnv();
   }
 
   const startCode = await runCaptured(

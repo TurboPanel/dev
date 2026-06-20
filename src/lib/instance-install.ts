@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { writeDaemonEnv } from "./daemon-env.ts";
+import { writeDaemonInstanceEnv } from "./daemon-env.ts";
 import { requestDaemonRestart } from "./daemon-actions.ts";
 import { orchestrationActionCommand } from "./daemon-exec.ts";
 import { resolveDevIdentity } from "./dev-identity.ts";
@@ -210,7 +210,7 @@ export async function installDevEnvironment(
     await ensureTurbopanelStateOwnership(onOutput);
     await ensureTurbopanelGithubAccess(onOutput);
     await ensurePlatformGitMetadataForAnsible(onOutput);
-    writeDaemonEnv();
+    writeDaemonInstanceEnv();
   }
 
   onStep?.(DEV_ENV_CONVERGE_STEP, "running");
