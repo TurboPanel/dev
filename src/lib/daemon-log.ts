@@ -4,6 +4,8 @@ import { isDaemonServiceActive } from "./daemon-actions.ts";
 import { DAEMON_ERR_LOG_PATH, DAEMON_LOG_PATH } from "./paths.ts";
 import { sanitizeInstallOutput } from "./install-output.ts";
 
+const HIDE_ANSIBLE_DEBUG = true;
+
 /** Legacy stderr noise before structured logging (skip when tailing old err.log). */
 function stripAnsi(text: string): string {
   return text.replace(/\x1b\[[0-9;]*m/g, "");
@@ -23,7 +25,6 @@ function isLegacyNoiseLine(raw: string): boolean {
   return (
     /^Warning/i.test(trimmed) ||
     /--env-file/.test(trimmed) ||
-    /^Python .* is already installed/i.test(trimmed) ||
     /^Download\s+https?:\/\//i.test(trimmed) ||
     /^\[instance\] waiting for instance:/i.test(trimmed)
   );
@@ -34,8 +35,6 @@ export const STRUCTURED_TEXT_WITH_TIME_RE =
 const STRUCTURED_TEXT_RE =
   /^(DEBUG|INFO|WARN|ERROR)\s+(\S+)\s{2,}(.*)$/;
 const WAITING_MESSAGE_RE = /^waiting(?:\s+for\s+instance)?$/i;
-const ANSIBLE_LINE_RE =
-  /^(TASK|PLAY|ok:|changed:|skipping:|ERROR!|WARNING:|fatal:)/i;
 
 export type DaemonLogLevel = "debug" | "info" | "warn" | "error";
 
@@ -196,14 +195,6 @@ export function parseDaemonLogLine(raw: string): DaemonLogLine {
   ) {
     const message = trimmed.replace(/^Warning\s*/i, "");
     return structuredLine("", "warn", "deno", message);
-  }
-
-  if (ANSIBLE_LINE_RE.test(trimmed)) {
-    return structuredLine("", "debug", "ansible", trimmed);
-  }
-
-  if (/Python .* is already installed/i.test(trimmed)) {
-    return structuredLine("", "info", "orchestration", trimmed);
   }
 
   return structuredLine("", "info", "daemon", trimmed);
@@ -407,7 +398,7 @@ function parseTailedFile(meta: FileTailMeta): DaemonLogLine[] {
   }
   const parsed = filtered
     .map((line) => parseDaemonLogLine(line.text))
-    .filter((line) => !isDockerMonitorPollLine(line));
+    .filter((line) => !shouldHideDaemonLogLine(line));
   return enrichLineTimestamps(
     parsed,
     meta,
@@ -424,7 +415,13 @@ function isDockerMonitorPollLine(line: DaemonLogLine): boolean {
 }
 
 export function shouldHideDaemonLogLine(line: DaemonLogLine): boolean {
-  return isDockerMonitorPollLine(line);
+  if (isDockerMonitorPollLine(line)) {
+    return true;
+  }
+  if (HIDE_ANSIBLE_DEBUG && line.component === "ansible" && line.level === "debug") {
+    return true;
+  }
+  return false;
 }
 
 function emptyLogHints(
@@ -489,6 +486,8 @@ function collapseRepeatedStatus(lines: DaemonLogLine[]): DaemonLogLine[] {
   const keep: DaemonLogLine[] = [];
   let sawWaiting = false;
   let sawDockerPoll = false;
+  let lastRecapKey: string | undefined;
+  let lastRecapIndex: number | undefined;
 
   for (const line of collapsed) {
     if (line.component === "instance" && line.message === "waiting for instance") {
@@ -508,6 +507,19 @@ function collapseRepeatedStatus(lines: DaemonLogLine[]): DaemonLogLine[] {
       }
       continue;
     }
+    if (line.component === "ansible" && line.message.startsWith("[recap]")) {
+      const key = collapseKey(line);
+      if (lastRecapKey === key && lastRecapIndex !== undefined) {
+        keep[lastRecapIndex] = line;
+      } else {
+        keep.push(line);
+        lastRecapKey = key;
+        lastRecapIndex = keep.length - 1;
+      }
+      continue;
+    }
+    lastRecapKey = undefined;
+    lastRecapIndex = undefined;
     keep.push(line);
   }
 
