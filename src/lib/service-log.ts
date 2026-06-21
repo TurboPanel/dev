@@ -15,6 +15,7 @@ export type ServiceLogLine = {
 
 const INSTANCE_LOG_DIR = `${platformRepoPath("instance")}/logs`;
 const UI_LOG_DIR = `${platformRepoPath("ui")}/logs`;
+const WEBSITE_LOG_DIR = `${platformRepoPath("website")}/logs`;
 
 export const SERVICE_FILE_LOG_PATHS: Record<string, string[]> = {
   instance: [
@@ -27,6 +28,10 @@ export const SERVICE_FILE_LOG_PATHS: Record<string, string[]> = {
   ],
   daemon: [DAEMON_ERR_LOG_PATH, DAEMON_LOG_PATH],
   ui: [`${UI_LOG_DIR}/ui.err.log`, `${UI_LOG_DIR}/ui.log`],
+  website: [
+    `${WEBSITE_LOG_DIR}/website.err.log`,
+    `${WEBSITE_LOG_DIR}/website.log`,
+  ],
 };
 
 const FILE_LOG_SOURCES = SERVICE_FILE_LOG_PATHS;
