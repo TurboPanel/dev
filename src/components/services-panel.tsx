@@ -8,7 +8,10 @@ import {
 } from "../lib/daemon-actions.ts";
 import { readInstanceRuntime } from "../lib/daemon-env.ts";
 import type { PendingRestart, ServiceOperation } from "../hooks/use-console-app.ts";
-import type { DevEnvConvergeState } from "../hooks/use-dev-env-converge.ts";
+import type {
+  ConvergeServicePhase,
+  DevEnvConvergeState,
+} from "../hooks/use-dev-env-converge.ts";
 import {
   canRunServiceAction,
   serviceActionForKey,
@@ -16,7 +19,13 @@ import {
 } from "../lib/service-actions.ts";
 import type { ConsoleLogLine } from "../lib/service-restart.ts";
 import type { DaemonOperation } from "../lib/spinners.ts";
-import { BORDER_COLOR, MENU_BLUE, STATUS_INSTALLING } from "../theme.ts";
+import {
+  BORDER_COLOR,
+  MENU_BLUE,
+  STATUS_COMPILING,
+  STATUS_INSTALLING,
+  STATUS_PENDING,
+} from "../theme.ts";
 import { DevEnvConvergePanel } from "./dev-env-converge-panel.tsx";
 import { DaemonDetailPanel } from "./daemon-detail-panel.tsx";
 import { RestartServiceModal } from "./restart-service-modal.tsx";
@@ -29,6 +38,7 @@ const LIST_LEADING_WIDTH = ARROW_WIDTH;
 const LIST_TRAILING_WIDTH = LIST_PADDING_RIGHT;
 const SERVICE_LIST_BORDER_COLUMNS = 2;
 const MIN_DETAIL_WIDTH = 28;
+const CONVERGE_PANEL_MIN_HEIGHT = 8;
 
 export function serviceListWidth(services: DevService[]): number {
   const longestLabel = services.reduce(
@@ -78,6 +88,67 @@ function nearestVisibleFullIndex(
   return nearest;
 }
 
+function phaseColors(phase: ConvergeServicePhase): {
+  primary: string;
+  secondary: string;
+} {
+  if (phase === "compiling") {
+    return { primary: STATUS_COMPILING, secondary: MENU_BLUE };
+  }
+  return { primary: STATUS_INSTALLING, secondary: MENU_BLUE };
+}
+
+function shouldAnimateConvergeLabel(
+  service: DevService,
+  phase: ConvergeServicePhase | undefined,
+): phase is ConvergeServicePhase {
+  if (service.status === "running" || !phase) {
+    return false;
+  }
+  return phase === "installing" || phase === "compiling";
+}
+
+function ConvergeServiceLabel({
+  label,
+  phase,
+  dimColor,
+}: {
+  label: string;
+  phase: ConvergeServicePhase;
+  dimColor: boolean;
+}) {
+  const [frame, setFrame] = useState(0);
+
+  useEffect(() => {
+    const id = setInterval(() => setFrame((current) => current + 1), 120);
+    return () => clearInterval(id);
+  }, []);
+
+  const { primary, secondary } = phaseColors(phase);
+  const chars = [...label];
+
+  return (
+    <Text dimColor={dimColor} wrap="truncate">
+      {chars.map((char, index) => (
+        <Text
+          key={`${index}-${char}`}
+          color={(frame % chars.length) === index ? primary : secondary}
+        >
+          {char}
+        </Text>
+      ))}
+    </Text>
+  );
+}
+
+function serviceInConverge(
+  serviceId: string,
+  servicePhases: Record<string, ConvergeServicePhase>,
+): boolean {
+  const phase = servicePhases[serviceId];
+  return phase === "installing" || phase === "compiling" || phase === "ready";
+}
+
 export function ServicesPanel({
   width,
   height,
@@ -120,8 +191,15 @@ export function ServicesPanel({
   onDismissDevEnvConvergeError?: () => void;
 }) {
   const { leftWidth, detailWidth } = resolvePaneWidths(width, services);
-  const installLogsByService = devEnvConverge?.installLogsByService ?? {};
-  const installingServiceIds = devEnvConverge?.installingServiceIds ?? {};
+  const servicePhases = devEnvConverge?.servicePhases ?? {};
+  const convergeSummaryVisible = Boolean(
+    devEnvConverge &&
+      (daemonOperation === "dev-env" || devEnvConverge.active || devEnvConverge.error),
+  );
+  const convergePanelHeight = convergeSummaryVisible
+    ? Math.min(Math.floor(height * 0.4), Math.max(CONVERGE_PANEL_MIN_HEIGHT, height - 6))
+    : 0;
+  const serviceDetailHeight = Math.max(1, height - convergePanelHeight);
   const { displayServices, visibleFullIndices } = useMemo(() => {
     const visible: DevService[] = [];
     const fullIndices: number[] = [];
@@ -131,14 +209,14 @@ export function ServicesPanel({
         service.status === "starting" ||
         service.status === "failed" ||
         service.status === "stopped" ||
-        Boolean(installingServiceIds[service.id])
+        serviceInConverge(service.id, servicePhases)
       ) {
         visible.push(service);
         fullIndices.push(index);
       }
     });
     return { displayServices: visible, visibleFullIndices: fullIndices };
-  }, [services, installingServiceIds]);
+  }, [services, servicePhases]);
   const effectiveSelectedIndex = useMemo(
     () => nearestVisibleFullIndex(selectedIndex, visibleFullIndices),
     [selectedIndex, visibleFullIndices],
@@ -153,23 +231,9 @@ export function ServicesPanel({
     () => (selectedService?.id === "daemon" ? daemonMenuActions(selectedService.status) : []),
     [selectedService],
   );
-  const [installPulse, setInstallPulse] = useState(true);
-  useEffect(() => {
-    const id = setInterval(() => setInstallPulse((p) => !p), 600);
-    return () => clearInterval(id);
-  }, []);
-  const showDevEnvConverge = Boolean(
-    devEnvConverge &&
-      selectedService?.id === "daemon" &&
-      (daemonOperation === "dev-env" || devEnvConverge.active || devEnvConverge.error),
-  );
 
-  const overlayForService = (serviceId: string): ConsoleLogLine[] => {
-    const restartLines =
-      restartOverlayServiceId === serviceId ? (restartLogOverlay ?? []) : [];
-    const installLines = installLogsByService[serviceId] ?? [];
-    return [...restartLines, ...installLines];
-  };
+  const overlayForService = (serviceId: string): ConsoleLogLine[] =>
+    restartOverlayServiceId === serviceId ? (restartLogOverlay ?? []) : [];
 
   useEffect(() => {
     setLogFocused(false);
@@ -192,7 +256,12 @@ export function ServicesPanel({
   }, [restartInProgress, onRefreshServices]);
 
   useInput((_input, key) => {
-    if (pendingRestart || restartInProgress || serviceOperation || showDevEnvConverge) {
+    if (pendingRestart || restartInProgress || serviceOperation) {
+      return;
+    }
+
+    if (devEnvConverge?.error && onDismissDevEnvConvergeError) {
+      onDismissDevEnvConvergeError();
       return;
     }
 
@@ -246,11 +315,12 @@ export function ServicesPanel({
           {displayServices.map((service, index) => {
             const focused = index === displaySelectedIndex;
             const restarting = restartInProgress === service.id;
-            const isInstalling = Boolean(installingServiceIds[service.id]);
-            const labelColor = isInstalling
-              ? installPulse
-                ? STATUS_INSTALLING
-                : MENU_BLUE
+            const phase = servicePhases[service.id];
+            const animatePhase = shouldAnimateConvergeLabel(service, phase);
+            const labelColor = animatePhase
+              ? undefined
+              : phase === "ready" && service.status !== "running"
+              ? STATUS_PENDING
               : serviceStatusColor(service.status, {
                   operation:
                     service.id === "daemon" && daemonOperation
@@ -269,69 +339,93 @@ export function ServicesPanel({
                 flexDirection="row"
                 paddingRight={LIST_PADDING_RIGHT}
               >
-                <Text color={labelColor} dimColor={!focused} wrap="truncate">
-                  {focused ? "›" : " "}{service.label}
-                </Text>
+                <Text dimColor={!focused}>{focused ? "›" : " "}</Text>
+                {animatePhase ? (
+                  <ConvergeServiceLabel
+                    label={service.label}
+                    phase={phase}
+                    dimColor={!focused}
+                  />
+                ) : (
+                  <Text color={labelColor} dimColor={!focused} wrap="truncate">
+                    {service.label}
+                  </Text>
+                )}
               </Box>
             );
           })}
         </ScrollList>
       </Box>
-      {detailWidth > 0 && showDevEnvConverge && devEnvConverge && (
-        <Box width={detailWidth} height={height} position="relative">
-          <DevEnvConvergePanel
-            width={detailWidth}
-            height={height}
-            converge={devEnvConverge}
-            onDismissError={onDismissDevEnvConvergeError}
-          />
-        </Box>
-      )}
-      {selectedService?.id === "daemon" && detailWidth > 0 && !showDevEnvConverge && (
-        <Box width={detailWidth} height={height} position="relative">
-          <DaemonDetailPanel
-            service={selectedService}
-            actions={daemonActions}
-            width={detailWidth}
-            height={height}
-            onDaemonAction={onDaemonAction}
-            logInputActive={logFocused && !pendingRestart && !restartInProgress}
-            logOverlayLines={overlayForService("daemon")}
-            logFollowResetKey={logFollowResetKey}
-          />
-          {pendingRestart?.serviceId === "daemon" && onConfirmRestart && onCancelRestart && (
-            <RestartServiceModal
-              width={detailWidth}
-              height={height}
-              serviceLabel={pendingRestart.label}
-              onConfirm={onConfirmRestart}
-              onCancel={onCancelRestart}
-            />
+      {detailWidth > 0 && (
+        <Box flexDirection="column" width={detailWidth} height={height}>
+          {convergeSummaryVisible && devEnvConverge && convergePanelHeight > 0 && (
+            <Box height={convergePanelHeight} flexShrink={0}>
+              <DevEnvConvergePanel
+                width={detailWidth}
+                height={convergePanelHeight}
+                converge={devEnvConverge}
+                onDismissError={onDismissDevEnvConvergeError}
+              />
+            </Box>
           )}
-        </Box>
-      )}
-      {selectedService &&
-        selectedService.id !== "daemon" &&
-        detailWidth > 0 &&
-        (!daemonOperation || daemonOperation === "dev-env") && (
-        <Box width={detailWidth} height={height} position="relative">
-          <ServiceDetailPanel
-            key={selectedService.id}
-            service={selectedService}
-            width={detailWidth}
-            height={height}
-            focused={logFocused && !pendingRestart && !restartInProgress}
-            logOverlayLines={overlayForService(selectedService.id)}
-            logFollowResetKey={logFollowResetKey}
-          />
-          {pendingRestart?.serviceId === selectedService.id && onConfirmRestart && onCancelRestart && (
-            <RestartServiceModal
+          {selectedService?.id === "daemon" && (
+            <Box
               width={detailWidth}
-              height={height}
-              serviceLabel={pendingRestart.label}
-              onConfirm={onConfirmRestart}
-              onCancel={onCancelRestart}
-            />
+              height={serviceDetailHeight}
+              flexGrow={convergeSummaryVisible ? 1 : 0}
+              position="relative"
+            >
+              <DaemonDetailPanel
+                service={selectedService}
+                actions={daemonActions}
+                width={detailWidth}
+                height={serviceDetailHeight}
+                onDaemonAction={onDaemonAction}
+                logInputActive={logFocused && !pendingRestart && !restartInProgress}
+                logOverlayLines={overlayForService("daemon")}
+                logFollowResetKey={logFollowResetKey}
+              />
+              {pendingRestart?.serviceId === "daemon" && onConfirmRestart && onCancelRestart && (
+                <RestartServiceModal
+                  width={detailWidth}
+                  height={serviceDetailHeight}
+                  serviceLabel={pendingRestart.label}
+                  onConfirm={onConfirmRestart}
+                  onCancel={onCancelRestart}
+                />
+              )}
+            </Box>
+          )}
+          {selectedService &&
+            selectedService.id !== "daemon" &&
+            (!daemonOperation || daemonOperation === "dev-env") && (
+            <Box
+              width={detailWidth}
+              height={serviceDetailHeight}
+              flexGrow={convergeSummaryVisible ? 1 : 0}
+              position="relative"
+            >
+              <ServiceDetailPanel
+                key={selectedService.id}
+                service={selectedService}
+                width={detailWidth}
+                height={serviceDetailHeight}
+                focused={logFocused && !pendingRestart && !restartInProgress}
+                logOverlayLines={overlayForService(selectedService.id)}
+                logFollowResetKey={logFollowResetKey}
+              />
+              {pendingRestart?.serviceId === selectedService.id &&
+                onConfirmRestart &&
+                onCancelRestart && (
+                <RestartServiceModal
+                  width={detailWidth}
+                  height={serviceDetailHeight}
+                  serviceLabel={pendingRestart.label}
+                  onConfirm={onConfirmRestart}
+                  onCancel={onCancelRestart}
+                />
+              )}
+            </Box>
           )}
         </Box>
       )}

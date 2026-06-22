@@ -15,6 +15,7 @@ export const STATUS_UNINSTALLED = "red";
 export const STATUS_PENDING = "yellow";
 export const STATUS_RUNNING = "green";
 export const STATUS_INSTALLING = "cyan";
+export const STATUS_COMPILING = "magenta";
 export const LOG_TIME = "gray";
 export const LOG_DEBUG = "gray";
 export const LOG_WARN = "yellow";

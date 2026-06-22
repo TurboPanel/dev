@@ -64,6 +64,7 @@ export function useConsoleApp() {
   const [logFollowResetKey, setLogFollowResetKey] = useState(0);
   const { services: visibleServices, refresh: refreshServices } = useVisibleServices();
   const autoInstallStarted = useRef(initialAutoInstall.shouldAutoInstall);
+  const devEnvConvergeSelectionPinned = useRef(false);
   const selectedServiceIdRef = useRef(
     getVisibleServices()[initialAutoInstall.selectedServiceIndex]?.id ?? "daemon",
   );
@@ -267,14 +268,24 @@ export function useConsoleApp() {
   }, [exit]);
 
   useEffect(() => {
-    if (daemonOperation === "dev-env" || devEnvConverge.active) {
-      const daemonIndex = visibleServices.findIndex((service) => service.id === "daemon");
-      if (daemonIndex >= 0) {
-        selectedServiceIdRef.current = "daemon";
-        setSelectedServiceIndex(daemonIndex);
-        return;
+    const inDevEnvConverge =
+      daemonOperation === "dev-env" || devEnvConverge.active;
+
+    if (inDevEnvConverge) {
+      if (!devEnvConvergeSelectionPinned.current) {
+        devEnvConvergeSelectionPinned.current = true;
+        const daemonIndex = visibleServices.findIndex(
+          (service) => service.id === "daemon",
+        );
+        if (daemonIndex >= 0) {
+          selectedServiceIdRef.current = "daemon";
+          setSelectedServiceIndex(daemonIndex);
+        }
       }
+      return;
     }
+
+    devEnvConvergeSelectionPinned.current = false;
 
     const preservedIndex = visibleServices.findIndex(
       (service) => service.id === selectedServiceIdRef.current,

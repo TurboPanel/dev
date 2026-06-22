@@ -1,14 +1,16 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import type { AnsibleTaskRow } from "@turbopanel/components/ansible-task-list.tsx";
 import { resolveServiceIdFromAnsibleName } from "../lib/ansible-service-map.ts";
+import { appendConvergeServiceLogLine } from "../lib/converge-service-log.ts";
 import { CONSOLE_LAST_TASK_ERROR_LOG } from "../lib/paths.ts";
 import {
   DEV_ENV_CONVERGE_STEP,
   installDevEnvironment,
 } from "../lib/instance-install.ts";
-import type { ConsoleLogLine } from "../lib/service-restart.ts";
 import { writeTaskErrorLog } from "../lib/task-error-log.ts";
 import { useAnsibleEvents } from "./use-ansible-events.ts";
+
+export type ConvergeServicePhase = "installing" | "compiling" | "ready";
 
 export type DevEnvConvergeState = {
   active: boolean;
@@ -16,9 +18,16 @@ export type DevEnvConvergeState = {
   recap: string | null;
   error: string | null;
   errorLogPath: string | null;
-  installLogsByService: Record<string, ConsoleLogLine[]>;
-  installingServiceIds: Record<string, true>;
+  servicePhases: Record<string, ConvergeServicePhase>;
 };
+
+function resolvePhaseFromAnsibleName(name: string): ConvergeServicePhase {
+  const lower = name.toLowerCase();
+  if (lower.includes("-build") || lower.includes("compile")) {
+    return "compiling";
+  }
+  return "installing";
+}
 
 function taskResultStatus(
   eventType: string,
@@ -37,6 +46,28 @@ function taskResultStatus(
   return "failed";
 }
 
+function markServiceReady(
+  serviceId: string,
+  setServicePhases: Dispatch<SetStateAction<Record<string, ConvergeServicePhase>>>,
+) {
+  setServicePhases((current) => {
+    if (current[serviceId] === "ready") {
+      return current;
+    }
+    return { ...current, [serviceId]: "ready" };
+  });
+}
+
+function markServicePhase(
+  serviceId: string,
+  phase: ConvergeServicePhase,
+  setServicePhases: Dispatch<SetStateAction<Record<string, ConvergeServicePhase>>>,
+) {
+  setServicePhases((current) =>
+    current[serviceId] === phase ? current : { ...current, [serviceId]: phase },
+  );
+}
+
 export function useDevEnvConverge(onFinished: (success: boolean) => void) {
   const {
     tasks,
@@ -52,17 +83,13 @@ export function useDevEnvConverge(onFinished: (success: boolean) => void) {
   const running = useRef(false);
   const currentServiceId = useRef<string | null>(null);
   const [active, setActive] = useState(false);
-  const [installLogsByService, setInstallLogsByService] = useState<
-    Record<string, ConsoleLogLine[]>
-  >({});
-  const [installingServiceIds, setInstallingServiceIds] = useState<
-    Record<string, true>
+  const [servicePhases, setServicePhases] = useState<
+    Record<string, ConvergeServicePhase>
   >({});
 
   const resetConverge = useCallback(() => {
     reset();
-    setInstallLogsByService({});
-    setInstallingServiceIds({});
+    setServicePhases({});
     currentServiceId.current = null;
   }, [reset]);
 
@@ -77,19 +104,14 @@ export function useDevEnvConverge(onFinished: (success: boolean) => void) {
           const resolved = name ? resolveServiceIdFromAnsibleName(name) : null;
           const previousServiceId = currentServiceId.current;
           if (previousServiceId && previousServiceId !== resolved) {
-            setInstallingServiceIds((current) => {
-              if (!current[previousServiceId]) {
-                return current;
-              }
-              const next = { ...current };
-              delete next[previousServiceId];
-              return next;
-            });
+            markServiceReady(previousServiceId, setServicePhases);
           }
           currentServiceId.current = resolved;
           if (resolved) {
-            setInstallingServiceIds((current) =>
-              current[resolved] ? current : { ...current, [resolved]: true },
+            markServicePhase(
+              resolved,
+              resolvePhaseFromAnsibleName(name),
+              setServicePhases,
             );
           }
         } else if (
@@ -101,8 +123,10 @@ export function useDevEnvConverge(onFinished: (success: boolean) => void) {
           const resolved = name ? resolveServiceIdFromAnsibleName(name) : null;
           if (resolved) {
             currentServiceId.current = resolved;
-            setInstallingServiceIds((current) =>
-              current[resolved] ? current : { ...current, [resolved]: true },
+            markServicePhase(
+              resolved,
+              resolvePhaseFromAnsibleName(name),
+              setServicePhases,
             );
           }
         } else if (
@@ -119,18 +143,16 @@ export function useDevEnvConverge(onFinished: (success: boolean) => void) {
               | Record<string, Record<string, unknown>>
               | undefined;
             const status = taskResultStatus(eventType, hosts);
-            const line: ConsoleLogLine = {
-              text: `${rawName} [${status}]`,
-              time: new Date().toISOString(),
-            };
-            setInstallLogsByService((current) => ({
-              ...current,
-              [serviceId]: [...(current[serviceId] ?? []), line],
-            }));
+            const time = new Date().toISOString();
+            const text = `${rawName} [${status}]`;
+            appendConvergeServiceLogLine(serviceId, text, time);
           }
         } else if (eventType === "v2_playbook_on_stats") {
+          const finishingServiceId = currentServiceId.current;
+          if (finishingServiceId) {
+            markServiceReady(finishingServiceId, setServicePhases);
+          }
           currentServiceId.current = null;
-          setInstallingServiceIds({});
         }
       }
     }
@@ -168,7 +190,13 @@ export function useDevEnvConverge(onFinished: (success: boolean) => void) {
         setError(message);
       } finally {
         running.current = false;
-        setInstallingServiceIds({});
+        setServicePhases((current) => {
+          const next: Record<string, ConvergeServicePhase> = {};
+          for (const serviceId of Object.keys(current)) {
+            next[serviceId] = "ready";
+          }
+          return next;
+        });
         setActive(success ? false : true);
         onFinished(success);
       }
@@ -193,8 +221,7 @@ export function useDevEnvConverge(onFinished: (success: boolean) => void) {
     recap,
     error,
     errorLogPath,
-    installLogsByService,
-    installingServiceIds,
+    servicePhases,
   };
 
   return { state, start, dismissError };

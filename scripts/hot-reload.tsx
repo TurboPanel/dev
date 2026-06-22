@@ -84,6 +84,7 @@ function HotReloadApp({
       daemonOperation={consoleApp.daemonOperation}
       onProvisioningDone={consoleApp.handleProvisioningDone}
       onInstallFinished={consoleApp.handleInstallFinished}
+      onDaemonInstallDone={consoleApp.handleDaemonInstallDone}
       onPurgeDone={consoleApp.handlePurgeDone}
       onDaemonAction={consoleApp.handleDaemonAction}
       onDeveloperDaemonAction={consoleApp.handleDaemonAction}
@@ -98,6 +99,8 @@ function HotReloadApp({
       logFollowResetKey={consoleApp.logFollowResetKey}
       onConfirmRestart={consoleApp.confirmServiceRestart}
       onCancelRestart={consoleApp.cancelServiceRestart}
+      devEnvConverge={consoleApp.devEnvConverge}
+      onDismissDevEnvConvergeError={consoleApp.dismissDevEnvConvergeError}
     />
   );
 }
