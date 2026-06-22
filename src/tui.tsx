@@ -1,44 +1,50 @@
-import React from "react";
-import { render, useWindowSize } from "ink";
-import { AppView } from "./app.tsx";
-import { useConsoleApp } from "./hooks/use-console-app.ts";
+import React, { useEffect, useState } from "react";
+import { render } from "ink";
+import { BootScreen } from "./components/boot-screen.tsx";
+import { openConsoleStdin } from "./lib/console-stdin.ts";
 
-function App() {
-  const { columns, rows } = useWindowSize();
-  const consoleApp = useConsoleApp();
+function Root() {
+  const [App, setApp] = useState<React.ComponentType | null>(null);
+  const [message, setMessage] = useState("Loading console modules…");
 
-  return (
-    <AppView
-      activeArea={consoleApp.activeArea}
-      provisioning={consoleApp.provisioning}
-      installFinished={consoleApp.installFinished}
-      columns={columns}
-      rows={rows}
-      selectedServiceIndex={consoleApp.selectedServiceIndex}
-      selectedServiceId={consoleApp.selectedService?.id ?? null}
-      visibleServices={consoleApp.visibleServices}
-      daemonOperation={consoleApp.daemonOperation}
-      onProvisioningDone={consoleApp.handleProvisioningDone}
-      onInstallFinished={consoleApp.handleInstallFinished}
-      onPurgeDone={consoleApp.handlePurgeDone}
-      onDaemonAction={consoleApp.handleDaemonAction}
-      onDeveloperDaemonAction={consoleApp.handleDaemonAction}
-      onSelectedServiceIndexChange={consoleApp.setSelectedServiceIndex}
-      onRefreshServices={consoleApp.refreshServices}
-      serviceOperation={consoleApp.serviceOperation}
-      onServiceAction={consoleApp.handleServiceAction}
-      pendingRestart={consoleApp.pendingRestart}
-      restartInProgress={consoleApp.restartInProgress}
-      restartOverlayServiceId={consoleApp.restartOverlayServiceId}
-      restartLogOverlay={consoleApp.restartLogOverlay}
-      logFollowResetKey={consoleApp.logFollowResetKey}
-      onConfirmRestart={consoleApp.confirmServiceRestart}
-      onCancelRestart={consoleApp.cancelServiceRestart}
-    />
-  );
+  useEffect(() => {
+    const slowTimer = setTimeout(() => {
+      setMessage("Still loading — compiling TypeScript modules…");
+    }, 2_000);
+    const slowerTimer = setTimeout(() => {
+      setMessage("Still loading — first launch may take a moment…");
+    }, 8_000);
+
+    void import("./console-app.tsx")
+      .then((mod) => setApp(() => mod.ConsoleApp))
+      .catch((error) => {
+        setMessage(
+          error instanceof Error ? error.message : "Failed to load console",
+        );
+      })
+      .finally(() => {
+        clearTimeout(slowTimer);
+        clearTimeout(slowerTimer);
+      });
+
+    return () => {
+      clearTimeout(slowTimer);
+      clearTimeout(slowerTimer);
+    };
+  }, []);
+
+  if (!App) {
+    return <BootScreen message={message} />;
+  }
+
+  const ConsoleApp = App;
+  return <ConsoleApp />;
 }
 
-const { waitUntilExit } = render(<App />, {
+const stdin = openConsoleStdin();
+
+const { waitUntilExit } = render(<Root />, {
+  stdin,
   alternateScreen: true,
   exitOnCtrlC: true,
   patchConsole: true,

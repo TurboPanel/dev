@@ -3,7 +3,9 @@ import React, { useEffect, useState } from "react";
 import { render, useWindowSize } from "ink";
 import { createServer, normalizePath, type ViteDevServer } from "vite";
 import type { AppView as AppViewComponent, AREAS as AppAreas } from "../src/app.tsx";
+import { BootScreen } from "../src/components/boot-screen.tsx";
 import { useConsoleApp } from "../src/hooks/use-console-app.ts";
+import { openConsoleStdin } from "../src/lib/console-stdin.ts";
 
 type AppModule = {
   AppView: typeof AppViewComponent;
@@ -93,37 +95,82 @@ function HotReloadApp({
       restartInProgress={consoleApp.restartInProgress}
       restartOverlayServiceId={consoleApp.restartOverlayServiceId}
       restartLogOverlay={consoleApp.restartLogOverlay}
+      logFollowResetKey={consoleApp.logFollowResetKey}
       onConfirmRestart={consoleApp.confirmServiceRestart}
       onCancelRestart={consoleApp.cancelServiceRestart}
     />
   );
 }
 
-const server = await createServer({
-  configFile,
-  appType: "custom",
-  server: {
-    middlewareMode: true,
-    hmr: false,
-    watch: {
-      ignored: ["**/node_modules/**", "**/.git/**"],
-    },
-  },
+function Root() {
+  const [ready, setReady] = useState<{
+    server: ViteDevServer;
+    initialModule: AppModule;
+  } | null>(null);
+  const [message, setMessage] = useState("Loading console modules…");
+
+  useEffect(() => {
+    const slowTimer = setTimeout(() => {
+      setMessage("Still loading — compiling TypeScript modules…");
+    }, 2_000);
+    const slowerTimer = setTimeout(() => {
+      setMessage("Still loading — first launch may take a moment…");
+    }, 8_000);
+
+    let server: ViteDevServer | undefined;
+
+    void (async () => {
+      try {
+        server = await createServer({
+          configFile,
+          appType: "custom",
+          server: {
+            middlewareMode: true,
+            hmr: false,
+            watch: {
+              ignored: ["**/node_modules/**", "**/.git/**"],
+            },
+          },
+        });
+        const initialModule = await loadAppModule(server);
+        setReady({ server, initialModule });
+      } catch (error) {
+        setMessage(
+          error instanceof Error ? error.message : "Failed to load console",
+        );
+      } finally {
+        clearTimeout(slowTimer);
+        clearTimeout(slowerTimer);
+      }
+    })();
+
+    return () => {
+      clearTimeout(slowTimer);
+      clearTimeout(slowerTimer);
+      void server?.close();
+    };
+  }, []);
+
+  if (!ready) {
+    return <BootScreen message={message} />;
+  }
+
+  return (
+    <HotReloadApp server={ready.server} initialModule={ready.initialModule} />
+  );
+}
+
+const stdin = openConsoleStdin();
+
+const { waitUntilExit } = render(<Root />, {
+  stdin,
+  alternateScreen: true,
+  exitOnCtrlC: true,
+  patchConsole: true,
 });
-
-const initialModule = await loadAppModule(server);
-
-const { waitUntilExit } = render(
-  <HotReloadApp server={server} initialModule={initialModule} />,
-  {
-    alternateScreen: true,
-    exitOnCtrlC: true,
-    patchConsole: true,
-  },
-);
 
 try {
   await waitUntilExit();
 } finally {
-  await server.close();
+  // HotReloadApp owns the server lifecycle via Root cleanup on unmount.
 }
