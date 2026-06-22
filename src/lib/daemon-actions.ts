@@ -6,6 +6,12 @@ import {
   RUNTIMES_DIR,
   TURBOPANEL_ROOT,
 } from "./paths.ts";
+import {
+  ensureBootstrapDeno,
+  resolveBootstrapDenoBin,
+  systemDenoInstalled,
+} from "./daemon-exec.ts";
+import { SYSTEM_DENO_BIN } from "./paths.ts";
 import { type InstallOutputHandler, runCaptured } from "./install-output.ts";
 
 export type DaemonActionId =
@@ -13,7 +19,8 @@ export type DaemonActionId =
   | "repair"
   | "restart"
   | "purge"
-  | "start-dev-env";
+  | "start-dev-env"
+  | "build-daemon-binaries";
 
 const DAEMON_UNIT = "turbopanel-daemon";
 const DEFAULT_WAIT_TIMEOUT_MS = 120_000;
@@ -25,6 +32,7 @@ export const DAEMON_ACTION_LABELS: Record<DaemonActionId, string> = {
   restart: "Restart",
   purge: "Purge completely",
   "start-dev-env": "Start development environment",
+  "build-daemon-binaries": "Build daemon binaries (amd64 + arm64)",
 };
 
 export function daemonMenuActions(_status: DevServiceStatus): DaemonActionId[] {
@@ -36,7 +44,7 @@ export function developerMenuActions(status: DevServiceStatus | undefined): Daem
     return [];
   }
 
-  return ["repair", "start-dev-env", "purge"];
+  return ["repair", "start-dev-env", "build-daemon-binaries", "purge"];
 }
 
 export function canRestartDaemon(): boolean {
@@ -152,5 +160,41 @@ export async function purgeDaemon(
   const code = await runCaptured(["sudo", "bash", "-c", command], onOutput);
   if (code !== 0) {
     throw new Error("Failed to purge daemon");
+  }
+}
+
+export async function buildDaemonBinaries(
+  onOutput?: InstallOutputHandler,
+): Promise<void> {
+  // Host PATH may point at a dev-home Deno the turbopanel user cannot execute.
+  resolveBootstrapDenoBin();
+  if (!systemDenoInstalled()) {
+    await ensureBootstrapDeno(onOutput);
+  }
+  const command =
+    `cd ${shellQuote(DAEMON_REPO_DIR)} && ${shellQuote(SYSTEM_DENO_BIN)} task compile:all`;
+
+  const lines: string[] = [];
+  const append = (line: string) => {
+    lines.push(line);
+    onOutput?.(line);
+  };
+
+  const code = await runCaptured(
+    [
+      "sudo",
+      "-n",
+      "-u",
+      "turbopanel",
+      "env",
+      "HOME=/opt/turbopanel",
+      "bash",
+      "-c",
+      command,
+    ],
+    append,
+  );
+  if (code !== 0) {
+    throw new Error(lines.at(-1) ?? "Failed to build daemon binaries");
   }
 }

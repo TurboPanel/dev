@@ -115,6 +115,12 @@ export function useConsoleApp() {
         setDaemonOperation("dev-env");
         return;
       }
+      case "build-daemon-binaries":
+        setInstallFinished(false);
+        setActiveArea("bootstrap");
+        setProvisioning(true);
+        setDaemonOperation("build-daemon-binaries");
+        return;
     }
   }, [startDaemonInstall, visibleServices]);
 
