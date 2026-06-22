@@ -7,6 +7,7 @@ export type DaemonOperation =
   | "purge"
   | "restart"
   | "dev-env"
+  | "reset-dev-env"
   | "build-daemon-binaries";
 
 export function spinnerFrames(operation: DaemonOperation): string[] {

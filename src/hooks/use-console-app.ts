@@ -15,6 +15,7 @@ import {
 import { readInstanceRuntime } from "../lib/daemon-env.ts";
 import type { DaemonOperation } from "../lib/spinners.ts";
 import { refreshDevPermissionsQuietly } from "../lib/turbopanel-permissions.ts";
+import { useDevEnvConverge } from "./use-dev-env-converge.ts";
 import { useVisibleServices } from "./use-visible-services.ts";
 
 export type ActiveArea = "developer" | "services" | "bootstrap";
@@ -63,8 +64,28 @@ export function useConsoleApp() {
   const [logFollowResetKey, setLogFollowResetKey] = useState(0);
   const { services: visibleServices, refresh: refreshServices } = useVisibleServices();
   const autoInstallStarted = useRef(initialAutoInstall.shouldAutoInstall);
+  const selectedServiceIdRef = useRef(
+    getVisibleServices()[initialAutoInstall.selectedServiceIndex]?.id ?? "daemon",
+  );
+
+  const handleDevEnvConvergeFinished = useCallback((success: boolean) => {
+    if (success) {
+      setProvisioning(false);
+      setActiveArea("services");
+      setDaemonOperation(null);
+      setInstallFinished(false);
+      refreshServices();
+      return;
+    }
+    setDaemonOperation(null);
+    refreshServices();
+  }, [refreshServices]);
+
+  const { state: devEnvConverge, start: startDevEnvConverge, dismissError: dismissDevEnvConvergeError } =
+    useDevEnvConverge(handleDevEnvConvergeFinished);
 
   const startDaemonInstall = useCallback(() => {
+    selectedServiceIdRef.current = "daemon";
     const index = visibleServices.findIndex((service) => service.id === "daemon");
     if (index >= 0) {
       setSelectedServiceIndex(index);
@@ -113,6 +134,19 @@ export function useConsoleApp() {
         setActiveArea("bootstrap");
         setProvisioning(true);
         setDaemonOperation("dev-env");
+        return;
+      }
+      case "reset-dev-env": {
+        const daemon = visibleServices.find((service) => service.id === "daemon");
+        if (!daemon || daemon.status === "uninstalled") {
+          throw new Error(
+            "Install the daemon before resetting the development environment.",
+          );
+        }
+        setInstallFinished(false);
+        setActiveArea("bootstrap");
+        setProvisioning(true);
+        setDaemonOperation("reset-dev-env");
         return;
       }
       case "build-daemon-binaries":
@@ -221,14 +255,46 @@ export function useConsoleApp() {
     refreshServices();
   }, [refreshServices]);
 
+  const handleDaemonInstallDone = useCallback(() => {
+    setActiveArea("services");
+    setProvisioning(false);
+    setDaemonOperation("dev-env");
+    startDevEnvConverge();
+  }, [startDevEnvConverge]);
+
   const handlePurgeDone = useCallback(() => {
     exit();
   }, [exit]);
 
   useEffect(() => {
+    if (daemonOperation === "dev-env" || devEnvConverge.active) {
+      const daemonIndex = visibleServices.findIndex((service) => service.id === "daemon");
+      if (daemonIndex >= 0) {
+        selectedServiceIdRef.current = "daemon";
+        setSelectedServiceIndex(daemonIndex);
+        return;
+      }
+    }
+
+    const preservedIndex = visibleServices.findIndex(
+      (service) => service.id === selectedServiceIdRef.current,
+    );
+    if (preservedIndex >= 0) {
+      setSelectedServiceIndex(preservedIndex);
+      return;
+    }
+
     setSelectedServiceIndex((index) =>
       Math.min(index, Math.max(0, visibleServices.length - 1)),
     );
+  }, [visibleServices, daemonOperation, devEnvConverge.active]);
+
+  const setSelectedServiceIndexById = useCallback((index: number) => {
+    const service = visibleServices[index];
+    if (service) {
+      selectedServiceIdRef.current = service.id;
+    }
+    setSelectedServiceIndex(index);
   }, [visibleServices]);
 
   useInput((_input, key) => {
@@ -262,12 +328,15 @@ export function useConsoleApp() {
     installFinished,
     handleDaemonAction,
     handleProvisioningDone,
+    handleDaemonInstallDone,
     handleInstallFinished,
     handleServiceAction,
     handlePurgeDone,
+    devEnvConverge,
+    dismissDevEnvConvergeError,
     confirmServiceRestart,
     cancelServiceRestart,
-    setSelectedServiceIndex,
+    setSelectedServiceIndex: setSelectedServiceIndexById,
     refreshServices,
   };
 }

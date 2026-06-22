@@ -10,6 +10,7 @@ import type { DevService } from "./dev-services.ts";
 import type { DaemonActionId } from "./lib/daemon-actions.ts";
 import type { ServiceActionId } from "./lib/service-actions.ts";
 import type { PendingRestart, ServiceOperation } from "./hooks/use-console-app.ts";
+import type { DevEnvConvergeState } from "./hooks/use-dev-env-converge.ts";
 import type { ConsoleLogLine } from "./lib/service-restart.ts";
 import type { DaemonOperation } from "./lib/spinners.ts";
 
@@ -35,6 +36,7 @@ function MainContent({
   visibleServices,
   onProvisioningDone,
   onInstallFinished,
+  onDaemonInstallDone,
   onPurgeDone,
   onRefreshServices,
   daemonOperation,
@@ -50,6 +52,8 @@ function MainContent({
   logFollowResetKey,
   onConfirmRestart,
   onCancelRestart,
+  devEnvConverge,
+  onDismissDevEnvConvergeError,
 }: {
   activeArea: string;
   width: number;
@@ -64,6 +68,7 @@ function MainContent({
   onSelectedServiceIndexChange?: (index: number) => void;
   onProvisioningDone?: () => void;
   onInstallFinished?: (success: boolean) => void;
+  onDaemonInstallDone?: () => void;
   onPurgeDone?: () => void;
   onRefreshServices?: () => void;
   pendingRestart?: PendingRestart | null;
@@ -73,6 +78,8 @@ function MainContent({
   logFollowResetKey?: number;
   onConfirmRestart?: () => void;
   onCancelRestart?: () => void;
+  devEnvConverge?: DevEnvConvergeState | null;
+  onDismissDevEnvConvergeError?: () => void;
 }) {
   const daemon = visibleServices.find((service) => service.id === "daemon");
 
@@ -83,14 +90,17 @@ function MainContent({
           phase={
             daemonOperation === "dev-env"
               ? "dev-env"
-              : daemonOperation === "build-daemon-binaries"
-                ? "build-daemon-binaries"
-                : "daemon"
+              : daemonOperation === "reset-dev-env"
+                ? "reset-dev-env"
+                : daemonOperation === "build-daemon-binaries"
+                  ? "build-daemon-binaries"
+                  : "daemon"
           }
           width={width}
           height={height}
           onDone={onProvisioningDone!}
           onInstallFinished={onInstallFinished}
+          onDaemonInstallDone={onDaemonInstallDone}
         />
       );
     case "developer":
@@ -124,6 +134,8 @@ function MainContent({
           logFollowResetKey={logFollowResetKey}
           onConfirmRestart={onConfirmRestart}
           onCancelRestart={onCancelRestart}
+          devEnvConverge={devEnvConverge}
+          onDismissDevEnvConvergeError={onDismissDevEnvConvergeError}
         />
       );
     default:
@@ -143,6 +155,7 @@ export function AppView({
   daemonOperation,
   onProvisioningDone,
   onInstallFinished,
+  onDaemonInstallDone,
   onPurgeDone,
   onDaemonAction,
   onDeveloperDaemonAction,
@@ -157,6 +170,8 @@ export function AppView({
   logFollowResetKey,
   onConfirmRestart,
   onCancelRestart,
+  devEnvConverge,
+  onDismissDevEnvConvergeError,
 }: {
   activeArea: string;
   provisioning: boolean;
@@ -171,6 +186,7 @@ export function AppView({
   onServiceAction?: (serviceId: string, action: ServiceActionId) => void | Promise<void>;
   onProvisioningDone?: () => void;
   onInstallFinished?: (success: boolean) => void;
+  onDaemonInstallDone?: () => void;
   onPurgeDone?: () => void;
   onDaemonAction?: (action: DaemonActionId) => void | Promise<void>;
   onDeveloperDaemonAction?: (action: DaemonActionId) => void | Promise<void>;
@@ -183,6 +199,8 @@ export function AppView({
   logFollowResetKey?: number;
   onConfirmRestart?: () => void;
   onCancelRestart?: () => void;
+  devEnvConverge?: DevEnvConvergeState | null;
+  onDismissDevEnvConvergeError?: () => void;
 }) {
   const activeIndex = AREAS.findIndex((area) => area.id === activeArea);
   const menuActiveIndex = activeIndex >= 0 ? activeIndex : 0;
@@ -194,6 +212,7 @@ export function AppView({
     installFinished,
     pendingRestart,
     restartInProgress,
+    daemonOperation === "dev-env" || Boolean(devEnvConverge?.active),
   );
 
   return (
@@ -220,6 +239,7 @@ export function AppView({
           daemonOperation={daemonOperation}
           onProvisioningDone={onProvisioningDone}
           onInstallFinished={onInstallFinished}
+          onDaemonInstallDone={onDaemonInstallDone}
           onPurgeDone={onPurgeDone}
           onDaemonAction={onDaemonAction}
           onDeveloperDaemonAction={onDeveloperDaemonAction}
@@ -234,6 +254,8 @@ export function AppView({
           logFollowResetKey={logFollowResetKey}
           onConfirmRestart={onConfirmRestart}
           onCancelRestart={onCancelRestart}
+          devEnvConverge={devEnvConverge}
+          onDismissDevEnvConvergeError={onDismissDevEnvConvergeError}
         />
       </MainPanel>
     </Box>

@@ -32,8 +32,12 @@ export function statusHints(
   installFinished?: boolean,
   pendingRestart?: PendingRestart | null,
   restartInProgress?: string | null,
+  devEnvConverging?: boolean,
 ): string {
   if (activeAreaId === "services") {
+    if (devEnvConverging) {
+      return "Converging development environment · watch tasks · Ctrl-C exit";
+    }
     if (pendingRestart) {
       return "↑ ↓ Yes/No · Enter select · Esc cancel · Ctrl-C exit";
     }

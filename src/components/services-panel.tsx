@@ -8,6 +8,7 @@ import {
 } from "../lib/daemon-actions.ts";
 import { readInstanceRuntime } from "../lib/daemon-env.ts";
 import type { PendingRestart, ServiceOperation } from "../hooks/use-console-app.ts";
+import type { DevEnvConvergeState } from "../hooks/use-dev-env-converge.ts";
 import {
   canRunServiceAction,
   serviceActionForKey,
@@ -15,7 +16,8 @@ import {
 } from "../lib/service-actions.ts";
 import type { ConsoleLogLine } from "../lib/service-restart.ts";
 import type { DaemonOperation } from "../lib/spinners.ts";
-import { BORDER_COLOR } from "../theme.ts";
+import { BORDER_COLOR, MENU_BLUE, STATUS_INSTALLING } from "../theme.ts";
+import { DevEnvConvergePanel } from "./dev-env-converge-panel.tsx";
 import { DaemonDetailPanel } from "./daemon-detail-panel.tsx";
 import { RestartServiceModal } from "./restart-service-modal.tsx";
 import { ServiceDetailPanel } from "./service-detail-panel.tsx";
@@ -54,6 +56,28 @@ function resolvePaneWidths(
   };
 }
 
+function nearestVisibleFullIndex(
+  selectedIndex: number,
+  visibleFullIndices: number[],
+): number {
+  if (visibleFullIndices.length === 0) {
+    return selectedIndex;
+  }
+  if (visibleFullIndices.includes(selectedIndex)) {
+    return selectedIndex;
+  }
+  let nearest = visibleFullIndices[0];
+  let minDistance = Math.abs(selectedIndex - nearest);
+  for (const index of visibleFullIndices) {
+    const distance = Math.abs(selectedIndex - index);
+    if (distance < minDistance) {
+      minDistance = distance;
+      nearest = index;
+    }
+  }
+  return nearest;
+}
+
 export function ServicesPanel({
   width,
   height,
@@ -72,6 +96,8 @@ export function ServicesPanel({
   logFollowResetKey,
   onConfirmRestart,
   onCancelRestart,
+  devEnvConverge,
+  onDismissDevEnvConvergeError,
 }: {
   width: number;
   height: number;
@@ -90,25 +116,74 @@ export function ServicesPanel({
   logFollowResetKey?: number;
   onConfirmRestart?: () => void;
   onCancelRestart?: () => void;
+  devEnvConverge?: DevEnvConvergeState | null;
+  onDismissDevEnvConvergeError?: () => void;
 }) {
   const { leftWidth, detailWidth } = resolvePaneWidths(width, services);
-  const selectedService = services[selectedIndex] ?? null;
+  const installLogsByService = devEnvConverge?.installLogsByService ?? {};
+  const installingServiceIds = devEnvConverge?.installingServiceIds ?? {};
+  const { displayServices, visibleFullIndices } = useMemo(() => {
+    const visible: DevService[] = [];
+    const fullIndices: number[] = [];
+    services.forEach((service, index) => {
+      if (
+        service.status === "running" ||
+        service.status === "starting" ||
+        service.status === "failed" ||
+        service.status === "stopped" ||
+        Boolean(installingServiceIds[service.id])
+      ) {
+        visible.push(service);
+        fullIndices.push(index);
+      }
+    });
+    return { displayServices: visible, visibleFullIndices: fullIndices };
+  }, [services, installingServiceIds]);
+  const effectiveSelectedIndex = useMemo(
+    () => nearestVisibleFullIndex(selectedIndex, visibleFullIndices),
+    [selectedIndex, visibleFullIndices],
+  );
+  const selectedService = services[effectiveSelectedIndex] ?? null;
+  const displaySelectedIndex = useMemo(() => {
+    const index = visibleFullIndices.indexOf(effectiveSelectedIndex);
+    return index >= 0 ? index : 0;
+  }, [effectiveSelectedIndex, visibleFullIndices]);
   const [logFocused, setLogFocused] = useState(false);
   const daemonActions = useMemo(
     () => (selectedService?.id === "daemon" ? daemonMenuActions(selectedService.status) : []),
     [selectedService],
   );
+  const [installPulse, setInstallPulse] = useState(true);
+  useEffect(() => {
+    const id = setInterval(() => setInstallPulse((p) => !p), 600);
+    return () => clearInterval(id);
+  }, []);
+  const showDevEnvConverge = Boolean(
+    devEnvConverge &&
+      selectedService?.id === "daemon" &&
+      (daemonOperation === "dev-env" || devEnvConverge.active || devEnvConverge.error),
+  );
 
   const overlayForService = (serviceId: string): ConsoleLogLine[] => {
-    if (restartOverlayServiceId !== serviceId) {
-      return [];
-    }
-    return restartLogOverlay ?? [];
+    const restartLines =
+      restartOverlayServiceId === serviceId ? (restartLogOverlay ?? []) : [];
+    const installLines = installLogsByService[serviceId] ?? [];
+    return [...restartLines, ...installLines];
   };
 
   useEffect(() => {
     setLogFocused(false);
-  }, [selectedIndex]);
+  }, [effectiveSelectedIndex]);
+
+  useEffect(() => {
+    if (
+      visibleFullIndices.length > 0 &&
+      selectedIndex !== effectiveSelectedIndex &&
+      onSelectedIndexChange
+    ) {
+      onSelectedIndexChange(effectiveSelectedIndex);
+    }
+  }, [selectedIndex, effectiveSelectedIndex, visibleFullIndices, onSelectedIndexChange]);
 
   useEffect(() => {
     if (restartInProgress) {
@@ -117,7 +192,7 @@ export function ServicesPanel({
   }, [restartInProgress, onRefreshServices]);
 
   useInput((_input, key) => {
-    if (pendingRestart || restartInProgress || serviceOperation) {
+    if (pendingRestart || restartInProgress || serviceOperation || showDevEnvConverge) {
       return;
     }
 
@@ -130,13 +205,15 @@ export function ServicesPanel({
       return;
     }
 
-    const lastServiceIndex = services.length - 1;
-    if (key.upArrow && onSelectedIndexChange) {
-      onSelectedIndexChange(Math.max(0, selectedIndex - 1));
+    const currentVisiblePos = visibleFullIndices.indexOf(effectiveSelectedIndex);
+    if (key.upArrow && onSelectedIndexChange && visibleFullIndices.length > 0) {
+      const nextPos = Math.max(0, currentVisiblePos - 1);
+      onSelectedIndexChange(visibleFullIndices[nextPos]);
       return;
     }
-    if (key.downArrow && onSelectedIndexChange) {
-      onSelectedIndexChange(Math.min(lastServiceIndex, selectedIndex + 1));
+    if (key.downArrow && onSelectedIndexChange && visibleFullIndices.length > 0) {
+      const nextPos = Math.min(visibleFullIndices.length - 1, currentVisiblePos + 1);
+      onSelectedIndexChange(visibleFullIndices[nextPos]);
       return;
     }
 
@@ -165,21 +242,26 @@ export function ServicesPanel({
         borderBottom={false}
         borderLeft={false}
       >
-        <ScrollList height={height} selectedIndex={selectedIndex}>
-          {services.map((service, index) => {
-            const focused = index === selectedIndex;
+        <ScrollList height={height} selectedIndex={displaySelectedIndex}>
+          {displayServices.map((service, index) => {
+            const focused = index === displaySelectedIndex;
             const restarting = restartInProgress === service.id;
-            const labelColor = serviceStatusColor(service.status, {
-              operation:
-                service.id === "daemon" && daemonOperation
-                  ? daemonOperation
-                  : restarting
-                  ? "restart"
-                  : null,
-              busy:
-                serviceOperation?.serviceId === service.id &&
-                serviceOperation.action !== "restart",
-            });
+            const isInstalling = Boolean(installingServiceIds[service.id]);
+            const labelColor = isInstalling
+              ? installPulse
+                ? STATUS_INSTALLING
+                : MENU_BLUE
+              : serviceStatusColor(service.status, {
+                  operation:
+                    service.id === "daemon" && daemonOperation
+                      ? daemonOperation
+                      : restarting
+                      ? "restart"
+                      : null,
+                  busy:
+                    serviceOperation?.serviceId === service.id &&
+                    serviceOperation.action !== "restart",
+                });
             return (
               <Box
                 key={service.id}
@@ -195,7 +277,17 @@ export function ServicesPanel({
           })}
         </ScrollList>
       </Box>
-      {selectedService?.id === "daemon" && detailWidth > 0 && (
+      {detailWidth > 0 && showDevEnvConverge && devEnvConverge && (
+        <Box width={detailWidth} height={height} position="relative">
+          <DevEnvConvergePanel
+            width={detailWidth}
+            height={height}
+            converge={devEnvConverge}
+            onDismissError={onDismissDevEnvConvergeError}
+          />
+        </Box>
+      )}
+      {selectedService?.id === "daemon" && detailWidth > 0 && !showDevEnvConverge && (
         <Box width={detailWidth} height={height} position="relative">
           <DaemonDetailPanel
             service={selectedService}
@@ -218,7 +310,10 @@ export function ServicesPanel({
           )}
         </Box>
       )}
-      {selectedService && selectedService.id !== "daemon" && detailWidth > 0 && !daemonOperation && (
+      {selectedService &&
+        selectedService.id !== "daemon" &&
+        detailWidth > 0 &&
+        (!daemonOperation || daemonOperation === "dev-env") && (
         <Box width={detailWidth} height={height} position="relative">
           <ServiceDetailPanel
             key={selectedService.id}

@@ -20,6 +20,7 @@ import {
   DEV_ENV_CONVERGE_STEP,
   installDevEnvironment,
 } from "../lib/instance-install.ts";
+import { resetDevEnvironment } from "../lib/reset-dev-environment.ts";
 
 const OUTPUT_LOG_ROWS = 6;
 const BUILD_OUTPUT_LOG_ROWS = 200;
@@ -36,7 +37,7 @@ function truncateLine(text: string, maxWidth: number): string {
 }
 
 type BootstrapPhase = "uv" | "python" | "ansible" | "converge";
-type ProvisionerPhase = "daemon" | "dev-env" | "build-daemon-binaries";
+type ProvisionerPhase = "daemon" | "dev-env" | "reset-dev-env" | "build-daemon-binaries";
 
 export function ProvisionerPanel({
   width,
@@ -44,12 +45,14 @@ export function ProvisionerPanel({
   phase = "daemon",
   onDone,
   onInstallFinished,
+  onDaemonInstallDone,
 }: {
   width: number;
   height: number;
   phase?: ProvisionerPhase;
   onDone: () => void;
   onInstallFinished?: (success: boolean) => void;
+  onDaemonInstallDone?: () => void;
 }) {
   const [outputLines, setOutputLines] = useState<string[]>([]);
   const bootstrapPhase = useRef<BootstrapPhase>("uv");
@@ -201,11 +204,8 @@ export function ProvisionerPanel({
         await installDaemonSystemd(appendOutput, emitStep);
         if (cancelled) return;
 
-        currentStep = DEV_ENV_CONVERGE_STEP;
-        await installDevEnvironment(trackBootstrapEvent, appendOutput, trackDevEnvStep);
-        if (cancelled) return;
-
-        setDone(true);
+        onInstallFinished?.(true);
+        onDaemonInstallDone?.();
       } catch (caught) {
         if (cancelled) return;
         emitStep(currentStep, "failed");
@@ -242,7 +242,6 @@ export function ProvisionerPanel({
     setDone,
     setError,
     setErrorLogPath,
-    trackBootstrapEvent,
     trackBootstrapOutput,
   ]);
 
@@ -287,6 +286,49 @@ export function ProvisionerPanel({
     setError,
     setErrorLogPath,
     trackBootstrapEvent,
+    trackDevEnvStep,
+  ]);
+
+  useEffect(() => {
+    if (phase !== "reset-dev-env") {
+      return;
+    }
+
+    let cancelled = false;
+
+    void (async () => {
+      const currentStep = DEV_ENV_CONVERGE_STEP;
+      try {
+        await resetDevEnvironment(appendOutput, trackDevEnvStep);
+        if (cancelled) return;
+        setDone(true);
+      } catch (caught) {
+        if (cancelled) return;
+        emitStep(currentStep, "failed");
+        const message = caught instanceof Error ? caught.message : String(caught);
+        const saved = await writeTaskErrorLog({
+          title: "Reset development environment",
+          message: `step=${currentStep}\n${message}`,
+          tasks: [{ label: currentStep, status: "failed" }],
+          timestamp: new Date().toISOString(),
+        });
+        if (saved) {
+          setErrorLogPath(CONSOLE_LAST_TASK_ERROR_LOG);
+        }
+        setError(message);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    appendOutput,
+    emitStep,
+    phase,
+    setDone,
+    setError,
+    setErrorLogPath,
     trackDevEnvStep,
   ]);
 
@@ -350,13 +392,17 @@ export function ProvisionerPanel({
     ? "Building daemon binaries…"
     : phase === "dev-env"
       ? "Starting development environment"
-      : "Bootstrapping development environment";
+      : phase === "reset-dev-env"
+        ? "Resetting development environment…"
+        : "Bootstrapping development environment";
 
   const successMessage = phase === "build-daemon-binaries"
     ? "Daemon binaries built successfully"
     : phase === "dev-env"
       ? "Development environment running"
-      : "Development environment ready";
+      : phase === "reset-dev-env"
+        ? "Development environment reset complete"
+        : "Development environment ready";
 
   return (
     <Box flexDirection="column" width={width} height={height}>

@@ -20,6 +20,7 @@ export type DaemonActionId =
   | "restart"
   | "purge"
   | "start-dev-env"
+  | "reset-dev-env"
   | "build-daemon-binaries";
 
 const DAEMON_UNIT = "turbopanel-daemon";
@@ -32,6 +33,7 @@ export const DAEMON_ACTION_LABELS: Record<DaemonActionId, string> = {
   restart: "Restart",
   purge: "Purge completely",
   "start-dev-env": "Start development environment",
+  "reset-dev-env": "Reset development environment",
   "build-daemon-binaries": "Build daemon binaries (amd64 + arm64)",
 };
 
@@ -44,7 +46,7 @@ export function developerMenuActions(status: DevServiceStatus | undefined): Daem
     return [];
   }
 
-  return ["repair", "start-dev-env", "build-daemon-binaries", "purge"];
+  return ["repair", "start-dev-env", "reset-dev-env", "build-daemon-binaries", "purge"];
 }
 
 export function canRestartDaemon(): boolean {

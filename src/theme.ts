@@ -14,6 +14,7 @@ export const MODAL_PANEL_BG = "black";
 export const STATUS_UNINSTALLED = "red";
 export const STATUS_PENDING = "yellow";
 export const STATUS_RUNNING = "green";
+export const STATUS_INSTALLING = "cyan";
 export const LOG_TIME = "gray";
 export const LOG_DEBUG = "gray";
 export const LOG_WARN = "yellow";
