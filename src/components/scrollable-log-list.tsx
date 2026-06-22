@@ -68,16 +68,23 @@ export function ScrollableLogList({
       return;
     }
 
-    setMetrics({
+    const next = {
       scrollOffset: resolveLogScrollOffset(ref, selectedIndex, scrollAlignment),
       contentHeight: ref.getContentHeight(),
       viewportHeight: ref.getViewportHeight(),
-    });
+    };
+    setMetrics((current) =>
+      current.scrollOffset === next.scrollOffset &&
+      current.contentHeight === next.contentHeight &&
+      current.viewportHeight === next.viewportHeight
+        ? current
+        : next,
+    );
   }, [scrollAlignment, selectedIndex]);
 
   useEffect(() => {
     syncMetrics();
-  }, [selectedIndex, height, children, focused, syncMetrics]);
+  }, [selectedIndex, height, focused, syncMetrics]);
 
   return (
     <Box flexDirection="row" width={width} height={height} minHeight={0}>

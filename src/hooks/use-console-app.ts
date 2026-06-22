@@ -132,9 +132,10 @@ export function useConsoleApp() {
           );
         }
         setInstallFinished(false);
-        setActiveArea("bootstrap");
-        setProvisioning(true);
+        setActiveArea("services");
+        setProvisioning(false);
         setDaemonOperation("dev-env");
+        startDevEnvConverge();
         return;
       }
       case "reset-dev-env": {
@@ -157,7 +158,7 @@ export function useConsoleApp() {
         setDaemonOperation("build-daemon-binaries");
         return;
     }
-  }, [startDaemonInstall, visibleServices]);
+  }, [startDaemonInstall, startDevEnvConverge, visibleServices]);
 
   const requestServiceRestart = useCallback((serviceId: string) => {
     const service = visibleServices.find((entry) => entry.id === serviceId);

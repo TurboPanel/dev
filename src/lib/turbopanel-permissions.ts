@@ -1,12 +1,14 @@
 import { spawnSync } from "node:child_process";
 import {
   DAEMON_REPO_DIR,
+  DEV_ORCHESTRATION_STAGED_DIR,
   RUNTIMES_DIR,
   TURBOPANEL_PLATFORM,
   TURBOPANEL_ROOT,
 } from "./paths.ts";
 import { tryResolveDevIdentity } from "./dev-identity.ts";
 import { type InstallOutputHandler, runCaptured } from "./install-output.ts";
+import { stageDevOrchestration } from "./dev-orchestration-stage.ts";
 
 const TURBOPANEL_USER = "turbopanel";
 const TURBOPANEL_GROUP = "turbopanel";
@@ -143,6 +145,11 @@ function buildDevPlatformAccessScript(devUser: string): string {
     '    setfacl -m u:$dev:rx "$runtimes"',
     '    setfacl -d -m u:$dev:rx "$runtimes"',
     "  fi",
+    `  devOrch=${shellQuote(DEV_ORCHESTRATION_STAGED_DIR)}`,
+    '  if [ -d "$devOrch" ]; then',
+    '    setfacl -m u:$dev:rx "$devOrch"',
+    '    setfacl -d -m u:$dev:rx "$devOrch"',
+    "  fi",
     '  if [ -d "$daemonCheckout" ]; then',
     '    setfacl -R -m u:$dev:rwx "$daemonCheckout" 2>/dev/null || true',
     '    find "$daemonCheckout" -type d -exec setfacl -d -m u:$dev:rwx {} + 2>/dev/null || true',
@@ -192,6 +199,7 @@ export async function ensureDevPlatformAccess(
   }
 
   await ensureAclTool(onOutput);
+  await stageDevOrchestration(onOutput);
 
   const script = buildDevPlatformAccessScript(dev.user);
   const code = await runCaptured(["sudo", "-n", "bash", "-c", script], onOutput);

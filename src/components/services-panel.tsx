@@ -12,6 +12,7 @@ import type {
   ConvergeServicePhase,
   DevEnvConvergeState,
 } from "../hooks/use-dev-env-converge.ts";
+import { useSpinnerFrame } from "../hooks/use-spinner-frame.ts";
 import {
   canRunServiceAction,
   serviceActionForKey,
@@ -112,27 +113,23 @@ function ConvergeServiceLabel({
   label,
   phase,
   dimColor,
+  spinnerFrame,
 }: {
   label: string;
   phase: ConvergeServicePhase;
   dimColor: boolean;
+  spinnerFrame: number;
 }) {
-  const [frame, setFrame] = useState(0);
-
-  useEffect(() => {
-    const id = setInterval(() => setFrame((current) => current + 1), 120);
-    return () => clearInterval(id);
-  }, []);
-
   const { primary, secondary } = phaseColors(phase);
   const chars = [...label];
+  const frame = spinnerFrame % Math.max(chars.length, 1);
 
   return (
     <Text dimColor={dimColor} wrap="truncate">
       {chars.map((char, index) => (
         <Text
           key={`${index}-${char}`}
-          color={(frame % chars.length) === index ? primary : secondary}
+          color={frame === index ? primary : secondary}
         >
           {char}
         </Text>
@@ -226,6 +223,19 @@ export function ServicesPanel({
     const index = visibleFullIndices.indexOf(effectiveSelectedIndex);
     return index >= 0 ? index : 0;
   }, [effectiveSelectedIndex, visibleFullIndices]);
+  const needsConvergeAnimation = useMemo(
+    () =>
+      displayServices.some((service) =>
+        shouldAnimateConvergeLabel(service, servicePhases[service.id]),
+      ) ||
+      Boolean(
+        devEnvConverge &&
+          (devEnvConverge.active ||
+            devEnvConverge.tasks.some((task) => task.status === "running")),
+      ),
+    [displayServices, devEnvConverge, servicePhases],
+  );
+  const convergeSpinnerFrame = useSpinnerFrame(needsConvergeAnimation ? 120 : 0);
   const [logFocused, setLogFocused] = useState(false);
   const daemonActions = useMemo(
     () => (selectedService?.id === "daemon" ? daemonMenuActions(selectedService.status) : []),
@@ -345,6 +355,7 @@ export function ServicesPanel({
                     label={service.label}
                     phase={phase}
                     dimColor={!focused}
+                    spinnerFrame={convergeSpinnerFrame}
                   />
                 ) : (
                   <Text color={labelColor} dimColor={!focused} wrap="truncate">
@@ -365,6 +376,7 @@ export function ServicesPanel({
                 height={convergePanelHeight}
                 converge={devEnvConverge}
                 onDismissError={onDismissDevEnvConvergeError}
+                spinnerFrame={convergeSpinnerFrame}
               />
             </Box>
           )}

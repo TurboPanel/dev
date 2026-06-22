@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { memo, useEffect, useMemo, useState } from "react";
 import { Box, Text, useInput } from "ink";
 import type { DevService } from "../dev-services.ts";
 import {
@@ -35,7 +35,7 @@ function overlayToDaemonLines(lines: ConsoleLogLine[]): DaemonLogLine[] {
   return parsed;
 }
 
-export function DaemonDetailPanel({
+export const DaemonDetailPanel = memo(function DaemonDetailPanel({
   service,
   actions,
   width,
@@ -182,4 +182,4 @@ export function DaemonDetailPanel({
       )}
     </Box>
   );
-}
+});

@@ -27,7 +27,7 @@ export function useLogScroll({
   useEffect(() => {
     setFollowTail(true);
     setScrollIndex(lastLogScrollIndex(lineCount));
-  }, [resetKey, followResetKey, lineCount]);
+  }, [resetKey, followResetKey]);
 
   useEffect(() => {
     if (focused && !wasFocusedRef.current) {

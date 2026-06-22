@@ -1,6 +1,8 @@
 export const TURBOPANEL_ROOT = "/opt/turbopanel";
 export const TURBOPANEL_PLATFORM = `${TURBOPANEL_ROOT}/platform`;
 export const RUNTIMES_DIR = `${TURBOPANEL_ROOT}/runtimes`;
+/** Runtime-consumable copy of turbopanel-dev orchestration for turbopanel converge. */
+export const DEV_ORCHESTRATION_STAGED_DIR = `${TURBOPANEL_ROOT}/dev-orchestration`;
 export const UV_CACHE_DIR = `${RUNTIMES_DIR}/uv/cache`;
 export const PYTHON_INSTALL_DIR = `${RUNTIMES_DIR}/python`;
 export const ANSIBLE_COLLECTIONS_PATH =
@@ -24,8 +26,13 @@ export const DAEMON_REPO = {
 } as const;
 
 export const CONSOLE_LOG_DIR = `${TURBOPANEL_PLATFORM}/.local/console`;
+export const CONVERGE_SERVICE_LOG_DIR = `${CONSOLE_LOG_DIR}/converge`;
 export const CONSOLE_LAST_TASK_ERROR_LOG =
   `${CONSOLE_LOG_DIR}/last-task-error.log`;
+
+export function convergeServiceLogPath(serviceId: string): string {
+  return `${CONVERGE_SERVICE_LOG_DIR}/${serviceId}.log`;
+}
 
 export const DAEMON_LOG_PATH = `${DAEMON_REPO_DIR}/logs/daemon.log`;
 export const DAEMON_ERR_LOG_PATH = `${DAEMON_REPO_DIR}/logs/daemon.err.log`;

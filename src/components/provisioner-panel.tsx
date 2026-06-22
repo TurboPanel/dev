@@ -5,6 +5,7 @@ import {
   buildAnsibleTaskView,
   useAnsibleEvents,
 } from "../hooks/use-ansible-events.ts";
+import { useSpinnerFrame } from "../hooks/use-spinner-frame.ts";
 import { installDaemon } from "../lib/platform-install.ts";
 import { CONSOLE_LAST_TASK_ERROR_LOG } from "../lib/paths.ts";
 import { appendOutputLines } from "../lib/install-output.ts";
@@ -163,6 +164,8 @@ export function ProvisionerPanel({
     () => buildAnsibleTaskView(tasks, taskRowBudget),
     [tasks, taskRowBudget],
   );
+  const hasRunningTask = tasks.some((task) => task.status === "running");
+  const spinnerFrame = useSpinnerFrame(!finished && hasRunningTask ? 120 : 0);
 
   useEffect(() => {
     if (done) {
@@ -419,6 +422,7 @@ export function ProvisionerPanel({
           error={error}
           errorLogPath={errorLogPath}
           columns={outputWidth}
+          spinnerFrame={spinnerFrame}
         />
       </Box>
       {showLiveBuildOutput && (

@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { memo, useMemo } from "react";
 import { Box, useInput } from "ink";
 import type { DevService } from "../dev-services.ts";
 import type { ConsoleLogLine } from "../lib/service-restart.ts";
@@ -47,7 +47,7 @@ const PINNED_SERVICE_BADGES: Partial<
   db: { runtime: "postgres", badgeReserve: POSTGRES_BADGE_RESERVE },
 };
 
-export function ServiceDetailPanel({
+export const ServiceDetailPanel = memo(function ServiceDetailPanel({
   service,
   width,
   height,
@@ -133,4 +133,4 @@ export function ServiceDetailPanel({
       </Box>
     </Box>
   );
-}
+});

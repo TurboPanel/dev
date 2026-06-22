@@ -1,4 +1,4 @@
-import React from "react";
+import React, { memo } from "react";
 import { Box, Text } from "ink";
 import { readInstanceRuntime } from "../lib/daemon-env.ts";
 import { isManagedService } from "../lib/service-actions.ts";
@@ -58,7 +58,13 @@ export function statusHints(
   return "← → switch tabs · Ctrl-C exit";
 }
 
-export function StatusBar({ width, status }: { width: number; status: string }) {
+export const StatusBar = memo(function StatusBar({
+  width,
+  status,
+}: {
+  width: number;
+  status: string;
+}) {
   const labelWidth = Math.min(status.length + 2, width - 4);
   const inner = width - 2;
   const dashTotal = Math.max(0, inner - labelWidth);
@@ -91,4 +97,4 @@ export function StatusBar({ width, status }: { width: number; status: string }) 
       </Text>
     </Box>
   );
-}
+});

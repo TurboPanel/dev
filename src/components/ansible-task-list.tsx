@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React from "react";
 import { Box, Text } from "ink";
 import { ScrollList } from "ink-scroll-list";
 import { ansibleSpinnerFrames } from "../lib/spinners.ts";
@@ -42,20 +42,14 @@ function truncateLabel(text: string, maxWidth: number): string {
 function RunningGlyph({
   depth,
   dimmed,
+  spinnerFrame,
 }: {
   depth: number;
   dimmed: boolean;
+  spinnerFrame: number;
 }) {
   const frames = ansibleSpinnerFrames(depth);
-  const [index, setIndex] = useState(0);
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setIndex((value) => (value + 1) % frames.length);
-    }, 120);
-    return () => clearInterval(timer);
-  }, [frames.length]);
-
+  const index = spinnerFrame % frames.length;
   const color = depth >= 2 ? "yellow" : "cyan";
 
   return (
@@ -68,11 +62,13 @@ function TaskRow({
   columns,
   dimmed = false,
   focused = false,
+  spinnerFrame,
 }: {
   task: AnsibleTaskRow;
   columns: number;
   dimmed?: boolean;
   focused?: boolean;
+  spinnerFrame: number;
 }) {
   const { glyph, color } = statusGlyph(task.status);
   const indent = indentForDepth(task.depth);
@@ -90,7 +86,7 @@ function TaskRow({
     <Box flexDirection="row">
       <Text>{indent}</Text>
       {isRunning ? (
-        <RunningGlyph depth={task.depth} dimmed={showDimmed} />
+        <RunningGlyph depth={task.depth} dimmed={showDimmed} spinnerFrame={spinnerFrame} />
       ) : (
         <Text color={showDimmed ? "gray" : color}>{glyph}</Text>
       )}
@@ -115,6 +111,7 @@ export function AnsibleTaskList({
   error,
   errorLogPath,
   columns,
+  spinnerFrame,
 }: {
   visibleTasks: AnsibleTaskRow[];
   hiddenCount: number;
@@ -124,6 +121,7 @@ export function AnsibleTaskList({
   error: string | null;
   errorLogPath?: string | null;
   columns: number;
+  spinnerFrame: number;
 }) {
   const scrollHeight = Math.max(1, height);
   const scrollIndex = visibleTasks.length === 0
@@ -148,6 +146,7 @@ export function AnsibleTaskList({
               columns={columns}
               dimmed={index < scrollIndex - 1}
               focused={index === scrollIndex}
+              spinnerFrame={spinnerFrame}
             />
           ))}
         </ScrollList>

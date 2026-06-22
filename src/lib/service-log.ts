@@ -3,6 +3,7 @@ import { spawnSync } from "node:child_process";
 import { STRUCTURED_TEXT_WITH_TIME_RE } from "./daemon-log.ts";
 import { dockerOutputLines, spawnDocker } from "./docker-access.ts";
 import {
+  convergeServiceLogPath,
   DAEMON_ERR_LOG_PATH,
   DAEMON_LOG_PATH,
   platformRepoPath,
@@ -136,6 +137,8 @@ export function readServiceLogTail(
   const unit = dockerContainer ? null : serviceSystemdUnit(serviceId);
   const filePaths = FILE_LOG_SOURCES[serviceId] ?? [];
   const collected: string[] = [];
+
+  collected.push(...tailFile(convergeServiceLogPath(serviceId), maxLines));
 
   for (const path of filePaths) {
     collected.push(...tailFile(path, maxLines));

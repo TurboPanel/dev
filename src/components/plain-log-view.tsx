@@ -1,4 +1,4 @@
-import React from "react";
+import React, { memo } from "react";
 import { Text } from "ink";
 import {
   formatLogDisplayTime,
@@ -20,7 +20,7 @@ function truncateText(text: string, maxWidth: number): string {
   return `${text.slice(0, maxWidth - 1)}…`;
 }
 
-export function PlainLogView({
+export const PlainLogView = memo(function PlainLogView({
   lines,
   width,
   height,
@@ -73,4 +73,4 @@ export function PlainLogView({
       })}
     </ScrollableLogList>
   );
-}
+});

@@ -11,11 +11,13 @@ export function DevEnvConvergePanel({
   height,
   converge,
   onDismissError,
+  spinnerFrame,
 }: {
   width: number;
   height: number;
   converge: DevEnvConvergeState;
   onDismissError?: () => void;
+  spinnerFrame: number;
 }) {
   const finished = !converge.active && converge.error === null;
   const footerRows = converge.error ? (converge.errorLogPath ? 3 : 2) : 0;
@@ -46,6 +48,7 @@ export function DevEnvConvergePanel({
           error={converge.error}
           errorLogPath={converge.errorLogPath}
           columns={Math.max(20, width - 2)}
+          spinnerFrame={spinnerFrame}
         />
       </Box>
       {finished && !converge.error && converge.recap && (

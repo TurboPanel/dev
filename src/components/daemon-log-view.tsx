@@ -1,4 +1,4 @@
-import React from "react";
+import React, { memo } from "react";
 import { Text } from "ink";
 import { daemonLogLineKey } from "../lib/log-lines-equal.ts";
 import {
@@ -71,7 +71,7 @@ function LogRow({
   );
 }
 
-export function DaemonLogView({
+export const DaemonLogView = memo(function DaemonLogView({
   lines,
   width,
   height,
@@ -106,4 +106,4 @@ export function DaemonLogView({
       ))}
     </ScrollableLogList>
   );
-}
+});
