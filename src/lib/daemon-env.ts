@@ -8,9 +8,19 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { resolveDevIdentity } from "./dev-identity.ts";
-import { DAEMON_ENV_PATH, DAEMON_REPO_DIR } from "./paths.ts";
+import {
+  DAEMON_ENV_PATH,
+  DAEMON_REPO_DIR,
+  PLATFORM_CA_CERT_PATH,
+} from "./paths.ts";
+import { caddyBrowserUrl } from "./service-urls.ts";
 
 const INSTANCE_OPT_IN_KEY = "TURBOPANEL_DEV_INSTANCE";
+const RUNTIME_KEY = "TURBOPANEL_INSTANCE_RUNTIME";
+const WORKERS_INSTANCE_URL_KEYS = [
+  "TURBOPANEL_INSTANCE_URL",
+  "TURBOPANEL_INSTANCE_CA",
+] as const;
 
 function readEnvFile(path: string): string {
   try {
@@ -118,13 +128,42 @@ export function writeDaemonBaseEnv(extra?: Record<string, string>): void {
   });
 }
 
-/** Opt in to co-located instance provisioning via the daemon `.env` marker. */
+function resolveRuntimeForWrite(
+  extra?: Record<string, string>,
+): "deno" | "workers" {
+  if (extra?.[RUNTIME_KEY] === "workers") {
+    return "workers";
+  }
+  if (extra?.[RUNTIME_KEY] === "deno") {
+    return "deno";
+  }
+  return readInstanceRuntime();
+}
+
+/**
+ * Opt in to co-located instance provisioning via the daemon `.env` marker.
+ *
+ * Also applies runtime-aware daemon connectivity: workers mode writes
+ * `TURBOPANEL_INSTANCE_URL` + `TURBOPANEL_INSTANCE_CA`; deno mode removes them
+ * so the daemon falls back to the local Unix socket.
+ */
 export function writeDaemonInstanceEnv(extra?: Record<string, string>): void {
-  mergeDaemonEnv({
+  const runtime = resolveRuntimeForWrite(extra);
+  const entries: Record<string, string> = {
     ...buildDaemonBaseEntries(),
     [INSTANCE_OPT_IN_KEY]: "1",
     ...extra,
-  });
+  };
+  const removeKeys: string[] = [];
+
+  if (runtime === "workers") {
+    entries.TURBOPANEL_INSTANCE_URL = caddyBrowserUrl();
+    entries.TURBOPANEL_INSTANCE_CA = PLATFORM_CA_CERT_PATH;
+  } else {
+    removeKeys.push(...WORKERS_INSTANCE_URL_KEYS);
+  }
+
+  mergeDaemonEnv(entries, { removeKeys });
 }
 
 function parseEnvEntries(content: string): Map<string, string> {

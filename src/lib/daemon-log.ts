@@ -357,7 +357,11 @@ function readLogFileText(path: string): string | undefined {
   return result.stdout;
 }
 
-function tailLinesWithMeta(path: string, maxLines: number): FileTailMeta {
+function tailLinesWithMeta(
+  path: string,
+  maxLines: number,
+  minByteOffset = 0,
+): FileTailMeta {
   const empty: FileTailMeta = {
     path,
     readable: false,
@@ -373,12 +377,14 @@ function tailLinesWithMeta(path: string, maxLines: number): FileTailMeta {
     return empty;
   }
 
+  const effectiveFloor = stat.size < minByteOffset ? 0 : minByteOffset;
+
   const lines = splitLinesWithOffsets(text)
     .map((line) => ({
       text: sanitizeInstallOutput(line.text),
       offset: line.offset,
     }))
-    .filter((line) => line.text.trim().length > 0)
+    .filter((line) => line.text.trim().length > 0 && line.offset >= effectiveFloor)
     .slice(-maxLines);
 
   return {
@@ -533,6 +539,12 @@ export type DaemonLogFileStat = {
   stderrMtimeMs: number;
 };
 
+/** Show only log bytes appended at or after these file offsets (post-restart view). */
+export type DaemonLogByteFloor = {
+  stdout: number;
+  stderr: number;
+};
+
 export function readDaemonLogFileStat(): DaemonLogFileStat {
   const stdout = fileStatMs(DAEMON_LOG_PATH) ?? sudoFileStatMs(DAEMON_LOG_PATH);
   const stderr = fileStatMs(DAEMON_ERR_LOG_PATH) ?? sudoFileStatMs(DAEMON_ERR_LOG_PATH);
@@ -544,11 +556,22 @@ export function readDaemonLogFileStat(): DaemonLogFileStat {
   };
 }
 
-export function readDaemonLogTail(maxLines = 500): DaemonLogLine[] {
+export function readDaemonLogTail(
+  maxLines = 500,
+  byteFloor?: DaemonLogByteFloor | null,
+): DaemonLogLine[] {
   const stdoutBudget = Math.max(1, Math.round(maxLines * 0.8));
   const stderrBudget = Math.max(1, maxLines - stdoutBudget);
-  const stdout = tailLinesWithMeta(DAEMON_LOG_PATH, stdoutBudget);
-  const stderr = tailLinesWithMeta(DAEMON_ERR_LOG_PATH, stderrBudget);
+  const stdout = tailLinesWithMeta(
+    DAEMON_LOG_PATH,
+    stdoutBudget,
+    byteFloor?.stdout ?? 0,
+  );
+  const stderr = tailLinesWithMeta(
+    DAEMON_ERR_LOG_PATH,
+    stderrBudget,
+    byteFloor?.stderr ?? 0,
+  );
   const lines = [
     ...parseTailedFile(stdout),
     ...parseTailedFile(stderr),

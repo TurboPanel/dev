@@ -5,7 +5,11 @@ import {
   DAEMON_ACTION_LABELS,
   type DaemonActionId,
 } from "../lib/daemon-actions.ts";
-import { parseDaemonLogLine, shouldHideDaemonLogLine, type DaemonLogLine } from "../lib/daemon-log.ts";
+import type { DaemonLogByteFloor, DaemonLogLine } from "../lib/daemon-log.ts";
+import {
+  parseDaemonLogLine,
+  shouldHideDaemonLogLine,
+} from "../lib/daemon-log.ts";
 import type { ConsoleLogLine } from "../lib/service-restart.ts";
 import { useLogScroll } from "../hooks/use-log-scroll.ts";
 import { useDaemonLog } from "../hooks/use-daemon-log.ts";
@@ -44,6 +48,7 @@ export const DaemonDetailPanel = memo(function DaemonDetailPanel({
   logInputActive = false,
   logOverlayLines = [],
   logFollowResetKey,
+  daemonLogByteFloor = null,
 }: {
   service: DevService;
   actions: DaemonActionId[];
@@ -53,8 +58,9 @@ export const DaemonDetailPanel = memo(function DaemonDetailPanel({
   logInputActive?: boolean;
   logOverlayLines?: ConsoleLogLine[];
   logFollowResetKey?: number;
+  daemonLogByteFloor?: DaemonLogByteFloor | null;
 }) {
-  const fileLogLines = useDaemonLog();
+  const fileLogLines = useDaemonLog(daemonLogByteFloor, logFollowResetKey);
   const logLines = useMemo(
     () => [...fileLogLines, ...overlayToDaemonLines(logOverlayLines)],
     [fileLogLines, logOverlayLines],

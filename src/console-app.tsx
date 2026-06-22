@@ -33,6 +33,7 @@ export function ConsoleApp() {
       restartOverlayServiceId={consoleApp.restartOverlayServiceId}
       restartLogOverlay={consoleApp.restartLogOverlay}
       logFollowResetKey={consoleApp.logFollowResetKey}
+      daemonLogByteFloor={consoleApp.daemonLogByteFloor}
       onConfirmRestart={consoleApp.confirmServiceRestart}
       onCancelRestart={consoleApp.cancelServiceRestart}
       devEnvConverge={consoleApp.devEnvConverge}

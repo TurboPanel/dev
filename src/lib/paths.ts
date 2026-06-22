@@ -10,6 +10,8 @@ export const ANSIBLE_COLLECTIONS_PATH =
 /** Must match daemon orchestration/roles/deno-runtime/defaults/main.yml deno_version. */
 export const DENO_VERSION = "2.8.3";
 export const SYSTEM_DENO_BIN = "/usr/local/bin/deno";
+export const INSTANCE_DIR = `${TURBOPANEL_PLATFORM}/instance`;
+export const PLATFORM_CA_CERT_PATH = `${INSTANCE_DIR}/certs/ca.crt`;
 export const DAEMON_REPO_DIR = `${TURBOPANEL_PLATFORM}/daemon`;
 export const DAEMON_ENV_PATH = `${DAEMON_REPO_DIR}/.env`;
 export const DAEMON_BOOTSTRAP_SCRIPT =

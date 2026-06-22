@@ -23,9 +23,11 @@ export function useLogScroll({
   const [scrollIndex, setScrollIndex] = useState(0);
   const [followTail, setFollowTail] = useState(true);
   const wasFocusedRef = useRef(false);
+  const pendingTailPinRef = useRef(false);
 
   useEffect(() => {
     setFollowTail(true);
+    pendingTailPinRef.current = true;
     setScrollIndex(lastLogScrollIndex(lineCount));
   }, [resetKey, followResetKey]);
 
@@ -38,6 +40,11 @@ export function useLogScroll({
   }, [focused, lineCount]);
 
   useEffect(() => {
+    if (pendingTailPinRef.current) {
+      setScrollIndex(lastLogScrollIndex(lineCount));
+      pendingTailPinRef.current = false;
+      return;
+    }
     if (followTail) {
       setScrollIndex((index) => followLogScrollIndex(index, lineCount));
     }

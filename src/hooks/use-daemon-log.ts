@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { daemonLogLinesEqual } from "../lib/log-lines-equal.ts";
 import {
+  type DaemonLogByteFloor,
   type DaemonLogFileStat,
   type DaemonLogLine,
   readDaemonLogFileStat,
@@ -15,10 +16,10 @@ type DaemonLogSnapshot = {
   lines: DaemonLogLine[];
 };
 
-function readSnapshot(): DaemonLogSnapshot {
+function readSnapshot(byteFloor?: DaemonLogByteFloor | null): DaemonLogSnapshot {
   return {
     stat: readDaemonLogFileStat(),
-    lines: readDaemonLogTail(MAX_LINES),
+    lines: readDaemonLogTail(MAX_LINES, byteFloor),
   };
 }
 
@@ -32,18 +33,23 @@ function snapshotEqual(current: DaemonLogSnapshot, next: DaemonLogSnapshot): boo
   );
 }
 
-export function useDaemonLog(): DaemonLogLine[] {
-  const [snapshot, setSnapshot] = useState<DaemonLogSnapshot>(readSnapshot);
+export function useDaemonLog(
+  byteFloor?: DaemonLogByteFloor | null,
+  refreshKey = 0,
+): DaemonLogLine[] {
+  const [snapshot, setSnapshot] = useState<DaemonLogSnapshot>(() =>
+    readSnapshot(byteFloor),
+  );
 
   useEffect(() => {
     const refresh = () => {
-      const next = readSnapshot();
+      const next = readSnapshot(byteFloor);
       setSnapshot((current) => (snapshotEqual(current, next) ? current : next));
     };
     refresh();
     const id = setInterval(refresh, POLL_MS);
     return () => clearInterval(id);
-  }, []);
+  }, [byteFloor?.stdout, byteFloor?.stderr, refreshKey]);
 
   return snapshot.lines;
 }

@@ -13,32 +13,48 @@ async function runSystemctl(
   }
 }
 
+function runtimePlaybookExtraArgs(target: "deno" | "workers"): string[] {
+  return [
+    "-e",
+    `turbopanel_instance_runtime=${target}`,
+    "-e",
+    `postgres_expose_port=${target === "workers"}`,
+  ];
+}
+
 export async function switchInstanceRuntime(
   target: "deno" | "workers",
   onOutput?: InstallOutputHandler,
 ): Promise<void> {
+  // URL/CA keys for workers mode (and their removal for deno) are applied by
+  // writeDaemonInstanceEnv() from the resolved runtime.
   writeDaemonInstanceEnv({ TURBOPANEL_INSTANCE_RUNTIME: target });
 
-  const exposePort = target === "workers";
-  const runtimeArg = `-e turbopanel_instance_runtime=${target}`;
-  const postgresArg = `-e postgres_expose_port=${exposePort}`;
+  const playbookExtra = runtimePlaybookExtraArgs(target);
 
   onOutput?.(`Switching instance to ${target} mode…`);
   await runOrchestrationAction(
-    ["playbook", "postgres-setup.yml", postgresArg],
+    [
+      "playbook",
+      "postgres-setup.yml",
+      "-e",
+      `postgres_expose_port=${target === "workers"}`,
+    ],
     () => {},
     onOutput,
   );
   await runOrchestrationAction(
-    ["playbook", "instance-launch-only.yml", runtimeArg, postgresArg],
+    ["playbook", "instance-launch-only.yml", ...playbookExtra],
     () => {},
     onOutput,
   );
 
   if (target === "workers") {
     await runSystemctl(["restart", "turbopanel-instance"], onOutput);
+    await runSystemctl(["restart", "turbopanel-caddy"], onOutput);
   } else {
     await runSystemctl(["start", "turbopanel-instance"], onOutput);
+    await runSystemctl(["restart", "turbopanel-caddy"], onOutput);
   }
 
   await requestDaemonRestart(onOutput);

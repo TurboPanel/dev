@@ -13,6 +13,8 @@ import {
   watchServiceRestart,
 } from "../lib/service-restart.ts";
 import { readInstanceRuntime } from "../lib/daemon-env.ts";
+import type { DaemonLogByteFloor } from "../lib/daemon-log.ts";
+import { readDaemonLogFileStat } from "../lib/daemon-log.ts";
 import type { DaemonOperation } from "../lib/spinners.ts";
 import { refreshDevPermissionsQuietly } from "../lib/turbopanel-permissions.ts";
 import { useDevEnvConverge } from "./use-dev-env-converge.ts";
@@ -62,6 +64,9 @@ export function useConsoleApp() {
   const [restartOverlayServiceId, setRestartOverlayServiceId] = useState<string | null>(null);
   const [restartLogOverlay, setRestartLogOverlay] = useState<ConsoleLogLine[]>([]);
   const [logFollowResetKey, setLogFollowResetKey] = useState(0);
+  const [daemonLogByteFloor, setDaemonLogByteFloor] = useState<DaemonLogByteFloor | null>(
+    null,
+  );
   const { services: visibleServices, refresh: refreshServices } = useVisibleServices();
   const autoInstallStarted = useRef(initialAutoInstall.shouldAutoInstall);
   const devEnvConvergeSelectionPinned = useRef(false);
@@ -181,6 +186,14 @@ export function useConsoleApp() {
     setRestartInProgress(serviceId);
     setRestartOverlayServiceId(serviceId);
     setRestartLogOverlay([]);
+
+    if (serviceId === "daemon") {
+      const stat = readDaemonLogFileStat();
+      setDaemonLogByteFloor({
+        stdout: stat.stdoutSize,
+        stderr: stat.stderrSize,
+      });
+    }
 
     const appendLog = (line: ConsoleLogLine) => {
       setRestartLogOverlay((current) => [...current, line]);
@@ -337,6 +350,7 @@ export function useConsoleApp() {
     restartOverlayServiceId,
     restartLogOverlay,
     logFollowResetKey,
+    daemonLogByteFloor,
     installFinished,
     handleDaemonAction,
     handleProvisioningDone,
