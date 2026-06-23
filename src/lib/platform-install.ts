@@ -11,6 +11,7 @@ import {
   platformRepoPath,
   sshRepoUrl,
   TURBOPANEL_PLATFORM,
+  TURBOPANEL_TRUNK_BRANCH,
 } from "./paths.ts";
 import {
   type InstallOutputHandler,
@@ -18,7 +19,7 @@ import {
 } from "./install-output.ts";
 import { ensureTurbopanelGithubAccess } from "./turbopanel-github-access.ts";
 
-const BRANCH = "trunk";
+
 const TURBOPANEL_USER = "turbopanel";
 const TURBOPANEL_GROUP = "turbopanel";
 
@@ -141,7 +142,7 @@ async function privilegedClone(
     "git",
     "clone",
     "--branch",
-    BRANCH,
+    TURBOPANEL_TRUNK_BRANCH,
     url,
     tmpDir,
   ], onOutput);
@@ -250,7 +251,7 @@ async function cloneOrUpdateRepo(
   if (!daemonCheckoutExists(target)) {
     onStep?.(`Clone ${dir}`, "running");
     const code = canManageDaemonCheckout(target)
-      ? await runInherit(["git", "clone", "--branch", BRANCH, url, target], onOutput)
+      ? await runInherit(["git", "clone", "--branch", TURBOPANEL_TRUNK_BRANCH, url, target], onOutput)
       : await privilegedClone(url, target, onOutput);
     if (code !== 0) {
       onStep?.(`Clone ${dir}`, "failed");
@@ -281,7 +282,7 @@ async function cloneOrUpdateRepo(
     "pull",
     "--ff-only",
     "origin",
-    BRANCH,
+    TURBOPANEL_TRUNK_BRANCH,
   ], onOutput);
   if (code !== 0) {
     onStep?.(`Update ${dir}`, "failed");

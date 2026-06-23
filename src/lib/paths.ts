@@ -22,6 +22,10 @@ export const DAEMON_BOOTSTRAP_COMPILED =
   `${DAEMON_REPO_DIR}/dist/turbopanel-bootstrap-orchestration`;
 export const DAEMON_DENO_CONFIG = `${DAEMON_REPO_DIR}/deno.json`;
 
+/** Co-located dev only — git branch for platform checkouts and Upgrade System. Not written on release/binary daemon installs. */
+export const TURBOPANEL_TRUNK_BRANCH = "trunk";
+export const DAEMON_ENV_TRUNK_BRANCH_KEY = "TURBOPANEL_TRUNK_BRANCH" as const;
+
 export const DAEMON_REPO = {
   dir: "daemon",
   repo: "turbopanel/turbopanel-daemon",

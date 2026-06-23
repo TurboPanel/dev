@@ -79,6 +79,7 @@ src/
 - Run via `vite-node` (Node). Normal mode enters through `src/tui.tsx`; watch mode enters through `scripts/hot-reload.tsx`, which hot-loads `src/app.tsx` through the Vite module graph and rerenders the existing Ink instance. Keep interactive shell state in `scripts/hot-reload.tsx` or another stable runtime layer if it must survive UI edits.
 - The `@turbopanel/components/` import alias is defined in **both** `vite.config.ts` (`resolve.alias`) and `tsconfig.json` (`paths`) — keep them in sync.
 - Keep the CLI **simple**. Platform repo install, service monitoring, and stack actions belong in the Ink app when rebuilt — not new shell scripts.
+- **`src/lib/paths.ts`** — `TURBOPANEL_TRUNK_BRANCH` (`trunk`) is the co-located dev shim for git checkouts and `TURBOPANEL_TRUNK_BRANCH` in the daemon `.env`; release/binary installs omit it.
 - **`src/lib/daemon-exec.ts`** — resolves bootstrap invocation: compiled
   `dist/turbopanel-bootstrap-orchestration` when present, otherwise host Deno
   (`command -v deno`) for dev checkout bootstrap and binary builds.

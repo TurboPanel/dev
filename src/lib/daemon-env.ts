@@ -10,8 +10,10 @@ import { spawnSync } from "node:child_process";
 import { resolveDevIdentity } from "./dev-identity.ts";
 import {
   DAEMON_ENV_PATH,
+  DAEMON_ENV_TRUNK_BRANCH_KEY,
   DAEMON_REPO_DIR,
   PLATFORM_CA_CERT_PATH,
+  TURBOPANEL_TRUNK_BRANCH,
 } from "./paths.ts";
 import { caddyBrowserUrl } from "./service-urls.ts";
 
@@ -69,7 +71,7 @@ function writeEnvFile(path: string, content: string): void {
 function buildDaemonBaseEntries(extra?: Record<string, string>): Record<string, string> {
   const dev = resolveDevIdentity();
   return {
-    TURBOPANEL_TRUNK_BRANCH: "trunk",
+    [DAEMON_ENV_TRUNK_BRANCH_KEY]: TURBOPANEL_TRUNK_BRANCH,
     TURBOPANEL_DAEMON_STATE_DIR: DAEMON_REPO_DIR,
     TURBOPANEL_DEV_USER: dev.user,
     TURBOPANEL_DEV_UID: String(dev.uid),

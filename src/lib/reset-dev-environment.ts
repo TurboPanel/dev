@@ -9,7 +9,7 @@ import {
   PLATFORM_DOCKER_VOLUME_NAMES,
 } from "./platform-docker-resources.ts";
 import type { InstallStepHandler } from "./platform-install.ts";
-import { TURBOPANEL_PLATFORM } from "./paths.ts";
+import { TURBOPANEL_PLATFORM, TURBOPANEL_TRUNK_BRANCH } from "./paths.ts";
 
 const PLATFORM_REPOS = ["daemon", "instance", "ui", "website"] as const;
 
@@ -47,7 +47,7 @@ async function resetRepo(
 
   const quotedPath = shellQuote(repoPath);
   const command =
-    `git -C ${quotedPath} fetch --all && git -C ${quotedPath} reset --hard origin/trunk`;
+    `git -C ${quotedPath} fetch --all && git -C ${quotedPath} reset --hard origin/${TURBOPANEL_TRUNK_BRANCH}`;
 
   onStep(label, "running");
   const code = await runCaptured(
