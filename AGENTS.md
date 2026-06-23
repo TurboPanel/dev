@@ -4,7 +4,12 @@
 
 `turbopanel-dev` is the **TurboPanel development console** — a minimal terminal UI built on [Ink](https://github.com/vadimdemedes/ink) 7, run on **Node** via **Vite (`vite-node`)**. Watch mode uses a custom Vite dev runner (`scripts/hot-reload.tsx`) that keeps the Ink process mounted and reloads changed `src/` modules. It is installed via a one-liner into `./turbopanel-dev` relative to the user's current directory.
 
-**This repo runs on Node, not Deno.** Deno is required on the **host** for daemon bootstrap during development, but the console does not install or manage it. Platform services install and use Deno from `/opt/turbopanel/runtimes/deno` via daemon bootstrap/Ansible.
+**This repo runs on Node, not Deno.** Deno on the **host** is optional for dev
+when a compiled bootstrap binary or host Deno is available for orchestration
+bootstrap and binary builds; the console does not install or manage it. The
+**daemon** runs as compiled `dist/turbopaneld`. Deno is still installed for the
+**instance** stack (and mailer) via the `deno-runtime` Ansible role during dev
+converge.
 
 **Target host:** Debian 13 (Vagrant support planned).
 
@@ -29,10 +34,10 @@ The previous multi-screen console (Status / Instance / Developer areas, stack ac
 /usr/local/bin/pnpm        # pnpm shim (Corepack)
 /opt/turbopanel/
 ├── platform/             # daemon and other platform repos (installed by daemon via Ansible)
-└── runtimes/             # uv/python/ansible/deno (daemon bootstrap)
+└── runtimes/             # uv/python/ansible (orchestration bootstrap); deno for instance stack
 ```
 
-Node is a pinned `nodejs.org` tarball installed into `/usr/local`. pnpm is provisioned via Corepack and pinned by the `packageManager` field in `package.json`. Deno is **host-provided in development** (on PATH) and **platform-managed in production** (`/opt/turbopanel/runtimes/deno/current/deno`, or a compiled bootstrap binary when `TURBOPANEL_RUNTIME=production`).
+Node is a pinned `nodejs.org` tarball installed into `/usr/local`. pnpm is provisioned via Corepack and pinned by the `packageManager` field in `package.json`. Deno is **host-provided in development** when compiling daemon release artifacts or when the compiled bootstrap binary is absent; production daemon installs use compiled `turbopaneld` + `turbopanel-bootstrap-orchestration` only.
 
 ## Entry points
 
@@ -74,7 +79,9 @@ src/
 - Run via `vite-node` (Node). Normal mode enters through `src/tui.tsx`; watch mode enters through `scripts/hot-reload.tsx`, which hot-loads `src/app.tsx` through the Vite module graph and rerenders the existing Ink instance. Keep interactive shell state in `scripts/hot-reload.tsx` or another stable runtime layer if it must survive UI edits.
 - The `@turbopanel/components/` import alias is defined in **both** `vite.config.ts` (`resolve.alias`) and `tsconfig.json` (`paths`) — keep them in sync.
 - Keep the CLI **simple**. Platform repo install, service monitoring, and stack actions belong in the Ink app when rebuilt — not new shell scripts.
-- **`src/lib/daemon-exec.ts`** — resolves bootstrap invocation: host Deno (`command -v deno`) in development, compiled bootstrap entrypoint or platform Deno in production (`TURBOPANEL_RUNTIME=production`).
+- **`src/lib/daemon-exec.ts`** — resolves bootstrap invocation: compiled
+  `dist/turbopanel-bootstrap-orchestration` when present, otherwise host Deno
+  (`command -v deno`) for dev checkout bootstrap and binary builds.
 
 ## Shell libraries
 

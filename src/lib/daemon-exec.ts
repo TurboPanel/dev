@@ -170,13 +170,13 @@ export function orchestrationActionCommand(...actionArgs: string[]): string {
 
 /** Shell command to exec bootstrap-orchestration for the current runtime contract. */
 export function bootstrapOrchestrationCommand(): string {
+  if (
+    existsSync(DAEMON_BOOTSTRAP_COMPILED) &&
+    isExecutable(DAEMON_BOOTSTRAP_COMPILED)
+  ) {
+    return shellQuote(DAEMON_BOOTSTRAP_COMPILED);
+  }
   if (isProductionRuntime()) {
-    if (
-      existsSync(DAEMON_BOOTSTRAP_COMPILED) &&
-      isExecutable(DAEMON_BOOTSTRAP_COMPILED)
-    ) {
-      return shellQuote(DAEMON_BOOTSTRAP_COMPILED);
-    }
     return denoRunBootstrapInvocation(resolveProductionDenoBin());
   }
   return denoRunBootstrapInvocation(resolveBootstrapDenoBin());
