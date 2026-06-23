@@ -174,7 +174,7 @@ export async function buildDaemonBinaries(
     await ensureBootstrapDeno(onOutput);
   }
   const command =
-    `cd ${shellQuote(DAEMON_REPO_DIR)} && ${shellQuote(SYSTEM_DENO_BIN)} task compile:all`;
+    `cd ${shellQuote(DAEMON_REPO_DIR)} && ${shellQuote(SYSTEM_DENO_BIN)} task release:package`;
 
   const lines: string[] = [];
   const append = (line: string) => {
