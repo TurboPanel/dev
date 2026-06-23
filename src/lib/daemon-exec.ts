@@ -1,8 +1,8 @@
 import { accessSync, constants, existsSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import {
-  DAEMON_BOOTSTRAP_COMPILED,
   DAEMON_BOOTSTRAP_SCRIPT,
+  DAEMON_COMPILED,
   DAEMON_DENO_CONFIG,
   DAEMON_ORCHESTRATION_SCRIPT,
   DENO_VERSION,
@@ -170,11 +170,8 @@ export function orchestrationActionCommand(...actionArgs: string[]): string {
 
 /** Shell command to exec bootstrap-orchestration for the current runtime contract. */
 export function bootstrapOrchestrationCommand(): string {
-  if (
-    existsSync(DAEMON_BOOTSTRAP_COMPILED) &&
-    isExecutable(DAEMON_BOOTSTRAP_COMPILED)
-  ) {
-    return shellQuote(DAEMON_BOOTSTRAP_COMPILED);
+  if (existsSync(DAEMON_COMPILED) && isExecutable(DAEMON_COMPILED)) {
+    return `${shellQuote(DAEMON_COMPILED)} bootstrap-orchestration`;
   }
   if (isProductionRuntime()) {
     return denoRunBootstrapInvocation(resolveProductionDenoBin());

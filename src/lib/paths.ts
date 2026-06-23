@@ -18,8 +18,7 @@ export const DAEMON_BOOTSTRAP_SCRIPT =
   `${DAEMON_REPO_DIR}/scripts/bootstrap-orchestration.ts`;
 export const DAEMON_ORCHESTRATION_SCRIPT =
   `${DAEMON_REPO_DIR}/scripts/run-orchestration-action.ts`;
-export const DAEMON_BOOTSTRAP_COMPILED =
-  `${DAEMON_REPO_DIR}/dist/turbopanel-bootstrap-orchestration`;
+export const DAEMON_COMPILED = `${DAEMON_REPO_DIR}/dist/turbopaneld`;
 export const DAEMON_DENO_CONFIG = `${DAEMON_REPO_DIR}/deno.json`;
 
 /** Co-located dev only — git branch for platform checkouts and Upgrade System. Not written on release/binary daemon installs. */

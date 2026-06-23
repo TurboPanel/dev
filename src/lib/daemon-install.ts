@@ -3,7 +3,7 @@ import { spawn } from "node:child_process";
 import { bootstrapOrchestrationCommand, ensureBootstrapDeno } from "./daemon-exec.ts";
 import {
   ANSIBLE_COLLECTIONS_PATH,
-  DAEMON_BOOTSTRAP_COMPILED,
+  DAEMON_COMPILED,
   DAEMON_REPO_DIR,
   PYTHON_INSTALL_DIR,
   RUNTIMES_DIR,
@@ -27,9 +27,9 @@ import { writeDaemonBaseEnv } from "./daemon-env.ts";
 const TURBOPANEL_USER = "turbopanel";
 const DAEMON_DIR = DAEMON_REPO_DIR;
 
-function compiledBootstrapInstalled(): boolean {
+function compiledDaemonInstalled(): boolean {
   try {
-    accessSync(DAEMON_BOOTSTRAP_COMPILED, constants.X_OK);
+    accessSync(DAEMON_COMPILED, constants.X_OK);
     return true;
   } catch {
     return false;
@@ -81,7 +81,7 @@ export async function bootstrapOrchestration(
 ): Promise<void> {
   await prepareBootstrapEnvironment(onOutput);
 
-  if (!compiledBootstrapInstalled()) {
+  if (!compiledDaemonInstalled()) {
     await ensureBootstrapDeno(onOutput);
   }
 

@@ -37,7 +37,7 @@ The previous multi-screen console (Status / Instance / Developer areas, stack ac
 └── runtimes/             # uv/python/ansible (orchestration bootstrap); deno for instance stack
 ```
 
-Node is a pinned `nodejs.org` tarball installed into `/usr/local`. pnpm is provisioned via Corepack and pinned by the `packageManager` field in `package.json`. Deno is **host-provided in development** when compiling daemon release artifacts or when the compiled bootstrap binary is absent; production daemon installs use compiled `turbopaneld` + `turbopanel-bootstrap-orchestration` only.
+Node is a pinned `nodejs.org` tarball installed into `/usr/local`. pnpm is provisioned via Corepack and pinned by the `packageManager` field in `package.json`. Deno is **host-provided in development** when compiling daemon release artifacts or when `dist/turbopaneld` is absent; production daemon installs use the compiled `turbopaneld` binary only.
 
 ## Entry points
 
@@ -80,9 +80,7 @@ src/
 - The `@turbopanel/components/` import alias is defined in **both** `vite.config.ts` (`resolve.alias`) and `tsconfig.json` (`paths`) — keep them in sync.
 - Keep the CLI **simple**. Platform repo install, service monitoring, and stack actions belong in the Ink app when rebuilt — not new shell scripts.
 - **`src/lib/paths.ts`** — `TURBOPANEL_TRUNK_BRANCH` (`trunk`) is the co-located dev shim for git checkouts and `TURBOPANEL_TRUNK_BRANCH` in the daemon `.env`; release/binary installs omit it.
-- **`src/lib/daemon-exec.ts`** — resolves bootstrap invocation: compiled
-  `dist/turbopanel-bootstrap-orchestration` when present, otherwise host Deno
-  (`command -v deno`) for dev checkout bootstrap and binary builds.
+- **`src/lib/daemon-exec.ts`** — resolves bootstrap invocation: `dist/turbopaneld bootstrap-orchestration` when present, otherwise host Deno (`command -v deno`) for dev checkout bootstrap and binary builds.
 
 ## Shell libraries
 
