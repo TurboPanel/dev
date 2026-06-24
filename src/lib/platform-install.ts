@@ -17,7 +17,6 @@ import {
   type InstallOutputHandler,
   runCaptured,
 } from "./install-output.ts";
-import { aptGetInstall } from "./apt.ts";
 import { ensureTurbopanelGithubAccess } from "./turbopanel-github-access.ts";
 
 
@@ -201,7 +200,12 @@ async function ensureGit(
   }
 
   onStep?.("Install git", "running");
-  const code = await aptGetInstall(["git"], onOutput, { update: true });
+  const code = await runInherit([
+    "sudo",
+    "sh",
+    "-c",
+    "apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y git",
+  ], onOutput);
 
   if (code !== 0 || !commandExists("git")) {
     onStep?.("Install git", "failed");

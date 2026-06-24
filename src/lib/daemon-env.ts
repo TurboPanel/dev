@@ -72,7 +72,13 @@ function buildDaemonBaseEntries(extra?: Record<string, string>): Record<string, 
   const dev = resolveDevIdentity();
   return {
     [DAEMON_ENV_TRUNK_BRANCH_KEY]: TURBOPANEL_TRUNK_BRANCH,
-    TURBOPANEL_DAEMON_STATE_DIR: DAEMON_REPO_DIR,
+    // Canonical daemon state dir is <checkout>/state — this is where the
+    // co-located instance writes colocated license credentials
+    // (resolveColocatedLicenseCredentialsDir hardcodes /state) and where the
+    // daemon persists server.id/server-key.json. Pointing at the bare checkout
+    // dir makes the daemon look one level above the license files and fail
+    // enrollment with "missing license credentials".
+    TURBOPANEL_DAEMON_STATE_DIR: `${DAEMON_REPO_DIR}/state`,
     TURBOPANEL_DEV_USER: dev.user,
     TURBOPANEL_DEV_UID: String(dev.uid),
     TURBOPANEL_DEV_GID: String(dev.gid),
