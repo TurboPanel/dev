@@ -148,18 +148,19 @@ tp_ensure_corepack_pnpm() {
   fi
 
   _ecp_pnpm_version=$(tp_read_pnpm_version "$_ecp_repo_root/package.json")
+  _ecp_pnpm_semver=${_ecp_pnpm_version%%+*}
 
-  tp_info "Ensuring pnpm v${_ecp_pnpm_version} (Corepack)…"
+  tp_info "Ensuring pnpm v${_ecp_pnpm_semver} (Corepack)…"
   tp_run_corepack "$_ecp_corepack" enable
   tp_run_corepack "$_ecp_corepack" prepare "pnpm@${_ecp_pnpm_version}" --activate
 
   _ecp_installed=$(tp_pnpm_installed_version) || true
-  if [ "$_ecp_installed" != "$_ecp_pnpm_version" ]; then
-    tp_error "pnpm install failed — expected v${_ecp_pnpm_version}, got ${_ecp_installed:-<missing>}"
+  if [ "$_ecp_installed" != "$_ecp_pnpm_semver" ]; then
+    tp_error "pnpm install failed — expected v${_ecp_pnpm_semver}, got ${_ecp_installed:-<missing>}"
     exit 1
   fi
 
-  tp_success "pnpm v${_ecp_pnpm_version} ready"
+  tp_success "pnpm v${_ecp_pnpm_semver} ready"
 }
 
 tp_ensure_node_runtime() {
