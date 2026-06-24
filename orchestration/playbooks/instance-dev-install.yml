@@ -88,6 +88,8 @@
     - role: website-repo
     - role: ui-build
     - role: instance-build
+    # turbopanel_public_urls may be passed as an extra-var (from daemon .env via
+    # devInstanceExtraArgs) to seed cert SANs before the instance .env exists.
     - role: instance-certs
     - role: instance-launch
 
