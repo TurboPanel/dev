@@ -15,6 +15,9 @@
     {
       "path": "/opt/turbopanel/platform/website",
     },
+    {
+      "path": "../../../opt/turbopanel/platform/config",
+    }
   ],
   "settings": {
     "ansible.ansible.path": "/opt/turbopanel/runtimes/ansible/current/bin/ansible",
