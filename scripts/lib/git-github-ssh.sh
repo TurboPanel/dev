@@ -30,13 +30,14 @@ tp_ensure_openssh_client() {
   fi
 
   tp_info "openssh-client is required for GitHub SSH"
+  _apt_lock_opt="-o DPkg::Lock::Timeout=300"
   if [ "$(id -u)" -eq 0 ]; then
-    apt-get update -qq
-    DEBIAN_FRONTEND=noninteractive apt-get install -y openssh-client
+    apt-get $_apt_lock_opt update -qq
+    DEBIAN_FRONTEND=noninteractive apt-get $_apt_lock_opt install -y openssh-client
   elif command -v sudo >/dev/null 2>&1; then
     tp_info "Administrator privileges required to install openssh-client"
-    sudo apt-get update -qq
-    DEBIAN_FRONTEND=noninteractive sudo apt-get install -y openssh-client
+    sudo apt-get $_apt_lock_opt update -qq
+    DEBIAN_FRONTEND=noninteractive sudo apt-get $_apt_lock_opt install -y openssh-client
   else
     tp_error "openssh-client is not installed and sudo is not available."
     exit 1

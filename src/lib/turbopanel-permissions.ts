@@ -8,6 +8,7 @@ import {
 } from "./paths.ts";
 import { tryResolveDevIdentity } from "./dev-identity.ts";
 import { type InstallOutputHandler, runCaptured } from "./install-output.ts";
+import { aptGetInstall } from "./apt.ts";
 import { stageDevOrchestration } from "./dev-orchestration-stage.ts";
 
 const TURBOPANEL_USER = "turbopanel";
@@ -43,6 +44,18 @@ function setfaclAvailable(): boolean {
   }).status === 0;
 }
 
+/**
+ * acl/setfacl is a development-only convenience for granting the dev user write
+ * access to platform checkouts. Production managed servers never install the acl
+ * package or apply ACLs, so gate every acl/permission helper on this.
+ */
+export function isDevEnvironment(): boolean {
+  if (process.env.TURBOPANEL_RUNTIME === "production") {
+    return false;
+  }
+  return tryResolveDevIdentity() !== null;
+}
+
 /** Install the acl package when setfacl is missing (required for dev-user path ACLs). */
 async function ensureAclTool(onOutput?: InstallOutputHandler): Promise<void> {
   if (aclToolEnsured || setfaclAvailable()) {
@@ -50,17 +63,13 @@ async function ensureAclTool(onOutput?: InstallOutputHandler): Promise<void> {
     return;
   }
 
+  // Never install acl outside development — production hosts must not enable ACLs.
+  if (!isDevEnvironment()) {
+    return;
+  }
+
   onOutput?.("Install acl (setfacl)");
-  const code = await runCaptured(
-    [
-      "sudo",
-      "-n",
-      "sh",
-      "-c",
-      "DEBIAN_FRONTEND=noninteractive apt-get install -y acl",
-    ],
-    onOutput,
-  );
+  const code = await aptGetInstall(["acl"], onOutput);
 
   if (code !== 0 || !setfaclAvailable()) {
     onOutput?.(
@@ -332,6 +341,11 @@ export async function ensurePlatformCheckoutGroupAccess(
 
 /** Best-effort filesystem ACL refresh on console launch; never blocks the TUI. */
 export function refreshDevPermissionsQuietly(): void {
+  // Dev-only: skip entirely on production hosts (no acl install, no ACL scripts).
+  if (!isDevEnvironment()) {
+    return;
+  }
+
   void (async () => {
     try {
       await ensureDevPlatformAccess();

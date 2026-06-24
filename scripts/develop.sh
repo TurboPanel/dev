@@ -74,13 +74,14 @@ ensure_git() {
 
   tp_info "git is not installed — installing…"
 
+  _apt_lock_opt="-o DPkg::Lock::Timeout=300"
   if [ "$(id -u)" -eq 0 ]; then
-    apt-get update -qq
-    DEBIAN_FRONTEND=noninteractive apt-get install -y git
+    apt-get $_apt_lock_opt update -qq
+    DEBIAN_FRONTEND=noninteractive apt-get $_apt_lock_opt install -y git
   elif command -v sudo >/dev/null 2>&1; then
     tp_info "Administrator privileges required to install git"
-    sudo apt-get update -qq
-    DEBIAN_FRONTEND=noninteractive sudo apt-get install -y git
+    sudo apt-get $_apt_lock_opt update -qq
+    DEBIAN_FRONTEND=noninteractive sudo apt-get $_apt_lock_opt install -y git
   else
     tp_error "git is not installed and sudo is not available."
     echo "Install git manually: apt install git"
