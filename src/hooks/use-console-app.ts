@@ -156,6 +156,19 @@ export function useConsoleApp() {
         setDaemonOperation("reset-dev-env");
         return;
       }
+      case "reset-dev-db": {
+        const daemon = visibleServices.find((service) => service.id === "daemon");
+        if (!daemon || daemon.status === "uninstalled") {
+          throw new Error(
+            "Install the daemon before resetting the dev database.",
+          );
+        }
+        setInstallFinished(false);
+        setActiveArea("bootstrap");
+        setProvisioning(true);
+        setDaemonOperation("reset-dev-db");
+        return;
+      }
       case "build-daemon-binaries":
         setInstallFinished(false);
         setActiveArea("bootstrap");

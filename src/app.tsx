@@ -95,9 +95,11 @@ function MainContent({
               ? "dev-env"
               : daemonOperation === "reset-dev-env"
                 ? "reset-dev-env"
-                : daemonOperation === "build-daemon-binaries"
-                  ? "build-daemon-binaries"
-                  : "daemon"
+                : daemonOperation === "reset-dev-db"
+                  ? "reset-dev-db"
+                  : daemonOperation === "build-daemon-binaries"
+                    ? "build-daemon-binaries"
+                    : "daemon"
           }
           width={width}
           height={height}

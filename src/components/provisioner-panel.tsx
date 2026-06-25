@@ -22,6 +22,7 @@ import {
   installDevEnvironment,
 } from "../lib/instance-install.ts";
 import { resetDevEnvironment } from "../lib/reset-dev-environment.ts";
+import { resetDevDatabase } from "../lib/reset-dev-database.ts";
 
 const OUTPUT_LOG_ROWS = 6;
 const BUILD_OUTPUT_LOG_ROWS = 200;
@@ -38,7 +39,12 @@ function truncateLine(text: string, maxWidth: number): string {
 }
 
 type BootstrapPhase = "uv" | "python" | "ansible" | "converge";
-type ProvisionerPhase = "daemon" | "dev-env" | "reset-dev-env" | "build-daemon-binaries";
+type ProvisionerPhase =
+  | "daemon"
+  | "dev-env"
+  | "reset-dev-env"
+  | "reset-dev-db"
+  | "build-daemon-binaries";
 
 export function ProvisionerPanel({
   width,
@@ -336,6 +342,50 @@ export function ProvisionerPanel({
   ]);
 
   useEffect(() => {
+    if (phase !== "reset-dev-db") {
+      return;
+    }
+
+    let cancelled = false;
+
+    void (async () => {
+      const stepLabel = "Reset dev database";
+      try {
+        emitStep(stepLabel, "running");
+        await resetDevDatabase(appendOutput);
+        if (cancelled) return;
+        emitStep(stepLabel, "ok");
+        setDone(true);
+      } catch (caught) {
+        if (cancelled) return;
+        emitStep(stepLabel, "failed");
+        const message = caught instanceof Error ? caught.message : String(caught);
+        const saved = await writeTaskErrorLog({
+          title: "Reset dev database",
+          message: `step=${stepLabel}\n${message}`,
+          tasks: [{ label: stepLabel, status: "failed" }],
+          timestamp: new Date().toISOString(),
+        });
+        if (saved) {
+          setErrorLogPath(CONSOLE_LAST_TASK_ERROR_LOG);
+        }
+        setError(message);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    appendOutput,
+    emitStep,
+    phase,
+    setDone,
+    setError,
+    setErrorLogPath,
+  ]);
+
+  useEffect(() => {
     if (phase !== "build-daemon-binaries") {
       return;
     }
@@ -397,7 +447,9 @@ export function ProvisionerPanel({
       ? "Starting development environment"
       : phase === "reset-dev-env"
         ? "Resetting development environment…"
-        : "Bootstrapping development environment";
+        : phase === "reset-dev-db"
+          ? "Resetting dev database…"
+          : "Bootstrapping development environment";
 
   const successMessage = phase === "build-daemon-binaries"
     ? "Daemon binaries built successfully"
@@ -405,7 +457,9 @@ export function ProvisionerPanel({
       ? "Development environment running"
       : phase === "reset-dev-env"
         ? "Development environment reset complete"
-        : "Development environment ready";
+        : phase === "reset-dev-db"
+          ? "Dev database reset complete"
+          : "Development environment ready";
 
   return (
     <Box flexDirection="column" width={width} height={height}>
