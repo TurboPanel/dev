@@ -130,7 +130,7 @@ clone_or_update_repo() {
 }
 
 if ! tp_is_interactive; then
-  tp_error "Run in an interactive terminal (curl -fsSL https://develop.trbp.nl | sh)."
+  tp_error "Run in an interactive terminal (curl -fsSL https://trbp.nl/develop.sh | sh)."
   exit 1
 fi
 

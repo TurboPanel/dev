@@ -13,7 +13,7 @@ converge.
 
 **Target host:** Debian 13 (Vagrant support planned).
 
-**Bootstrap URL:** https://develop.trbp.nl → `scripts/develop.sh` on the `trunk` branch. When piped (`curl … | sh`), `$0` is `sh` so local `scripts/lib/` is not on disk yet — the script downloads those libs from `raw.githubusercontent.com` (override with `TURBOPANEL_DEV_LIB_BASE`) before clone.
+**Bootstrap URL:** https://trbp.nl/develop.sh → `scripts/develop.sh` on the `trunk` branch. When piped (`curl … | sh`), `$0` is `sh` so local `scripts/lib/` is not on disk yet — the script downloads those libs from `raw.githubusercontent.com` (override with `TURBOPANEL_DEV_LIB_BASE`) before clone.
 
 The previous multi-screen console (Status / Instance / Developer areas, stack actions, Ansible task list) was archived under `temp/legacy-src/` during a rewrite. The current entrypoint is a minimal launcher only.
 
@@ -43,7 +43,7 @@ Node is a pinned `nodejs.org` tarball installed into `/usr/local`. pnpm is provi
 
 | Script | Purpose |
 |--------|---------|
-| `curl -fsSL https://develop.trbp.nl \| sh` | Clone/update `./turbopanel-dev` via SSH, then launch the TUI. |
+| `curl -fsSL https://trbp.nl/develop.sh \| sh` | Clone/update `./turbopanel-dev` via SSH, then launch the TUI. |
 | `sh scripts/develop.sh` | Same when run from inside the repo to update the checkout. |
 | `./console` | Ensure pinned Node (sudo on first run), `pnpm install`, launch `src/tui.tsx` via `vite-node`. |
 | `./console --watch` | Same, but use `scripts/hot-reload.tsx` for live reload on `src/` changes. |
@@ -53,7 +53,7 @@ Node is a pinned `nodejs.org` tarball installed into `/usr/local`. pnpm is provi
 **Typical flow:**
 
 ```bash
-curl -fsSL https://develop.trbp.nl | sh
+curl -fsSL https://trbp.nl/develop.sh | sh
 ```
 
 (`develop.sh` clones/updates the checkout and `exec`s `./console`.)

@@ -5,7 +5,7 @@ Development environment for [TurboPanel](https://github.com/turbopanel/turbopane
 ## Getting started
 
 ```sh
-curl -fsSL https://develop.trbp.nl | sh
+curl -fsSL https://trbp.nl/develop.sh | sh
 ```
 
 That one-liner downloads `scripts/develop.sh`, clones or updates this repo into `./turbopanel-dev`, installs the pinned **Node** runtime (used to run this console) to `/usr/local` when needed, runs `pnpm install`, and starts the developer console via `vite-node`. On first run it may prompt for git identity, GitHub SSH setup, and sudo (for `git`, `openssh-client`, and the Node install). You can optionally configure passwordless sudo for your dev user to avoid repeated password prompts.
