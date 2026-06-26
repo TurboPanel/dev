@@ -8,6 +8,7 @@ import {
   DENO_VERSION,
   SYSTEM_DENO_BIN,
 } from "./paths.ts";
+import { aptGetInstall } from "./apt.ts";
 import { type InstallOutputHandler, runCaptured } from "./install-output.ts";
 
 function shellQuote(value: string): string {
@@ -104,13 +105,7 @@ async function ensureUnzip(onOutput?: InstallOutputHandler): Promise<void> {
     return;
   }
 
-  const code = await runCaptured([
-    "sudo",
-    "-n",
-    "sh",
-    "-c",
-    "DEBIAN_FRONTEND=noninteractive apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y unzip",
-  ], onOutput);
+  const code = await aptGetInstall(["unzip"], onOutput, { update: true });
 
   if (code !== 0 || (!commandExists("unzip") && !commandExists("7z"))) {
     throw new Error("Failed to install unzip (required for Deno bootstrap)");

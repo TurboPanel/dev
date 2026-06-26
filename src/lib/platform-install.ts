@@ -13,6 +13,7 @@ import {
   TURBOPANEL_PLATFORM,
   TURBOPANEL_TRUNK_BRANCH,
 } from "./paths.ts";
+import { aptGetInstall } from "./apt.ts";
 import {
   type InstallOutputHandler,
   runCaptured,
@@ -200,12 +201,7 @@ async function ensureGit(
   }
 
   onStep?.("Install git", "running");
-  const code = await runInherit([
-    "sudo",
-    "sh",
-    "-c",
-    "apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y git",
-  ], onOutput);
+  const code = await aptGetInstall(["git"], onOutput, { update: true });
 
   if (code !== 0 || !commandExists("git")) {
     onStep?.("Install git", "failed");
