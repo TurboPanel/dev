@@ -24,6 +24,18 @@ import {
   turbopanelUserExists,
 } from "./turbopanel-permissions.ts";
 import { writeDaemonBaseEnv } from "./daemon-env.ts";
+
+/**
+ * Dev vs production install path invariant:
+ *
+ * Dev path — uses `daemon-systemd-setup.yml` (source run mode, `deno run main.ts`).
+ * Dev identity vars are injected via `writeDaemonBaseEnv()` before
+ * `systemctl enable --now`. Never calls `turbopaneld run-installer`.
+ *
+ * Production path — `scripts/run.sh` calls `turbopaneld run-installer`, which runs
+ * `daemon-install.yml` (binary run mode, `dist/turbopaneld`). No dev identity vars
+ * are written.
+ */
 const TURBOPANEL_USER = "turbopanel";
 const DAEMON_DIR = DAEMON_REPO_DIR;
 
@@ -201,6 +213,9 @@ export async function installDaemonSystemd(
   resetTurbopanelUserCache();
   await ensureTurbopanelStateOwnership(onOutput);
 
+  // Must precede `systemctl enable --now` so the daemon reads identity vars on first
+  // start. TURBOPANEL_DEV_INSTANCE=1 was already written by writeDaemonInstanceEnv()
+  // in installDevEnvironment() before the converge step.
   if (turbopanelUserExists()) {
     writeDaemonBaseEnv();
   }

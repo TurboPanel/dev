@@ -163,7 +163,13 @@ export function orchestrationActionCommand(...actionArgs: string[]): string {
   return denoRunOrchestrationInvocation(resolveBootstrapDenoBin(), actionArgs);
 }
 
-/** Shell command to exec bootstrap-orchestration for the current runtime contract. */
+/**
+ * Shell command to exec bootstrap-orchestration for the current runtime contract.
+ *
+ * When dist/turbopaneld exists and is executable, the compiled binary path is the
+ * production contract (`turbopaneld bootstrap-orchestration`). The Deno fallback
+ * (`scripts/bootstrap-orchestration.ts`) is dev-only — do not unify these paths.
+ */
 export function bootstrapOrchestrationCommand(): string {
   if (existsSync(DAEMON_COMPILED) && isExecutable(DAEMON_COMPILED)) {
     return `${shellQuote(DAEMON_COMPILED)} bootstrap-orchestration`;

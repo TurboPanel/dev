@@ -93,6 +93,10 @@ export function useDevEnvConverge(onFinished: (success: boolean) => void) {
     currentServiceId.current = null;
   }, [reset]);
 
+  // Event wiring: installDevEnvironment → runOrchestrationAction →
+  // run-orchestration-action.ts → runInstanceDevInstall() → runLocalPlaybook(onEvent) →
+  // runPlaybookStreaming (JSONL) → onConvergeEvent (here) → useAnsibleEvents.onEvent →
+  // React state → AnsibleTaskList.
   const onConvergeEvent = useCallback((event: unknown) => {
     if (typeof event === "object" && event !== null) {
       const record = event as Record<string, unknown>;
