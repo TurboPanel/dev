@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { writeDaemonInstanceEnv } from "./daemon-env.ts";
 import { requestDaemonRestart } from "./daemon-actions.ts";
 import { runOrchestrationAction } from "./instance-install.ts";
@@ -11,6 +12,26 @@ async function runSystemctl(
   if (code !== 0) {
     throw new Error(`systemctl ${args.join(" ")} failed`);
   }
+}
+
+function isSystemdUnitInstalled(unit: string): boolean {
+  const result = spawnSync(
+    "systemctl",
+    ["show", unit, "--property=LoadState", "--value"],
+    { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
+  );
+  if (result.status !== 0) {
+    return false;
+  }
+  const loadState = (result.stdout ?? "").trim();
+  return loadState === "loaded" || loadState === "masked";
+}
+
+async function ensureMailpitRunning(onOutput?: InstallOutputHandler): Promise<void> {
+  if (!isSystemdUnitInstalled("turbopanel-mailpit")) {
+    return;
+  }
+  await runSystemctl(["enable", "--now", "turbopanel-mailpit"], onOutput);
 }
 
 function runtimePlaybookExtraArgs(target: "deno" | "workers"): string[] {
@@ -48,6 +69,8 @@ export async function switchInstanceRuntime(
     () => {},
     onOutput,
   );
+
+  await ensureMailpitRunning(onOutput);
 
   if (target === "workers") {
     await runSystemctl(["restart", "turbopanel-instance"], onOutput);

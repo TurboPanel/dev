@@ -65,6 +65,7 @@ const ANCILLARY_DENO_DEFS = [
 
 const ANCILLARY_WORKERS_DEFS = [
   { id: "db", label: "db", kind: "postgres" as const },
+  { id: "smtp", label: "smtp", kind: "mailpit" as const },
 ] as const;
 
 function systemctlProperty(unit: string, property: string): string | null {
