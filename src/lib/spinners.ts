@@ -9,7 +9,7 @@ export type DaemonOperation =
   | "dev-env"
   | "reset-dev-env"
   | "reset-dev-db"
-  | "build-daemon-binaries";
+  | "sync-dev-build";
 
 export function spinnerFrames(operation: DaemonOperation): string[] {
   return operation === "purge" ? PURGE_SPINNER_FRAMES : INSTALL_SPINNER_FRAMES;

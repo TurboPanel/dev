@@ -97,8 +97,8 @@ function MainContent({
                 ? "reset-dev-env"
                 : daemonOperation === "reset-dev-db"
                   ? "reset-dev-db"
-                  : daemonOperation === "build-daemon-binaries"
-                    ? "build-daemon-binaries"
+                  : daemonOperation === "sync-dev-build"
+                    ? "sync-dev-build"
                     : "daemon"
           }
           width={width}

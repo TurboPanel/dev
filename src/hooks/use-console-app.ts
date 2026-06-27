@@ -169,11 +169,11 @@ export function useConsoleApp() {
         setDaemonOperation("reset-dev-db");
         return;
       }
-      case "build-daemon-binaries":
+      case "sync-dev-build":
         setInstallFinished(false);
         setActiveArea("bootstrap");
         setProvisioning(true);
-        setDaemonOperation("build-daemon-binaries");
+        setDaemonOperation("sync-dev-build");
         return;
     }
   }, [startDaemonInstall, startDevEnvConverge, visibleServices]);

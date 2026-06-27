@@ -1,9 +1,7 @@
-import { accessSync, constants } from "node:fs";
 import { spawn } from "node:child_process";
 import { bootstrapOrchestrationCommand, ensureBootstrapDeno } from "./daemon-exec.ts";
 import {
   ANSIBLE_COLLECTIONS_PATH,
-  DAEMON_COMPILED,
   DAEMON_REPO_DIR,
   PYTHON_INSTALL_DIR,
   RUNTIMES_DIR,
@@ -30,23 +28,15 @@ import { writeDaemonBaseEnv } from "./daemon-env.ts";
  *
  * Dev path — uses `daemon-systemd-setup.yml` (source run mode, `deno run main.ts`).
  * Dev identity vars are injected via `writeDaemonBaseEnv()` before
- * `systemctl enable --now`. Never calls `turbopaneld run-installer`.
+ * `systemctl enable --now`.
  *
- * Production path — `scripts/run.sh` calls `turbopaneld run-installer`, which runs
- * `daemon-install.yml` (binary run mode, `dist/turbopaneld`). No dev identity vars
- * are written.
+ * Production path — `scripts/run.sh` runs `daemon-install.yml` against the
+ * extracted source tree (source run mode, `deno run main.ts`). No dev identity
+ * vars are written. Both paths run the daemon from source — there is no compiled
+ * binary run mode.
  */
 const TURBOPANEL_USER = "turbopanel";
 const DAEMON_DIR = DAEMON_REPO_DIR;
-
-function compiledDaemonInstalled(): boolean {
-  try {
-    accessSync(DAEMON_COMPILED, constants.X_OK);
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 function shellQuote(value: string): string {
   return `'${value.replace(/'/g, "'\\''")}'`;
@@ -93,9 +83,7 @@ export async function bootstrapOrchestration(
 ): Promise<void> {
   await prepareBootstrapEnvironment(onOutput);
 
-  if (!compiledDaemonInstalled()) {
-    await ensureBootstrapDeno(onOutput);
-  }
+  await ensureBootstrapDeno(onOutput);
 
   if (turbopanelUserExists()) {
     await ensureTurbopanelStateOwnership(onOutput);

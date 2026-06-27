@@ -1,8 +1,6 @@
-import { accessSync, constants, existsSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import {
   DAEMON_BOOTSTRAP_SCRIPT,
-  DAEMON_COMPILED,
   DAEMON_DENO_CONFIG,
   DAEMON_ORCHESTRATION_SCRIPT,
   DENO_VERSION,
@@ -13,15 +11,6 @@ import { type InstallOutputHandler, runCaptured } from "./install-output.ts";
 
 function shellQuote(value: string): string {
   return `'${value.replace(/'/g, "'\\''")}'`;
-}
-
-function isExecutable(path: string): boolean {
-  try {
-    accessSync(path, constants.X_OK);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 /** True when the host runs the production runtime contract (compiled entrypoints). */
@@ -166,14 +155,11 @@ export function orchestrationActionCommand(...actionArgs: string[]): string {
 /**
  * Shell command to exec bootstrap-orchestration for the current runtime contract.
  *
- * When dist/turbopaneld exists and is executable, the compiled binary path is the
- * production contract (`turbopaneld bootstrap-orchestration`). The Deno fallback
- * (`scripts/bootstrap-orchestration.ts`) is dev-only — do not unify these paths.
+ * The daemon always runs from source — there is no compiled `dist/turbopaneld`
+ * binary run mode. Bootstrap always goes through the source
+ * `scripts/bootstrap-orchestration.ts` path via Deno.
  */
 export function bootstrapOrchestrationCommand(): string {
-  if (existsSync(DAEMON_COMPILED) && isExecutable(DAEMON_COMPILED)) {
-    return `${shellQuote(DAEMON_COMPILED)} bootstrap-orchestration`;
-  }
   if (isProductionRuntime()) {
     return denoRunBootstrapInvocation(resolveProductionDenoBin());
   }

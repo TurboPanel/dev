@@ -16,7 +16,7 @@ import {
   bootstrapOrchestration,
   installDaemonSystemd,
 } from "../lib/daemon-install.ts";
-import { buildDaemonBinaries } from "../lib/daemon-actions.ts";
+import { syncDevBuildToDaemons } from "../lib/daemon-actions.ts";
 import {
   DEV_ENV_CONVERGE_STEP,
   installDevEnvironment,
@@ -25,7 +25,7 @@ import { resetDevEnvironment } from "../lib/reset-dev-environment.ts";
 import { resetDevDatabase } from "../lib/reset-dev-database.ts";
 
 const OUTPUT_LOG_ROWS = 6;
-const BUILD_OUTPUT_LOG_ROWS = 200;
+const SYNC_OUTPUT_LOG_ROWS = 200;
 
 const BOOTSTRAP_UV = "Install uv package manager";
 const BOOTSTRAP_PYTHON = "Install Python runtime";
@@ -44,7 +44,7 @@ type ProvisionerPhase =
   | "dev-env"
   | "reset-dev-env"
   | "reset-dev-db"
-  | "build-daemon-binaries";
+  | "sync-dev-build";
 
 export function ProvisionerPanel({
   width,
@@ -76,27 +76,27 @@ export function ProvisionerPanel({
     setErrorLogPath,
   } = useAnsibleEvents();
 
-  const isBuildPhase = phase === "build-daemon-binaries";
+  const isSyncPhase = phase === "sync-dev-build";
   const finished = done || error !== null;
   const footerRows = finished ? (error ? (errorLogPath ? 3 : 2) : 1) : 0;
-  const showLiveBuildOutput = isBuildPhase && (!finished || outputLines.length > 0);
-  const buildLogHeight = showLiveBuildOutput
+  const showLiveSyncOutput = isSyncPhase && (!finished || outputLines.length > 0);
+  const syncLogHeight = showLiveSyncOutput
     ? Math.max(6, Math.min(height - 10, Math.floor(height * 0.55)))
     : 0;
-  const buildLogSectionRows = showLiveBuildOutput ? buildLogHeight + 2 : 0;
+  const syncLogSectionRows = showLiveSyncOutput ? syncLogHeight + 2 : 0;
   const taskRowBudget = Math.max(
     3,
-    height - 1 - footerRows - buildLogSectionRows,
+    height - 1 - footerRows - syncLogSectionRows,
   );
   const outputWidth = Math.max(20, width);
-  const buildLogContentWidth = logContentWidth(outputWidth, false);
+  const syncLogContentWidth = logContentWidth(outputWidth, false);
 
   const appendOutput = useCallback((line: string) => {
     setOutputLines((lines) => appendOutputLines(lines, line, OUTPUT_LOG_ROWS));
   }, []);
 
-  const appendBuildOutput = useCallback((line: string) => {
-    setOutputLines((lines) => appendOutputLines(lines, line, BUILD_OUTPUT_LOG_ROWS));
+  const appendSyncOutput = useCallback((line: string) => {
+    setOutputLines((lines) => appendOutputLines(lines, line, SYNC_OUTPUT_LOG_ROWS));
   }, []);
 
   const trackBootstrapOutput = useCallback((line: string) => {
@@ -386,17 +386,17 @@ export function ProvisionerPanel({
   ]);
 
   useEffect(() => {
-    if (phase !== "build-daemon-binaries") {
+    if (phase !== "sync-dev-build") {
       return;
     }
 
     let cancelled = false;
 
     void (async () => {
-      const stepLabel = "Build daemon binaries (amd64 + arm64)";
+      const stepLabel = "Sync dev build to attached daemons";
       try {
         emitStep(stepLabel, "running");
-        await buildDaemonBinaries(appendBuildOutput);
+        await syncDevBuildToDaemons(appendSyncOutput);
         if (cancelled) return;
         emitStep(stepLabel, "ok");
         setDone(true);
@@ -405,7 +405,7 @@ export function ProvisionerPanel({
         emitStep(stepLabel, "failed");
         const message = caught instanceof Error ? caught.message : String(caught);
         const saved = await writeTaskErrorLog({
-          title: "Build daemon binaries",
+          title: "Sync dev build",
           message: `step=${stepLabel}\n${message}`,
           tasks: [{ label: stepLabel, status: "failed" }],
           timestamp: new Date().toISOString(),
@@ -421,7 +421,7 @@ export function ProvisionerPanel({
       cancelled = true;
     };
   }, [
-    appendBuildOutput,
+    appendSyncOutput,
     emitStep,
     phase,
     setDone,
@@ -441,8 +441,8 @@ export function ProvisionerPanel({
     }
   });
 
-  const title = phase === "build-daemon-binaries"
-    ? "Building daemon binaries…"
+  const title = phase === "sync-dev-build"
+    ? "Syncing dev build to attached daemons…"
     : phase === "dev-env"
       ? "Starting development environment"
       : phase === "reset-dev-env"
@@ -451,8 +451,8 @@ export function ProvisionerPanel({
           ? "Resetting dev database…"
           : "Bootstrapping development environment";
 
-  const successMessage = phase === "build-daemon-binaries"
-    ? "Daemon binaries built successfully"
+  const successMessage = phase === "sync-dev-build"
+    ? "Dev build synced to attached daemons"
     : phase === "dev-env"
       ? "Development environment running"
       : phase === "reset-dev-env"
@@ -479,24 +479,24 @@ export function ProvisionerPanel({
           spinnerFrame={spinnerFrame}
         />
       </Box>
-      {showLiveBuildOutput && (
+      {showLiveSyncOutput && (
         <Box flexDirection="column" marginTop={1} flexShrink={0} minHeight={0}>
           <Text dimColor>Output</Text>
           <ScrollableLogList
             width={outputWidth}
-            height={buildLogHeight}
+            height={syncLogHeight}
             selectedIndex={Math.max(0, outputLines.length - 1)}
             scrollAlignment="bottom"
           >
             {outputLines.map((line, index) => (
               <Text key={`${index}:${line}`} dimColor wrap="truncate">
-                {truncateLine(line, buildLogContentWidth)}
+                {truncateLine(line, syncLogContentWidth)}
               </Text>
             ))}
           </ScrollableLogList>
         </Box>
       )}
-      {error && outputLines.length > 0 && !isBuildPhase && (
+      {error && outputLines.length > 0 && !isSyncPhase && (
         <Box flexDirection="column" marginTop={1} flexShrink={0}>
           <Text dimColor>Output</Text>
           {outputLines.map((line, index) => (

@@ -6,13 +6,8 @@ import {
   RUNTIMES_DIR,
   TURBOPANEL_ROOT,
 } from "./paths.ts";
-import {
-  ensureBootstrapDeno,
-  resolveBootstrapDenoBin,
-  systemDenoInstalled,
-} from "./daemon-exec.ts";
-import { SYSTEM_DENO_BIN } from "./paths.ts";
 import { type InstallOutputHandler, runCaptured } from "./install-output.ts";
+import { syncDevToAllDaemons } from "./developer-client.ts";
 
 export type DaemonActionId =
   | "install"
@@ -22,7 +17,7 @@ export type DaemonActionId =
   | "start-dev-env"
   | "reset-dev-env"
   | "reset-dev-db"
-  | "build-daemon-binaries";
+  | "sync-dev-build";
 
 const DAEMON_UNIT = "turbopanel-daemon";
 const DEFAULT_WAIT_TIMEOUT_MS = 120_000;
@@ -36,7 +31,7 @@ export const DAEMON_ACTION_LABELS: Record<DaemonActionId, string> = {
   "start-dev-env": "Start development environment",
   "reset-dev-env": "Reset development environment",
   "reset-dev-db": "Reset dev database",
-  "build-daemon-binaries": "Build daemon binaries (amd64 + arm64)",
+  "sync-dev-build": "Sync dev build to attached daemons",
 };
 
 export function daemonMenuActions(_status: DevServiceStatus): DaemonActionId[] {
@@ -53,7 +48,7 @@ export function developerMenuActions(status: DevServiceStatus | undefined): Daem
     "start-dev-env",
     "reset-dev-env",
     "reset-dev-db",
-    "build-daemon-binaries",
+    "sync-dev-build",
     "purge",
   ];
 }
@@ -174,38 +169,47 @@ export async function purgeDaemon(
   }
 }
 
-export async function buildDaemonBinaries(
+/**
+ * Push the local daemon source build to every attached daemon via the live
+ * instance developer API (`/api/developer/v1/daemon/sync-dev`). This replaces
+ * the old local `release:package` binary build — the daemon runs from source and
+ * dev pushes are streamed/unpacked by each daemon.
+ */
+export async function syncDevBuildToDaemons(
   onOutput?: InstallOutputHandler,
 ): Promise<void> {
-  // Host PATH may point at a dev-home Deno the turbopanel user cannot execute.
-  resolveBootstrapDenoBin();
-  if (!systemDenoInstalled()) {
-    await ensureBootstrapDeno(onOutput);
-  }
-  const command =
-    `cd ${shellQuote(DAEMON_REPO_DIR)} && ${shellQuote(SYSTEM_DENO_BIN)} task release:package`;
+  const append = (line: string) => onOutput?.(line);
 
-  const lines: string[] = [];
-  const append = (line: string) => {
-    lines.push(line);
-    onOutput?.(line);
-  };
+  append("Packaging local daemon source and syncing to attached daemons…");
 
-  const code = await runCaptured(
-    [
-      "sudo",
-      "-n",
-      "-u",
-      "turbopanel",
-      "env",
-      "HOME=/opt/turbopanel",
-      "bash",
-      "-c",
-      command,
-    ],
-    append,
-  );
-  if (code !== 0) {
-    throw new Error(lines.at(-1) ?? "Failed to build daemon binaries");
+  let response;
+  try {
+    response = await syncDevToAllDaemons();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw new Error(`Could not reach the instance developer API: ${message}`);
   }
+
+  const results = response.results ?? [];
+  if (results.length === 0) {
+    append("No attached daemons are currently connected.");
+    return;
+  }
+
+  for (const result of results) {
+    if (result.ok) {
+      append(`✓ ${result.daemonId}: synced`);
+    } else {
+      append(`✗ ${result.daemonId}: ${result.error ?? "sync failed"}`);
+    }
+  }
+
+  const failed = results.filter((result) => !result.ok);
+  if (failed.length > 0) {
+    throw new Error(
+      `${failed.length} of ${results.length} daemon(s) failed to sync`,
+    );
+  }
+
+  append(`Synced ${results.length} daemon(s) successfully.`);
 }
