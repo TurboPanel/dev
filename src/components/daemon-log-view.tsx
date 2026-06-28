@@ -40,6 +40,18 @@ function levelColor(level: DaemonLogLevel): string | undefined {
 
 const LOG_TIME_WIDTH = 8;
 
+function visibleWindowStart(
+  lineCount: number,
+  selectedIndex: number,
+  viewportHeight: number,
+): number {
+  if (lineCount <= viewportHeight) {
+    return 0;
+  }
+  const maxStart = Math.max(0, lineCount - viewportHeight);
+  return Math.max(0, Math.min(selectedIndex - viewportHeight + 1, maxStart));
+}
+
 function structuredPrefixWidth(line: DaemonLogLine): number {
   return LOG_TIME_WIDTH + 1 + 6 + 1 + 16 + 1;
 }
@@ -88,18 +100,22 @@ export const DaemonLogView = memo(function DaemonLogView({
     ? 0
     : Math.min(selectedIndex, lines.length - 1);
   const contentWidth = logContentWidth(width, focused);
+  const windowStart = visibleWindowStart(lines.length, scrollIndex, height);
+  const visibleLines = lines.slice(windowStart, windowStart + height);
+  const visibleSelectedIndex = Math.max(0, scrollIndex - windowStart);
 
   return (
     <ScrollableLogList
       width={width}
       height={height}
-      selectedIndex={scrollIndex}
-      scrollAlignment="bottom"
+      selectedIndex={visibleSelectedIndex}
       focused={focused}
+      totalItems={lines.length}
+      scrollOffset={windowStart}
     >
-      {lines.map((line, index) => (
+      {visibleLines.map((line, index) => (
         <LogRow
-          key={daemonLogLineKey(line, index)}
+          key={daemonLogLineKey(line, windowStart + index)}
           line={line}
           width={contentWidth}
         />

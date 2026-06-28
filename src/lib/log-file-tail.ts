@@ -1,19 +1,60 @@
-import { existsSync, readFileSync } from "node:fs";
+import { closeSync, openSync, readSync, statSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 
-function readLogFileText(path: string): string | undefined {
+function fileSize(path: string): number | undefined {
   try {
-    if (existsSync(path)) {
-      return readFileSync(path, "utf8");
-    }
+    return statSync(path).size;
   } catch {
-    // fall through to sudo cat
+    // fall through to sudo stat
   }
 
   const result = spawnSync(
     "sudo",
-    ["-n", "cat", path],
-    { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], maxBuffer: 16 * 1024 * 1024 },
+    ["-n", "stat", "-c", "%s", path],
+    { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
+  );
+  if (result.status !== 0 || !result.stdout) {
+    return undefined;
+  }
+  const size = Number(result.stdout.trim());
+  return Number.isFinite(size) ? size : undefined;
+}
+
+/** Read only `[start, start + length)`; never loads the whole file into memory. */
+function readChunkFrom(
+  path: string,
+  start: number,
+  length: number,
+): string | undefined {
+  if (length <= 0) {
+    return "";
+  }
+  let fd: number | undefined;
+  try {
+    fd = openSync(path, "r");
+    const buffer = Buffer.allocUnsafe(length);
+    const bytesRead = readSync(fd, buffer, 0, length, start);
+    return buffer.toString("utf8", 0, bytesRead);
+  } catch {
+    // fall through to sudo tail
+  } finally {
+    if (fd !== undefined) {
+      try {
+        closeSync(fd);
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  const result = spawnSync(
+    "sudo",
+    ["-n", "tail", "-c", `+${start + 1}`, path],
+    {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+      maxBuffer: length + 1024,
+    },
   );
   if (result.status !== 0 || result.stdout === undefined) {
     return undefined;
@@ -27,24 +68,30 @@ export class LogFileTailer {
 
   constructor(paths: readonly string[]) {
     for (const path of paths) {
-      this.offsets.set(path, readLogFileText(path)?.length ?? 0);
+      this.offsets.set(path, fileSize(path) ?? 0);
     }
   }
 
   drain(onLine: (line: string) => void): void {
     for (const path of this.offsets.keys()) {
-      const text = readLogFileText(path);
-      if (text === undefined) {
+      const size = fileSize(path);
+      if (size === undefined) {
         continue;
       }
 
       let offset = this.offsets.get(path) ?? 0;
-      if (text.length < offset) {
+      if (size < offset) {
         offset = 0;
       }
+      if (size === offset) {
+        continue;
+      }
 
-      const chunk = text.slice(offset);
-      this.offsets.set(path, text.length);
+      const chunk = readChunkFrom(path, offset, size - offset);
+      if (chunk === undefined) {
+        continue;
+      }
+      this.offsets.set(path, size);
 
       if (chunk.length === 0) {
         continue;

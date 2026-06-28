@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { closeSync, openSync, readSync, statSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { isDaemonServiceActive } from "./daemon-actions.ts";
 import { DAEMON_ERR_LOG_PATH, DAEMON_LOG_PATH } from "./paths.ts";
@@ -239,6 +239,12 @@ type FileTailMeta = {
 const derivedTimestampCache = new Map<string, string>();
 const derivedTimestampFileSize = new Map<string, number>();
 
+// Per-line byte budget for tail reads. Daemon logs can include Ansible output
+// and stack traces; 4 KB/line keeps the tail window generous while never
+// loading a multi-hundred-MB log file fully into memory.
+const TAIL_BYTES_PER_LINE = 4 * 1024;
+const TAIL_MIN_BYTES = 64 * 1024;
+
 function cachedDerivedTimestamp(
   path: string,
   offset: number,
@@ -337,19 +343,45 @@ function splitLinesWithOffsets(text: string): RawLogLine[] {
   return lines;
 }
 
-function readLogFileText(path: string): string | undefined {
+/**
+ * Read only the final `length` bytes of a file starting at `start`, instead of
+ * loading the whole file. Append-only daemon logs can grow to hundreds of MB; a
+ * full read on every 1s poll exhausts the heap.
+ */
+function readLogFileChunk(
+  path: string,
+  start: number,
+  length: number,
+): string | undefined {
+  if (length <= 0) {
+    return "";
+  }
+  let fd: number | undefined;
   try {
-    if (existsSync(path)) {
-      return readFileSync(path, "utf8");
-    }
+    fd = openSync(path, "r");
+    const buffer = Buffer.allocUnsafe(length);
+    const bytesRead = readSync(fd, buffer, 0, length, start);
+    return buffer.toString("utf8", 0, bytesRead);
   } catch {
-    // fall through to sudo cat
+    // fall through to sudo tail
+  } finally {
+    if (fd !== undefined) {
+      try {
+        closeSync(fd);
+      } catch {
+        // ignore
+      }
+    }
   }
 
   const result = spawnSync(
     "sudo",
-    ["-n", "cat", path],
-    { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], maxBuffer: 16 * 1024 * 1024 },
+    ["-n", "tail", "-c", String(length), path],
+    {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+      maxBuffer: length + 1024,
+    },
   );
   if (result.status !== 0 || result.stdout === undefined) {
     return undefined;
@@ -372,14 +404,28 @@ function tailLinesWithMeta(
   };
 
   const stat = fileStatMs(path) ?? sudoFileStatMs(path);
-  const text = readLogFileText(path);
-  if (!stat || text === undefined) {
+  if (!stat) {
+    return empty;
+  }
+
+  const maxBytes = Math.max(TAIL_MIN_BYTES, maxLines * TAIL_BYTES_PER_LINE);
+  const start = stat.size > maxBytes ? stat.size - maxBytes : 0;
+  const text = readLogFileChunk(path, start, stat.size - start);
+  if (text === undefined) {
     return empty;
   }
 
   const effectiveFloor = stat.size < minByteOffset ? 0 : minByteOffset;
 
-  const lines = splitLinesWithOffsets(text)
+  // Offsets are absolute file positions; drop the first (partial) line when the
+  // tail window did not start at the beginning of the file.
+  const rawLines = splitLinesWithOffsets(text).map((line) => ({
+    text: line.text,
+    offset: start + line.offset,
+  }));
+  const completeLines = start > 0 ? rawLines.slice(1) : rawLines;
+
+  const lines = completeLines
     .map((line) => ({
       text: sanitizeInstallOutput(line.text),
       offset: line.offset,

@@ -1,4 +1,10 @@
-import { existsSync, readFileSync } from "node:fs";
+import {
+  closeSync,
+  existsSync,
+  fstatSync,
+  openSync,
+  readSync,
+} from "node:fs";
 import { spawnSync } from "node:child_process";
 import { STRUCTURED_TEXT_WITH_TIME_RE } from "./daemon-log.ts";
 import { dockerOutputLines, spawnDocker } from "./docker-access.ts";
@@ -37,6 +43,12 @@ export const SERVICE_FILE_LOG_PATHS: Record<string, string[]> = {
 
 const FILE_LOG_SOURCES = SERVICE_FILE_LOG_PATHS;
 
+// Per-line byte budget for tail reads. Service logs (Expo, Caddy, Deno stack
+// traces) can be long; 4 KB/line keeps the tail window generous without ever
+// loading a multi-hundred-MB log file fully into memory.
+const TAIL_BYTES_PER_LINE = 4 * 1024;
+const TAIL_MIN_BYTES = 64 * 1024;
+
 const SERVICE_UNITS: Record<string, string> = {
   instance: "turbopanel-instance",
   web: "turbopanel-caddy",
@@ -67,19 +79,56 @@ function parseServiceLine(text: string): ServiceLogLine {
   return { text };
 }
 
-function tailFile(path: string, maxLines: number): string[] {
+/**
+ * Read only the final bytes of a file (enough to cover `maxLines`) instead of
+ * loading the whole file. Append-only log files can grow to hundreds of MB; a
+ * full `readFileSync` on every 1s poll exhausts the heap. When the read starts
+ * mid-file, the first (partial) line is dropped.
+ */
+function readFileTailText(path: string, maxLines: number): string | undefined {
+  let fd: number | undefined;
   try {
-    if (!existsSync(path)) {
-      return [];
+    fd = openSync(path, "r");
+    const { size } = fstatSync(fd);
+    if (size <= 0) {
+      return "";
     }
-    const text = readFileSync(path, "utf8");
-    return text
-      .split("\n")
-      .filter((line) => line.trim().length > 0)
-      .slice(-maxLines);
+    const maxBytes = Math.max(TAIL_MIN_BYTES, maxLines * TAIL_BYTES_PER_LINE);
+    const start = size > maxBytes ? size - maxBytes : 0;
+    const length = size - start;
+    const buffer = Buffer.allocUnsafe(length);
+    const bytesRead = readSync(fd, buffer, 0, length, start);
+    let text = buffer.toString("utf8", 0, bytesRead);
+    if (start > 0) {
+      const firstNewline = text.indexOf("\n");
+      text = firstNewline === -1 ? "" : text.slice(firstNewline + 1);
+    }
+    return text;
   } catch {
+    return undefined;
+  } finally {
+    if (fd !== undefined) {
+      try {
+        closeSync(fd);
+      } catch {
+        // ignore
+      }
+    }
+  }
+}
+
+function tailFile(path: string, maxLines: number): string[] {
+  if (!existsSync(path)) {
     return [];
   }
+  const text = readFileTailText(path, maxLines);
+  if (text === undefined) {
+    return [];
+  }
+  return text
+    .split("\n")
+    .filter((line) => line.trim().length > 0)
+    .slice(-maxLines);
 }
 
 function shellQuote(value: string): string {

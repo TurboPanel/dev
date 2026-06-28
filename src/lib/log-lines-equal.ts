@@ -36,7 +36,7 @@ export function daemonLogLinesEqual(
 }
 
 export function serviceLogLineKey(line: ServiceLogLine, index: number): string {
-  return `${line.time ?? index}:${line.text}`;
+  return `${index}:${line.time ?? ""}:${line.text}`;
 }
 
 export function daemonLogLineKey(line: DaemonLogLine, index: number): string {

@@ -20,6 +20,18 @@ function truncateText(text: string, maxWidth: number): string {
   return `${text.slice(0, maxWidth - 1)}…`;
 }
 
+function visibleWindowStart(
+  lineCount: number,
+  selectedIndex: number,
+  viewportHeight: number,
+): number {
+  if (lineCount <= viewportHeight) {
+    return 0;
+  }
+  const maxStart = Math.max(0, lineCount - viewportHeight);
+  return Math.max(0, Math.min(selectedIndex - viewportHeight + 1, maxStart));
+}
+
 export const PlainLogView = memo(function PlainLogView({
   lines,
   width,
@@ -37,16 +49,21 @@ export const PlainLogView = memo(function PlainLogView({
     ? 0
     : Math.min(selectedIndex, lines.length - 1);
   const contentWidth = logContentWidth(width, focused);
+  const windowStart = visibleWindowStart(lines.length, scrollIndex, height);
+  const visibleLines = lines.slice(windowStart, windowStart + height);
+  const visibleSelectedIndex = Math.max(0, scrollIndex - windowStart);
 
   return (
     <ScrollableLogList
       width={width}
       height={height}
-      selectedIndex={scrollIndex}
-      scrollAlignment="bottom"
+      selectedIndex={visibleSelectedIndex}
       focused={focused}
+      totalItems={lines.length}
+      scrollOffset={windowStart}
     >
-      {lines.map((line, index) => {
+      {visibleLines.map((line, index) => {
+        const absoluteIndex = windowStart + index;
         const showTime = line.time != null && line.time.length > 0;
         const maxMessageWidth = showTime
           ? Math.max(1, contentWidth - LOG_TIME_WIDTH - 1)
@@ -55,7 +72,7 @@ export const PlainLogView = memo(function PlainLogView({
 
         return (
           <Text
-            key={serviceLogLineKey(line, index)}
+            key={serviceLogLineKey(line, absoluteIndex)}
             wrap="truncate"
           >
             {showTime ? (
