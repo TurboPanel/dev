@@ -25,6 +25,7 @@ const REQUEST_TIMEOUT_MS = 240_000;
 export type DaemonSyncResult = {
   daemonId: string;
   ok: boolean;
+  skipped?: boolean;
   error?: string;
 };
 

@@ -197,7 +197,9 @@ export async function syncDevBuildToDaemons(
   }
 
   for (const result of results) {
-    if (result.ok) {
+    if (result.skipped) {
+      append(`– ${result.daemonId}: skipped (${result.error ?? "co-located dev daemon"})`);
+    } else if (result.ok) {
       append(`✓ ${result.daemonId}: synced`);
     } else {
       append(`✗ ${result.daemonId}: ${result.error ?? "sync failed"}`);
@@ -211,5 +213,8 @@ export async function syncDevBuildToDaemons(
     );
   }
 
-  append(`Synced ${results.length} daemon(s) successfully.`);
+  const synced = results.filter((result) => result.ok && !result.skipped);
+  if (synced.length > 0) {
+    append(`Synced ${synced.length} daemon(s) successfully.`);
+  }
 }
