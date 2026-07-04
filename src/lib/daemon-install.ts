@@ -165,9 +165,27 @@ export async function installDaemonSystemd(
   ].join(" ");
 
   const command =
-    `cd ${shellQuote(DAEMON_DIR)} && ${envPrefix} exec bash ${shellQuote("scripts/install-daemon-systemd.sh")}`;
+    `cd ${shellQuote(DAEMON_DIR)} && TURBOPANEL_DEBUG_LOG=${shellQuote("/home/tp/dev/.cursor/debug-56c179.log")} ${envPrefix} exec bash ${shellQuote("scripts/install-daemon-systemd.sh")}`;
 
   const code = await runCaptured(["sudo", "bash", "-c", command], onOutput);
+
+  // #region agent log
+  fetch("http://localhost:7262/ingest/30307085-a951-482e-af80-d101537cd557", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Debug-Session-Id": "56c179",
+    },
+    body: JSON.stringify({
+      sessionId: "56c179",
+      hypothesisId: "B",
+      location: "daemon-install.ts:installDaemonSystemd",
+      message: "install-daemon-systemd finished",
+      data: { exitCode: code, daemonDir: DAEMON_DIR },
+      timestamp: Date.now(),
+    }),
+  }).catch(() => {});
+  // #endregion
 
   if (code !== 0) {
     onStep?.(`Install ${DAEMON_SYSTEMD_UNIT} systemd unit`, "failed");
