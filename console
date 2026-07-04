@@ -58,9 +58,10 @@ tp_ensure_dev_prerequisites
 
 tp_info "Checking Node runtime…"
 tp_ensure_node_runtime
+tp_export_node_path
 tp_ensure_corepack_pnpm "$SCRIPT_DIR"
 
-PNPM_BIN=$(dirname "$NODE_BIN")/pnpm
+PNPM_BIN=${PNPM_BIN:-$NODE_PREFIX/bin/pnpm}
 
 cd "$SCRIPT_DIR"
 

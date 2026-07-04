@@ -138,6 +138,16 @@ tp_corepack_bin() {
   printf '%s' "$NODE_PREFIX/bin/corepack"
 }
 
+tp_node_bin_dir() {
+  dirname "$NODE_BIN"
+}
+
+# Vendored Node is not on the host PATH; corepack/pnpm shims use #!/usr/bin/env node.
+tp_export_node_path() {
+  PATH="$(tp_node_bin_dir):${PATH:-}"
+  export PATH
+}
+
 tp_corepack_env() {
   COREPACK_ENABLE_DOWNLOAD_PROMPT=0
   export COREPACK_ENABLE_DOWNLOAD_PROMPT
@@ -145,25 +155,28 @@ tp_corepack_env() {
 
 tp_run_corepack() {
   tp_corepack_env
+  _tp_node_bin=$(tp_node_bin_dir)
   if [ "$(id -u)" -eq 0 ] || tp_can_write_path "$NODE_PREFIX/bin"; then
-    "$@"
+    PATH="$_tp_node_bin:${PATH:-}" "$@"
     return $?
   fi
   if ! command -v sudo >/dev/null 2>&1; then
     tp_error "Corepack requires write access to ${NODE_PREFIX}/bin, but sudo is not installed."
     exit 1
   fi
-  sudo env COREPACK_ENABLE_DOWNLOAD_PROMPT=0 "$@"
+  sudo env COREPACK_ENABLE_DOWNLOAD_PROMPT=0 PATH="${_tp_node_bin}:${PATH:-}" "$@"
 }
 
 tp_pnpm_installed_version() {
   [ -x "$PNPM_BIN" ] || return 1
   tp_corepack_env
+  tp_export_node_path
   "$PNPM_BIN" --version 2>/dev/null
 }
 
 tp_ensure_corepack_pnpm() {
   _ecp_repo_root=$1
+  tp_export_node_path
   _ecp_corepack=$(tp_corepack_bin)
   if [ ! -x "$_ecp_corepack" ]; then
     tp_error "corepack not found at ${_ecp_corepack} (expected from the Node install)."

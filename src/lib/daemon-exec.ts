@@ -88,7 +88,7 @@ function denoRunBootstrapInvocation(denoBin: string): string {
   ].map(shellQuote).join(" ");
 }
 
-function denoRunBootstrapInvocation(denoBin: string): string {
+function resolveDenoAssetTriple(): string {
   const arch = process.arch;
   switch (arch) {
     case "arm64":
