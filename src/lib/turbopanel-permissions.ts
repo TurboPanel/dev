@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { CONFIG_DIR, LOG_DIR, TURBOPANEL_ROOT } from "./paths.ts";
+import { CONFIG_DIR, LOG_DIR, RUNTIMES_DIR, TURBOPANEL_ROOT } from "./paths.ts";
 import { tryResolveDevIdentity } from "./dev-identity.ts";
 import { type InstallOutputHandler, runCaptured } from "./install-output.ts";
 
@@ -43,20 +43,31 @@ function dockerIsPresent(): boolean {
 }
 
 /**
- * Best-effort: chown the FHS trees to the resolved dev user when they exist but
- * are not yet dev-owned. Covers the window before the first Ansible converge —
- * which is authoritative for ownership — and any stray root-owned artifact. No
- * ACLs, no setgid, no recursive `.git` reclaim (top-level dir only).
+ * Best-effort: chown FHS trees to the resolved dev user when they exist but are
+ * not yet dev-owned. Covers the window before the first Ansible converge — which
+ * is authoritative for ownership — and root-owned artifacts from sudo runtime
+ * installers (./console Node, ensureBootstrapDeno).
+ *
+ * Ownership contract:
+ * - **Development:** everything under `/opt/turbopanel` (and the other FHS
+ *   mutable dirs) is owned by the invoking dev user + primary group.
+ * - **Production:** Ansible `turbopanel-user` owns the install root and vendor
+ *   tree as `turbopanel:turbopanel` (uid/gid 9999). This helper never runs there.
  */
 export async function ensureFhsTreeOwnership(
   onOutput?: InstallOutputHandler,
 ): Promise<void> {
+  if (!isDevEnvironment()) {
+    return;
+  }
+
   const dev = tryResolveDevIdentity();
   if (!dev) {
     return;
   }
 
   const treePaths = FHS_TREES.map(shellQuote).join(" ");
+  const installRoot = shellQuote(TURBOPANEL_ROOT);
   const script = [
     "set -eu",
     `dev=${shellQuote(dev.user)}`,
@@ -67,6 +78,14 @@ export async function ensureFhsTreeOwnership(
     '  [ "$owner" = "$dev" ] && continue',
     '  chown "$dev:$group" "$dir" 2>/dev/null || true',
     "done",
+    // Sudo runtime installers create root-owned subtrees under /opt/turbopanel;
+    // bootstrap and uv/python/ansible writes run as the dev user.
+    `if [ -e ${installRoot} ]; then`,
+    `  vendor_owner="$(stat -c %U ${shellQuote(RUNTIMES_DIR)} 2>/dev/null || true)"`,
+    `  if [ -n "$vendor_owner" ] && [ "$vendor_owner" != "$dev" ]; then`,
+    `    chown -R "$dev:$group" ${installRoot}`,
+    "  fi",
+    "fi",
   ].join("\n");
 
   await runCaptured(["sudo", "-n", "bash", "-c", script], onOutput);
