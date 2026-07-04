@@ -64,7 +64,8 @@ resolve_repo_dir() {
       fi
       ;;
   esac
-  printf '%s' "$(CDPATH= cd -- "$(pwd)" && pwd)/${REPO_NAME}"
+  _tp_dev_root=${TURBOPANEL_DEV_ROOT:-$HOME}
+  printf '%s' "$_tp_dev_root/dev"
 }
 
 ensure_git() {

@@ -2,7 +2,7 @@
 
 ## What this repo is
 
-`turbopanel-dev` is the **TurboPanel development console** — a minimal terminal UI built on [Ink](https://github.com/vadimdemedes/ink) 7, run on **Node** via **Vite (`vite-node`)**. Watch mode uses a custom Vite dev runner (`scripts/hot-reload.tsx`) that keeps the Ink process mounted and reloads changed `src/` modules. It is installed via a one-liner into `./turbopanel-dev` relative to the user's current directory.
+`turbopanel-dev` is the **TurboPanel development console** — a minimal terminal UI built on [Ink](https://github.com/vadimdemedes/ink) 7, run on **Node** via **Vite (`vite-node`)**. Watch mode uses a custom Vite dev runner (`scripts/hot-reload.tsx`) that keeps the Ink process mounted and reloads changed `src/` modules. It is installed via a one-liner into `~/dev` (or `${TURBOPANEL_DEV_ROOT}/dev` when set).
 
 **This repo runs on Node, not Deno.** In dev the console bootstraps
 orchestration and runs the **daemon from the dev user's home checkout**
@@ -25,7 +25,7 @@ The current entrypoint is a minimal launcher only (full multi-screen console was
 ## Filesystem layout
 
 ```
-~/dev/                    # turbopanel-dev checkout (or ./turbopanel-dev from develop.sh)
+~/dev/                    # turbopanel-dev checkout (develop.sh clones here via TURBOPANEL_DEV_ROOT)
 ├── console               # ensure Node, pnpm install, launch the TUI via vite-node
 ├── orchestration/        # Ansible dev overlay (overrides daemon prod roles)
 ├── scripts/develop.sh    # clone/update + exec ./console
@@ -64,7 +64,7 @@ Node is a pinned `nodejs.org` tarball installed into `/usr/local`. pnpm is provi
 
 | Script | Purpose |
 |--------|---------|
-| `curl -fsSL https://trbp.nl/develop.sh \| sh` | Clone/update `./turbopanel-dev` via SSH, then launch the TUI. |
+| `curl -fsSL https://trbp.nl/develop.sh \| sh` | Clone/update `~/dev` via SSH, then launch the TUI. |
 | `sh scripts/develop.sh` | Same when run from inside the repo to update the checkout. |
 | `./console` | Ensure pinned Node (sudo on first run), `pnpm install`, launch `src/tui.tsx` via `vite-node`. |
 | `./console --watch` | Same, but use `scripts/hot-reload.tsx` for live reload on `src/` changes. |
@@ -124,7 +124,7 @@ The **Ansible dev overlay** lives in `dev/orchestration/` and overrides the daem
 - Git clones use **SSH** (`git@github.com:turbopanel/...`), not HTTPS.
 - **`scripts/develop.sh` only installs this repo** — no runtime, no platform repos.
 - **`console` owns the Node runtime** (for this repo) and starting the TUI. It does **not** install Deno or other platform runtimes.
-- **`turbopanel-dev` installs to `./turbopanel-dev`** in the user's cwd (or clone as `~/dev` alongside sibling repos).
+- **`develop.sh` clones to `~/dev`** (or `${TURBOPANEL_DEV_ROOT}/dev` when set), alongside sibling repos under the same dev root.
 - Developer identity (`TURBOPANEL_DEV_USER`, `TURBOPANEL_DEV_UID`, `TURBOPANEL_DEV_GID`) is resolved from the **process UID** via `getent passwd` (`tp_resolve_dev_identity()` in `scripts/lib/dev-identity.sh`). **`USER` / `LOGNAME` are never trusted.** Unresolved identities and `root` are rejected; the only root exception is a validated `SUDO_USER` passwd entry when the console runs under `sudo`.
 - Node is pinned in `scripts/lib/paths.sh` (`NODE_VERSION` **`24.17.0`**), downloaded from `nodejs.org`, installed to `/usr/local` (override prefix with `NODE_PREFIX=`). pnpm is pinned solely by `packageManager` in `package.json` and provisioned via Corepack.
 - **`TURBOPANEL_MODE=development`** during dev converge. Source repos default under `$HOME` via `TURBOPANEL_DEV_ROOT` and per-repo `TURBOPANEL_<DIR>_REPO` overrides.
