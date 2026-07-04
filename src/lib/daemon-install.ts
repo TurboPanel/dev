@@ -3,6 +3,7 @@ import { bootstrapOrchestrationCommand, ensureBootstrapDeno } from "./daemon-exe
 import {
   ANSIBLE_COLLECTIONS_PATH,
   DAEMON_REPO_DIR,
+  DAEMON_SYSTEMD_UNIT,
   PYTHON_INSTALL_DIR,
   RUNTIMES_DIR,
   TURBOPANEL_ROOT,
@@ -180,7 +181,7 @@ export async function installDaemonSystemd(
   onOutput?: InstallOutputHandler,
   onStep?: InstallStepHandler,
 ): Promise<void> {
-  onStep?.("Install turbopanel-daemon systemd unit", "running");
+  onStep?.(`Install ${DAEMON_SYSTEMD_UNIT} systemd unit`, "running");
 
   resetTurbopanelUserCache();
   await ensureDevPlatformAccess(onOutput);
@@ -192,11 +193,11 @@ export async function installDaemonSystemd(
   const code = await runCaptured(["sudo", "bash", "-c", command], onOutput);
 
   if (code !== 0) {
-    onStep?.("Install turbopanel-daemon systemd unit", "failed");
+    onStep?.(`Install ${DAEMON_SYSTEMD_UNIT} systemd unit`, "failed");
     throw new Error("Install daemon systemd failed");
   }
 
-  onStep?.("Install turbopanel-daemon systemd unit", "ok");
+  onStep?.(`Install ${DAEMON_SYSTEMD_UNIT} systemd unit`, "ok");
 
   resetTurbopanelUserCache();
   await ensureTurbopanelStateOwnership(onOutput);
@@ -210,20 +211,20 @@ export async function installDaemonSystemd(
 
   // Stop if the install script started the daemon before runtimes ownership was reclaimed.
   await runCaptured(
-    ["sudo", "-n", "systemctl", "stop", "turbopanel-daemon"],
+    ["sudo", "-n", "systemctl", "stop", DAEMON_SYSTEMD_UNIT],
     onOutput,
   );
 
-  onStep?.("Start turbopanel-daemon", "running");
+  onStep?.(`Start ${DAEMON_SYSTEMD_UNIT}`, "running");
   const startCode = await runCaptured(
-    ["sudo", "-n", "systemctl", "enable", "--now", "turbopanel-daemon"],
+    ["sudo", "-n", "systemctl", "enable", "--now", DAEMON_SYSTEMD_UNIT],
     onOutput,
   );
   if (startCode !== 0) {
-    onStep?.("Start turbopanel-daemon", "failed");
-    throw new Error("Failed to start turbopanel-daemon");
+    onStep?.(`Start ${DAEMON_SYSTEMD_UNIT}`, "failed");
+    throw new Error(`Failed to start ${DAEMON_SYSTEMD_UNIT}`);
   }
-  onStep?.("Start turbopanel-daemon", "ok");
+  onStep?.(`Start ${DAEMON_SYSTEMD_UNIT}`, "ok");
 
   await ensureDevPlatformAccess(onOutput);
 }

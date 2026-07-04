@@ -4,12 +4,17 @@
 
 `turbopanel-dev` is the **TurboPanel development console** — a minimal terminal UI built on [Ink](https://github.com/vadimdemedes/ink) 7, run on **Node** via **Vite (`vite-node`)**. Watch mode uses a custom Vite dev runner (`scripts/hot-reload.tsx`) that keeps the Ink process mounted and reloads changed `src/` modules. It is installed via a one-liner into `./turbopanel-dev` relative to the user's current directory.
 
-**This repo runs on Node, not Deno.** Deno on the **host** is optional for dev
-when a compiled bootstrap binary or host Deno is available for orchestration
-bootstrap and binary builds; the console does not install or manage it. The
-**daemon** runs as compiled `dist/turbopaneld`. Deno is still installed for the
-**instance** stack (and mailer) via the `deno-runtime` Ansible role during dev
-converge.
+**This repo runs on Node, not Deno.** In dev the console bootstraps
+orchestration and runs the **daemon from the co-located source checkout**
+(`/opt/turbopanel/platform/daemon`) via Deno (`deno run main.ts`) — host Deno is
+preferred, else the bootstrap-installed `/usr/local/bin/deno`. It never runs a
+compiled daemon binary. Production installs (driven by `run.sh` + Ansible, **not**
+this console) run the compiled **`/opt/turbopanel/bin/turbopaneld`** binary — with
+a **`turbopaneld.js`** `deno run` fallback — as **`turbopaneld.service`** on the
+FHS tree (`/etc/turbopanel`, `/var/lib/turbopanel`, `/var/log/turbopanel`,
+`/run/turbopanel`; see the daemon repo's `AGENTS.md` → "Filesystem layout & path
+model"). Deno is still installed for the **instance** stack (and mailer) via the
+`deno-runtime` Ansible role during dev converge.
 
 **Target host:** Debian 13 (Vagrant support planned).
 
@@ -37,7 +42,7 @@ The previous multi-screen console (Status / Instance / Developer areas, stack ac
 └── runtimes/             # uv/python/ansible (orchestration bootstrap); deno for instance stack
 ```
 
-Node is a pinned `nodejs.org` tarball installed into `/usr/local`. pnpm is provisioned via Corepack and pinned by the `packageManager` field in `package.json`. Deno is **host-provided in development** when compiling daemon release artifacts or when `dist/turbopaneld` is absent; production daemon installs use the compiled `turbopaneld` binary only.
+Node is a pinned `nodejs.org` tarball installed into `/usr/local`. pnpm is provisioned via Corepack and pinned by the `packageManager` field in `package.json`. Deno is **host-provided in development** (preferred) or bootstrap-installed to `/usr/local/bin/deno` when host Deno is absent; the dev console always runs the daemon and orchestration **from the source checkout** via Deno. Production daemon installs use the compiled `/opt/turbopanel/bin/turbopaneld` binary (with a `turbopaneld.js` `deno run` fallback), driven by `run.sh` + Ansible — never by this console. The co-located dev tree (`/opt/turbopanel/platform/*`, `/opt/turbopanel/runtimes`, checkout-local `logs/`) is unchanged by the production FHS model.
 
 ## Entry points
 
@@ -79,8 +84,8 @@ src/
 - Run via `vite-node` (Node). Normal mode enters through `src/tui.tsx`; watch mode enters through `scripts/hot-reload.tsx`, which hot-loads `src/app.tsx` through the Vite module graph and rerenders the existing Ink instance. Keep interactive shell state in `scripts/hot-reload.tsx` or another stable runtime layer if it must survive UI edits.
 - The `@turbopanel/components/` import alias is defined in **both** `vite.config.ts` (`resolve.alias`) and `tsconfig.json` (`paths`) — keep them in sync.
 - Keep the CLI **simple**. Platform repo install, service monitoring, and stack actions belong in the Ink app when rebuilt — not new shell scripts.
-- **`src/lib/paths.ts`** — `TURBOPANEL_TRUNK_BRANCH` (`trunk`) is the co-located dev shim for git checkouts and `TURBOPANEL_TRUNK_BRANCH` in the daemon `.env`; release/binary installs omit it.
-- **`src/lib/daemon-exec.ts`** — resolves bootstrap invocation: `dist/turbopaneld bootstrap-orchestration` when present, otherwise host Deno (`command -v deno`) for dev checkout bootstrap and binary builds.
+- **`src/lib/paths.ts`** — `TURBOPANEL_TRUNK_BRANCH` (`trunk`) is the co-located dev shim for git checkouts and `TURBOPANEL_TRUNK_BRANCH` in the daemon `.env`; release/binary installs omit it. It also holds the co-located dev daemon paths (`DAEMON_ENV_PATH` = `<checkout>/.env`, `DAEMON_LOG_PATH`/`DAEMON_ERR_LOG_PATH` = `<checkout>/logs/*`) which are **dev-only** — managed installs read `/etc/turbopanel/daemon.env` and log to `/var/log/turbopanel/`. `DENO_VERSION` (**`2.9.0`**) is the console's bootstrap fallback + status label and **must** match `deno_version` in the daemon's `deno-runtime` role (pinned by the daemon's `src/orchestration/paths.test.ts`). The daemon systemd unit name lives here too: `DAEMON_SYSTEMD_UNIT` = **`turbopaneld`** (matches the daemon's `install-daemon-systemd.sh`), with `LEGACY_DAEMON_SYSTEMD_UNIT` = `turbopanel-daemon` cleaned up on purge/reset for pre-rename hosts.
+- **`src/lib/daemon-exec.ts`** — always resolves a **Deno** invocation of the source-checkout scripts (`scripts/bootstrap-orchestration.ts`, `scripts/run-orchestration-action.ts`): host Deno if on PATH, else `/usr/local/bin/deno`. It never runs `/opt/turbopanel/bin/turbopaneld`; that compiled entrypoint (and its `turbopaneld.js` fallback) exists only on managed/production installs, which the console does not drive.
 
 ## Shell libraries
 
@@ -102,7 +107,7 @@ src/
 - **`turbopanel-dev` installs to `./turbopanel-dev`** in the user's cwd.
 - Developer identity (`TURBOPANEL_DEV_USER`, `TURBOPANEL_DEV_UID`, `TURBOPANEL_DEV_GID`) is resolved from the **process UID** via `getent passwd` (`tp_resolve_dev_identity()` in `scripts/lib/dev-identity.sh`). **`USER` / `LOGNAME` are never trusted.** Unresolved identities and `root` are rejected; the only root exception is a validated `SUDO_USER` passwd entry when the console runs under `sudo`.
 - Node is pinned in `scripts/lib/paths.sh` (`NODE_VERSION`), downloaded from `nodejs.org`, installed to `/usr/local` (override prefix with `NODE_PREFIX=`). pnpm is pinned solely by `packageManager` in `package.json` and provisioned via Corepack.
-- Daemon bootstrap runs as **`turbopanel`** when that user exists (only falling back to root for the first bootstrap phase before Ansible creates the user). Purge removes the daemon checkout, systemd unit, shared runtime state under `/opt/turbopanel/runtimes`, and turbopanel-owned dotdirs (`.cache`, `.ansible`, `.local`).
+- Daemon bootstrap runs as **`turbopanel`** when that user exists (only falling back to root for the first bootstrap phase before Ansible creates the user). Purge/reset stops and removes the daemon systemd unit **`turbopaneld.service`** (and the legacy `turbopanel-daemon.service` for pre-rename hosts), the daemon checkout, shared runtime state under `/opt/turbopanel/runtimes`, and turbopanel-owned dotdirs (`.cache`, `.ansible`, `.local`).
 - Do not commit secrets or environment-specific config.
 
 ## Legacy archive

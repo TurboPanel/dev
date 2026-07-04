@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { isDevInstanceEnabled, readInstanceRuntime } from "./lib/daemon-env.ts";
-import { DAEMON_REPO_DIR, platformRepoPath } from "./lib/paths.ts";
+import { DAEMON_REPO_DIR, DAEMON_SYSTEMD_UNIT, platformRepoPath } from "./lib/paths.ts";
 import { spawnAsTurbopanel, spawnDocker } from "./lib/docker-access.ts";
 
 export type DevServiceStatus =
@@ -18,7 +18,7 @@ export type DevService = {
   status: DevServiceStatus;
 };
 
-const DAEMON_UNIT = "turbopanel-daemon";
+const DAEMON_UNIT = DAEMON_SYSTEMD_UNIT;
 const POSTGRES_CONTAINER = "turbopaneldb";
 const MAILPIT_CONTAINER = "turbopanelmailpit";
 const POSTGRES_SOCKET = "/var/run/turbopanel/postgres/.s.PGSQL.5432";

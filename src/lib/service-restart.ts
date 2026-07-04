@@ -3,9 +3,10 @@ import { LogFileTailer } from "./log-file-tail.ts";
 import { spawnDocker } from "./docker-access.ts";
 import { runCaptured } from "./install-output.ts";
 import { SERVICE_FILE_LOG_PATHS } from "./service-log.ts";
+import { DAEMON_SYSTEMD_UNIT } from "./paths.ts";
 
 const SYSTEMD_UNITS: Record<string, string> = {
-  daemon: "turbopanel-daemon",
+  daemon: DAEMON_SYSTEMD_UNIT,
   instance: "turbopanel-instance",
   web: "turbopanel-caddy",
   dbstudio: "turbopanel-dbstudio",

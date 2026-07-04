@@ -155,9 +155,12 @@ export function orchestrationActionCommand(...actionArgs: string[]): string {
 /**
  * Shell command to exec bootstrap-orchestration for the current runtime contract.
  *
- * The daemon always runs from source — there is no compiled `dist/turbopaneld`
- * binary run mode. Bootstrap always goes through the source
- * `scripts/bootstrap-orchestration.ts` path via Deno.
+ * In dev the console always bootstraps orchestration **from the source checkout**
+ * via Deno (`scripts/bootstrap-orchestration.ts`) — it never runs the compiled
+ * `bin/turbopaneld` binary. That compiled entrypoint (and its
+ * `bin/turbopaneld.js` fallback) only exists on managed/production installs,
+ * which the dev console does not drive; bootstrap there is handled by
+ * `run.sh` + Ansible, not this path.
  */
 export function bootstrapOrchestrationCommand(): string {
   if (isProductionRuntime()) {

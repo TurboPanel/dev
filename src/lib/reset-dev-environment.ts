@@ -9,7 +9,12 @@ import {
   PLATFORM_DOCKER_VOLUME_NAMES,
 } from "./platform-docker-resources.ts";
 import type { InstallStepHandler } from "./platform-install.ts";
-import { TURBOPANEL_PLATFORM, TURBOPANEL_TRUNK_BRANCH } from "./paths.ts";
+import {
+  DAEMON_SYSTEMD_UNIT,
+  LEGACY_DAEMON_SYSTEMD_UNIT,
+  TURBOPANEL_PLATFORM,
+  TURBOPANEL_TRUNK_BRANCH,
+} from "./paths.ts";
 
 const PLATFORM_REPOS = ["daemon", "instance", "ui", "website"] as const;
 
@@ -70,7 +75,7 @@ export async function resetDevEnvironment(
 
   await runShellStep(
     "Stop platform services",
-    "systemctl stop turbopanel-instance turbopanel-caddy turbopanel-ui turbopanel-website turbopanel-mailer turbopanel-rabbitmq turbopanel-mailpit turbopanel-redis turbopanel-daemon 2>/dev/null || true",
+    `systemctl stop turbopanel-instance turbopanel-caddy turbopanel-ui turbopanel-website turbopanel-mailer turbopanel-rabbitmq turbopanel-mailpit turbopanel-redis ${DAEMON_SYSTEMD_UNIT} ${LEGACY_DAEMON_SYSTEMD_UNIT} 2>/dev/null || true`,
     onOutput,
     onStep,
   );

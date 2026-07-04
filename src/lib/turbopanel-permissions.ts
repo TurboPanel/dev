@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import {
   DAEMON_REPO_DIR,
+  DAEMON_SYSTEMD_UNIT,
   DEV_ORCHESTRATION_STAGED_DIR,
   RUNTIMES_DIR,
   TURBOPANEL_PLATFORM,
@@ -246,7 +247,7 @@ export async function ensureDaemonSystemdDockerAccess(
     return false;
   }
 
-  const dropInDir = "/etc/systemd/system/turbopanel-daemon.service.d";
+  const dropInDir = `/etc/systemd/system/${DAEMON_SYSTEMD_UNIT}.service.d`;
   const dropInFile = `${dropInDir}/docker-supplementary.conf`;
   const script = [
     "set -eu",
@@ -272,7 +273,7 @@ export async function ensureDaemonSystemdDockerAccess(
   if (result.status !== 0) {
     onOutput?.((result.stderr ?? "").trim());
     throw new Error(
-      "Failed to configure docker supplementary group for turbopanel-daemon",
+      `Failed to configure docker supplementary group for ${DAEMON_SYSTEMD_UNIT}`,
     );
   }
 

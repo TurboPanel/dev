@@ -1,7 +1,7 @@
 import { closeSync, openSync, readSync, statSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { isDaemonServiceActive } from "./daemon-actions.ts";
-import { DAEMON_ERR_LOG_PATH, DAEMON_LOG_PATH } from "./paths.ts";
+import { DAEMON_ERR_LOG_PATH, DAEMON_LOG_PATH, DAEMON_SYSTEMD_UNIT } from "./paths.ts";
 import { sanitizeInstallOutput } from "./install-output.ts";
 
 const HIDE_ANSIBLE_DEBUG = true;
@@ -504,7 +504,7 @@ function emptyLogHints(
         now,
         "info",
         "console",
-        "turbopanel-daemon is not running — logs appear once the service starts",
+        `${DAEMON_SYSTEMD_UNIT} is not running — logs appear once the service starts`,
       ),
       structuredLine(
         now,

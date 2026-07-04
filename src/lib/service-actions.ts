@@ -4,6 +4,7 @@ import { spawnDocker } from "./docker-access.ts";
 import { type InstallOutputHandler, runCaptured } from "./install-output.ts";
 import { openServiceInBrowser } from "./service-open.ts";
 import { serviceSupportsOpen } from "./service-urls.ts";
+import { DAEMON_SYSTEMD_UNIT } from "./paths.ts";
 
 export type ServiceActionId =
   | "restart"
@@ -14,7 +15,7 @@ export type ServiceActionId =
   | "switch-deno";
 
 const SYSTEMD_UNITS: Record<string, string> = {
-  daemon: "turbopanel-daemon",
+  daemon: DAEMON_SYSTEMD_UNIT,
   instance: "turbopanel-instance",
   web: "turbopanel-caddy",
   dbstudio: "turbopanel-dbstudio",

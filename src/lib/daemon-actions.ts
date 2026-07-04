@@ -3,6 +3,8 @@ import type { DevServiceStatus } from "../dev-services.ts";
 import { isDaemonSystemdInstalled } from "../dev-services.ts";
 import {
   DAEMON_REPO_DIR,
+  DAEMON_SYSTEMD_UNIT,
+  LEGACY_DAEMON_SYSTEMD_UNIT,
   RUNTIMES_DIR,
   TURBOPANEL_ROOT,
 } from "./paths.ts";
@@ -19,7 +21,7 @@ export type DaemonActionId =
   | "reset-dev-db"
   | "sync-dev-build";
 
-const DAEMON_UNIT = "turbopanel-daemon";
+const DAEMON_UNIT = DAEMON_SYSTEMD_UNIT;
 const DEFAULT_WAIT_TIMEOUT_MS = 120_000;
 const DEFAULT_WAIT_POLL_MS = 500;
 
@@ -106,7 +108,7 @@ export async function enableAndStartDaemon(
     append,
   );
   if (code !== 0) {
-    throw new Error(lines.at(-1) ?? "Failed to enable and start turbopanel-daemon");
+    throw new Error(lines.at(-1) ?? `Failed to enable and start ${DAEMON_UNIT}`);
   }
 }
 
@@ -155,10 +157,15 @@ export async function purgeDaemon(
     `${TURBOPANEL_ROOT}/.local`,
   ].map(shellQuote);
 
+  // Stop/remove the current unit and clean up the pre-rename legacy unit for
+  // hosts installed before the turbopanel-daemon → turbopaneld rename.
+  const units = [DAEMON_UNIT, LEGACY_DAEMON_SYSTEMD_UNIT];
   const command = [
-    "systemctl stop turbopanel-daemon 2>/dev/null || true",
-    "systemctl disable turbopanel-daemon 2>/dev/null || true",
-    "rm -f /etc/systemd/system/turbopanel-daemon.service",
+    ...units.flatMap((unit) => [
+      `systemctl stop ${unit} 2>/dev/null || true`,
+      `systemctl disable ${unit} 2>/dev/null || true`,
+      `rm -f /etc/systemd/system/${unit}.service`,
+    ]),
     "systemctl daemon-reload",
     ...pathsToRemove.map((path) => `rm -rf ${path}`),
   ].join(" && ");
