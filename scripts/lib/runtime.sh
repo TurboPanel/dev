@@ -1,5 +1,5 @@
 # Install the pinned Node release from nodejs.org into the vendored runtime tree
-# (default /opt/turbopanel/lib/runtime/node/<version>/ with a current symlink).
+# (default /opt/turbopanel/vendor/node/<version>/ with a current symlink).
 # Bump NODE_VERSION in paths.sh; ./console installs or upgrades on the next run.
 # Source after privileges.sh, paths.sh, and packages.sh.
 
@@ -63,7 +63,7 @@ tp_link_node_current() {
 tp_download_node_release() {
   _dnr_arch=$(tp_node_linux_asset)
   _dnr_name=node-v${NODE_VERSION}-linux-${_dnr_arch}
-  _dnr_tarball=${_dnr_name}.tar.xz
+  _dnr_tarball=${_dnr_name}.tar.gz
   _dnr_base=${NODE_RELEASE_BASE}/v${NODE_VERSION}
   _dnr_tmp=$(mktemp -d)
 
@@ -74,7 +74,7 @@ tp_download_node_release() {
     grep " ${_dnr_tarball}\$" SHASUMS256.txt > "${_dnr_tarball}.sha256"
     sha256sum -c "${_dnr_tarball}.sha256"
   )
-  tar -xJf "$_dnr_tmp/$_dnr_tarball" -C "$_dnr_tmp"
+  tar -xzf "$_dnr_tmp/$_dnr_tarball" -C "$_dnr_tmp"
   rm -rf "$NODE_VERSION_DIR"
   tp_install_node_tree "$_dnr_tmp/$_dnr_name"
   rm -rf "$_dnr_tmp"
@@ -90,7 +90,7 @@ tp_install_node_runtime() {
     _node_upgrading=1
   fi
 
-  tp_ensure_node_prerequisites  # curl, tar, xz-utils, sha256sum
+  tp_require_host_commands  # curl, tar, sha256sum — host-base only
 
   if [ "$_node_upgrading" -eq 1 ]; then
     tp_info "Upgrading Node to v${NODE_VERSION} at ${NODE_BIN}"

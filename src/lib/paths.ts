@@ -19,19 +19,44 @@ export function resolveDevRoot(): string {
 export function platformRepoEnvKey(dir: string): string {
   return `TURBOPANEL_${dir.toUpperCase()}_REPO`;
 }
-export const RUNTIMES_DIR = `${TURBOPANEL_ROOT}/lib/runtime`;
+
+/** Production FHS default for vendored runtimes (`/opt/turbopanel/vendor`). */
+export const DEFAULT_RUNTIMES_DIR = `${TURBOPANEL_ROOT}/vendor`;
+
+/**
+ * Resolve the vendored runtime root.
+ *
+ * Honors `TURBOPANEL_RUNTIMES_DIR`, then `TURBOPANEL_RUNTIME_DIR`, then
+ * {@link DEFAULT_RUNTIMES_DIR}. Mirrors daemon `resolveRuntimesDir()`.
+ */
+export function resolveRuntimesDir(): string {
+  const override = process.env.TURBOPANEL_RUNTIMES_DIR?.trim() ||
+    process.env.TURBOPANEL_RUNTIME_DIR?.trim();
+  const dir = override || DEFAULT_RUNTIMES_DIR;
+  return dir.replace(/\/+$/, "") || "/";
+}
+
+export const RUNTIMES_DIR = resolveRuntimesDir();
 /** Pinned Node.js for the dev console (matches node-runtime Ansible role). */
 export const NODE_VERSION = "24.17.0";
 export const NODE_BIN = `${RUNTIMES_DIR}/node/current/bin/node`;
 export const PNPM_BIN = `${RUNTIMES_DIR}/node/current/bin/pnpm`;
-/** Runtime-consumable copy of turbopanel-dev orchestration for turbopanel converge. */
-export const DEV_ORCHESTRATION_STAGED_DIR = `${TURBOPANEL_ROOT}/dev-orchestration`;
+
+/** Co-located dev Ansible overlay under the daemon checkout. */
+export function devOrchestrationDir(): string {
+  return `${daemonRepoPath()}/dev/orchestration`;
+}
 
 /** FHS mutable dirs (dev shares the production paths, dev-owned at runtime). */
 export const CONFIG_DIR = "/etc/turbopanel";
 export const LOG_DIR = "/var/log/turbopanel";
 export const UV_CACHE_DIR = `${RUNTIMES_DIR}/uv/cache`;
-export const PYTHON_INSTALL_DIR = `${RUNTIMES_DIR}/python`;
+/** Pinned managed Python (matches daemon `PYTHON_VERSION`). */
+export const PYTHON_VERSION = "3.14";
+export const PYTHON_RUNTIME_DIR = `${RUNTIMES_DIR}/python/${PYTHON_VERSION}`;
+export const PYTHON_CURRENT_DIR = `${RUNTIMES_DIR}/python/current`;
+/** `UV_PYTHON_INSTALL_DIR` target for orchestration bootstrap. */
+export const PYTHON_INSTALL_DIR = PYTHON_RUNTIME_DIR;
 export const ANSIBLE_COLLECTIONS_PATH =
   `${RUNTIMES_DIR}/ansible/galaxy-collections`;
 /**
@@ -41,8 +66,7 @@ export const ANSIBLE_COLLECTIONS_PATH =
  * `orchestration/roles/deno-runtime/defaults/main.yml` (and `TP_DENO_VERSION`
  * in the daemon `scripts/run.sh`) so the version the console would install when
  * host Deno is absent matches the one Ansible converges into
- * host Deno is absent matches the one Ansible converges into
- * `/opt/turbopanel/lib/runtime/deno`.
+ * `/opt/turbopanel/vendor/deno`.
  */
 export const DENO_VERSION = "2.9.0";
 export const VENDORED_DENO_BIN = `${RUNTIMES_DIR}/deno/current/deno`;

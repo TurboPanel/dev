@@ -29,7 +29,9 @@ tp_export_dev_repo_contract() {
   export TURBOPANEL_UI_REPO="$(tp_platform_repo_path ui)"
   export TURBOPANEL_WEBSITE_REPO="$(tp_platform_repo_path website)"
 }
-TURBOPANEL_RUNTIMES_DIR=${TURBOPANEL_RUNTIMES_DIR:-$TURBOPANEL_ROOT/lib/runtime}
+TURBOPANEL_ROOT=/opt/turbopanel
+# Vendored runtime root (override with TURBOPANEL_RUNTIMES_DIR / TURBOPANEL_RUNTIME_DIR).
+TURBOPANEL_RUNTIMES_DIR=${TURBOPANEL_RUNTIMES_DIR:-${TURBOPANEL_RUNTIME_DIR:-$TURBOPANEL_ROOT/vendor}}
 TURBOPANEL_RUNTIME=$TURBOPANEL_RUNTIMES_DIR
 
 # FHS mutable dirs (dev shares the production paths, dev-owned at runtime).
@@ -39,7 +41,7 @@ TURBOPANEL_STATE_DIR=${TURBOPANEL_STATE_DIR:-/var/lib/turbopanel}
 DAEMON_ENV_PATH=${DAEMON_ENV_PATH:-$TURBOPANEL_CONFIG_DIR/daemon.env}
 
 # Node is dev-only (Ink HMR via Vite + future website repo). Platform services
-# (daemon, instance) use the platform-managed runtimes under lib/runtime.
+# (daemon, instance) use the platform-managed runtimes under vendor.
 NODE_VERSION=24.17.0
 NODE_RUNTIME_DIR=${NODE_RUNTIME_DIR:-$TURBOPANEL_RUNTIMES_DIR/node}
 NODE_VERSION_DIR=$NODE_RUNTIME_DIR/$NODE_VERSION

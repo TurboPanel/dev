@@ -18,11 +18,11 @@
 	],
 	"settings": {
 		"typescript.tsdk": "node_modules/typescript/lib",
-		"ansible.ansible.path": "/opt/turbopanel/lib/runtime/ansible/current/bin/ansible",
-		"ansible.python.interpreterPath": "/opt/turbopanel/lib/runtime/ansible/current/bin/python3",
+		"ansible.ansible.path": "/opt/turbopanel/vendor/ansible/current/bin/ansible",
+		"ansible.python.interpreterPath": "/opt/turbopanel/vendor/ansible/current/bin/python3",
 		"ansible.validation.lint.enabled": true,
-		"ansible.validation.lint.path": "/opt/turbopanel/lib/runtime/ansible/current/bin/ansible-lint",
-		"deno.path": "/opt/turbopanel/lib/runtime/deno/current/deno",
+		"ansible.validation.lint.path": "/opt/turbopanel/vendor/ansible/current/bin/ansible-lint",
+		"deno.path": "/opt/turbopanel/vendor/deno/current/deno",
 		"deno.enablePaths": ["../daemon"],
 		"remote.restoreForwardedPorts": true,
 		"remote.portsAttributes": {

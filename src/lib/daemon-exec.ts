@@ -7,7 +7,6 @@ import {
   RUNTIMES_DIR,
   VENDORED_DENO_BIN,
 } from "./paths.ts";
-import { aptGetInstall } from "./apt.ts";
 import { type InstallOutputHandler, runCaptured } from "./install-output.ts";
 
 function shellQuote(value: string): string {
@@ -56,7 +55,7 @@ function vendoredDenoUsable(): boolean {
   return sudo.status === 0;
 }
 
-/** Prefer host Deno, then the vendored runtime at lib/runtime/deno/current/deno. */
+/** Prefer host Deno, then the vendored runtime at vendor/deno/current/deno. */
 export function resolveBootstrapDenoBin(): string {
   const host = lookupHostDenoBin();
   if (host) {
@@ -89,28 +88,26 @@ function denoRunBootstrapInvocation(denoBin: string): string {
   ].map(shellQuote).join(" ");
 }
 
-function commandExists(name: string): boolean {
-  const result = spawnSync(
-    "/bin/sh",
-    ["-c", 'command -v "$1" >/dev/null 2>&1', "_", name],
-    { stdio: "ignore" },
-  );
+function denoRunBootstrapInvocation(denoBin: string): string {
+  const arch = process.arch;
+  switch (arch) {
+    case "arm64":
+      return "aarch64-unknown-linux-gnu";
+    case "x64":
+      return "x86_64-unknown-linux-gnu";
+    default:
+      throw new Error(`Unsupported CPU architecture for Deno bootstrap: ${arch}`);
+  }
+}
+
+function hostPython3Available(): boolean {
+  const result = spawnSync("/bin/sh", ["-c", "command -v python3"], {
+    stdio: "ignore",
+  });
   return result.status === 0;
 }
 
-async function ensureUnzip(onOutput?: InstallOutputHandler): Promise<void> {
-  if (commandExists("unzip") || commandExists("7z")) {
-    return;
-  }
-
-  const code = await aptGetInstall(["unzip"], onOutput, { update: true });
-
-  if (code !== 0 || (!commandExists("unzip") && !commandExists("7z"))) {
-    throw new Error("Failed to install unzip (required for Deno bootstrap)");
-  }
-}
-
-/** Install Deno under lib/runtime/deno (same flow as deno-runtime Ansible role). */
+/** Install Deno under vendor/deno (GitHub release zip + python3 stdlib extract). */
 export async function ensureBootstrapDeno(
   onOutput?: InstallOutputHandler,
 ): Promise<void> {
@@ -118,23 +115,45 @@ export async function ensureBootstrapDeno(
     return;
   }
 
-  await ensureUnzip(onOutput);
+  if (!hostPython3Available()) {
+    throw new Error(
+      "Deno is not installed — install host Deno, vendor it via stack converge, " +
+        "or install python3-minimal to extract the release zip",
+    );
+  }
 
+  const triple = resolveDenoAssetTriple();
   const installScript = [
     "set -euo pipefail",
     `RUNTIMES_DIR=${shellQuote(RUNTIMES_DIR)}`,
     `VERSION=${shellQuote(DENO_VERSION)}`,
     `DENO_BIN=${shellQuote(VENDORED_DENO_BIN)}`,
     'if [ -x "$DENO_BIN" ]; then exit 0; fi',
-    'DENO_DEST="$RUNTIMES_DIR/deno/$VERSION/deno"',
-    'DENO_TMP="$RUNTIMES_DIR/deno/.install"',
-    'rm -rf "$DENO_TMP"',
-    'mkdir -p "$(dirname "$DENO_DEST")" "$RUNTIMES_DIR/deno/bin"',
-    'CI=1 curl -fsSL https://deno.land/install.sh | CI=1 DENO_INSTALL="$DENO_TMP" sh -s "v$VERSION"',
-    'install -m 0755 "$DENO_TMP/bin/deno" "$DENO_DEST"',
-    'rm -rf "$DENO_TMP"',
+    `ASSET="deno-${triple}.zip"`,
+    'URL="https://github.com/denoland/deno/releases/download/v${VERSION}/${ASSET}"',
+    'TMP="$(mktemp -d)"',
+    'DEST="$RUNTIMES_DIR/deno/$VERSION/deno"',
+    'curl -fsSL -o "$TMP/$ASSET" "$URL"',
+    `python3 - "$TMP/$ASSET" "$DEST" <<'PY'
+import shutil, sys, tempfile, zipfile
+from pathlib import Path
+
+archive, dest = Path(sys.argv[1]), Path(sys.argv[2])
+dest.parent.mkdir(parents=True, exist_ok=True)
+with tempfile.TemporaryDirectory(prefix="deno-zip-") as tmp:
+    tmp_path = Path(tmp)
+    with zipfile.ZipFile(archive) as zf:
+        zf.extractall(tmp_path)
+    candidates = list(tmp_path.rglob("deno"))
+    if not candidates:
+        raise SystemExit("deno binary not found in release zip")
+    shutil.copy2(candidates[0], dest)
+dest.chmod(0o755)
+PY`,
+    'mkdir -p "$RUNTIMES_DIR/deno/bin"',
     'ln -sfn "$RUNTIMES_DIR/deno/$VERSION" "$RUNTIMES_DIR/deno/current"',
     'ln -sfn ../current/deno "$RUNTIMES_DIR/deno/bin/deno"',
+    'rm -rf "$TMP"',
   ].join("\n");
 
   const code = await runCaptured(["sudo", "-n", "bash", "-c", installScript], onOutput);

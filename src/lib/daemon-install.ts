@@ -4,7 +4,8 @@ import {
   ANSIBLE_COLLECTIONS_PATH,
   daemonRepoPath,
   DAEMON_SYSTEMD_UNIT,
-  PYTHON_INSTALL_DIR,
+  PYTHON_RUNTIME_DIR,
+  resolveDevRoot,
   UV_CACHE_DIR,
 } from "./paths.ts";
 import type { InstallStepHandler } from "./platform-install.ts";
@@ -15,10 +16,8 @@ import {
   sanitizeInstallOutput,
 } from "./install-output.ts";
 import { ensureFhsTreeOwnership } from "./turbopanel-permissions.ts";
-import { stageDevOrchestration } from "./dev-orchestration-stage.ts";
 import { writeDaemonBaseEnv } from "./daemon-env.ts";
 import { resolveDevIdentity } from "./dev-identity.ts";
-import { resolveDevRoot } from "./paths.ts";
 
 /**
  * Dev vs production install path invariant:
@@ -45,7 +44,7 @@ function shellQuote(value: string): string {
 function bootstrapEnv(): string[] {
   return [
     `ANSIBLE_COLLECTIONS_PATH=${ANSIBLE_COLLECTIONS_PATH}`,
-    `UV_PYTHON_INSTALL_DIR=${PYTHON_INSTALL_DIR}`,
+    `UV_PYTHON_INSTALL_DIR=${PYTHON_RUNTIME_DIR}`,
     `UV_CACHE_DIR=${UV_CACHE_DIR}`,
     "UV_NO_MODIFY_PATH=1",
     "UV_PYTHON_DOWNLOADS=automatic",
@@ -56,7 +55,6 @@ function bootstrapEnv(): string[] {
 async function prepareBootstrapEnvironment(
   onOutput?: InstallOutputHandler,
 ): Promise<void> {
-  await stageDevOrchestration(onOutput);
   await ensureFhsTreeOwnership(onOutput);
 }
 

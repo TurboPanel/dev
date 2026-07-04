@@ -10,7 +10,7 @@ import { resolveDevIdentity } from "./dev-identity.ts";
 import {
   ANSIBLE_COLLECTIONS_PATH,
   daemonRepoPath,
-  PYTHON_INSTALL_DIR,
+  PYTHON_RUNTIME_DIR,
   UV_CACHE_DIR,
 } from "./paths.ts";
 import type { InstallStepHandler } from "./platform-install.ts";
@@ -19,7 +19,6 @@ import {
   type InstallOutputHandler,
   sanitizeInstallOutput,
 } from "./install-output.ts";
-import { stageDevOrchestration } from "./dev-orchestration-stage.ts";
 import { ensureDevUserDockerAccess } from "./turbopanel-permissions.ts";
 
 const DAEMON_DIR = daemonRepoPath();
@@ -34,7 +33,7 @@ function orchestrationEnv(): string[] {
   const dev = resolveDevIdentity();
   return [
     `ANSIBLE_COLLECTIONS_PATH=${ANSIBLE_COLLECTIONS_PATH}`,
-    `UV_PYTHON_INSTALL_DIR=${PYTHON_INSTALL_DIR}`,
+    `UV_PYTHON_INSTALL_DIR=${PYTHON_RUNTIME_DIR}`,
     `UV_CACHE_DIR=${UV_CACHE_DIR}`,
     `TURBOPANEL_DEV_USER=${dev.user}`,
     `TURBOPANEL_DEV_UID=${dev.uid}`,
@@ -158,11 +157,9 @@ export async function installDevEnvironment(
   onOutput?: InstallOutputHandler,
   onStep?: InstallStepHandler,
 ): Promise<void> {
-  // Pre-converge: stage the dev orchestration overlay the converge reads, make a
-  // best-effort attempt to add the dev user to the docker group, and write the
-  // daemon identity/instance opt-in env before the daemon (re)starts. Ansible's
-  // converge is authoritative for FHS/checkout ownership and docker membership.
-  await stageDevOrchestration(onOutput);
+  // Pre-converge: best-effort docker group membership and daemon instance opt-in
+  // env before the daemon (re)starts. Ansible's converge is authoritative for
+  // FHS/checkout ownership and docker membership.
   await ensureDevUserDockerAccess(onOutput);
   writeDaemonInstanceEnv();
 
