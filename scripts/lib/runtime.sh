@@ -1,6 +1,6 @@
-# Install the pinned Node release from nodejs.org into NODE_PREFIX (default
-# /usr/local). Bump NODE_VERSION in paths.sh; ./console installs or upgrades on
-# the next run.
+# Install the pinned Node release from nodejs.org into the vendored runtime tree
+# (default /opt/turbopanel/lib/runtime/node/<version>/ with a current symlink).
+# Bump NODE_VERSION in paths.sh; ./console installs or upgrades on the next run.
 # Source after privileges.sh, paths.sh, and packages.sh.
 
 tp_node_linux_asset() {
@@ -24,18 +24,40 @@ tp_node_runtime_usable() {
   [ "$_tnu_version" = "$NODE_VERSION" ]
 }
 
-tp_install_node_tree() {
-  _int_src_dir=$1
-  if [ "$(id -u)" -eq 0 ] || tp_can_write_path "$NODE_PREFIX"; then
-    cp -R "$_int_src_dir"/bin "$_int_src_dir"/include "$_int_src_dir"/lib "$_int_src_dir"/share "$NODE_PREFIX"/
+tp_ensure_node_runtime_dir() {
+  if [ "$(id -u)" -eq 0 ] || tp_can_write_path "$NODE_RUNTIME_DIR"; then
+    mkdir -p "$NODE_VERSION_DIR"
     return 0
   fi
   if ! command -v sudo >/dev/null 2>&1; then
-    tp_error "Installing Node to ${NODE_PREFIX} requires root privileges, but sudo is not installed."
+    tp_error "Installing Node to ${NODE_RUNTIME_DIR} requires root privileges, but sudo is not installed."
     exit 1
   fi
-  tp_info "Administrator privileges required to install Node to ${NODE_PREFIX}"
-  sudo cp -R "$_int_src_dir"/bin "$_int_src_dir"/include "$_int_src_dir"/lib "$_int_src_dir"/share "$NODE_PREFIX"/
+  tp_info "Administrator privileges required to install Node to ${NODE_RUNTIME_DIR}"
+  sudo mkdir -p "$NODE_VERSION_DIR"
+}
+
+tp_install_node_tree() {
+  _int_src_dir=$1
+  tp_ensure_node_runtime_dir
+  if [ "$(id -u)" -eq 0 ] || tp_can_write_path "$NODE_VERSION_DIR"; then
+    cp -R "$_int_src_dir"/bin "$_int_src_dir"/include "$_int_src_dir"/lib "$_int_src_dir"/share "$NODE_VERSION_DIR"/
+  else
+    sudo cp -R "$_int_src_dir"/bin "$_int_src_dir"/include "$_int_src_dir"/lib "$_int_src_dir"/share "$NODE_VERSION_DIR"/
+  fi
+  tp_link_node_current
+}
+
+tp_link_node_current() {
+  if [ "$(id -u)" -eq 0 ] || tp_can_write_path "$NODE_RUNTIME_DIR"; then
+    ln -sfn "$NODE_VERSION_DIR" "$NODE_RUNTIME_DIR/current"
+    return 0
+  fi
+  if ! command -v sudo >/dev/null 2>&1; then
+    tp_error "Updating Node current symlink requires root privileges, but sudo is not installed."
+    exit 1
+  fi
+  sudo ln -sfn "$NODE_VERSION_DIR" "$NODE_RUNTIME_DIR/current"
 }
 
 tp_download_node_release() {
@@ -53,6 +75,7 @@ tp_download_node_release() {
     sha256sum -c "${_dnr_tarball}.sha256"
   )
   tar -xJf "$_dnr_tmp/$_dnr_tarball" -C "$_dnr_tmp"
+  rm -rf "$NODE_VERSION_DIR"
   tp_install_node_tree "$_dnr_tmp/$_dnr_name"
   rm -rf "$_dnr_tmp"
 }
@@ -112,7 +135,7 @@ tp_read_pnpm_version() {
 }
 
 tp_corepack_bin() {
-  printf '%s' "$(dirname "$NODE_BIN")/corepack"
+  printf '%s' "$NODE_PREFIX/bin/corepack"
 }
 
 tp_corepack_env() {
@@ -122,12 +145,12 @@ tp_corepack_env() {
 
 tp_run_corepack() {
   tp_corepack_env
-  if [ "$(id -u)" -eq 0 ] || tp_can_write_path "$(dirname "$NODE_BIN")"; then
+  if [ "$(id -u)" -eq 0 ] || tp_can_write_path "$NODE_PREFIX/bin"; then
     "$@"
     return $?
   fi
   if ! command -v sudo >/dev/null 2>&1; then
-    tp_error "Corepack requires write access to $(dirname "$NODE_BIN"), but sudo is not installed."
+    tp_error "Corepack requires write access to ${NODE_PREFIX}/bin, but sudo is not installed."
     exit 1
   fi
   sudo env COREPACK_ENABLE_DOWNLOAD_PROMPT=0 "$@"

@@ -1,0 +1,59 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../instance"
+		},
+		{
+			"path": "../daemon"
+		},
+		{
+			"path": "../ui"
+		},
+		{
+			"path": "../website"
+		}
+	],
+	"settings": {
+		"typescript.tsdk": "node_modules/typescript/lib",
+		"ansible.ansible.path": "/opt/turbopanel/lib/runtime/ansible/current/bin/ansible",
+		"ansible.python.interpreterPath": "/opt/turbopanel/lib/runtime/ansible/current/bin/python3",
+		"ansible.validation.lint.enabled": true,
+		"ansible.validation.lint.path": "/opt/turbopanel/lib/runtime/ansible/current/bin/ansible-lint",
+		"deno.path": "/opt/turbopanel/lib/runtime/deno/current/deno",
+		"deno.enablePaths": ["../daemon"],
+		"remote.restoreForwardedPorts": true,
+		"remote.portsAttributes": {
+			"4983": {
+				"label": "Drizzle Studio",
+				"protocol": "http",
+				"onAutoForward": "silent"
+			},
+			"8025": {
+				"label": "Mailpit",
+				"protocol": "http",
+				"onAutoForward": "silent"
+			},
+			"8443": {
+				"label": "Instance HTTPS",
+				"protocol": "https",
+				"onAutoForward": "silent"
+			},
+			"19820": {
+				"label": "Website (Next.js)",
+				"protocol": "http",
+				"onAutoForward": "silent"
+			}
+		}
+	},
+	"extensions": {
+		"recommendations": [
+			"redhat.ansible",
+			"sonarsource.sonarlint-vscode",
+			"denoland.vscode-deno",
+			"esbenp.prettier-vscode"
+		]
+	}
+}

@@ -8,9 +8,9 @@ Development environment for [TurboPanel](https://github.com/turbopanel/turbopane
 curl -fsSL https://trbp.nl/develop.sh | sh
 ```
 
-That one-liner downloads `scripts/develop.sh`, clones or updates this repo into `~/dev` (or `${TURBOPANEL_DEV_ROOT}/dev` when set), installs the pinned **Node** runtime (used to run this console) to `/usr/local` when needed, runs `pnpm install`, and starts the developer console via `vite-node`. On first run it may prompt for git identity, GitHub SSH setup, and sudo (for `git`, `openssh-client`, and the Node install). You can optionally configure passwordless sudo for your dev user to avoid repeated password prompts.
+That one-liner downloads `scripts/develop.sh`, clones or updates this repo into `~/dev` (or `${TURBOPANEL_DEV_ROOT}/dev` when set), installs the pinned **Node** runtime to `/opt/turbopanel/lib/runtime/node/` when needed, runs `pnpm install`, and starts the developer console via `vite-node`. On first run it may prompt for git identity, GitHub SSH setup, and sudo (for `git`, `openssh-client`, and the Node install). You can optionally configure passwordless sudo for your dev user to avoid repeated password prompts.
 
-**Deno** is not installed or managed by this repo for the console itself. Install Deno on your host for daemon bootstrap during development, or let daemon bootstrap install it to `/usr/local/bin/deno`. Production hosts use the same system binary or a compiled bootstrap entrypoint when `TURBOPANEL_RUNTIME=production`.
+**Deno** is not installed by `./console` itself. Install Deno on your host for daemon bootstrap during development, or let daemon bootstrap vendor it to `/opt/turbopanel/lib/runtime/deno/current/deno`. Production hosts use the vendored runtime or a compiled bootstrap entrypoint when `TURBOPANEL_RUNTIME=production`.
 
 The console is an [Ink](https://github.com/vadimdemedes/ink) TUI run on Node via Vite. Use `./console --watch` (or `pnpm dev:watch`) for live reload while editing; the watch runner keeps Ink mounted and rerenders when files under `src/` change.
 

@@ -21,7 +21,7 @@
     "ansible.python.interpreterPath": "/opt/turbopanel/lib/runtime/ansible/current/bin/python3",
     "ansible.validation.lint.enabled": true,
     "ansible.validation.lint.path": "/opt/turbopanel/lib/runtime/ansible/current/bin/ansible-lint",
-    "deno.path": "/usr/local/bin/deno",
+    "deno.path": "/opt/turbopanel/lib/runtime/deno/current/deno",
     "deno.enablePaths": ["../daemon"],
     "remote.restoreForwardedPorts": true,
     "remote.portsAttributes": {

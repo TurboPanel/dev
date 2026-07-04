@@ -18,6 +18,6 @@
       {{ turbopanel_dev_user }} ALL=(root) NOPASSWD: /bin/chmod, /usr/bin/chmod, /bin/chown, /usr/bin/chown
       {{ turbopanel_dev_user }} ALL=(root) NOPASSWD: /usr/bin/tee, /usr/bin/cp, /usr/bin/cat, /usr/bin/test
       {{ turbopanel_dev_user }} ALL=(root) NOPASSWD: /usr/bin/mkdir, /bin/mkdir
-      {{ turbopanel_dev_user }} ALL=(root) NOPASSWD: /usr/local/bin/deno
+      {{ turbopanel_dev_user }} ALL=(root) NOPASSWD: /usr/bin/install, /bin/install
       {{ turbopanel_dev_user }} ALL=(root) NOPASSWD: /usr/bin/systemctl, /bin/systemctl
       {{ turbopanel_dev_user }} ALL=(root) NOPASSWD: /usr/bin/journalctl

@@ -7,7 +7,8 @@
 **This repo runs on Node, not Deno.** In dev the console bootstraps
 orchestration and runs the **daemon from the dev user's home checkout**
 (`~/daemon`, resolved via `TURBOPANEL_DEV_ROOT` / `TURBOPANEL_DAEMON_REPO`) via Deno (`deno run main.ts`) — host Deno is
-preferred, else the bootstrap-installed `/usr/local/bin/deno`. It never runs a
+preferred, else the vendored runtime at
+`/opt/turbopanel/lib/runtime/deno/current/deno`. It never runs a
 compiled daemon binary. Production installs (driven by `run.sh` + Ansible, **not**
 this console) run the compiled **`/opt/turbopanel/bin/turbopaneld`** binary — with
 a **`turbopaneld.js`** `deno run` fallback — as **`turbopaneld.service`** on the
@@ -38,20 +39,22 @@ The current entrypoint is a minimal launcher only (full multi-screen console was
 ~/ui/                     # TURBOPANEL_UI_REPO
 ~/website/                # TURBOPANEL_WEBSITE_REPO
 
-/usr/local/bin/node       # pinned Node (installed by ./console)
-/usr/local/bin/pnpm       # pnpm shim (Corepack)
+/opt/turbopanel/lib/runtime/
+├── node/current/bin/node   # pinned Node (installed by ./console + node-runtime role)
+├── node/current/bin/pnpm   # pnpm shim (Corepack)
+├── deno/current/deno       # pinned Deno (deno-runtime role / console bootstrap)
+├── caddy/current/caddy     # …
+└── …                       # uv/python/ansible (orchestration bootstrap)
 
 /etc/turbopanel/          # config (dev-user-owned): daemon.env, instance/, rabbitmq/, …
 /var/lib/turbopanel/      # persistent state (dev-user-owned)
 /var/log/turbopanel/      # service logs (dev-user-owned)
 /run/turbopanel/          # runtime sockets (dev-user-owned)
-/opt/turbopanel/
-├── lib/runtime/          # vendored deno/uv/python/ansible (orchestration bootstrap)
-└── share/ui/             # static UI export (production build mode)
+/opt/turbopanel/share/ui/ # static UI export (production build mode)
 ~/.local/console/         # console converge logs (consoleLogDir())
 ```
 
-Node is a pinned `nodejs.org` tarball installed into `/usr/local`. pnpm is provisioned via Corepack and pinned by the `packageManager` field in `package.json`. Deno is **host-provided in development** (preferred) or bootstrap-installed to `/usr/local/bin/deno` when host Deno is absent; the dev console always runs the daemon and orchestration **from the source checkout** via Deno. Production daemon installs use the compiled `/opt/turbopanel/bin/turbopaneld` binary (with a `turbopaneld.js` `deno run` fallback), driven by `run.sh` + Ansible — never by this console.
+Node is a pinned `nodejs.org` tarball vendored under `/opt/turbopanel/lib/runtime/node/<version>/` with a `current` symlink (same layout as deno/caddy). pnpm is provisioned via Corepack and pinned by the `packageManager` field in `package.json`. Deno is **host-provided in development** (preferred) or bootstrap-installed to `/opt/turbopanel/lib/runtime/deno/current/deno` when host Deno is absent; the dev console always runs the daemon and orchestration **from the source checkout** via Deno. Production daemon installs use the compiled `/opt/turbopanel/bin/turbopaneld` binary (with a `turbopaneld.js` `deno run` fallback), driven by `run.sh` + Ansible — never by this console.
 
 ## Fresh-clone → working dev
 
@@ -82,7 +85,7 @@ curl -fsSL https://trbp.nl/develop.sh | sh
 ## Responsibilities
 
 - **`scripts/develop.sh`** — clones/updates **only** `turbopanel-dev` via `git@github.com:turbopanel/turbopanel-dev.git`. Requires **`curl`**, **`sudo`**, and a **sudo-capable development user** before it runs (`scripts/lib/dev-prerequisites.sh`). On first run, prompts for git `user.name` and `user.email`, generates `~/.ssh/id_ed25519` if missing, configures SSH commit signing, and verifies GitHub SSH before cloning. May use sudo for `git` / `openssh-client` apt installs. Uses `tp_is_interactive()` so `curl | sh` works when a controlling terminal is available (`/dev/tty`).
-- **`console`** — runs the prerequisite check, ensures pinned **Node** (`/usr/local/bin/node`, runs this repo) is installed, enables Corepack/pnpm, runs `pnpm install`, and launches the Ink TUI via `vite-node`. Add `--watch` to use `scripts/hot-reload.tsx`, which keeps the Ink process alive and rerenders when imported `src/` modules change. When stdin/stdout/stderr are not TTYs (e.g. after `exec` from a piped bootstrap), reattaches stdio to `/dev/tty` when `tp_is_interactive()` succeeds. Does **not** install Deno.
+- **`console`** — runs the prerequisite check, ensures pinned **Node** (`/opt/turbopanel/lib/runtime/node/current/bin/node`, runs this repo) is installed, enables Corepack/pnpm, runs `pnpm install`, and launches the Ink TUI via `vite-node`. Add `--watch` to use `scripts/hot-reload.tsx`, which keeps the Ink process alive and rerenders when imported `src/` modules change. When stdin/stdout/stderr are not TTYs (e.g. after `exec` from a piped bootstrap), reattaches stdio to `/dev/tty` when `tp_is_interactive()` succeeds. Does **not** install Deno via `./console` itself (Deno bootstrap is via `ensureBootstrapDeno` during daemon install).
 - **`src/tui.tsx`** — minimal Ink app: full-height shell with a one-row `MenuBar`, a bordered `MainPanel`, and a one-row `StatusBar`. `← →` switches areas; Ctrl-C exits. Uses `alternateScreen`. No stack orchestration or platform install yet — rebuild features in `src/` incrementally.
 
 ## Node app
@@ -101,7 +104,7 @@ src/
 - The `@turbopanel/components/` import alias is defined in **both** `vite.config.ts` (`resolve.alias`) and `tsconfig.json` (`paths`) — keep them in sync.
 - Keep the CLI **simple**. Platform repo install, service monitoring, and stack actions belong in the Ink app when rebuilt — not new shell scripts.
 - **`src/lib/paths.ts`** — `TURBOPANEL_TRUNK_BRANCH` (`trunk`) is the dev shim for git checkouts and `TURBOPANEL_TRUNK_BRANCH` in `/etc/turbopanel/daemon.env`; release/binary installs omit it. Path helpers: `resolveDevRoot()`, `platformRepoPath()`, `TURBOPANEL_DEV_ROOT`, `TURBOPANEL_<DIR>_REPO` env overrides. Mutable data: `CONFIG_DIR=/etc/turbopanel`, `LOG_DIR=/var/log/turbopanel`, `RUNTIMES_DIR=/opt/turbopanel/lib/runtime`. Daemon: `DAEMON_ENV_PATH=/etc/turbopanel/daemon.env`, `DAEMON_LOG_PATH`/`DAEMON_ERR_LOG_PATH`=`/var/log/turbopanel/daemon/*`. Console logs: `consoleLogDir()` → `~/.local/console`. `DENO_VERSION` (**`2.9.0`**) is the console's bootstrap fallback + status label and **must** match `deno_version` in the daemon's `deno-runtime` role (pinned by the daemon's `src/orchestration/paths.test.ts`). The daemon systemd unit name lives here too: `DAEMON_SYSTEMD_UNIT` = **`turbopaneld`** (matches the daemon's `install-daemon-systemd.sh`), with `LEGACY_DAEMON_SYSTEMD_UNIT` = `turbopanel-daemon` cleaned up on purge/reset for pre-rename hosts.
-- **`src/lib/daemon-exec.ts`** — always resolves a **Deno** invocation of the source-checkout scripts (`scripts/bootstrap-orchestration.ts`, `scripts/run-orchestration-action.ts`): host Deno if on PATH, else `/usr/local/bin/deno`. It never runs `/opt/turbopanel/bin/turbopaneld`; that compiled entrypoint (and its `turbopaneld.js` fallback) exists only on managed/production installs, which the console does not drive.
+- **`src/lib/daemon-exec.ts`** — always resolves a **Deno** invocation of the source-checkout scripts (`scripts/bootstrap-orchestration.ts`, `scripts/run-orchestration-action.ts`): host Deno if on PATH, else `/opt/turbopanel/lib/runtime/deno/current/deno`. It never runs `/opt/turbopanel/bin/turbopaneld`; that compiled entrypoint (and its `turbopaneld.js` fallback) exists only on managed/production installs, which the console does not drive.
 
 ## Ansible dev overlay
 
@@ -110,9 +113,9 @@ The **Ansible dev overlay** lives in `dev/orchestration/` and overrides the daem
 ## Shell libraries
 
 - **`scripts/lib/privileges.sh`** — POSIX sudo re-exec helpers (`tp_ensure_privileges`), logging helpers, `tp_is_interactive()` (stdin TTY or readable/writable `/dev/tty`).
-- **`scripts/lib/paths.sh`** — `/opt/turbopanel` path constants; pinned `NODE_VERSION` + `NODE_PREFIX`/`NODE_BIN`, `PNPM_BIN`.
+- **`scripts/lib/paths.sh`** — `/opt/turbopanel` path constants; pinned `NODE_VERSION` + vendored `NODE_BIN`/`PNPM_BIN` under `lib/runtime/node/current/bin/`.
 - **`scripts/lib/packages.sh`** — apt prerequisite checks: `tp_ensure_node_prerequisites` (curl/tar/xz-utils/sha256sum).
-- **`scripts/lib/runtime.sh`** — pinned **Node** install from the `nodejs.org` tarball into `/usr/local` plus Corepack/pnpm (`tp_ensure_node_runtime`).
+- **`scripts/lib/runtime.sh`** — pinned **Node** install from the `nodejs.org` tarball into `/opt/turbopanel/lib/runtime/node/<version>/` plus Corepack/pnpm (`tp_ensure_node_runtime`).
 - **`scripts/lib/dev-identity.sh`** — resolve dev user from process UID (`tp_resolve_dev_identity`).
 - **`scripts/lib/dev-prerequisites.sh`** — curl/sudo/dev-user checks shared by `develop.sh` and `./console`. When sudo still requires a password, optionally prompts to install `/etc/sudoers.d/turbopanel-dev-nopasswd` (full `NOPASSWD` for the dev user on local dev hosts). Set `TURBOPANEL_DEV_SKIP_NOPASSWD_SUDO=1` to skip the prompt.
 - **`scripts/lib/git-github-ssh.sh`** — git identity prompts, SSH key generation, GitHub verification (used by `develop.sh`).
@@ -126,7 +129,7 @@ The **Ansible dev overlay** lives in `dev/orchestration/` and overrides the daem
 - **`console` owns the Node runtime** (for this repo) and starting the TUI. It does **not** install Deno or other platform runtimes.
 - **`develop.sh` clones to `~/dev`** (or `${TURBOPANEL_DEV_ROOT}/dev` when set), alongside sibling repos under the same dev root.
 - Developer identity (`TURBOPANEL_DEV_USER`, `TURBOPANEL_DEV_UID`, `TURBOPANEL_DEV_GID`) is resolved from the **process UID** via `getent passwd` (`tp_resolve_dev_identity()` in `scripts/lib/dev-identity.sh`). **`USER` / `LOGNAME` are never trusted.** Unresolved identities and `root` are rejected; the only root exception is a validated `SUDO_USER` passwd entry when the console runs under `sudo`.
-- Node is pinned in `scripts/lib/paths.sh` (`NODE_VERSION` **`24.17.0`**), downloaded from `nodejs.org`, installed to `/usr/local` (override prefix with `NODE_PREFIX=`). pnpm is pinned solely by `packageManager` in `package.json` and provisioned via Corepack.
+- Node is pinned in `scripts/lib/paths.sh` (`NODE_VERSION` **`24.17.0`**), downloaded from `nodejs.org`, vendored to `/opt/turbopanel/lib/runtime/node/<version>/` with a `current` symlink. pnpm is pinned solely by `packageManager` in `package.json` and provisioned via Corepack.
 - **`TURBOPANEL_MODE=development`** during dev converge. Source repos default under `$HOME` via `TURBOPANEL_DEV_ROOT` and per-repo `TURBOPANEL_<DIR>_REPO` overrides.
 - Daemon bootstrap, systemd units, and Docker containers run as the **current dev user** — no `turbopanel` / `turbopaneli` / `turbopanelc` service accounts are created in dev.
 - Purge/reset stops and removes the daemon systemd unit **`turbopaneld.service`** (and the legacy `turbopanel-daemon.service` for pre-rename hosts), dev FHS state under `/etc/turbopanel`, `/var/lib/turbopanel`, `/var/log/turbopanel`, `/run/turbopanel`, and runtimes under `/opt/turbopanel/lib/runtime`.

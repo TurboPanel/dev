@@ -4,7 +4,8 @@ import {
   daemonDenoConfig,
   daemonOrchestrationScript,
   DENO_VERSION,
-  SYSTEM_DENO_BIN,
+  RUNTIMES_DIR,
+  VENDORED_DENO_BIN,
 } from "./paths.ts";
 import { aptGetInstall } from "./apt.ts";
 import { type InstallOutputHandler, runCaptured } from "./install-output.ts";
@@ -42,23 +43,31 @@ export function resolveHostDenoBin(): string {
   return bin;
 }
 
-export function systemDenoInstalled(): boolean {
-  const result = spawnSync("sudo", ["-n", "test", "-x", SYSTEM_DENO_BIN], {
+function vendoredDenoUsable(): boolean {
+  const direct = spawnSync("/bin/sh", ["-c", `test -x ${shellQuote(VENDORED_DENO_BIN)}`], {
     stdio: "ignore",
   });
-  return result.status === 0;
+  if (direct.status === 0) {
+    return true;
+  }
+  const sudo = spawnSync("sudo", ["-n", "test", "-x", VENDORED_DENO_BIN], {
+    stdio: "ignore",
+  });
+  return sudo.status === 0;
 }
 
-/** Prefer host Deno, then the system binary at /usr/local/bin/deno. */
+/** Prefer host Deno, then the vendored runtime at lib/runtime/deno/current/deno. */
 export function resolveBootstrapDenoBin(): string {
   const host = lookupHostDenoBin();
   if (host) {
     return host;
   }
-  if (systemDenoInstalled()) {
-    return SYSTEM_DENO_BIN;
+  if (vendoredDenoUsable()) {
+    return VENDORED_DENO_BIN;
   }
-  throw new Error("Deno is not installed — install Deno on the host or via bootstrap");
+  throw new Error(
+    "Deno is not installed — install Deno on the host or run stack converge to vendor it",
+  );
 }
 
 function resolveProductionDenoBin(): string {
@@ -101,11 +110,11 @@ async function ensureUnzip(onOutput?: InstallOutputHandler): Promise<void> {
   }
 }
 
-/** Install Deno to /usr/local/bin/deno (same flow as deno-runtime Ansible role). */
+/** Install Deno under lib/runtime/deno (same flow as deno-runtime Ansible role). */
 export async function ensureBootstrapDeno(
   onOutput?: InstallOutputHandler,
 ): Promise<void> {
-  if (lookupHostDenoBin() || systemDenoInstalled()) {
+  if (lookupHostDenoBin() || vendoredDenoUsable()) {
     return;
   }
 
@@ -113,18 +122,24 @@ export async function ensureBootstrapDeno(
 
   const installScript = [
     "set -euo pipefail",
-    `SYSTEM_DENO=${shellQuote(SYSTEM_DENO_BIN)}`,
+    `RUNTIMES_DIR=${shellQuote(RUNTIMES_DIR)}`,
     `VERSION=${shellQuote(DENO_VERSION)}`,
-    'if [ -x "$SYSTEM_DENO" ]; then exit 0; fi',
-    'DENO_TMP=$(mktemp -d)',
-    'curl -fsSL https://deno.land/install.sh | DENO_INSTALL="$DENO_TMP" sh -s "v$VERSION" -- -y --no-modify-path',
-    'install -m 0755 "$DENO_TMP/bin/deno" "$SYSTEM_DENO"',
+    `DENO_BIN=${shellQuote(VENDORED_DENO_BIN)}`,
+    'if [ -x "$DENO_BIN" ]; then exit 0; fi',
+    'DENO_DEST="$RUNTIMES_DIR/deno/$VERSION/deno"',
+    'DENO_TMP="$RUNTIMES_DIR/deno/.install"',
     'rm -rf "$DENO_TMP"',
+    'mkdir -p "$(dirname "$DENO_DEST")" "$RUNTIMES_DIR/deno/bin"',
+    'CI=1 curl -fsSL https://deno.land/install.sh | CI=1 DENO_INSTALL="$DENO_TMP" sh -s "v$VERSION"',
+    'install -m 0755 "$DENO_TMP/bin/deno" "$DENO_DEST"',
+    'rm -rf "$DENO_TMP"',
+    'ln -sfn "$RUNTIMES_DIR/deno/$VERSION" "$RUNTIMES_DIR/deno/current"',
+    'ln -sfn ../current/deno "$RUNTIMES_DIR/deno/bin/deno"',
   ].join("\n");
 
   const code = await runCaptured(["sudo", "-n", "bash", "-c", installScript], onOutput);
-  if (code !== 0 || !systemDenoInstalled()) {
-    throw new Error("Failed to install Deno to /usr/local/bin/deno");
+  if (code !== 0 || !vendoredDenoUsable()) {
+    throw new Error(`Failed to install Deno to ${VENDORED_DENO_BIN}`);
   }
 }
 

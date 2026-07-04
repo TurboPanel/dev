@@ -136,3 +136,17 @@
         state: started
       loop: "{{ _dev_stack_units }}"
       failed_when: false
+
+    - name: Recursively ensure vendored runtime trees are owned by the dev user
+      when: turbopanel_dev_user | length > 0
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ turbopanel_dev_user }}"
+        group: "{{ turbopanel_dev_user }}"
+        recurse: true
+      loop:
+        - "{{ turbopanel_install_root }}/lib/runtime/node"
+        - "{{ turbopanel_install_root }}/lib/runtime/deno"
+        - "{{ turbopanel_install_root }}/lib/runtime/caddy"
+      failed_when: false

@@ -20,6 +20,10 @@ export function platformRepoEnvKey(dir: string): string {
   return `TURBOPANEL_${dir.toUpperCase()}_REPO`;
 }
 export const RUNTIMES_DIR = `${TURBOPANEL_ROOT}/lib/runtime`;
+/** Pinned Node.js for the dev console (matches node-runtime Ansible role). */
+export const NODE_VERSION = "24.17.0";
+export const NODE_BIN = `${RUNTIMES_DIR}/node/current/bin/node`;
+export const PNPM_BIN = `${RUNTIMES_DIR}/node/current/bin/pnpm`;
 /** Runtime-consumable copy of turbopanel-dev orchestration for turbopanel converge. */
 export const DEV_ORCHESTRATION_STAGED_DIR = `${TURBOPANEL_ROOT}/dev-orchestration`;
 
@@ -37,10 +41,11 @@ export const ANSIBLE_COLLECTIONS_PATH =
  * `orchestration/roles/deno-runtime/defaults/main.yml` (and `TP_DENO_VERSION`
  * in the daemon `scripts/run.sh`) so the version the console would install when
  * host Deno is absent matches the one Ansible converges into
- * `/opt/turbopanel/runtimes/deno`.
+ * host Deno is absent matches the one Ansible converges into
+ * `/opt/turbopanel/lib/runtime/deno`.
  */
 export const DENO_VERSION = "2.9.0";
-export const SYSTEM_DENO_BIN = "/usr/local/bin/deno";
+export const VENDORED_DENO_BIN = `${RUNTIMES_DIR}/deno/current/deno`;
 
 export function platformRepoPath(dir: string): string {
   const override = process.env[platformRepoEnvKey(dir)]?.trim();
