@@ -4,10 +4,8 @@ import {
   DEV_ORCHESTRATION_STAGED_DIR,
   TURBOPANEL_ROOT,
 } from "./paths.ts";
+import { tryResolveDevIdentity } from "./dev-identity.ts";
 import { type InstallOutputHandler, runCaptured } from "./install-output.ts";
-
-const TURBOPANEL_USER = "turbopanel";
-const TURBOPANEL_GROUP = "turbopanel";
 
 /** Checked-in dev orchestration source tree beside the console checkout. */
 export const DEV_ORCHESTRATION_SOURCE_DIR = join(
@@ -23,17 +21,23 @@ function shellQuote(value: string): string {
 
 /**
  * Copy turbopanel-dev orchestration assets into a stable path under
- * /opt/turbopanel so the turbopanel user can read them during converge.
+ * /opt/turbopanel so the dev user can read them during converge.
  */
 export async function stageDevOrchestration(
   onOutput?: InstallOutputHandler,
 ): Promise<void> {
+  const dev = tryResolveDevIdentity();
+  const chownLines = dev
+    ? [
+        `owner=${shellQuote(dev.user)}`,
+        `group=${shellQuote(String(dev.gid))}`,
+        'chown -R "$owner:$group" "$dest"',
+      ]
+    : [];
   const script = [
     "set -eu",
     `src=${shellQuote(DEV_ORCHESTRATION_SOURCE_DIR)}`,
     `dest=${shellQuote(DEV_ORCHESTRATION_STAGED_DIR)}`,
-    `owner=${shellQuote(TURBOPANEL_USER)}`,
-    `group=${shellQuote(TURBOPANEL_GROUP)}`,
     '[ -d "$src" ] || { echo "Dev orchestration source missing: $src" >&2; exit 1; }',
     'mkdir -p "$dest"',
     'if command -v rsync >/dev/null 2>&1; then',
@@ -42,9 +46,7 @@ export async function stageDevOrchestration(
     '  rm -rf "$dest"/*',
     '  cp -a "$src/." "$dest/"',
     "fi",
-    'if getent passwd "$owner" >/dev/null 2>&1; then',
-    '  chown -R "$owner:$group" "$dest"',
-    "fi",
+    ...chownLines,
     'find "$dest" -type d -exec chmod 755 {} +',
     'find "$dest" -type f -exec chmod 644 {} +',
     `test -f "$dest/dev-converge-manifest.json"`,

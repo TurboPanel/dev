@@ -2,11 +2,9 @@ import { spawn } from "node:child_process";
 import { bootstrapOrchestrationCommand, ensureBootstrapDeno } from "./daemon-exec.ts";
 import {
   ANSIBLE_COLLECTIONS_PATH,
-  DAEMON_REPO_DIR,
+  daemonRepoPath,
   DAEMON_SYSTEMD_UNIT,
   PYTHON_INSTALL_DIR,
-  RUNTIMES_DIR,
-  TURBOPANEL_ROOT,
   UV_CACHE_DIR,
 } from "./paths.ts";
 import type { InstallStepHandler } from "./platform-install.ts";
@@ -16,35 +14,36 @@ import {
   runCaptured,
   sanitizeInstallOutput,
 } from "./install-output.ts";
-import {
-  ensureDevPlatformAccess,
-  ensureTurbopanelStateOwnership,
-  resetTurbopanelUserCache,
-  turbopanelUserExists,
-} from "./turbopanel-permissions.ts";
+import { ensureFhsTreeOwnership } from "./turbopanel-permissions.ts";
+import { stageDevOrchestration } from "./dev-orchestration-stage.ts";
 import { writeDaemonBaseEnv } from "./daemon-env.ts";
+import { resolveDevIdentity } from "./dev-identity.ts";
+import { resolveDevRoot } from "./paths.ts";
 
 /**
  * Dev vs production install path invariant:
  *
  * Dev path — uses `daemon-systemd-setup.yml` (source run mode, `deno run main.ts`).
- * Dev identity vars are injected via `writeDaemonBaseEnv()` before
- * `systemctl enable --now`.
+ * Dev identity vars are written via `writeDaemonBaseEnv()` before
+ * `install-daemon-systemd.sh`, which forwards them as Ansible extra-vars.
  *
  * Production path — `scripts/run.sh` runs `daemon-install.yml` against the
  * extracted source tree (source run mode, `deno run main.ts`). No dev identity
  * vars are written. Both paths run the daemon from source — there is no compiled
  * binary run mode.
+ *
+ * The dev stack runs entirely as the single invoking dev user. Bootstrap runs
+ * directly as that user (Ansible's `become: true` handles per-task privilege
+ * escalation via the dev user's own passwordless sudo).
  */
-const TURBOPANEL_USER = "turbopanel";
-const DAEMON_DIR = DAEMON_REPO_DIR;
+const DAEMON_DIR = daemonRepoPath();
 
 function shellQuote(value: string): string {
   return `'${value.replace(/'/g, "'\\''")}'`;
 }
 
 function bootstrapEnv(): string[] {
-  const env = [
+  return [
     `ANSIBLE_COLLECTIONS_PATH=${ANSIBLE_COLLECTIONS_PATH}`,
     `UV_PYTHON_INSTALL_DIR=${PYTHON_INSTALL_DIR}`,
     `UV_CACHE_DIR=${UV_CACHE_DIR}`,
@@ -52,30 +51,13 @@ function bootstrapEnv(): string[] {
     "UV_PYTHON_DOWNLOADS=automatic",
     "UV_VENV_CLEAR=1",
   ];
-  // Root bootstrap must not use /opt/turbopanel as HOME — Deno would cache as root
-  // under turbopanel's state dir and the daemon service cannot write those entries.
-  if (turbopanelUserExists()) {
-    env.unshift(`HOME=${TURBOPANEL_ROOT}`);
-  }
-  return env;
-}
-
-function bootstrapSudoArgs(command: string): string[] {
-  const envArgs = ["env", ...bootstrapEnv(), "bash", "-c", command];
-  if (turbopanelUserExists()) {
-    return ["-n", "-u", TURBOPANEL_USER, ...envArgs];
-  }
-  // Before Ansible creates turbopanel, bootstrap must install runtimes as root.
-  return ["-n", ...envArgs];
 }
 
 async function prepareBootstrapEnvironment(
   onOutput?: InstallOutputHandler,
 ): Promise<void> {
-  await ensureDevPlatformAccess(onOutput);
-  if (turbopanelUserExists()) {
-    await ensureTurbopanelStateOwnership(onOutput);
-  }
+  await stageDevOrchestration(onOutput);
+  await ensureFhsTreeOwnership(onOutput);
 }
 
 export async function bootstrapOrchestration(
@@ -86,18 +68,12 @@ export async function bootstrapOrchestration(
 
   await ensureBootstrapDeno(onOutput);
 
-  if (turbopanelUserExists()) {
-    await ensureTurbopanelStateOwnership(onOutput);
-  }
-
   const bootstrapInvocation = bootstrapOrchestrationCommand();
   const command =
     `cd ${shellQuote(DAEMON_DIR)} && exec ${bootstrapInvocation}`;
-  const args = bootstrapSudoArgs(command);
-  const bootstrapRanAsRoot = !turbopanelUserExists();
 
   await new Promise<void>((resolve, reject) => {
-    const child = spawn("sudo", args, {
+    const child = spawn("env", [...bootstrapEnv(), "bash", "-c", command], {
       stdio: ["ignore", "pipe", "pipe"],
       env: captureChildEnv(),
       detached: false,
@@ -149,14 +125,7 @@ export async function bootstrapOrchestration(
         handleLine(stdoutBuffer);
       }
       if (code === 0) {
-        resetTurbopanelUserCache();
-        const finalize = async () => {
-          await ensureDevPlatformAccess(onOutput);
-          if (turbopanelUserExists() || bootstrapRanAsRoot) {
-            await ensureTurbopanelStateOwnership(onOutput);
-          }
-        };
-        void finalize().then(resolve).catch(reject);
+        resolve();
         return;
       }
 
@@ -183,12 +152,22 @@ export async function installDaemonSystemd(
 ): Promise<void> {
   onStep?.(`Install ${DAEMON_SYSTEMD_UNIT} systemd unit`, "running");
 
-  resetTurbopanelUserCache();
-  await ensureDevPlatformAccess(onOutput);
-  await ensureTurbopanelStateOwnership(onOutput);
+  // Must precede systemd setup so the playbook's create-if-absent guard and the
+  // daemon's first start both see the real dev-identity/connectivity contract.
+  writeDaemonBaseEnv();
+
+  const dev = resolveDevIdentity();
+  const envPrefix = [
+    "TURBOPANEL_SKIP_DAEMON_START=1",
+    `TURBOPANEL_DEV_USER=${dev.user}`,
+    `TURBOPANEL_DEV_UID=${dev.uid}`,
+    `TURBOPANEL_DEV_GID=${dev.gid}`,
+    `TURBOPANEL_DEV_ROOT=${resolveDevRoot()}`,
+    `TURBOPANEL_DAEMON_ROOT=${DAEMON_DIR}`,
+  ].join(" ");
 
   const command =
-    `cd ${shellQuote(DAEMON_DIR)} && TURBOPANEL_SKIP_DAEMON_START=1 exec bash ${shellQuote("scripts/install-daemon-systemd.sh")}`;
+    `cd ${shellQuote(DAEMON_DIR)} && ${envPrefix} exec bash ${shellQuote("scripts/install-daemon-systemd.sh")}`;
 
   const code = await runCaptured(["sudo", "bash", "-c", command], onOutput);
 
@@ -199,17 +178,7 @@ export async function installDaemonSystemd(
 
   onStep?.(`Install ${DAEMON_SYSTEMD_UNIT} systemd unit`, "ok");
 
-  resetTurbopanelUserCache();
-  await ensureTurbopanelStateOwnership(onOutput);
-
-  // Must precede `systemctl enable --now` so the daemon reads identity vars on first
-  // start. TURBOPANEL_DEV_INSTANCE=1 was already written by writeDaemonInstanceEnv()
-  // in installDevEnvironment() before the converge step.
-  if (turbopanelUserExists()) {
-    writeDaemonBaseEnv();
-  }
-
-  // Stop if the install script started the daemon before runtimes ownership was reclaimed.
+  // Stop if the install script started the daemon before env was fully applied.
   await runCaptured(
     ["sudo", "-n", "systemctl", "stop", DAEMON_SYSTEMD_UNIT],
     onOutput,
@@ -225,6 +194,4 @@ export async function installDaemonSystemd(
     throw new Error(`Failed to start ${DAEMON_SYSTEMD_UNIT}`);
   }
   onStep?.(`Start ${DAEMON_SYSTEMD_UNIT}`, "ok");
-
-  await ensureDevPlatformAccess(onOutput);
 }

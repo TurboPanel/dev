@@ -12,6 +12,7 @@ import {
   convergeServiceLogPath,
   DAEMON_ERR_LOG_PATH,
   DAEMON_LOG_PATH,
+  LOG_DIR,
   platformRepoPath,
 } from "./paths.ts";
 
@@ -20,24 +21,40 @@ export type ServiceLogLine = {
   time?: string;
 };
 
-const INSTANCE_LOG_DIR = `${platformRepoPath("instance")}/logs`;
-const UI_LOG_DIR = `${platformRepoPath("ui")}/logs`;
-const WEBSITE_LOG_DIR = `${platformRepoPath("website")}/logs`;
+const INSTANCE_LOG_DIR = `${LOG_DIR}/instance`;
+const UI_LOG_DIR = `${LOG_DIR}/ui`;
+const WEBSITE_LOG_DIR = `${LOG_DIR}/website`;
+
+/** Legacy checkout-local log dirs (pre-FHS); tried after the canonical paths. */
+const LEGACY_INSTANCE_LOG_DIR = `${platformRepoPath("instance")}/logs`;
+const LEGACY_UI_LOG_DIR = `${platformRepoPath("ui")}/logs`;
+const LEGACY_WEBSITE_LOG_DIR = `${platformRepoPath("website")}/logs`;
 
 export const SERVICE_FILE_LOG_PATHS: Record<string, string[]> = {
   instance: [
     `${INSTANCE_LOG_DIR}/instance.err.log`,
     `${INSTANCE_LOG_DIR}/instance.log`,
+    `${LEGACY_INSTANCE_LOG_DIR}/instance.err.log`,
+    `${LEGACY_INSTANCE_LOG_DIR}/instance.log`,
   ],
   dbstudio: [
     `${INSTANCE_LOG_DIR}/dbstudio.err.log`,
     `${INSTANCE_LOG_DIR}/dbstudio.log`,
+    `${LEGACY_INSTANCE_LOG_DIR}/dbstudio.err.log`,
+    `${LEGACY_INSTANCE_LOG_DIR}/dbstudio.log`,
   ],
   daemon: [DAEMON_ERR_LOG_PATH, DAEMON_LOG_PATH],
-  ui: [`${UI_LOG_DIR}/ui.err.log`, `${UI_LOG_DIR}/ui.log`],
+  ui: [
+    `${UI_LOG_DIR}/ui.err.log`,
+    `${UI_LOG_DIR}/ui.log`,
+    `${LEGACY_UI_LOG_DIR}/ui.err.log`,
+    `${LEGACY_UI_LOG_DIR}/ui.log`,
+  ],
   website: [
     `${WEBSITE_LOG_DIR}/website.err.log`,
     `${WEBSITE_LOG_DIR}/website.log`,
+    `${LEGACY_WEBSITE_LOG_DIR}/website.err.log`,
+    `${LEGACY_WEBSITE_LOG_DIR}/website.log`,
   ],
 };
 

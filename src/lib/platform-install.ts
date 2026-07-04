@@ -1,16 +1,10 @@
-import { spawn, spawnSync } from "node:child_process";
-import { randomUUID } from "node:crypto";
-import {
-  existsSync,
-  mkdirSync,
-  unlinkSync,
-  writeFileSync,
-} from "node:fs";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdirSync } from "node:fs";
+import { dirname } from "node:path";
 import {
   DAEMON_REPO,
   platformRepoPath,
   sshRepoUrl,
-  TURBOPANEL_PLATFORM,
   TURBOPANEL_TRUNK_BRANCH,
 } from "./paths.ts";
 import { aptGetInstall } from "./apt.ts";
@@ -18,29 +12,11 @@ import {
   type InstallOutputHandler,
   runCaptured,
 } from "./install-output.ts";
-import { ensureTurbopanelGithubAccess } from "./turbopanel-github-access.ts";
-
-
-const TURBOPANEL_USER = "turbopanel";
-const TURBOPANEL_GROUP = "turbopanel";
-
-let turbopanelUserExistsCache: boolean | null = null;
 
 export type InstallStepHandler = (
   label: string,
   status: "running" | "ok" | "failed",
 ) => void;
-
-function turbopanelUserExists(): boolean {
-  if (turbopanelUserExistsCache !== null) {
-    return turbopanelUserExistsCache;
-  }
-  const result = spawnSync("getent", ["passwd", TURBOPANEL_USER], {
-    stdio: "ignore",
-  });
-  turbopanelUserExistsCache = result.status === 0;
-  return turbopanelUserExistsCache;
-}
 
 function commandExists(name: string): boolean {
   const result = spawnSync(
@@ -51,18 +27,11 @@ function commandExists(name: string): boolean {
   return result.status === 0;
 }
 
-async function runInherit(cmd: string[], onOutput?: InstallOutputHandler): Promise<number> {
-  return runCaptured(cmd, onOutput);
-}
-
-async function runGitInherit(
+async function runGit(
   gitArgs: string[],
   onOutput?: InstallOutputHandler,
 ): Promise<number> {
-  if (turbopanelUserExists()) {
-    return runInherit(["sudo", "-u", TURBOPANEL_USER, "git", ...gitArgs], onOutput);
-  }
-  return runInherit(["git", ...gitArgs], onOutput);
+  return runCaptured(["git", ...gitArgs], onOutput);
 }
 
 function runGitCapture(gitArgs: string[]): {
@@ -70,10 +39,7 @@ function runGitCapture(gitArgs: string[]): {
   stdout: string;
   stderr: string;
 } {
-  const cmd = turbopanelUserExists()
-    ? ["sudo", "-u", TURBOPANEL_USER, "git", ...gitArgs]
-    : ["git", ...gitArgs];
-  const result = spawnSync(cmd[0], cmd.slice(1), {
+  const result = spawnSync("git", gitArgs, {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -84,83 +50,8 @@ function runGitCapture(gitArgs: string[]): {
   };
 }
 
-function canWritePath(path: string): boolean {
-  try {
-    mkdirSync(path, { recursive: true });
-    const probe = `${path}/.write-probe-${process.pid}`;
-    writeFileSync(probe, "");
-    unlinkSync(probe);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function canWritePlatformDir(): boolean {
-  return canWritePath(TURBOPANEL_PLATFORM);
-}
-
 function daemonCheckoutExists(target: string): boolean {
   return existsSync(target);
-}
-
-function canManageDaemonCheckout(target: string): boolean {
-  if (!daemonCheckoutExists(target)) {
-    return canWritePath(TURBOPANEL_PLATFORM);
-  }
-
-  return canWritePath(target);
-}
-
-async function ensureTurbopanelOwnership(
-  target: string,
-  onOutput?: InstallOutputHandler,
-): Promise<void> {
-  if (!turbopanelUserExists()) {
-    return;
-  }
-
-  const code = await runInherit([
-    "sudo",
-    "sh",
-    "-c",
-    `chown -R '${TURBOPANEL_USER}:${TURBOPANEL_GROUP}' '${target}'`,
-  ], onOutput);
-
-  if (code !== 0) {
-    throw new Error(`Failed to set ownership on ${target}`);
-  }
-}
-
-async function privilegedClone(
-  url: string,
-  target: string,
-  onOutput?: InstallOutputHandler,
-): Promise<number> {
-  const tmpDir = `/tmp/turbopanel-daemon-clone-${randomUUID()}`;
-
-  const cloneCode = await runInherit([
-    "git",
-    "clone",
-    "--branch",
-    TURBOPANEL_TRUNK_BRANCH,
-    url,
-    tmpDir,
-  ], onOutput);
-  if (cloneCode !== 0) {
-    return cloneCode;
-  }
-
-  const chownStep = turbopanelUserExists()
-    ? ` && chown -R '${TURBOPANEL_USER}:${TURBOPANEL_GROUP}' '${target}'`
-    : "";
-
-  return runInherit([
-    "sudo",
-    "sh",
-    "-c",
-    `mkdir -p '${TURBOPANEL_PLATFORM}' && rm -rf '${target}' && mv '${tmpDir}' '${target}'${chownStep}`,
-  ], onOutput);
 }
 
 function isGitRepo(path: string): boolean {
@@ -189,7 +80,7 @@ async function ensureOriginUrl(
     return;
   }
 
-  await runGitInherit(["-C", path, "remote", "set-url", "origin", url], onOutput);
+  await runGit(["-C", path, "remote", "set-url", "origin", url], onOutput);
 }
 
 async function ensureGit(
@@ -210,31 +101,6 @@ async function ensureGit(
   onStep?.("Install git", "ok");
 }
 
-async function ensurePlatformDir(
-  onStep?: InstallStepHandler,
-  onOutput?: InstallOutputHandler,
-): Promise<void> {
-  if (canWritePlatformDir()) {
-    return;
-  }
-
-  const label = `Create ${TURBOPANEL_PLATFORM}`;
-  onStep?.(label, "running");
-
-  const code = await runInherit([
-    "sudo",
-    "sh",
-    "-c",
-    `mkdir -p '${TURBOPANEL_PLATFORM}'`,
-  ], onOutput);
-
-  if (code !== 0) {
-    onStep?.(label, "failed");
-    throw new Error(`Failed to create ${TURBOPANEL_PLATFORM}`);
-  }
-  onStep?.(label, "ok");
-}
-
 async function cloneOrUpdateRepo(
   dir: string,
   repo: string,
@@ -246,15 +112,16 @@ async function cloneOrUpdateRepo(
 
   if (!daemonCheckoutExists(target)) {
     onStep?.(`Clone ${dir}`, "running");
-    const code = canManageDaemonCheckout(target)
-      ? await runInherit(["git", "clone", "--branch", TURBOPANEL_TRUNK_BRANCH, url, target], onOutput)
-      : await privilegedClone(url, target, onOutput);
+    // The checkout lives under the dev user's home, which the dev user owns —
+    // create the parent and clone directly (no sudo/service-user dance).
+    mkdirSync(dirname(target), { recursive: true });
+    const code = await runGit(
+      ["clone", "--branch", TURBOPANEL_TRUNK_BRANCH, url, target],
+      onOutput,
+    );
     if (code !== 0) {
       onStep?.(`Clone ${dir}`, "failed");
       throw new Error(`Failed to clone ${dir}`);
-    }
-    if (canManageDaemonCheckout(target)) {
-      await ensureTurbopanelOwnership(target, onOutput);
     }
     onStep?.(`Clone ${dir}`, "ok");
     return "cloned";
@@ -272,14 +139,10 @@ async function cloneOrUpdateRepo(
   }
 
   onStep?.(`Update ${dir}`, "running");
-  const code = await runGitInherit([
-    "-C",
-    target,
-    "pull",
-    "--ff-only",
-    "origin",
-    TURBOPANEL_TRUNK_BRANCH,
-  ], onOutput);
+  const code = await runGit(
+    ["-C", target, "pull", "--ff-only", "origin", TURBOPANEL_TRUNK_BRANCH],
+    onOutput,
+  );
   if (code !== 0) {
     onStep?.(`Update ${dir}`, "failed");
     throw new Error(`Failed to update ${dir}`);
@@ -293,11 +156,6 @@ export async function installDaemon(
   onOutput?: InstallOutputHandler,
 ): Promise<void> {
   await ensureGit(onStep, onOutput);
-  await ensurePlatformDir(onStep, onOutput);
-
-  if (turbopanelUserExists()) {
-    await ensureTurbopanelGithubAccess(onOutput);
-  }
 
   const { dir, repo } = DAEMON_REPO;
   await cloneOrUpdateRepo(dir, repo, onStep, onOutput);

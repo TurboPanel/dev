@@ -74,8 +74,10 @@ fi
 
 if [ -n "$CONSOLE_WATCH" ]; then
   tp_info "Launching console UI (Fast Refresh — edits hot-reload)…"
+  tp_export_dev_repo_contract
   exec env COREPACK_ENABLE_DOWNLOAD_PROMPT=0 "$PNPM_BIN" exec vite-node scripts/hot-reload.tsx
 fi
 
 tp_info "Launching console UI…"
+tp_export_dev_repo_contract
 exec env COREPACK_ENABLE_DOWNLOAD_PROMPT=0 "$PNPM_BIN" exec vite-node "$TUI_ENTRY"

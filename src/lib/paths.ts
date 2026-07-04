@@ -1,8 +1,31 @@
 export const TURBOPANEL_ROOT = "/opt/turbopanel";
-export const TURBOPANEL_PLATFORM = `${TURBOPANEL_ROOT}/platform`;
-export const RUNTIMES_DIR = `${TURBOPANEL_ROOT}/runtimes`;
+
+/** Co-located platform repo dir names (daemon/instance/ui/website). */
+export const PLATFORM_REPO_DIRS = ["daemon", "instance", "ui", "website"] as const;
+
+/**
+ * Development source-repo root. Source repos live under this root — defaults to
+ * the dev user's home (`$HOME`), overridable with `TURBOPANEL_DEV_ROOT`.
+ */
+export function resolveDevRoot(): string {
+  return (
+    process.env.TURBOPANEL_DEV_ROOT?.trim() ||
+    process.env.HOME?.trim() ||
+    TURBOPANEL_ROOT
+  );
+}
+
+/** Env key for an explicit repo checkout override (`TURBOPANEL_<DIR>_REPO`). */
+export function platformRepoEnvKey(dir: string): string {
+  return `TURBOPANEL_${dir.toUpperCase()}_REPO`;
+}
+export const RUNTIMES_DIR = `${TURBOPANEL_ROOT}/lib/runtime`;
 /** Runtime-consumable copy of turbopanel-dev orchestration for turbopanel converge. */
 export const DEV_ORCHESTRATION_STAGED_DIR = `${TURBOPANEL_ROOT}/dev-orchestration`;
+
+/** FHS mutable dirs (dev shares the production paths, dev-owned at runtime). */
+export const CONFIG_DIR = "/etc/turbopanel";
+export const LOG_DIR = "/var/log/turbopanel";
 export const UV_CACHE_DIR = `${RUNTIMES_DIR}/uv/cache`;
 export const PYTHON_INSTALL_DIR = `${RUNTIMES_DIR}/python`;
 export const ANSIBLE_COLLECTIONS_PATH =
@@ -18,22 +41,53 @@ export const ANSIBLE_COLLECTIONS_PATH =
  */
 export const DENO_VERSION = "2.9.0";
 export const SYSTEM_DENO_BIN = "/usr/local/bin/deno";
-export const INSTANCE_DIR = `${TURBOPANEL_PLATFORM}/instance`;
-export const PLATFORM_CA_CERT_PATH = `${INSTANCE_DIR}/certs/ca.crt`;
-export const DAEMON_REPO_DIR = `${TURBOPANEL_PLATFORM}/daemon`;
+
+export function platformRepoPath(dir: string): string {
+  const override = process.env[platformRepoEnvKey(dir)]?.trim();
+  return override || `${resolveDevRoot()}/${dir}`;
+}
+
+export function daemonRepoPath(): string {
+  return platformRepoPath("daemon");
+}
+
+export function instanceRepoPath(): string {
+  return platformRepoPath("instance");
+}
+
+export function platformCaCertPath(): string {
+  return `${instanceRepoPath()}/certs/ca.crt`;
+}
+
+/** Managed repo-root entries for `daemon.env` (override-aware). */
+export function buildPlatformRepoEntries(): Record<string, string> {
+  const entries: Record<string, string> = {};
+  for (const dir of PLATFORM_REPO_DIRS) {
+    entries[platformRepoEnvKey(dir)] = platformRepoPath(dir);
+  }
+  return entries;
+}
+
 /**
- * Co-located dev daemon env file (source mode: `deno run … --env-file=.env`).
+ * Daemon env file.
  *
- * This is the dev-only path. Managed/production installs read
- * `/etc/turbopanel/daemon.env` (`EnvironmentFile=` on `turbopaneld.service`) and
- * are never touched by the dev console.
+ * Dev and managed installs share the FHS config path
+ * (`/etc/turbopanel/daemon.env`, `EnvironmentFile=` on `turbopaneld.service`);
+ * in dev it is dev-user-owned at runtime.
  */
-export const DAEMON_ENV_PATH = `${DAEMON_REPO_DIR}/.env`;
-export const DAEMON_BOOTSTRAP_SCRIPT =
-  `${DAEMON_REPO_DIR}/scripts/bootstrap-orchestration.ts`;
-export const DAEMON_ORCHESTRATION_SCRIPT =
-  `${DAEMON_REPO_DIR}/scripts/run-orchestration-action.ts`;
-export const DAEMON_DENO_CONFIG = `${DAEMON_REPO_DIR}/deno.json`;
+export const DAEMON_ENV_PATH = `${CONFIG_DIR}/daemon.env`;
+
+export function daemonBootstrapScript(): string {
+  return `${daemonRepoPath()}/scripts/bootstrap-orchestration.ts`;
+}
+
+export function daemonOrchestrationScript(): string {
+  return `${daemonRepoPath()}/scripts/run-orchestration-action.ts`;
+}
+
+export function daemonDenoConfig(): string {
+  return `${daemonRepoPath()}/deno.json`;
+}
 
 /** Co-located dev only — git branch for platform checkouts and Upgrade System. Not written on release/binary daemon installs. */
 export const TURBOPANEL_TRUNK_BRANCH = "trunk";
@@ -57,7 +111,11 @@ export const DAEMON_SYSTEMD_UNIT = "turbopaneld";
 /** Pre-rename unit name, still cleaned up for hosts installed before the rename. */
 export const LEGACY_DAEMON_SYSTEMD_UNIT = "turbopanel-daemon";
 
-export const CONSOLE_LOG_DIR = `${TURBOPANEL_PLATFORM}/.local/console`;
+export function consoleLogDir(): string {
+  return `${resolveDevRoot()}/.local/console`;
+}
+
+export const CONSOLE_LOG_DIR = consoleLogDir();
 export const CONVERGE_SERVICE_LOG_DIR = `${CONSOLE_LOG_DIR}/converge`;
 export const CONSOLE_LAST_TASK_ERROR_LOG =
   `${CONSOLE_LOG_DIR}/last-task-error.log`;
@@ -67,19 +125,14 @@ export function convergeServiceLogPath(serviceId: string): string {
 }
 
 /**
- * Co-located dev daemon logs (checkout-local `logs/`).
+ * Daemon logs.
  *
- * `daemon-systemd-setup.yml` points the dev `turbopaneld.service` at these files.
- * Managed/production installs log to `/var/log/turbopanel/daemon/` instead; the
- * dev console only ever tails the co-located checkout logs.
+ * Dev and managed installs share the FHS log path (`/var/log/turbopanel/daemon/`);
+ * in dev the console tails these dev-user-owned files.
  */
-export const DAEMON_LOG_PATH = `${DAEMON_REPO_DIR}/logs/daemon.log`;
-export const DAEMON_ERR_LOG_PATH = `${DAEMON_REPO_DIR}/logs/daemon.err.log`;
+export const DAEMON_LOG_PATH = `${LOG_DIR}/daemon/daemon.log`;
+export const DAEMON_ERR_LOG_PATH = `${LOG_DIR}/daemon/daemon.err.log`;
 
 export function sshRepoUrl(repo: string): string {
   return `git@github.com:${repo}.git`;
-}
-
-export function platformRepoPath(dir: string): string {
-  return `${TURBOPANEL_PLATFORM}/${dir}`;
 }

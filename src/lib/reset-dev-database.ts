@@ -1,4 +1,4 @@
-import { INSTANCE_DIR } from "./paths.ts";
+import { instanceRepoPath } from "./paths.ts";
 import { type InstallOutputHandler, runCaptured } from "./install-output.ts";
 
 const INSTANCE_UNIT = "turbopanel-instance";
@@ -14,12 +14,13 @@ function shellQuote(value: string): string {
  * All database access reuses the instance checkout's own ops tooling
  * (`scripts/db-connect.sh` resolves the DB URL from the `turbopanel-instance`
  * systemd unit and locates node + drizzle-kit). Nothing about this lives in the
- * instance application — the console owns and drives the action. Runs as the
- * `turbopanel` user (9999), mirroring `scripts/bootstrap-dev-db.sh`, which is
- * how migrations are applied during converge.
+ * instance application — the console owns and drives the action. Runs directly
+ * as the invoking dev user: the instance checkout under `$HOME` is dev-owned and
+ * Postgres/`TURBOPANEL_DATABASE_URL` access does not require the turbopanel
+ * identity.
  */
 const WIPE_AND_MIGRATE_SCRIPT = `set -euo pipefail
-ROOT=${shellQuote(INSTANCE_DIR)}
+ROOT=${shellQuote(instanceRepoPath())}
 cd "$ROOT"
 # shellcheck source=/dev/null
 source "$ROOT/scripts/db-connect.sh"
@@ -70,18 +71,7 @@ export async function resetDevDatabase(
   };
 
   const resetCode = await runCaptured(
-    [
-      "sudo",
-      "-n",
-      "-u",
-      "turbopanel",
-      "env",
-      "HOME=/opt/turbopanel",
-      "PATH=/usr/local/bin:/usr/bin:/bin",
-      "bash",
-      "-c",
-      WIPE_AND_MIGRATE_SCRIPT,
-    ],
+    ["bash", "-c", WIPE_AND_MIGRATE_SCRIPT],
     append,
   );
   if (resetCode !== 0) {

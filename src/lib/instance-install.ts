@@ -9,61 +9,20 @@ import { orchestrationActionCommand } from "./daemon-exec.ts";
 import { resolveDevIdentity } from "./dev-identity.ts";
 import {
   ANSIBLE_COLLECTIONS_PATH,
-  DAEMON_REPO_DIR,
+  daemonRepoPath,
   PYTHON_INSTALL_DIR,
-  RUNTIMES_DIR,
-  TURBOPANEL_PLATFORM,
-  TURBOPANEL_ROOT,
   UV_CACHE_DIR,
 } from "./paths.ts";
 import type { InstallStepHandler } from "./platform-install.ts";
 import {
   captureChildEnv,
   type InstallOutputHandler,
-  runCaptured,
   sanitizeInstallOutput,
 } from "./install-output.ts";
-import { ensureTurbopanelGithubAccess } from "./turbopanel-github-access.ts";
-import {
-  ensureDaemonSystemdDockerAccess,
-  ensureDevPlatformAccess,
-  ensureDevUserDockerAccess,
-  ensurePlatformCheckoutGroupAccess,
-  ensureTurbopanelStateOwnership,
-  resetTurbopanelUserCache,
-  turbopanelUserExists,
-} from "./turbopanel-permissions.ts";
+import { stageDevOrchestration } from "./dev-orchestration-stage.ts";
+import { ensureDevUserDockerAccess } from "./turbopanel-permissions.ts";
 
-const TURBOPANEL_USER = "turbopanel";
-const TURBOPANEL_GROUP = "turbopanel";
-const DAEMON_DIR = DAEMON_REPO_DIR;
-const PLATFORM_CHECKOUT_DIRS = ["daemon", "instance", "ui", "website"] as const;
-
-/** Reclaim platform checkout .git metadata so Ansible git tasks run as turbopanel. */
-async function ensurePlatformGitMetadataForAnsible(
-  onOutput?: InstallOutputHandler,
-): Promise<void> {
-  const gitPaths = PLATFORM_CHECKOUT_DIRS
-    .map((dir) => `${TURBOPANEL_PLATFORM}/${dir}/.git`)
-    .map(shellQuote)
-    .join(" ");
-  const code = await runCaptured(
-    [
-      "sudo",
-      "-n",
-      "bash",
-      "-c",
-      `for gitdir in ${gitPaths}; do ` +
-      `[ -d "$gitdir" ] || continue; ` +
-      `chown -R '${TURBOPANEL_USER}:${TURBOPANEL_GROUP}' "$gitdir" || exit 1; ` +
-      `done`,
-    ],
-    onOutput,
-  );
-  if (code !== 0) {
-    throw new Error("Failed to reclaim platform .git metadata for Ansible git tasks");
-  }
-}
+const DAEMON_DIR = daemonRepoPath();
 
 export const DEV_ENV_CONVERGE_STEP = "Converge development environment (Ansible)";
 
@@ -73,7 +32,7 @@ function shellQuote(value: string): string {
 
 function orchestrationEnv(): string[] {
   const dev = resolveDevIdentity();
-  const env = [
+  return [
     `ANSIBLE_COLLECTIONS_PATH=${ANSIBLE_COLLECTIONS_PATH}`,
     `UV_PYTHON_INSTALL_DIR=${PYTHON_INSTALL_DIR}`,
     `UV_CACHE_DIR=${UV_CACHE_DIR}`,
@@ -84,18 +43,6 @@ function orchestrationEnv(): string[] {
     "UV_PYTHON_DOWNLOADS=automatic",
     "UV_VENV_CLEAR=1",
   ];
-  if (turbopanelUserExists()) {
-    env.unshift(`HOME=${TURBOPANEL_ROOT}`);
-  }
-  return env;
-}
-
-function orchestrationSudoArgs(command: string): string[] {
-  const envArgs = ["env", ...orchestrationEnv(), "bash", "-c", command];
-  if (turbopanelUserExists()) {
-    return ["-n", "-u", TURBOPANEL_USER, ...envArgs];
-  }
-  return ["-n", ...envArgs];
 }
 
 export async function runOrchestrationAction(
@@ -105,7 +52,6 @@ export async function runOrchestrationAction(
 ): Promise<void> {
   const invocation = orchestrationActionCommand(...actionArgs);
   const command = `cd ${shellQuote(DAEMON_DIR)} && exec ${invocation}`;
-  const args = orchestrationSudoArgs(command);
   let lastFailureMessage: string | null = null;
 
   const trackEvent = (event: unknown) => {
@@ -134,7 +80,7 @@ export async function runOrchestrationAction(
   };
 
   await new Promise<void>((resolve, reject) => {
-    const child = spawn("sudo", args, {
+    const child = spawn("env", [...orchestrationEnv(), "bash", "-c", command], {
       stdio: ["ignore", "pipe", "pipe"],
       env: captureChildEnv(),
       detached: false,
@@ -212,13 +158,13 @@ export async function installDevEnvironment(
   onOutput?: InstallOutputHandler,
   onStep?: InstallStepHandler,
 ): Promise<void> {
-  await ensureDevPlatformAccess(onOutput);
-  if (turbopanelUserExists()) {
-    await ensureTurbopanelStateOwnership(onOutput);
-    await ensureTurbopanelGithubAccess(onOutput);
-    await ensurePlatformGitMetadataForAnsible(onOutput);
-    writeDaemonInstanceEnv();
-  }
+  // Pre-converge: stage the dev orchestration overlay the converge reads, make a
+  // best-effort attempt to add the dev user to the docker group, and write the
+  // daemon identity/instance opt-in env before the daemon (re)starts. Ansible's
+  // converge is authoritative for FHS/checkout ownership and docker membership.
+  await stageDevOrchestration(onOutput);
+  await ensureDevUserDockerAccess(onOutput);
+  writeDaemonInstanceEnv();
 
   onStep?.(DEV_ENV_CONVERGE_STEP, "running");
   try {
@@ -229,23 +175,9 @@ export async function installDevEnvironment(
     throw error;
   }
 
-  await ensurePlatformCheckoutGroupAccess(onOutput);
-  await ensureDevUserDockerAccess(onOutput);
-
   if (isDaemonServiceActive()) {
     await requestDaemonRestart(onOutput);
   } else {
     await enableAndStartDaemon(onOutput);
-  }
-
-  const dockerAccessChanged = await ensureDaemonSystemdDockerAccess(onOutput);
-  if (dockerAccessChanged) {
-    await requestDaemonRestart(onOutput);
-  }
-
-  resetTurbopanelUserCache();
-  await ensureDevPlatformAccess(onOutput);
-  if (turbopanelUserExists()) {
-    await ensureTurbopanelStateOwnership(onOutput);
   }
 }

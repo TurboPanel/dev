@@ -1,61 +1,58 @@
 {
   "folders": [
     {
-      "path": ".",
+      "path": "."
     },
     {
-      "path": "/opt/turbopanel/platform/daemon",
+      "path": "../daemon"
     },
     {
-      "path": "/opt/turbopanel/platform/instance",
+      "path": "../instance"
     },
     {
-      "path": "/opt/turbopanel/platform/ui",
+      "path": "../ui"
     },
     {
-      "path": "/opt/turbopanel/platform/website",
-    },
-    {
-      "path": "../../../opt/turbopanel/platform/config",
+      "path": "../website"
     }
   ],
   "settings": {
-    "ansible.ansible.path": "/opt/turbopanel/runtimes/ansible/current/bin/ansible",
-    "ansible.python.interpreterPath": "/opt/turbopanel/runtimes/ansible/current/bin/python3",
+    "ansible.ansible.path": "/opt/turbopanel/lib/runtime/ansible/current/bin/ansible",
+    "ansible.python.interpreterPath": "/opt/turbopanel/lib/runtime/ansible/current/bin/python3",
     "ansible.validation.lint.enabled": true,
-    "ansible.validation.lint.path": "/opt/turbopanel/runtimes/ansible/current/bin/ansible-lint",
+    "ansible.validation.lint.path": "/opt/turbopanel/lib/runtime/ansible/current/bin/ansible-lint",
     "deno.path": "/usr/local/bin/deno",
-    "deno.enablePaths": ["/opt/turbopanel/platform/daemon"],
+    "deno.enablePaths": ["../daemon"],
     "remote.restoreForwardedPorts": true,
     "remote.portsAttributes": {
       "4983": {
         "label": "Drizzle Studio",
         "protocol": "http",
-        "onAutoForward": "silent",
+        "onAutoForward": "silent"
       },
       "8025": {
         "label": "Mailpit",
         "protocol": "http",
-        "onAutoForward": "silent",
+        "onAutoForward": "silent"
       },
       "8443": {
         "label": "Instance HTTPS",
         "protocol": "https",
-        "onAutoForward": "silent",
+        "onAutoForward": "silent"
       },
       "19820": {
         "label": "Website (Next.js)",
         "protocol": "http",
-        "onAutoForward": "silent",
-      },
-    },
+        "onAutoForward": "silent"
+      }
+    }
   },
   "extensions": {
     "recommendations": [
       "redhat.ansible",
       "sonarsource.sonarlint-vscode",
       "denoland.vscode-deno",
-      "esbenp.prettier-vscode",
-    ],
-  },
+      "esbenp.prettier-vscode"
+    ]
+  }
 }

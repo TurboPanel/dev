@@ -1,10 +1,23 @@
 ---
-# Install the co-located self-hosted instance + UI + Caddy.
-# UI/instance run modes come from role defaults or extra-vars (daemon .env).
+# Co-located dev instance converge — OWNED BY turbopanel-dev (the dev overlay).
 #
-# Single convergence playbook for co-located dev: gathers facts once and runs
-# shared infrastructure roles without overlapping docker/redis/rabbitmq/postgres
-# playbook invocations.
+# This is the dev-only entrypoint. It sets the shared dev-identity contract
+# (turbopanel_dev_user/_uid/_gid/_root) so the daemon's *production* roles run in
+# FHS + single-dev-user mode. Dev-only vars and the three dev-only roles live in
+# this repo; they never mix into the daemon's production role tree. The daemon
+# still executes the playbook (staged dev overlay + daemon shared roles resolved
+# via ANSIBLE_ROLES_PATH — see the daemon's dev-orchestration.ts).
+#
+# In dev-user mode the daemon roles collapse every TurboPanel service identity
+# (turbopanel/turbopaneli/turbopanelc, uid 9999/9998/9997) onto the single human
+# dev user, and:
+#   * source repos live under the dev user's home (turbopanel_dev_root):
+#       <home>/daemon, <home>/instance, <home>/ui, <home>/website
+#   * every mutable dir is the shared FHS location (dev-user-owned at runtime):
+#       /etc/turbopanel, /var/lib/turbopanel, /var/log/turbopanel,
+#       /opt/turbopanel/lib/runtime, /run/turbopanel
+# There is no /opt/turbopanel/platform tree and no ACL / multi-user / setgid
+# reconciliation — the single dev user owns its home checkouts and the FHS trees.
 #
 # Run by the always-installed daemon when co-located and TURBOPANEL_DEV_INSTANCE=1.
 # Every role is idempotent and never force-resets an existing dev working tree.
@@ -16,18 +29,18 @@
 
   vars:
     turbopanel_install_root: /opt/turbopanel
-    turbopanel_runtimes_dir: "{{ turbopanel_install_root }}/runtimes"
-    turbopanel_platform_dir: "{{ turbopanel_install_root }}/platform"
-    turbopanel_daemon_dir: "{{ turbopanel_platform_dir }}/daemon"
-    turbopanel_instance_dir: "{{ turbopanel_platform_dir }}/instance"
-    turbopanel_ui_dir: "{{ turbopanel_platform_dir }}/ui"
-    turbopanel_website_dir: "{{ turbopanel_platform_dir }}/website"
-    turbopanel_group: turbopanel
-    turbopanel_user: turbopanel
-    turbopanel_uid: 9999
-    turbopanel_gid: 9999
-    instance_user: turbopaneli
-    instance_uid: 9998
+    # Shared dev-identity contract. turbopanel_dev_user/_uid/_gid are supplied as
+    # extra-vars by the daemon's dev converge runner (run-orchestration-action.ts).
+    # When non-empty, the daemon role defaults collapse every service identity onto
+    # this user. Declared empty here only for documentation — the extra-vars win.
+    turbopanel_dev_user: ""
+    turbopanel_dev_uid: ""
+    turbopanel_dev_gid: ""
+    # Dev source-repo root (the dev user's home). ansible_env.HOME is unreliable
+    # under become (it resolves to root's HOME), so a pre_task below overrides this
+    # with the dev user's real home resolved from getent. Passed on to every
+    # daemon role, which derive <root>/{daemon,instance,ui,website} from it.
+    turbopanel_dev_root: "{{ ansible_env.HOME }}"
     instance_repo_url: https://github.com/turbopanel/instance
     ui_repo_url: https://github.com/turbopanel/turbopanel-ui
     website_repo_url: https://github.com/turbopanel/turbopanel-website
@@ -46,10 +59,6 @@
     mailpit_web_port: 8025
     mailpit_smtp_port: 1025
     redis_socket_path: /run/turbopanel/redis.sock
-    turbopanel_dev_user: ""
-    turbopanel_dev_uid: ""
-    turbopanel_dev_gid: ""
-    force_checkout_normalize: false
 
   pre_tasks:
     - name: Refresh apt cache once per converge (Debian)
@@ -58,11 +67,21 @@
         cache_valid_time: 3600
       when: ansible_os_family == 'Debian'
 
-    - name: Install ACL tooling for co-located dev permissions
-      ansible.builtin.apt:
-        name: acl
-        state: present
+    # Resolve the dev user's home from passwd so the daemon roles clone the source
+    # repos into the real home (ansible_env.HOME is root's HOME under become).
+    - name: Resolve dev user account for source-checkout root
+      ansible.builtin.getent:
+        database: passwd
+        key: "{{ turbopanel_dev_user }}"
       when: turbopanel_dev_user | length > 0
+
+    - name: Set dev source-repo root from the dev user's home directory
+      ansible.builtin.set_fact:
+        turbopanel_dev_root: "{{ getent_passwd[turbopanel_dev_user][4] }}"
+      when:
+        - turbopanel_dev_user | length > 0
+        - getent_passwd is defined
+        - getent_passwd[turbopanel_dev_user] is defined
 
   roles:
     - role: turbopanel-user
@@ -80,9 +99,10 @@
     - role: node-runtime
     - role: deno-runtime
     - role: caddy
-    # Before turbopanel runs git/pnpm in platform checkouts (often pre-seeded by dev).
-    - role: dev-permissions
+    # Dev-console sudoers + dev-user ownership of the FHS trees and home checkouts,
+    # before the repo roles run git/pnpm in those checkouts.
     - role: dev-host-access
+    - role: dev-permissions
     - role: instance-repo
     - role: ui-repo
     - role: website-repo

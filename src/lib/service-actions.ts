@@ -104,7 +104,7 @@ async function runDocker(
   onOutput?: InstallOutputHandler,
 ): Promise<void> {
   const attempts: string[][] = [
-    ["sudo", "-n", "-u", "turbopanel", "docker", ...args],
+    ["docker", ...args],
     ["sudo", "-n", "docker", ...args],
   ];
 

@@ -1,8 +1,8 @@
 import { existsSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { isDevInstanceEnabled, readInstanceRuntime } from "./lib/daemon-env.ts";
-import { DAEMON_REPO_DIR, DAEMON_SYSTEMD_UNIT, platformRepoPath } from "./lib/paths.ts";
-import { spawnAsTurbopanel, spawnDocker } from "./lib/docker-access.ts";
+import { daemonRepoPath, DAEMON_SYSTEMD_UNIT, platformRepoPath } from "./lib/paths.ts";
+import { spawnDocker } from "./lib/docker-access.ts";
 
 export type DevServiceStatus =
   | "running"
@@ -83,7 +83,7 @@ function systemctlProperty(unit: string, property: string): string | null {
 
 export function isDaemonRepoInstalled(): boolean {
   try {
-    if (existsSync(DAEMON_REPO_DIR)) {
+    if (existsSync(daemonRepoPath())) {
       return true;
     }
   } catch {
@@ -148,8 +148,10 @@ function postgresSocketReady(): boolean {
     // The postgres socket dir is not traversable by the dev user.
   }
 
-  const sudoResult = spawnAsTurbopanel(["test", "-S", POSTGRES_SOCKET]);
-  return sudoResult?.status === 0;
+  const sudoResult = spawnSync("sudo", ["-n", "test", "-S", POSTGRES_SOCKET], {
+    stdio: "ignore",
+  });
+  return sudoResult.status === 0;
 }
 
 function postgresStatus(): DevServiceStatus {

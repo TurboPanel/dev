@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import type { DevServiceStatus } from "../dev-services.ts";
 import { isDaemonSystemdInstalled } from "../dev-services.ts";
 import {
-  DAEMON_REPO_DIR,
+  daemonRepoPath,
   DAEMON_SYSTEMD_UNIT,
   LEGACY_DAEMON_SYSTEMD_UNIT,
   RUNTIMES_DIR,
@@ -150,7 +150,7 @@ export async function purgeDaemon(
   onOutput?: InstallOutputHandler,
 ): Promise<void> {
   const pathsToRemove = [
-    DAEMON_REPO_DIR,
+    daemonRepoPath(),
     RUNTIMES_DIR,
     `${TURBOPANEL_ROOT}/.cache`,
     `${TURBOPANEL_ROOT}/.ansible`,

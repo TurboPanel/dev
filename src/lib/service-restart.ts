@@ -154,7 +154,7 @@ async function runSystemctl(args: string[]): Promise<void> {
 
 async function runDocker(args: string[]): Promise<void> {
   const attempts: string[][] = [
-    ["sudo", "-n", "-u", "turbopanel", "docker", ...args],
+    ["docker", ...args],
     ["sudo", "-n", "docker", ...args],
   ];
 

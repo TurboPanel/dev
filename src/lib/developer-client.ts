@@ -2,7 +2,7 @@ import { request as httpRequest, type IncomingMessage } from "node:http";
 import { request as httpsRequest, type RequestOptions } from "node:https";
 import { readFileSync } from "node:fs";
 import { URL } from "node:url";
-import { PLATFORM_CA_CERT_PATH } from "./paths.ts";
+import { platformCaCertPath } from "./paths.ts";
 import { caddyBrowserUrl } from "./service-urls.ts";
 import { readInstanceRuntime } from "./daemon-env.ts";
 
@@ -91,7 +91,7 @@ let cachedCaCert: Buffer | null | undefined;
 function loadCaCert(): Buffer | undefined {
   if (cachedCaCert === undefined) {
     try {
-      cachedCaCert = readFileSync(PLATFORM_CA_CERT_PATH);
+      cachedCaCert = readFileSync(platformCaCertPath());
     } catch {
       cachedCaCert = null;
     }

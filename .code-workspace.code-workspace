@@ -1,0 +1,22 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../instance"
+		},
+		{
+			"path": "../daemon"
+		},
+		{
+			"path": "../ui"
+		},
+		{
+			"path": "../website"
+		}
+	],
+	"settings": {
+		"typescript.tsdk": "node_modules/typescript/lib"
+	}
+}

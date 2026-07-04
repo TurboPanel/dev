@@ -1,5 +1,4 @@
 import { spawnSync, type SpawnSyncReturns } from "node:child_process";
-import { turbopanelUserExists } from "./turbopanel-permissions.ts";
 
 type SpawnResult = SpawnSyncReturns<string>;
 
@@ -16,20 +15,13 @@ function spawnFirst(attempts: string[][]): SpawnResult | null {
   return null;
 }
 
-export function spawnAsTurbopanel(args: string[]): SpawnResult | null {
-  if (!turbopanelUserExists()) {
-    return null;
-  }
-  return spawnFirst([["sudo", "-n", "-u", "turbopanel", ...args]]);
-}
-
 export function spawnDocker(args: string[]): SpawnResult | null {
-  const attempts: string[][] = [["docker", ...args]];
-  if (turbopanelUserExists()) {
-    attempts.push(["sudo", "-n", "-u", "turbopanel", "docker", ...args]);
-  }
-  attempts.push(["sudo", "-n", "docker", ...args]);
-  return spawnFirst(attempts);
+  // Try the dev user's own docker access first, then fall back to sudo for the
+  // window before the dev user's docker group membership has taken effect.
+  return spawnFirst([
+    ["docker", ...args],
+    ["sudo", "-n", "docker", ...args],
+  ]);
 }
 
 export function dockerOutputLines(result: SpawnResult): string[] {

@@ -12,7 +12,7 @@ import type { InstallStepHandler } from "./platform-install.ts";
 import {
   DAEMON_SYSTEMD_UNIT,
   LEGACY_DAEMON_SYSTEMD_UNIT,
-  TURBOPANEL_PLATFORM,
+  platformRepoPath,
   TURBOPANEL_TRUNK_BRANCH,
 } from "./paths.ts";
 
@@ -44,7 +44,7 @@ async function resetRepo(
   onStep: InstallStepHandler,
 ): Promise<void> {
   const label = `Reset repo: ${repo}`;
-  const repoPath = `${TURBOPANEL_PLATFORM}/${repo}`;
+  const repoPath = platformRepoPath(repo);
 
   if (!existsSync(repoPath)) {
     return;
@@ -55,10 +55,8 @@ async function resetRepo(
     `git -C ${quotedPath} fetch --all && git -C ${quotedPath} reset --hard origin/${TURBOPANEL_TRUNK_BRANCH}`;
 
   onStep(label, "running");
-  const code = await runCaptured(
-    ["sudo", "-n", "-u", "turbopanel", "bash", "-c", command],
-    onOutput,
-  );
+  // The checkout is dev-owned; run git directly as the invoking dev user.
+  const code = await runCaptured(["bash", "-c", command], onOutput);
   if (code !== 0) {
     onStep(label, "failed");
     throw new Error(`Step failed: ${label}`);
@@ -85,7 +83,6 @@ export async function resetDevEnvironment(
     `docker rm -f ${containerNames} 2>/dev/null || true`,
     onOutput,
     onStep,
-    ["sudo", "-n", "-u", "turbopanel", "bash", "-c"],
   );
 
   await runShellStep(
@@ -93,7 +90,6 @@ export async function resetDevEnvironment(
     `docker volume rm ${volumeNames} 2>/dev/null || true`,
     onOutput,
     onStep,
-    ["sudo", "-n", "-u", "turbopanel", "bash", "-c"],
   );
 
   for (const repo of PLATFORM_REPOS) {

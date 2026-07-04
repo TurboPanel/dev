@@ -1,8 +1,8 @@
 import { spawnSync } from "node:child_process";
 import {
-  DAEMON_BOOTSTRAP_SCRIPT,
-  DAEMON_DENO_CONFIG,
-  DAEMON_ORCHESTRATION_SCRIPT,
+  daemonBootstrapScript,
+  daemonDenoConfig,
+  daemonOrchestrationScript,
   DENO_VERSION,
   SYSTEM_DENO_BIN,
 } from "./paths.ts";
@@ -70,13 +70,13 @@ function denoRunBootstrapInvocation(denoBin: string): string {
     denoBin,
     "run",
     "--config",
-    DAEMON_DENO_CONFIG,
+    daemonDenoConfig(),
     "--allow-net",
     "--allow-read",
     "--allow-write",
     "--allow-run",
     "--allow-env",
-    DAEMON_BOOTSTRAP_SCRIPT,
+    daemonBootstrapScript(),
   ].map(shellQuote).join(" ");
 }
 
@@ -133,13 +133,13 @@ function denoRunOrchestrationInvocation(denoBin: string, actionArgs: string[]): 
     denoBin,
     "run",
     "--config",
-    DAEMON_DENO_CONFIG,
+    daemonDenoConfig(),
     "--allow-read",
     "--allow-run",
     "--allow-env",
     "--allow-write",
     "--allow-net",
-    DAEMON_ORCHESTRATION_SCRIPT,
+    daemonOrchestrationScript(),
     ...actionArgs,
   ].map(shellQuote).join(" ");
 }

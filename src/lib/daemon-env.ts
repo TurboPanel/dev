@@ -5,14 +5,15 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { resolveDevIdentity } from "./dev-identity.ts";
 import {
+  buildPlatformRepoEntries,
   DAEMON_ENV_PATH,
   DAEMON_ENV_TRUNK_BRANCH_KEY,
-  DAEMON_REPO_DIR,
-  PLATFORM_CA_CERT_PATH,
+  platformCaCertPath,
+  resolveDevRoot,
   TURBOPANEL_TRUNK_BRANCH,
 } from "./paths.ts";
 import { caddyBrowserUrl } from "./service-urls.ts";
@@ -41,22 +42,30 @@ function writeEnvFile(path: string, content: string): void {
     writeFileSync(path, content);
     return;
   } catch {
-    // Fall through when the checkout is turbopanel-owned.
+    // Fall through when the config dir isn't yet writable by the dev user.
   }
 
   const tmpDir = mkdtempSync(join(tmpdir(), "turbopanel-env-"));
   const tmpPath = join(tmpDir, "daemon.env");
   try {
     writeFileSync(tmpPath, content);
+    // /etc/turbopanel may not exist yet on the very first run (before any converge).
+    const mkdir = spawnSync("sudo", ["-n", "mkdir", "-p", dirname(path)], {
+      stdio: "ignore",
+    });
+    if (mkdir.status !== 0) {
+      throw new Error(`Failed to create ${dirname(path)}`);
+    }
     const result = spawnSync("sudo", ["-n", "cp", tmpPath, path], {
       stdio: "inherit",
     });
     if (result.status !== 0) {
       throw new Error(`Failed to write ${path}`);
     }
+    const dev = resolveDevIdentity();
     spawnSync(
       "sudo",
-      ["-n", "chown", "turbopanel:turbopanel", path],
+      ["-n", "chown", `${dev.user}:${dev.gid}`, path],
       { stdio: "ignore" },
     );
   } finally {
@@ -68,22 +77,25 @@ function writeEnvFile(path: string, content: string): void {
   }
 }
 
-function buildDaemonBaseEntries(extra?: Record<string, string>): Record<string, string> {
+/** Build the managed daemon.env entries the dev console writes (testable contract). */
+export function buildDaemonBaseEnvEntries(
+  extra?: Record<string, string>,
+): Record<string, string> {
   const dev = resolveDevIdentity();
   return {
+    TURBOPANEL_MODE: "development",
+    TURBOPANEL_DEV_ROOT: resolveDevRoot(),
+    ...buildPlatformRepoEntries(),
     [DAEMON_ENV_TRUNK_BRANCH_KEY]: TURBOPANEL_TRUNK_BRANCH,
-    // Canonical daemon state dir is <checkout>/state — this is where the
-    // co-located instance writes colocated license credentials
-    // (resolveColocatedLicenseCredentialsDir hardcodes /state) and where the
-    // daemon persists server.id/server-key.json. Pointing at the bare checkout
-    // dir makes the daemon look one level above the license files and fail
-    // enrollment with "missing license credentials".
-    TURBOPANEL_DAEMON_STATE_DIR: `${DAEMON_REPO_DIR}/state`,
     TURBOPANEL_DEV_USER: dev.user,
     TURBOPANEL_DEV_UID: String(dev.uid),
     TURBOPANEL_DEV_GID: String(dev.gid),
     ...extra,
   };
+}
+
+function buildDaemonBaseEntries(extra?: Record<string, string>): Record<string, string> {
+  return buildDaemonBaseEnvEntries(extra);
 }
 
 function mergeDaemonEnv(
@@ -166,7 +178,7 @@ export function writeDaemonInstanceEnv(extra?: Record<string, string>): void {
 
   if (runtime === "workers") {
     entries.TURBOPANEL_INSTANCE_URL = caddyBrowserUrl();
-    entries.TURBOPANEL_INSTANCE_CA = PLATFORM_CA_CERT_PATH;
+    entries.TURBOPANEL_INSTANCE_CA = platformCaCertPath();
   } else {
     removeKeys.push(...WORKERS_INSTANCE_URL_KEYS);
   }
