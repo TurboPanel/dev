@@ -2,6 +2,7 @@ import React, { memo, useMemo } from "react";
 import { Box, useInput } from "ink";
 import type { DevService } from "../dev-services.ts";
 import type { ConsoleLogLine } from "../lib/service-restart.ts";
+import type { ServiceLogByteFloor } from "../lib/service-log.ts";
 import { useLogScroll } from "../hooks/use-log-scroll.ts";
 import { useServiceLog } from "../hooks/use-service-log.ts";
 import { InstanceTitleHeader, RuntimeTitleHeader, runtimeTitleHeaderRows } from "./instance-title-header.tsx";
@@ -54,6 +55,7 @@ export const ServiceDetailPanel = memo(function ServiceDetailPanel({
   focused = false,
   logOverlayLines = [],
   logFollowResetKey,
+  logByteFloor = null,
 }: {
   service: DevService;
   width: number;
@@ -61,8 +63,9 @@ export const ServiceDetailPanel = memo(function ServiceDetailPanel({
   focused?: boolean;
   logOverlayLines?: ConsoleLogLine[];
   logFollowResetKey?: number;
+  logByteFloor?: ServiceLogByteFloor | null;
 }) {
-  const fileLogLines = useServiceLog(service.id);
+  const fileLogLines = useServiceLog(service.id, logByteFloor);
   const logLines = useMemo(
     () => [
       ...fileLogLines,

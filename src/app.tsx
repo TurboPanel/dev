@@ -12,6 +12,7 @@ import type { ServiceActionId } from "./lib/service-actions.ts";
 import type { PendingRestart, ServiceOperation } from "./hooks/use-console-app.ts";
 import type { DevEnvConvergeState } from "./hooks/use-dev-env-converge.ts";
 import type { DaemonLogByteFloor } from "./lib/daemon-log.ts";
+import type { ServiceLogByteFloor } from "./lib/service-log.ts";
 import type { ConsoleLogLine } from "./lib/service-restart.ts";
 import type { DaemonOperation } from "./lib/spinners.ts";
 
@@ -52,6 +53,7 @@ function MainContent({
   restartLogOverlay,
   logFollowResetKey,
   daemonLogByteFloor,
+  instanceLogByteFloor,
   onConfirmRestart,
   onCancelRestart,
   devEnvConverge,
@@ -79,6 +81,7 @@ function MainContent({
   restartLogOverlay?: ConsoleLogLine[];
   logFollowResetKey?: number;
   daemonLogByteFloor?: DaemonLogByteFloor | null;
+  instanceLogByteFloor?: ServiceLogByteFloor | null;
   onConfirmRestart?: () => void;
   onCancelRestart?: () => void;
   devEnvConverge?: DevEnvConvergeState | null;
@@ -138,6 +141,7 @@ function MainContent({
           restartLogOverlay={restartLogOverlay}
           logFollowResetKey={logFollowResetKey}
           daemonLogByteFloor={daemonLogByteFloor}
+          instanceLogByteFloor={instanceLogByteFloor}
           onConfirmRestart={onConfirmRestart}
           onCancelRestart={onCancelRestart}
           devEnvConverge={devEnvConverge}
@@ -175,6 +179,7 @@ export function AppView({
   restartLogOverlay,
   logFollowResetKey,
   daemonLogByteFloor,
+  instanceLogByteFloor,
   onConfirmRestart,
   onCancelRestart,
   devEnvConverge,
@@ -205,6 +210,7 @@ export function AppView({
   restartLogOverlay?: ConsoleLogLine[];
   logFollowResetKey?: number;
   daemonLogByteFloor?: DaemonLogByteFloor | null;
+  instanceLogByteFloor?: ServiceLogByteFloor | null;
   onConfirmRestart?: () => void;
   onCancelRestart?: () => void;
   devEnvConverge?: DevEnvConvergeState | null;
@@ -261,6 +267,7 @@ export function AppView({
           restartLogOverlay={restartLogOverlay}
           logFollowResetKey={logFollowResetKey}
           daemonLogByteFloor={daemonLogByteFloor}
+          instanceLogByteFloor={instanceLogByteFloor}
           onConfirmRestart={onConfirmRestart}
           onCancelRestart={onCancelRestart}
           devEnvConverge={devEnvConverge}

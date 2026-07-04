@@ -10,11 +10,15 @@ import {
 } from "../lib/service-actions.ts";
 import {
   type ConsoleLogLine,
+  consoleLogLine,
   watchServiceRestart,
 } from "../lib/service-restart.ts";
 import { readInstanceRuntime } from "../lib/daemon-env.ts";
 import type { DaemonLogByteFloor } from "../lib/daemon-log.ts";
 import { readDaemonLogFileStat } from "../lib/daemon-log.ts";
+import { watchInstanceRuntimeSwitch } from "../lib/instance-runtime.ts";
+import type { ServiceLogByteFloor } from "../lib/service-log.ts";
+import { readServiceLogFileStat } from "../lib/service-log.ts";
 import type { DaemonOperation } from "../lib/spinners.ts";
 import { refreshDevPermissionsQuietly } from "../lib/turbopanel-permissions.ts";
 import { useDevEnvConverge } from "./use-dev-env-converge.ts";
@@ -65,6 +69,9 @@ export function useConsoleApp() {
   const [restartLogOverlay, setRestartLogOverlay] = useState<ConsoleLogLine[]>([]);
   const [logFollowResetKey, setLogFollowResetKey] = useState(0);
   const [daemonLogByteFloor, setDaemonLogByteFloor] = useState<DaemonLogByteFloor | null>(
+    null,
+  );
+  const [instanceLogByteFloor, setInstanceLogByteFloor] = useState<ServiceLogByteFloor | null>(
     null,
   );
   const { services: visibleServices, refresh: refreshServices } = useVisibleServices();
@@ -251,6 +258,37 @@ export function useConsoleApp() {
       return;
     }
 
+    if (action === "switch-workers" || action === "switch-deno") {
+      const target = action === "switch-workers" ? "workers" : "deno";
+      const from = runtime;
+      if (from === target) {
+        return;
+      }
+
+      setRestartInProgress(`instance (${from} → ${target})`);
+      setRestartOverlayServiceId("instance");
+      setRestartLogOverlay([]);
+      setInstanceLogByteFloor(readServiceLogFileStat("instance"));
+
+      const appendLog = (line: ConsoleLogLine) => {
+        setRestartLogOverlay((current) => [...current, line]);
+      };
+
+      try {
+        await watchInstanceRuntimeSwitch(target, from, appendLog);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        appendLog(consoleLogLine(`[console] Runtime switch failed: ${message}`));
+      } finally {
+        setRestartInProgress(null);
+        setRestartOverlayServiceId(null);
+        setRestartLogOverlay([]);
+        setLogFollowResetKey((key) => key + 1);
+        refreshServices();
+      }
+      return;
+    }
+
     setServiceOperation({ serviceId, action });
     try {
       await runServiceAction(serviceId, action);
@@ -364,6 +402,7 @@ export function useConsoleApp() {
     restartLogOverlay,
     logFollowResetKey,
     daemonLogByteFloor,
+    instanceLogByteFloor,
     installFinished,
     handleDaemonAction,
     handleProvisioningDone,

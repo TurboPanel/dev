@@ -97,6 +97,8 @@ function HotReloadApp({
       restartOverlayServiceId={consoleApp.restartOverlayServiceId}
       restartLogOverlay={consoleApp.restartLogOverlay}
       logFollowResetKey={consoleApp.logFollowResetKey}
+      daemonLogByteFloor={consoleApp.daemonLogByteFloor}
+      instanceLogByteFloor={consoleApp.instanceLogByteFloor}
       onConfirmRestart={consoleApp.confirmServiceRestart}
       onCancelRestart={consoleApp.cancelServiceRestart}
       devEnvConverge={consoleApp.devEnvConverge}

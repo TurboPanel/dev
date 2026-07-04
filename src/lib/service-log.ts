@@ -21,6 +21,9 @@ export type ServiceLogLine = {
   time?: string;
 };
 
+/** Show only log bytes appended at or after these per-file offsets (post-switch view). */
+export type ServiceLogByteFloor = Record<string, number>;
+
 const INSTANCE_LOG_DIR = `${LOG_DIR}/instance`;
 const UI_LOG_DIR = `${LOG_DIR}/ui`;
 const WEBSITE_LOG_DIR = `${LOG_DIR}/website`;
@@ -102,7 +105,50 @@ function parseServiceLine(text: string): ServiceLogLine {
  * full `readFileSync` on every 1s poll exhausts the heap. When the read starts
  * mid-file, the first (partial) line is dropped.
  */
-function readFileTailText(path: string, maxLines: number): string | undefined {
+function fileSize(path: string): number | undefined {
+  let fd: number | undefined;
+  try {
+    fd = openSync(path, "r");
+    return fstatSync(fd).size;
+  } catch {
+    const result = spawnSync(
+      "sudo",
+      ["-n", "stat", "-c", "%s", path],
+      { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
+    );
+    if (result.status !== 0 || !result.stdout) {
+      return undefined;
+    }
+    const size = Number(result.stdout.trim());
+    return Number.isFinite(size) ? size : undefined;
+  } finally {
+    if (fd !== undefined) {
+      try {
+        closeSync(fd);
+      } catch {
+        // ignore
+      }
+    }
+  }
+}
+
+export function readServiceLogFileStat(serviceId: string): ServiceLogByteFloor {
+  const paths = SERVICE_FILE_LOG_PATHS[serviceId] ?? [];
+  const floor: ServiceLogByteFloor = {};
+  for (const path of paths) {
+    const size = fileSize(path);
+    if (size !== undefined) {
+      floor[path] = size;
+    }
+  }
+  return floor;
+}
+
+function readFileTailText(
+  path: string,
+  maxLines: number,
+  minByteOffset = 0,
+): string | undefined {
   let fd: number | undefined;
   try {
     fd = openSync(path, "r");
@@ -111,7 +157,8 @@ function readFileTailText(path: string, maxLines: number): string | undefined {
       return "";
     }
     const maxBytes = Math.max(TAIL_MIN_BYTES, maxLines * TAIL_BYTES_PER_LINE);
-    const start = size > maxBytes ? size - maxBytes : 0;
+    const tailStart = size > maxBytes ? size - maxBytes : 0;
+    const start = Math.max(minByteOffset, tailStart);
     const length = size - start;
     const buffer = Buffer.allocUnsafe(length);
     const bytesRead = readSync(fd, buffer, 0, length, start);
@@ -134,11 +181,15 @@ function readFileTailText(path: string, maxLines: number): string | undefined {
   }
 }
 
-function tailFile(path: string, maxLines: number): string[] {
+function tailFile(
+  path: string,
+  maxLines: number,
+  minByteOffset = 0,
+): string[] {
   if (!existsSync(path)) {
     return [];
   }
-  const text = readFileTailText(path, maxLines);
+  const text = readFileTailText(path, maxLines, minByteOffset);
   if (text === undefined) {
     return [];
   }
@@ -198,6 +249,7 @@ function tailDockerLogs(container: string, maxLines: number): string[] {
 export function readServiceLogTail(
   serviceId: string,
   maxLines = 500,
+  byteFloor?: ServiceLogByteFloor | null,
 ): ServiceLogLine[] {
   const dockerContainer = DOCKER_LOG_CONTAINERS[serviceId];
   const unit = dockerContainer ? null : serviceSystemdUnit(serviceId);
@@ -207,7 +259,7 @@ export function readServiceLogTail(
   collected.push(...tailFile(convergeServiceLogPath(serviceId), maxLines));
 
   for (const path of filePaths) {
-    collected.push(...tailFile(path, maxLines));
+    collected.push(...tailFile(path, maxLines, byteFloor?.[path] ?? 0));
   }
 
   if (dockerContainer) {

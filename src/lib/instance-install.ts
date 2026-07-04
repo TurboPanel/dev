@@ -11,6 +11,7 @@ import {
   ANSIBLE_COLLECTIONS_PATH,
   daemonRepoPath,
   PYTHON_RUNTIME_DIR,
+  resolveDevRoot,
   UV_CACHE_DIR,
 } from "./paths.ts";
 import type { InstallStepHandler } from "./platform-install.ts";
@@ -31,6 +32,7 @@ function shellQuote(value: string): string {
 
 function orchestrationEnv(): string[] {
   const dev = resolveDevIdentity();
+  const devRoot = resolveDevRoot();
   return [
     `ANSIBLE_COLLECTIONS_PATH=${ANSIBLE_COLLECTIONS_PATH}`,
     `UV_PYTHON_INSTALL_DIR=${PYTHON_RUNTIME_DIR}`,
@@ -38,6 +40,7 @@ function orchestrationEnv(): string[] {
     `TURBOPANEL_DEV_USER=${dev.user}`,
     `TURBOPANEL_DEV_UID=${dev.uid}`,
     `TURBOPANEL_DEV_GID=${dev.gid}`,
+    `TURBOPANEL_DEV_ROOT=${devRoot}`,
     "UV_NO_MODIFY_PATH=1",
     "UV_PYTHON_DOWNLOADS=automatic",
     "UV_VENV_CLEAR=1",

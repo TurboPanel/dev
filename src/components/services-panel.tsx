@@ -20,6 +20,7 @@ import {
 } from "../lib/service-actions.ts";
 import type { ConsoleLogLine } from "../lib/service-restart.ts";
 import type { DaemonLogByteFloor } from "../lib/daemon-log.ts";
+import type { ServiceLogByteFloor } from "../lib/service-log.ts";
 import type { DaemonOperation } from "../lib/spinners.ts";
 import {
   BORDER_COLOR,
@@ -164,6 +165,7 @@ export function ServicesPanel({
   restartLogOverlay,
   logFollowResetKey,
   daemonLogByteFloor,
+  instanceLogByteFloor,
   onConfirmRestart,
   onCancelRestart,
   devEnvConverge,
@@ -185,6 +187,7 @@ export function ServicesPanel({
   restartLogOverlay?: ConsoleLogLine[];
   logFollowResetKey?: number;
   daemonLogByteFloor?: DaemonLogByteFloor | null;
+  instanceLogByteFloor?: ServiceLogByteFloor | null;
   onConfirmRestart?: () => void;
   onCancelRestart?: () => void;
   devEnvConverge?: DevEnvConvergeState | null;
@@ -429,6 +432,9 @@ export function ServicesPanel({
                 focused={logFocused && !pendingRestart && !restartInProgress}
                 logOverlayLines={overlayForService(selectedService.id)}
                 logFollowResetKey={logFollowResetKey}
+                logByteFloor={
+                  selectedService.id === "instance" ? instanceLogByteFloor : null
+                }
               />
               {pendingRestart?.serviceId === selectedService.id &&
                 onConfirmRestart &&
