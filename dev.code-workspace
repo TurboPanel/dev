@@ -18,6 +18,7 @@
 	],
 	"settings": {
 		"typescript.tsdk": "node_modules/typescript/lib",
+		"sonarlint.pathToNodeExecutable": "/opt/turbopanel/vendor/node/current/bin/node",
 		"ansible.ansible.path": "/opt/turbopanel/vendor/ansible/current/bin/ansible",
 		"ansible.python.interpreterPath": "/opt/turbopanel/vendor/ansible/current/bin/python3",
 		"ansible.validation.lint.enabled": true,
