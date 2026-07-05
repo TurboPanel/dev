@@ -39,6 +39,8 @@ export function ConsoleApp() {
       onCancelRestart={consoleApp.cancelServiceRestart}
       devEnvConverge={consoleApp.devEnvConverge}
       onDismissDevEnvConvergeError={consoleApp.dismissDevEnvConvergeError}
+      developerView={consoleApp.developerView}
+      onCloseCellTraceView={consoleApp.closeCellTraceView}
     />
   );
 }

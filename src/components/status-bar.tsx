@@ -5,7 +5,7 @@ import { isManagedService } from "../lib/service-actions.ts";
 import { serviceSupportsOpen } from "../lib/service-urls.ts";
 import { BORDER_COLOR } from "../theme.ts";
 
-import type { PendingRestart } from "../hooks/use-console-app.ts";
+import type { PendingRestart, DeveloperView } from "../hooks/use-console-app.ts";
 
 function serviceActionHints(selectedServiceId?: string | null): string {
   if (!selectedServiceId || !isManagedService(selectedServiceId)) {
@@ -33,6 +33,7 @@ export function statusHints(
   pendingRestart?: PendingRestart | null,
   restartInProgress?: string | null,
   devEnvConverging?: boolean,
+  developerView?: DeveloperView,
 ): string {
   if (activeAreaId === "services") {
     if (devEnvConverging) {
@@ -48,6 +49,12 @@ export function statusHints(
     return `← → tabs · ↑↓ select · Tab log · ↑↓ scroll${actionHints} · Ctrl-C exit`;
   }
   if (activeAreaId === "developer") {
+    if (restartInProgress) {
+      return `Restarting ${restartInProgress} · watch logs · Ctrl-C exit`;
+    }
+    if (developerView === "cell-trace") {
+      return "↑ ↓ scroll · Esc back · Ctrl-C exit";
+    }
     return "↑ ↓ choose action · Enter run · ← → switch tabs · Ctrl-C exit";
   }
   if (activeAreaId === "bootstrap") {

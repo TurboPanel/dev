@@ -9,7 +9,7 @@ import { statusHints } from "@turbopanel/components/status-bar.tsx";
 import type { DevService } from "./dev-services.ts";
 import type { DaemonActionId } from "./lib/daemon-actions.ts";
 import type { ServiceActionId } from "./lib/service-actions.ts";
-import type { PendingRestart, ServiceOperation } from "./hooks/use-console-app.ts";
+import type { PendingRestart, ServiceOperation, DeveloperView } from "./hooks/use-console-app.ts";
 import type { DevEnvConvergeState } from "./hooks/use-dev-env-converge.ts";
 import type { DaemonLogByteFloor } from "./lib/daemon-log.ts";
 import type { ServiceLogByteFloor } from "./lib/service-log.ts";
@@ -58,6 +58,8 @@ function MainContent({
   onCancelRestart,
   devEnvConverge,
   onDismissDevEnvConvergeError,
+  developerView,
+  onCloseCellTraceView,
 }: {
   activeArea: string;
   width: number;
@@ -86,6 +88,8 @@ function MainContent({
   onCancelRestart?: () => void;
   devEnvConverge?: DevEnvConvergeState | null;
   onDismissDevEnvConvergeError?: () => void;
+  developerView?: DeveloperView;
+  onCloseCellTraceView?: () => void;
 }) {
   const daemon = visibleServices.find((service) => service.id === "daemon");
 
@@ -118,8 +122,16 @@ function MainContent({
           height={height}
           daemonStatus={daemon?.status}
           daemonOperation={daemonOperation}
+          developerView={developerView}
+          onCloseCellTraceView={onCloseCellTraceView}
           onDaemonAction={onDeveloperDaemonAction}
           onPurgeDone={onPurgeDone}
+          onRefreshServices={onRefreshServices}
+          restartInProgress={restartInProgress}
+          restartOverlayServiceId={restartOverlayServiceId}
+          restartLogOverlay={restartLogOverlay}
+          logFollowResetKey={logFollowResetKey}
+          instanceLogByteFloor={instanceLogByteFloor}
         />
       );
     case "services":
@@ -184,6 +196,8 @@ export function AppView({
   onCancelRestart,
   devEnvConverge,
   onDismissDevEnvConvergeError,
+  developerView,
+  onCloseCellTraceView,
 }: {
   activeArea: string;
   provisioning: boolean;
@@ -215,6 +229,8 @@ export function AppView({
   onCancelRestart?: () => void;
   devEnvConverge?: DevEnvConvergeState | null;
   onDismissDevEnvConvergeError?: () => void;
+  developerView?: DeveloperView;
+  onCloseCellTraceView?: () => void;
 }) {
   const activeIndex = AREAS.findIndex((area) => area.id === activeArea);
   const menuActiveIndex = activeIndex >= 0 ? activeIndex : 0;
@@ -227,6 +243,7 @@ export function AppView({
     pendingRestart,
     restartInProgress,
     daemonOperation === "dev-env" || Boolean(devEnvConverge?.active),
+    developerView,
   );
 
   return (
@@ -272,6 +289,8 @@ export function AppView({
           onCancelRestart={onCancelRestart}
           devEnvConverge={devEnvConverge}
           onDismissDevEnvConvergeError={onDismissDevEnvConvergeError}
+          developerView={developerView}
+          onCloseCellTraceView={onCloseCellTraceView}
         />
       </MainPanel>
     </Box>

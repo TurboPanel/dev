@@ -50,6 +50,18 @@ export function devOrchestrationDir(): string {
 /** FHS mutable dirs (dev shares the production paths, dev-owned at runtime). */
 export const CONFIG_DIR = "/etc/turbopanel";
 export const LOG_DIR = "/var/log/turbopanel";
+
+export function instanceConfigDir(): string {
+  return `${CONFIG_DIR}/instance`;
+}
+
+export function instanceRuntimeEnvPath(): string {
+  return `${instanceConfigDir()}/runtime.env`;
+}
+
+export function instanceRuntimeDevVarsPath(): string {
+  return `${instanceConfigDir()}/runtime.dev-vars`;
+}
 export const UV_CACHE_DIR = `${RUNTIMES_DIR}/uv/cache`;
 /** Pinned managed Python (matches daemon `PYTHON_VERSION`). */
 export const PYTHON_VERSION = "3.14";

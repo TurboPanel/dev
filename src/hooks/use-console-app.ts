@@ -14,6 +14,10 @@ import {
   watchServiceRestart,
 } from "../lib/service-restart.ts";
 import { readInstanceRuntime } from "../lib/daemon-env.ts";
+import {
+  readCellTraceEnabled,
+  setCellTraceEnabled,
+} from "../lib/instance-trace-env.ts";
 import type { DaemonLogByteFloor } from "../lib/daemon-log.ts";
 import { readDaemonLogFileStat } from "../lib/daemon-log.ts";
 import { watchInstanceRuntimeSwitch } from "../lib/instance-runtime.ts";
@@ -48,6 +52,8 @@ function initialAutoInstallState(): {
   };
 }
 
+export type DeveloperView = "menu" | "cell-trace";
+
 export function useConsoleApp() {
   const { exit } = useApp();
   const initialAutoInstall = initialAutoInstallState();
@@ -74,6 +80,7 @@ export function useConsoleApp() {
   const [instanceLogByteFloor, setInstanceLogByteFloor] = useState<ServiceLogByteFloor | null>(
     null,
   );
+  const [developerView, setDeveloperView] = useState<DeveloperView>("menu");
   const { services: visibleServices, refresh: refreshServices } = useVisibleServices();
   const autoInstallStarted = useRef(initialAutoInstall.shouldAutoInstall);
   const devEnvConvergeSelectionPinned = useRef(false);
@@ -123,6 +130,30 @@ export function useConsoleApp() {
       startDaemonInstall();
     }
   }, [visibleServices, daemonOperation, startDaemonInstall]);
+
+  const restartInstanceWithOverlay = useCallback(async () => {
+    const service = visibleServices.find((entry) => entry.id === "instance");
+    const label = service?.label ?? "instance";
+
+    setRestartInProgress("instance");
+    setRestartOverlayServiceId("instance");
+    setRestartLogOverlay([]);
+    setInstanceLogByteFloor(readServiceLogFileStat("instance"));
+
+    const appendLog = (line: ConsoleLogLine) => {
+      setRestartLogOverlay((current) => [...current, line]);
+    };
+
+    try {
+      await watchServiceRestart("instance", label, appendLog);
+    } finally {
+      setRestartInProgress(null);
+      setRestartOverlayServiceId(null);
+      setRestartLogOverlay([]);
+      setLogFollowResetKey((key) => key + 1);
+      refreshServices();
+    }
+  }, [refreshServices, visibleServices]);
 
   const handleDaemonAction = useCallback(async (action: DaemonActionId) => {
     switch (action) {
@@ -182,8 +213,16 @@ export function useConsoleApp() {
         setProvisioning(true);
         setDaemonOperation("sync-dev-build");
         return;
+      case "toggle-cell-trace":
+        setActiveArea("developer");
+        setCellTraceEnabled(!readCellTraceEnabled());
+        await restartInstanceWithOverlay();
+        return;
+      case "view-cell-trace":
+        setDeveloperView("cell-trace");
+        return;
     }
-  }, [startDaemonInstall, startDevEnvConverge, visibleServices]);
+  }, [restartInstanceWithOverlay, startDaemonInstall, startDevEnvConverge, visibleServices]);
 
   const requestServiceRestart = useCallback((serviceId: string) => {
     const service = visibleServices.find((entry) => entry.id === serviceId);
@@ -373,8 +412,16 @@ export function useConsoleApp() {
     setSelectedServiceIndex(index);
   }, [visibleServices]);
 
+  const closeCellTraceView = useCallback(() => {
+    setDeveloperView("menu");
+  }, []);
+
   useInput((_input, key) => {
     if (provisioning || daemonOperation || serviceOperation || pendingRestart || restartInProgress) {
+      return;
+    }
+
+    if (developerView === "cell-trace") {
       return;
     }
 
@@ -414,6 +461,8 @@ export function useConsoleApp() {
     dismissDevEnvConvergeError,
     confirmServiceRestart,
     cancelServiceRestart,
+    developerView,
+    closeCellTraceView,
     setSelectedServiceIndex: setSelectedServiceIndexById,
     refreshServices,
   };

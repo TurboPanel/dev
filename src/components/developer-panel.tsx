@@ -1,40 +1,98 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Box, Text, useInput } from "ink";
 import type { DevServiceStatus } from "../dev-services.ts";
 import {
+  cellTraceToggleLabel,
   DAEMON_ACTION_LABELS,
   developerMenuActions,
   type DaemonActionId,
 } from "../lib/daemon-actions.ts";
+import type { ConsoleLogLine } from "../lib/service-restart.ts";
+import type { ServiceLogByteFloor } from "../lib/service-log.ts";
 import type { DaemonOperation } from "../lib/spinners.ts";
+import { useLogScroll } from "../hooks/use-log-scroll.ts";
+import { useServiceLog } from "../hooks/use-service-log.ts";
 import { LIST_SELECT_BG, LIST_SELECT_FG } from "../theme.ts";
+import { CellTraceView } from "./cell-trace-view.tsx";
+import { PlainLogView } from "./plain-log-view.tsx";
 import { PurgeDaemonPanel } from "./purge-daemon-panel.tsx";
 
-export function DeveloperPanel({
+const RESTART_HEADER_ROWS = 2;
+
+function DeveloperRestartOverlay({
+  width,
+  height,
+  restartLabel,
+  restartOverlayServiceId,
+  restartLogOverlay,
+  logFollowResetKey,
+  instanceLogByteFloor,
+}: {
+  width: number;
+  height: number;
+  restartLabel: string;
+  restartOverlayServiceId: string;
+  restartLogOverlay: ConsoleLogLine[];
+  logFollowResetKey?: number;
+  instanceLogByteFloor?: ServiceLogByteFloor | null;
+}) {
+  const fileLogLines = useServiceLog(restartOverlayServiceId, instanceLogByteFloor);
+  const logLines = useMemo(
+    () => [
+      ...fileLogLines,
+      ...restartLogOverlay.map((line) => ({ text: line.text, time: line.time })),
+    ],
+    [fileLogLines, restartLogOverlay],
+  );
+  const logHeight = Math.max(1, height - RESTART_HEADER_ROWS);
+  const { scrollIndex: logScrollIndex } = useLogScroll({
+    lineCount: logLines.length,
+    viewportHeight: logHeight,
+    focused: false,
+    resetKey: restartOverlayServiceId,
+    followResetKey: logFollowResetKey,
+  });
+
+  return (
+    <Box
+      flexDirection="column"
+      width={width}
+      height={height}
+      paddingX={1}
+      paddingY={1}
+    >
+      <Text bold>Restarting {restartLabel}</Text>
+      <Box marginTop={1} flexGrow={1}>
+        <PlainLogView
+          lines={logLines}
+          width={width}
+          height={logHeight}
+          selectedIndex={logScrollIndex}
+          focused={false}
+        />
+      </Box>
+    </Box>
+  );
+}
+
+function developerActionLabel(action: DaemonActionId): string {
+  if (action === "toggle-cell-trace") {
+    return cellTraceToggleLabel();
+  }
+  return DAEMON_ACTION_LABELS[action];
+}
+
+function DeveloperMenuPanel({
   width,
   height,
   daemonStatus,
-  daemonOperation,
   onDaemonAction,
-  onPurgeDone,
 }: {
   width: number;
   height: number;
   daemonStatus?: DevServiceStatus;
-  daemonOperation?: DaemonOperation | null;
   onDaemonAction?: (action: DaemonActionId) => void | Promise<void>;
-  onPurgeDone?: () => void;
 }) {
-  if (daemonOperation === "purge" && onPurgeDone) {
-    return (
-      <PurgeDaemonPanel
-        width={width}
-        height={height}
-        onDone={onPurgeDone}
-      />
-    );
-  }
-
   const actions = developerMenuActions(daemonStatus);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [message, setMessage] = useState<string | null>(null);
@@ -100,7 +158,7 @@ export function DeveloperPanel({
                 flexDirection="row"
               >
                 <Text color={selected ? LIST_SELECT_FG : undefined} bold={selected}>
-                  {DAEMON_ACTION_LABELS[action]}
+                  {developerActionLabel(action)}
                 </Text>
               </Box>
             );
@@ -114,5 +172,87 @@ export function DeveloperPanel({
         </Box>
       )}
     </Box>
+  );
+}
+
+export function DeveloperPanel({
+  width,
+  height,
+  daemonStatus,
+  daemonOperation,
+  developerView = "menu",
+  onCloseCellTraceView,
+  onDaemonAction,
+  onPurgeDone,
+  onRefreshServices,
+  restartInProgress,
+  restartOverlayServiceId,
+  restartLogOverlay,
+  logFollowResetKey,
+  instanceLogByteFloor,
+}: {
+  width: number;
+  height: number;
+  daemonStatus?: DevServiceStatus;
+  daemonOperation?: DaemonOperation | null;
+  developerView?: "menu" | "cell-trace";
+  onCloseCellTraceView?: () => void;
+  onDaemonAction?: (action: DaemonActionId) => void | Promise<void>;
+  onPurgeDone?: () => void;
+  onRefreshServices?: () => void;
+  restartInProgress?: string | null;
+  restartOverlayServiceId?: string | null;
+  restartLogOverlay?: ConsoleLogLine[];
+  logFollowResetKey?: number;
+  instanceLogByteFloor?: ServiceLogByteFloor | null;
+}) {
+  useEffect(() => {
+    if (restartInProgress) {
+      onRefreshServices?.();
+    }
+  }, [restartInProgress, onRefreshServices]);
+
+  if (daemonOperation === "purge" && onPurgeDone) {
+    return (
+      <PurgeDaemonPanel
+        width={width}
+        height={height}
+        onDone={onPurgeDone}
+      />
+    );
+  }
+
+  if (restartInProgress && restartOverlayServiceId) {
+    return (
+      <DeveloperRestartOverlay
+        width={width}
+        height={height}
+        restartLabel={restartInProgress}
+        restartOverlayServiceId={restartOverlayServiceId}
+        restartLogOverlay={restartLogOverlay ?? []}
+        logFollowResetKey={logFollowResetKey}
+        instanceLogByteFloor={instanceLogByteFloor}
+      />
+    );
+  }
+
+  if (developerView === "cell-trace" && onCloseCellTraceView) {
+    return (
+      <CellTraceView
+        width={width}
+        height={height}
+        focused
+        onClose={onCloseCellTraceView}
+      />
+    );
+  }
+
+  return (
+    <DeveloperMenuPanel
+      width={width}
+      height={height}
+      daemonStatus={daemonStatus}
+      onDaemonAction={onDaemonAction}
+    />
   );
 }

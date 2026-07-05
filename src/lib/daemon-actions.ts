@@ -20,6 +20,8 @@ export type DaemonActionId =
   | "start-dev-env"
   | "reset-dev-env"
   | "reset-dev-db"
+  | "toggle-cell-trace"
+  | "view-cell-trace"
   | "sync-dev-build";
 
 const DAEMON_UNIT = DAEMON_SYSTEMD_UNIT;
@@ -34,12 +36,16 @@ export const DAEMON_ACTION_LABELS: Record<DaemonActionId, string> = {
   "start-dev-env": "Start development environment",
   "reset-dev-env": "Reset development environment",
   "reset-dev-db": "Reset dev database",
+  "toggle-cell-trace": "Toggle verbose cell trace",
+  "view-cell-trace": "View cell trace log",
   "sync-dev-build": "Sync dev build to attached daemons",
 };
 
 export function daemonMenuActions(_status: DevServiceStatus): DaemonActionId[] {
   return [];
 }
+
+export { cellTraceToggleLabel } from "./instance-trace-env.ts";
 
 export function developerMenuActions(status: DevServiceStatus | undefined): DaemonActionId[] {
   if (!status || status === "uninstalled") {
@@ -51,6 +57,8 @@ export function developerMenuActions(status: DevServiceStatus | undefined): Daem
     "start-dev-env",
     "reset-dev-env",
     "reset-dev-db",
+    "toggle-cell-trace",
+    "view-cell-trace",
   ];
 
   if (readInstanceRuntime() === "deno") {
