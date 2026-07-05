@@ -1,7 +1,6 @@
 import { spawn } from "node:child_process";
 import { bootstrapOrchestrationCommand, ensureBootstrapDeno } from "./daemon-exec.ts";
 import {
-  ANSIBLE_COLLECTIONS_PATH,
   daemonRepoPath,
   DAEMON_SYSTEMD_UNIT,
   PYTHON_RUNTIME_DIR,
@@ -37,13 +36,14 @@ import { resolveDevIdentity } from "./dev-identity.ts";
  */
 const DAEMON_DIR = daemonRepoPath();
 
+const SHELL_SINGLE_QUOTE_ESCAPE = String.raw`'\''`;
+
 function shellQuote(value: string): string {
-  return `'${value.replace(/'/g, "'\\''")}'`;
+  return "'" + value.replaceAll("'", SHELL_SINGLE_QUOTE_ESCAPE) + "'";
 }
 
 function bootstrapEnv(): string[] {
   return [
-    `ANSIBLE_COLLECTIONS_PATH=${ANSIBLE_COLLECTIONS_PATH}`,
     `UV_PYTHON_INSTALL_DIR=${PYTHON_RUNTIME_DIR}`,
     `UV_CACHE_DIR=${UV_CACHE_DIR}`,
     "UV_NO_MODIFY_PATH=1",
@@ -134,7 +134,7 @@ export async function bootstrapOrchestration(
           .map((line) => line.trim())
           .filter(Boolean);
         if (lines.length > 0) {
-          stderrTail = lines[lines.length - 1]!;
+          stderrTail = lines.at(-1)!;
         }
       }
 

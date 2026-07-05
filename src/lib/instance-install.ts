@@ -8,7 +8,6 @@ import {
 import { orchestrationActionCommand } from "./daemon-exec.ts";
 import { resolveDevIdentity } from "./dev-identity.ts";
 import {
-  ANSIBLE_COLLECTIONS_PATH,
   daemonRepoPath,
   PYTHON_RUNTIME_DIR,
   resolveDevRoot,
@@ -26,15 +25,64 @@ const DAEMON_DIR = daemonRepoPath();
 
 export const DEV_ENV_CONVERGE_STEP = "Converge development environment (Ansible)";
 
+const SHELL_SINGLE_QUOTE_ESCAPE = String.raw`'\''`;
+
 function shellQuote(value: string): string {
-  return `'${value.replace(/'/g, "'\\''")}'`;
+  return "'" + value.replaceAll("'", SHELL_SINGLE_QUOTE_ESCAPE) + "'";
+}
+
+function collectAnsibleHostMessages(hosts: unknown): string[] {
+  if (typeof hosts !== "object" || hosts === null) {
+    return [];
+  }
+
+  const messages: string[] = [];
+  for (const result of Object.values(hosts as Record<string, Record<string, unknown>>)) {
+    const msg = result.msg;
+    if (typeof msg === "string" && msg.length > 0) {
+      messages.push(msg);
+    }
+  }
+  return messages;
+}
+
+function extractAnsibleTaskName(task: unknown): string | undefined {
+  if (typeof task !== "object" || task === null) {
+    return undefined;
+  }
+  return (task as { name?: string }).name?.trim();
+}
+
+function extractAnsibleFailureMessage(event: unknown): string | null {
+  if (typeof event !== "object" || event === null) {
+    return null;
+  }
+
+  const record = event as Record<string, unknown>;
+  if (record._event !== "v2_runner_on_failed" && record._event !== "v2_runner_on_unreachable") {
+    return null;
+  }
+
+  const detail = collectAnsibleHostMessages(record.hosts).join("; ");
+  const taskName = extractAnsibleTaskName(record.task);
+  if (taskName && detail) {
+    return `${taskName}: ${detail}`;
+  }
+  return taskName || detail || "Ansible task failed";
+}
+
+function lastNonEmptyLine(buffer: string): string | undefined {
+  return buffer
+    .trim()
+    .split("\n")
+    .map((line) => line.trim())
+    .findLast((line) => line.length > 0);
 }
 
 function orchestrationEnv(): string[] {
   const dev = resolveDevIdentity();
   const devRoot = resolveDevRoot();
   return [
-    `ANSIBLE_COLLECTIONS_PATH=${ANSIBLE_COLLECTIONS_PATH}`,
     `UV_PYTHON_INSTALL_DIR=${PYTHON_RUNTIME_DIR}`,
     `UV_CACHE_DIR=${UV_CACHE_DIR}`,
     `TURBOPANEL_DEV_USER=${dev.user}`,
@@ -57,26 +105,9 @@ export async function runOrchestrationAction(
   let lastFailureMessage: string | null = null;
 
   const trackEvent = (event: unknown) => {
-    if (typeof event === "object" && event !== null) {
-      const record = event as Record<string, unknown>;
-      if (record._event === "v2_runner_on_failed" || record._event === "v2_runner_on_unreachable") {
-        const hosts = record.hosts as Record<string, Record<string, unknown>> | undefined;
-        const messages: string[] = [];
-        if (hosts) {
-          for (const result of Object.values(hosts)) {
-            const msg = result.msg;
-            if (typeof msg === "string" && msg.length > 0) {
-              messages.push(msg);
-            }
-          }
-        }
-        const task = record.task as { name?: string } | undefined;
-        const taskName = task?.name?.trim();
-        const detail = messages.join("; ");
-        lastFailureMessage = taskName && detail
-          ? `${taskName}: ${detail}`
-          : taskName || detail || "Ansible task failed";
-      }
+    const failureMessage = extractAnsibleFailureMessage(event);
+    if (failureMessage) {
+      lastFailureMessage = failureMessage;
     }
     onEvent(event);
   };
@@ -139,14 +170,7 @@ export async function runOrchestrationAction(
       }
 
       if (!stderrTail && stderrBuffer.trim().length > 0) {
-        const lines = stderrBuffer
-          .trim()
-          .split("\n")
-          .map((line) => line.trim())
-          .filter(Boolean);
-        if (lines.length > 0) {
-          stderrTail = lines[lines.length - 1]!;
-        }
+        stderrTail = lastNonEmptyLine(stderrBuffer) ?? stderrTail;
       }
 
       const message = lastFailureMessage || stderrTail || stdoutTail || "Orchestration action failed";

@@ -69,8 +69,6 @@ export const PYTHON_RUNTIME_DIR = `${RUNTIMES_DIR}/python/${PYTHON_VERSION}`;
 export const PYTHON_CURRENT_DIR = `${RUNTIMES_DIR}/python/current`;
 /** `UV_PYTHON_INSTALL_DIR` target for orchestration bootstrap. */
 export const PYTHON_INSTALL_DIR = PYTHON_RUNTIME_DIR;
-export const ANSIBLE_COLLECTIONS_PATH =
-  `${RUNTIMES_DIR}/ansible/galaxy-collections`;
 /**
  * Pinned Deno version for the dev console's bootstrap fallback + status label.
  *
