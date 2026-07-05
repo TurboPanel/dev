@@ -1,6 +1,7 @@
 {
   "deno.enable": false,
   "typescript.tsdk": "node_modules/typescript/lib",
+  "sonarlint.pathToNodeExecutable": "/opt/turbopanel/vendor/node/current/bin/node",
   "sonarlint.connectedMode.project": {
     "connectionId": "turbopanel",
     "projectKey": "turbopanel_dev"
