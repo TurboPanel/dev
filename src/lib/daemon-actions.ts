@@ -8,6 +8,7 @@ import {
   RUNTIMES_DIR,
   TURBOPANEL_ROOT,
 } from "./paths.ts";
+import { readInstanceRuntime } from "./daemon-env.ts";
 import { type InstallOutputHandler, runCaptured } from "./install-output.ts";
 import { syncDevToAllDaemons } from "./developer-client.ts";
 
@@ -45,14 +46,19 @@ export function developerMenuActions(status: DevServiceStatus | undefined): Daem
     return [];
   }
 
-  return [
+  const actions: DaemonActionId[] = [
     "repair",
     "start-dev-env",
     "reset-dev-env",
     "reset-dev-db",
-    "sync-dev-build",
-    "purge",
   ];
+
+  if (readInstanceRuntime() === "deno") {
+    actions.push("sync-dev-build");
+  }
+
+  actions.push("purge");
+  return actions;
 }
 
 export function canRestartDaemon(): boolean {
