@@ -79,13 +79,11 @@ export async function switchInstanceRuntime(
 
   await ensureMailpitRunning(onOutput);
 
-  if (target === "workers") {
-    await runSystemctl(["restart", "turbopanel-instance"], onOutput);
-    await runSystemctl(["restart", "turbopanel-caddy"], onOutput);
-  } else {
-    await runSystemctl(["start", "turbopanel-instance"], onOutput);
-    await runSystemctl(["restart", "turbopanel-caddy"], onOutput);
-  }
+  // instance-launch-only handlers already restart turbopanel-instance when runtime
+  // unit/env templates change; start is a no-op if already active (restart would
+  // boot wrangler a second time on workers switches).
+  await runSystemctl(["start", "turbopanel-instance"], onOutput);
+  await runSystemctl(["restart", "turbopanel-caddy"], onOutput);
 
   await requestDaemonRestart(onOutput);
   onOutput?.(`Instance runtime switched to ${target}`);
