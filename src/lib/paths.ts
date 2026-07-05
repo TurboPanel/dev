@@ -156,11 +156,11 @@ export function convergeServiceLogPath(serviceId: string): string {
 /**
  * Daemon logs.
  *
- * Dev and managed installs share the FHS log path (`/var/log/turbopanel/daemon/`);
+ * Dev and managed installs share the FHS log path (`/var/log/turbopanel/`);
  * in dev the console tails these dev-user-owned files.
  */
-export const DAEMON_LOG_PATH = `${LOG_DIR}/daemon/daemon.log`;
-export const DAEMON_ERR_LOG_PATH = `${LOG_DIR}/daemon/daemon.err.log`;
+export const DAEMON_LOG_PATH = `${LOG_DIR}/daemon.log`;
+export const DAEMON_ERR_LOG_PATH = `${LOG_DIR}/daemon.err.log`;
 
 export function sshRepoUrl(repo: string): string {
   return `git@github.com:${repo}.git`;
