@@ -7,7 +7,7 @@ export const CADDY_VERSION = "2.10.2";
 export const NODE_VERSION = "24.17.0";
 
 /** instance/package.json devDependencies.wrangler */
-export const WRANGLER_VERSION = "4.98.0";
+export const WRANGLER_VERSION = "4.107.0";
 
 /** website/package.json dependencies.next */
 export const NEXT_VERSION = "16.2.9";
@@ -57,7 +57,8 @@ export function stackBadgeLabel(
   switch (runtime) {
     case "postgres": {
       const transport = instanceRuntime === "workers" ? "tcp" : "socket";
-      return `${dockerLabel(`postgres ${POSTGRES_VERSION}`)} via ${transport}`;
+      const postgresDocker = dockerLabel(`postgres ${POSTGRES_VERSION}`);
+      return `${postgresDocker} via ${transport}`;
     }
     case "mailpit":
       return dockerLabel("Mailpit");

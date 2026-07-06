@@ -64,7 +64,7 @@ export function instanceRuntimeDevVarsPath(): string {
 }
 export const UV_CACHE_DIR = `${RUNTIMES_DIR}/uv/cache`;
 /** Pinned managed Python (matches daemon `PYTHON_VERSION`). */
-export const PYTHON_VERSION = "3.14";
+export const PYTHON_VERSION = "3.14.6";
 export const PYTHON_RUNTIME_DIR = `${RUNTIMES_DIR}/python/${PYTHON_VERSION}`;
 export const PYTHON_CURRENT_DIR = `${RUNTIMES_DIR}/python/current`;
 /** `UV_PYTHON_INSTALL_DIR` target for orchestration bootstrap. */
