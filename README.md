@@ -1,6 +1,8 @@
-# turbopanel-dev
+# dev
 
 Development environment for [TurboPanel](https://github.com/turbopanel/turbopanel)
+
+GitHub repository: [turbopanel/dev](https://github.com/turbopanel/dev). Local checkout path: `~/dev` (or `${TURBOPANEL_DEV_ROOT}/dev` when set) — the directory name is independent of the repo slug.
 
 ## Getting started
 
@@ -8,7 +10,7 @@ Development environment for [TurboPanel](https://github.com/turbopanel/turbopane
 curl -fsSL https://trbp.nl/develop.sh | sh
 ```
 
-That one-liner downloads `scripts/develop.sh`, clones or updates this repo into `~/dev` (or `${TURBOPANEL_DEV_ROOT}/dev` when set), installs the pinned **Node** runtime to `/opt/turbopanel/vendor/node/` when needed, runs `pnpm install`, and starts the developer console via `vite-node`. On first run it may prompt for git identity, GitHub SSH setup, and sudo (for `git`, `openssh-client`, and the Node install). You can optionally configure passwordless sudo for your dev user to avoid repeated password prompts.
+That one-liner downloads `scripts/develop.sh` from `turbopanel/dev`, clones or updates this repo into `~/dev`, installs the pinned **Node** runtime to `/opt/turbopanel/vendor/node/` when needed, runs `pnpm install`, and starts the developer console via `vite-node`. On first run it may prompt for git identity, GitHub SSH setup, and sudo (for `git`, `openssh-client`, and the Node install). You can optionally configure passwordless sudo for your dev user to avoid repeated password prompts.
 
 **Deno** is not installed by `./console` itself. Install Deno on your host for daemon bootstrap during development, or let daemon bootstrap vendor it to `/opt/turbopanel/vendor/deno/current/deno`. Production hosts use the vendored runtime or a compiled bootstrap entrypoint when `TURBOPANEL_RUNTIME=production`.
 

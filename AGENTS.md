@@ -2,7 +2,7 @@
 
 ## What this repo is
 
-`turbopanel-dev` is the **TurboPanel development console** — a minimal terminal UI built on [Ink](https://github.com/vadimdemedes/ink) 7, run on **Node** via **Vite (`vite-node`)**. Watch mode uses a custom Vite dev runner (`scripts/hot-reload.tsx`) that keeps the Ink process mounted and reloads changed `src/` modules. It is installed via a one-liner into `~/dev` (or `${TURBOPANEL_DEV_ROOT}/dev` when set).
+The **dev** repository ([turbopanel/dev](https://github.com/turbopanel/dev)) is the **TurboPanel development console** — a minimal terminal UI built on [Ink](https://github.com/vadimdemedes/ink) 7, run on **Node** via **Vite (`vite-node`)**. Watch mode uses a custom Vite dev runner (`scripts/hot-reload.tsx`) that keeps the Ink process mounted and reloads changed `src/` modules. It is installed via a one-liner into `~/dev` (or `${TURBOPANEL_DEV_ROOT}/dev` when set).
 
 **This repo runs on Node, not Deno.** In dev the console bootstraps
 orchestration and runs the **daemon from the dev user's home checkout**
@@ -19,14 +19,14 @@ model"). Deno is still installed for the **instance** stack (and mailer) via the
 
 **Target host:** Debian 13 (Vagrant support planned).
 
-**Bootstrap URL:** https://trbp.nl/develop.sh → `scripts/develop.sh` on the `trunk` branch. When piped (`curl … | sh`), `$0` is `sh` so local `scripts/lib/` is not on disk yet — the script downloads those libs from `raw.githubusercontent.com` (override with `TURBOPANEL_DEV_LIB_BASE`) before clone.
+**Bootstrap URL:** https://trbp.nl/develop.sh → `scripts/develop.sh` on the `trunk` branch of [turbopanel/dev](https://github.com/turbopanel/dev). When piped (`curl … | sh`), `$0` is `sh` so local `scripts/lib/` is not on disk yet — the script downloads those libs from `raw.githubusercontent.com/turbopanel/dev` (override with `TURBOPANEL_DEV_LIB_BASE`) before clone.
 
 The current entrypoint is a minimal launcher only (full multi-screen console was removed during a rewrite).
 
 ## Filesystem layout
 
 ```
-~/dev/                    # turbopanel-dev checkout (develop.sh clones here via TURBOPANEL_DEV_ROOT)
+~/dev/                    # turbopanel/dev checkout (develop.sh clones here via TURBOPANEL_DEV_ROOT)
 ├── console               # ensure Node, pnpm install, launch the TUI via vite-node
 ├── orchestration/        # Ansible dev overlay (overrides daemon prod roles)
 ├── scripts/develop.sh    # clone/update + exec ./console
@@ -84,7 +84,7 @@ curl -fsSL https://trbp.nl/develop.sh | sh
 
 ## Responsibilities
 
-- **`scripts/develop.sh`** — clones/updates **only** `turbopanel-dev` via `git@github.com:turbopanel/turbopanel-dev.git`. Requires **`curl`**, **`sudo`**, and a **sudo-capable development user** before it runs (`scripts/lib/dev-prerequisites.sh`). On first run, prompts for git `user.name` and `user.email`, generates `~/.ssh/id_ed25519` if missing, configures SSH commit signing, and verifies GitHub SSH before cloning. May use sudo for `git` / `openssh-client` apt installs. Uses `tp_is_interactive()` so `curl | sh` works when a controlling terminal is available (`/dev/tty`).
+- **`scripts/develop.sh`** — clones/updates **only** [turbopanel/dev](https://github.com/turbopanel/dev) via `git@github.com:turbopanel/dev.git` into `~/dev`. Requires **`curl`**, **`sudo`**, and a **sudo-capable development user** before it runs (`scripts/lib/dev-prerequisites.sh`). On first run, prompts for git `user.name` and `user.email`, generates `~/.ssh/id_ed25519` if missing, configures SSH commit signing, and verifies GitHub SSH before cloning. May use sudo for `git` / `openssh-client` apt installs. Uses `tp_is_interactive()` so `curl | sh` works when a controlling terminal is available (`/dev/tty`).
 - **`console`** — runs the prerequisite check, ensures pinned **Node** (`/opt/turbopanel/vendor/node/current/bin/node`, runs this repo) is installed, enables Corepack/pnpm, runs `pnpm install`, and launches the Ink TUI via `vite-node`. Add `--watch` to use `scripts/hot-reload.tsx`, which keeps the Ink process alive and rerenders when imported `src/` modules change. When stdin/stdout/stderr are not TTYs (e.g. after `exec` from a piped bootstrap), reattaches stdio to `/dev/tty` when `tp_is_interactive()` succeeds. Does **not** install Deno via `./console` itself (Deno bootstrap is via `ensureBootstrapDeno` during daemon install).
 - **`src/tui.tsx`** — minimal Ink app: full-height shell with a one-row `MenuBar`, a bordered `MainPanel`, and a one-row `StatusBar`. `← →` switches areas; Ctrl-C exits. Uses `alternateScreen`. No stack orchestration or platform install yet — rebuild features in `src/` incrementally.
 

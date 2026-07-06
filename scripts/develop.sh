@@ -1,8 +1,8 @@
 #!/bin/sh
 set -eu
 
-REPO_NAME=turbopanel-dev
-REPO_SLUG=turbopanel/turbopanel-dev
+REPO_NAME=dev
+REPO_SLUG=turbopanel/dev
 REPO_URL=git@github.com:${REPO_SLUG}.git
 BRANCH=trunk
 
@@ -38,7 +38,7 @@ case $0 in
     ;;
 esac
 if [ -z "$_tp_install_lib_dir" ]; then
-  _tp_lib_base=${TURBOPANEL_DEV_LIB_BASE:-https://raw.githubusercontent.com/turbopanel/turbopanel-dev/trunk/scripts/lib}
+  _tp_lib_base=${TURBOPANEL_DEV_LIB_BASE:-https://raw.githubusercontent.com/turbopanel/dev/trunk/scripts/lib}
   _tp_install_lib_dir=$(mktemp -d)
   for _tp_lib in privileges.sh dev-identity.sh dev-prerequisites.sh git-github-ssh.sh; do
     curl -fsSL "$_tp_lib_base/$_tp_lib" -o "$_tp_install_lib_dir/$_tp_lib"

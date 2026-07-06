@@ -23,7 +23,7 @@ tp_install_dev_passwordless_sudo() {
 
   cat > "$_idps_tmp" <<EOF
 # TurboPanel development passwordless sudo for ${_idps_user}
-# Installed by turbopanel-dev scripts/develop.sh — remove this file to revert.
+# Installed by turbopanel/dev scripts/develop.sh — remove this file to revert.
 ${_idps_user} ALL=(ALL) NOPASSWD: ALL
 EOF
 
