@@ -1,11 +1,8 @@
 import { instanceRepoPath } from "./paths.ts";
 import { type InstallOutputHandler, runCaptured } from "./install-output.ts";
+import { shellQuote } from "./shell-quote.ts";
 
 const INSTANCE_UNIT = "turbopanel-instance";
-
-function shellQuote(value: string): string {
-  return `'${value.replace(/'/g, "'\\''")}'`;
-}
 
 /**
  * Wipe the dev Postgres schema and re-apply migrations, then restart the

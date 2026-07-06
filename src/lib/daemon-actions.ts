@@ -4,13 +4,13 @@ import { isDaemonSystemdInstalled } from "../dev-services.ts";
 import {
   daemonRepoPath,
   DAEMON_SYSTEMD_UNIT,
-  LEGACY_DAEMON_SYSTEMD_UNIT,
   RUNTIMES_DIR,
   TURBOPANEL_ROOT,
 } from "./paths.ts";
 import { readInstanceRuntime } from "./daemon-env.ts";
 import { type InstallOutputHandler, runCaptured } from "./install-output.ts";
 import { syncDevToAllDaemons } from "./developer-client.ts";
+import { shellQuote } from "./shell-quote.ts";
 
 export type DaemonActionId =
   | "install"
@@ -145,21 +145,6 @@ export async function requestDaemonRestart(
   }
 }
 
-/** @deprecated Use {@link requestDaemonRestart} — blocks until systemd reports active. */
-export async function restartDaemon(
-  onOutput?: InstallOutputHandler,
-): Promise<void> {
-  await requestDaemonRestart(onOutput);
-  const running = await waitForDaemonRunning();
-  if (!running) {
-    throw new Error("Daemon did not become active after restart");
-  }
-}
-
-function shellQuote(value: string): string {
-  return `'${value.replace(/'/g, "'\\''")}'`;
-}
-
 export async function purgeDaemon(
   onOutput?: InstallOutputHandler,
 ): Promise<void> {
@@ -171,9 +156,8 @@ export async function purgeDaemon(
     `${TURBOPANEL_ROOT}/.local`,
   ].map(shellQuote);
 
-  // Stop/remove the current unit and clean up the pre-rename legacy unit for
-  // hosts installed before the turbopanel-daemon → turbopaneld rename.
-  const units = [DAEMON_UNIT, LEGACY_DAEMON_SYSTEMD_UNIT];
+  // Stop/remove the daemon systemd unit.
+  const units = [DAEMON_UNIT];
   const command = [
     ...units.flatMap((unit) => [
       `systemctl stop ${unit} 2>/dev/null || true`,

@@ -103,7 +103,7 @@ src/
 - Run via `vite-node` (Node). Normal mode enters through `src/tui.tsx`; watch mode enters through `scripts/hot-reload.tsx`, which hot-loads `src/app.tsx` through the Vite module graph and rerenders the existing Ink instance. Keep interactive shell state in `scripts/hot-reload.tsx` or another stable runtime layer if it must survive UI edits.
 - The `@turbopanel/components/` import alias is defined in **both** `vite.config.ts` (`resolve.alias`) and `tsconfig.json` (`paths`) — keep them in sync.
 - Keep the CLI **simple**. Platform repo install, service monitoring, and stack actions belong in the Ink app when rebuilt — not new shell scripts.
-- **`src/lib/paths.ts`** — `TURBOPANEL_TRUNK_BRANCH` (`trunk`) is the dev shim for git checkouts and `TURBOPANEL_TRUNK_BRANCH` in `/etc/turbopanel/daemon.env`; release/binary installs omit it. Path helpers: `resolveDevRoot()`, `platformRepoPath()`, `TURBOPANEL_DEV_ROOT`, `TURBOPANEL_<DIR>_REPO` env overrides. Mutable data: `CONFIG_DIR=/etc/turbopanel`, `LOG_DIR=/var/log/turbopanel`, `RUNTIMES_DIR=/opt/turbopanel/vendor`. Daemon: `DAEMON_ENV_PATH=/etc/turbopanel/daemon.env`, `DAEMON_LOG_PATH`/`DAEMON_ERR_LOG_PATH`=`/var/log/turbopanel/daemon.log` + `daemon.err.log`. Console logs: `consoleLogDir()` → `~/.local/console`. `DENO_VERSION` (**`2.9.1`**) is the console's bootstrap fallback + status label and **must** match `deno_version` in the daemon's `deno-runtime` role (pinned by the daemon's `src/orchestration/paths.test.ts`). The daemon systemd unit name lives here too: `DAEMON_SYSTEMD_UNIT` = **`turbopaneld`** (matches the daemon's `install-daemon-systemd.sh`), with `LEGACY_DAEMON_SYSTEMD_UNIT` = `turbopanel-daemon` cleaned up on purge/reset for pre-rename hosts.
+- **`src/lib/paths.ts`** — `TURBOPANEL_TRUNK_BRANCH` (`trunk`) is the dev shim for git checkouts and `TURBOPANEL_TRUNK_BRANCH` in `/etc/turbopanel/daemon.env`; release/binary installs omit it. Path helpers: `resolveDevRoot()`, `platformRepoPath()`, `TURBOPANEL_DEV_ROOT`, `TURBOPANEL_<DIR>_REPO` env overrides. Mutable data: `CONFIG_DIR=/etc/turbopanel`, `LOG_DIR=/var/log/turbopanel`, `RUNTIMES_DIR=/opt/turbopanel/vendor`. Daemon: `DAEMON_ENV_PATH=/etc/turbopanel/daemon.env`, `DAEMON_LOG_PATH`/`DAEMON_ERR_LOG_PATH`=`/var/log/turbopanel/daemon.log` + `daemon.err.log`. Console logs: `consoleLogDir()` → `~/.local/console`. `DENO_VERSION` (**`2.9.1`**) is the console's bootstrap fallback + status label and **must** match `deno_version` in the daemon's `deno-runtime` role (pinned by the daemon's `src/orchestration/paths.test.ts`). The daemon systemd unit name is **`turbopaneld`** (`DAEMON_SYSTEMD_UNIT`), matching the daemon's `install-daemon-systemd.sh` and managed production installs.
 - **`src/lib/daemon-exec.ts`** — always resolves a **Deno** invocation of the source-checkout scripts (`scripts/bootstrap-orchestration.ts`, `scripts/run-orchestration-action.ts`): host Deno if on PATH, else `/opt/turbopanel/vendor/deno/current/deno`. It never runs `/opt/turbopanel/bin/turbopaneld`; that compiled entrypoint (and its `turbopaneld.js` fallback) exists only on managed/production installs, which the console does not drive.
 - **Cell trace (Developer area)** — the Developer menu (`src/lib/daemon-actions.ts` → `toggle-cell-trace` / `view-cell-trace` actions, dispatched in `src/hooks/use-console-app.ts`) lets you enable/disable verbose cell tracing and view it. The toggle (`src/lib/instance-trace-env.ts` — `readCellTraceEnabled`/`setCellTraceEnabled`) writes `TURBOPANEL_DAEMON_DEBUG` into **both** `/etc/turbopanel/instance/runtime.env` and `runtime.dev-vars` (so it applies to Deno and the Workers `wrangler dev` DO identically) and then restarts `turbopanel-instance` (reusing the existing restart-overlay flow) to apply it. The **Cell trace** viewer (`src/components/cell-trace-view.tsx`, `src/hooks/use-cell-trace-log.ts`, `src/lib/cell-trace-log.ts`) is a Developer sub-view that tails and filters the instance log (`/var/log/turbopanel/instance/instance.log` + `.err.log`) down to the `daemon-cell`/`command-consumer`-tagged trace lines, reached via the `view-cell-trace` action and rendered by `src/components/developer-panel.tsx`. Enabling `TURBOPANEL_DAEMON_DEBUG` now also surfaces per-call-site Durable Object storage-op counters (`storageReads`/`storageWrites`/`storageByCallSite`) on the cell diagnostics for billing audits; canonical detail lives in `~/instance/AGENTS.md` (Daemon Cell).
 
@@ -115,13 +115,30 @@ The **Ansible dev overlay** lives in `<daemon checkout>/dev/orchestration/` and 
 
 - **`scripts/lib/privileges.sh`** — POSIX sudo re-exec helpers (`tp_ensure_privileges`), logging helpers, `tp_is_interactive()` (stdin TTY or readable/writable `/dev/tty`).
 - **`scripts/lib/paths.sh`** — `/opt/turbopanel` path constants; pinned `NODE_VERSION` + vendored `NODE_BIN`/`PNPM_BIN` under `vendor/node/current/bin/`.
-- **`scripts/lib/packages.sh`** — apt prerequisite checks: `tp_ensure_node_prerequisites` (curl/tar/xz-utils/sha256sum).
+- **`scripts/lib/packages.sh`** — apt prerequisite checks: `tp_require_host_commands` (curl/tar/sha256sum).
 - **`scripts/lib/runtime.sh`** — pinned **Node** install from the `nodejs.org` tarball into `/opt/turbopanel/vendor/node/<version>/` plus Corepack/pnpm (`tp_ensure_node_runtime`).
 - **`scripts/lib/dev-identity.sh`** — resolve dev user from process UID (`tp_resolve_dev_identity`).
 - **`scripts/lib/dev-prerequisites.sh`** — curl/sudo/dev-user checks shared by `develop.sh` and `./console`. When sudo still requires a password, optionally prompts to install `/etc/sudoers.d/turbopanel-dev-nopasswd` (full `NOPASSWD` for the dev user on local dev hosts). Set `TURBOPANEL_DEV_SKIP_NOPASSWD_SUDO=1` to skip the prompt.
 - **`scripts/lib/git-github-ssh.sh`** — git identity prompts, SSH key generation, GitHub verification (used by `develop.sh`).
 
 ## Key conventions
+
+### TypeScript style (SonarQube)
+
+- Prefer **`String#replaceAll()`** over **`String#replace()` with a global regex** when replacing every occurrence of a substring (`typescript:S7781`).
+- Use **`String.raw`** for string literals that contain backslashes so escapes stay readable and correct (`typescript:S7780`). Example: POSIX shell single-quote escaping is `String.raw`'\''` plus `replaceAll("'", …)`, not `"\'\\''"` with `replace(/'/g, …)`.
+- Import **`shellQuote`** from `src/lib/shell-quote.ts` for shell argument quoting — do not copy inline `shellQuote` helpers.
+- Prefer **optional chaining** (`obj?.prop`) over `!obj || obj.prop` (`typescript:S6582`).
+- Use **`new TypeError()`** (not `new Error()`) when asserting types/shapes in tests (`typescript:S7786`).
+- Avoid **nested ternaries** — use `if`/`switch` or small helpers (`typescript:S3358`).
+- Extract helpers when **cognitive complexity** exceeds 15 (`typescript:S3776`).
+- Sort strings with **`.sort((a, b) => a.localeCompare(b))`** (`typescript:S2871`).
+- Do not leave **`TODO`** in code — use `Future:` in a normal comment (`typescript:S1135`).
+- Use **`RegExp.exec()`** instead of `String.match()` when extracting a single match (`typescript:S6594`).
+
+### Ansible style (SonarQube)
+
+- Prefer **`mode: "0640"`** / **`0750"`** over world-readable **`0644"`** / **`0755"`** for scripts and systemd units; set explicit **`owner`** / **`group`** (`ansible:S2612`).
 
 - Default git branch is **`trunk`** everywhere.
 - Shell scripts are **POSIX `sh`** — no bashisms.
@@ -133,7 +150,7 @@ The **Ansible dev overlay** lives in `<daemon checkout>/dev/orchestration/` and 
 - Node is pinned in `scripts/lib/paths.sh` (`NODE_VERSION` **`24.17.0`**), downloaded from `nodejs.org`, vendored to `/opt/turbopanel/vendor/node/<version>/` with a `current` symlink. pnpm is pinned solely by `packageManager` in `package.json` and provisioned via Corepack.
 - **`TURBOPANEL_MODE=development`** during dev converge. Source repos default under `$HOME` via `TURBOPANEL_DEV_ROOT` and per-repo `TURBOPANEL_<DIR>_REPO` overrides.
 - Daemon bootstrap, systemd units, and Docker containers run as the **current dev user** — no `turbopanel` / `turbopaneli` / `turbopanelc` service accounts are created in dev.
-- Purge/reset stops and removes the daemon systemd unit **`turbopaneld.service`** (and the legacy `turbopanel-daemon.service` for pre-rename hosts), dev FHS state under `/etc/turbopanel`, `/var/lib/turbopanel`, `/var/log/turbopanel`, `/run/turbopanel`, and runtimes under `/opt/turbopanel/vendor`.
+- Purge/reset stops and removes the daemon systemd unit **`turbopaneld.service`**, dev FHS state under `/etc/turbopanel`, `/var/lib/turbopanel`, `/var/log/turbopanel`, `/run/turbopanel`, and runtimes under `/opt/turbopanel/vendor`.
 - Do not commit secrets or environment-specific config.
 
 ## What agents must NOT do

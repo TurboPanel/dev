@@ -17,6 +17,7 @@ import {
 import { ensureFhsTreeOwnership } from "./turbopanel-permissions.ts";
 import { writeDaemonBaseEnv } from "./daemon-env.ts";
 import { resolveDevIdentity } from "./dev-identity.ts";
+import { shellQuote } from "./shell-quote.ts";
 
 /**
  * Dev vs production install path invariant:
@@ -35,12 +36,6 @@ import { resolveDevIdentity } from "./dev-identity.ts";
  * escalation via the dev user's own passwordless sudo).
  */
 const DAEMON_DIR = daemonRepoPath();
-
-const SHELL_SINGLE_QUOTE_ESCAPE = String.raw`'\''`;
-
-function shellQuote(value: string): string {
-  return "'" + value.replaceAll("'", SHELL_SINGLE_QUOTE_ESCAPE) + "'";
-}
 
 function bootstrapEnv(): string[] {
   return [

@@ -1,4 +1,5 @@
 import { type InstallOutputHandler, runCaptured } from "./install-output.ts";
+import { shellQuote } from "./shell-quote.ts";
 
 /**
  * Seconds apt-get waits for the dpkg/frontend lock before giving up. Covers both
@@ -20,10 +21,6 @@ function serializeApt<T>(task: () => Promise<T>): Promise<T> {
     () => undefined,
   );
   return run;
-}
-
-function shellQuote(value: string): string {
-  return `'${value.replace(/'/g, "'\\''")}'`;
 }
 
 export interface AptGetInstallOptions {

@@ -1,5 +1,5 @@
 import React, { memo, useEffect, useMemo, useState } from "react";
-import { Box, Text, useInput } from "ink";
+import { Box, Text, useInput, type Key } from "ink";
 import type { DevService } from "../dev-services.ts";
 import {
   DAEMON_ACTION_LABELS,
@@ -19,6 +19,58 @@ import { RuntimeTitleHeader, runtimeTitleHeaderRows } from "./instance-title-hea
 
 type DetailFocus = "actions" | "log";
 
+function handleDaemonDetailKey(
+  key: Key,
+  options: {
+    focusTargets: DetailFocus[];
+    focus: DetailFocus;
+    setFocus: (focus: DetailFocus) => void;
+    logFocused: boolean;
+    handleLogKey: (key: Key) => void;
+    logInputActive: boolean;
+    actions: DaemonActionId[];
+    selectedActionIndex: number;
+    setSelectedActionIndex: React.Dispatch<React.SetStateAction<number>>;
+    onDaemonAction?: (action: DaemonActionId) => void | Promise<void>;
+    setActionMessage: (message: string | null) => void;
+  },
+): void {
+  if (key.tab) {
+    const currentIndex = options.focusTargets.indexOf(options.focus);
+    const next = options.focusTargets[(currentIndex + 1) % options.focusTargets.length];
+    if (next) {
+      options.setFocus(next);
+    }
+    return;
+  }
+
+  if (options.logFocused) {
+    options.handleLogKey(key);
+    return;
+  }
+
+  if (options.focus !== "actions" || !options.logInputActive) {
+    return;
+  }
+
+  const lastAction = options.actions.length - 1;
+  if (key.upArrow) {
+    options.setSelectedActionIndex((index) => Math.max(0, index - 1));
+  }
+  if (key.downArrow) {
+    options.setSelectedActionIndex((index) => Math.min(lastAction, index + 1));
+  }
+  if (key.return && options.actions.length > 0 && options.onDaemonAction) {
+    const action = options.actions[options.selectedActionIndex];
+    if (action) {
+      void Promise.resolve(options.onDaemonAction(action)).catch((error: unknown) => {
+        const text = error instanceof Error ? error.message : String(error);
+        options.setActionMessage(text);
+      });
+    }
+  }
+}
+
 function overlayToDaemonLines(lines: ConsoleLogLine[]): DaemonLogLine[] {
   const parsed: DaemonLogLine[] = [];
   for (const line of lines) {
@@ -32,7 +84,7 @@ function overlayToDaemonLines(lines: ConsoleLogLine[]): DaemonLogLine[] {
       continue;
     }
     const entry = parseDaemonLogLine(line.text);
-    if (!shouldHideDaemonLogLine(entry)) {
+    if (entry && !shouldHideDaemonLogLine(entry)) {
       parsed.push(entry);
     }
   }
@@ -102,38 +154,19 @@ export const DaemonDetailPanel = memo(function DaemonDetailPanel({
   });
 
   useInput((_input, key) => {
-    if (key.tab) {
-      const currentIndex = focusTargets.indexOf(focus);
-      const next = focusTargets[(currentIndex + 1) % focusTargets.length];
-      if (next) {
-        setFocus(next);
-      }
-      return;
-    }
-
-    if (logFocused) {
-      handleLogKey(key);
-      return;
-    }
-
-    if (focus === "actions" && logInputActive) {
-      const lastAction = actions.length - 1;
-      if (key.upArrow) {
-        setSelectedActionIndex((index) => Math.max(0, index - 1));
-      }
-      if (key.downArrow) {
-        setSelectedActionIndex((index) => Math.min(lastAction, index + 1));
-      }
-      if (key.return && actions.length > 0 && onDaemonAction) {
-        const action = actions[selectedActionIndex];
-        if (action) {
-          void Promise.resolve(onDaemonAction(action)).catch((error: unknown) => {
-            const text = error instanceof Error ? error.message : String(error);
-            setActionMessage(text);
-          });
-        }
-      }
-    }
+    handleDaemonDetailKey(key, {
+      focusTargets,
+      focus,
+      setFocus,
+      logFocused,
+      handleLogKey,
+      logInputActive,
+      actions,
+      selectedActionIndex,
+      setSelectedActionIndex,
+      onDaemonAction,
+      setActionMessage,
+    });
   });
 
   return (

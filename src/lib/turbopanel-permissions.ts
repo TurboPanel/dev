@@ -2,16 +2,13 @@ import { spawnSync } from "node:child_process";
 import { CONFIG_DIR, LOG_DIR, RUNTIMES_DIR, TURBOPANEL_ROOT } from "./paths.ts";
 import { tryResolveDevIdentity } from "./dev-identity.ts";
 import { type InstallOutputHandler, runCaptured } from "./install-output.ts";
+import { shellQuote } from "./shell-quote.ts";
 
 /** Persistent state dir (FHS); dev-owned at runtime like the other trees. */
 const STATE_DIR = "/var/lib/turbopanel";
 
 /** FHS trees the dev user should own on co-located dev hosts. */
 const FHS_TREES = [TURBOPANEL_ROOT, CONFIG_DIR, STATE_DIR, LOG_DIR] as const;
-
-function shellQuote(value: string): string {
-  return `'${value.replace(/'/g, "'\\''")}'`;
-}
 
 /**
  * Dev-only gate. The whole dev stack runs as the single invoking dev user; this

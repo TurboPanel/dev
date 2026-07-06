@@ -19,8 +19,3 @@ tp_require_host_commands() {
     exit 1
   fi
 }
-
-# Back-compat alias for runtime.sh.
-tp_ensure_node_prerequisites() {
-  tp_require_host_commands
-}

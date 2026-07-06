@@ -8,10 +8,7 @@ import {
   VENDORED_DENO_BIN,
 } from "./paths.ts";
 import { type InstallOutputHandler, runCaptured } from "./install-output.ts";
-
-function shellQuote(value: string): string {
-  return `'${value.replace(/'/g, "'\\''")}'`;
-}
+import { shellQuote } from "./shell-quote.ts";
 
 /** True when the host runs the production runtime contract (compiled entrypoints). */
 export function isProductionRuntime(): boolean {

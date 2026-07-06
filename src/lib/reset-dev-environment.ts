@@ -11,16 +11,12 @@ import {
 import type { InstallStepHandler } from "./platform-install.ts";
 import {
   DAEMON_SYSTEMD_UNIT,
-  LEGACY_DAEMON_SYSTEMD_UNIT,
   platformRepoPath,
   TURBOPANEL_TRUNK_BRANCH,
 } from "./paths.ts";
+import { shellQuote } from "./shell-quote.ts";
 
 const PLATFORM_REPOS = ["daemon", "instance", "ui", "website"] as const;
-
-function shellQuote(value: string): string {
-  return `'${value.replace(/'/g, "'\\''")}'`;
-}
 
 async function runShellStep(
   label: string,
@@ -73,7 +69,7 @@ export async function resetDevEnvironment(
 
   await runShellStep(
     "Stop platform services",
-    `systemctl stop turbopanel-instance turbopanel-caddy turbopanel-ui turbopanel-website turbopanel-mailer turbopanel-rabbitmq turbopanel-mailpit turbopanel-redis ${DAEMON_SYSTEMD_UNIT} ${LEGACY_DAEMON_SYSTEMD_UNIT} 2>/dev/null || true`,
+    `systemctl stop turbopanel-instance turbopanel-caddy turbopanel-ui turbopanel-website turbopanel-mailer turbopanel-rabbitmq turbopanel-mailpit turbopanel-redis ${DAEMON_SYSTEMD_UNIT} 2>/dev/null || true`,
     onOutput,
     onStep,
   );

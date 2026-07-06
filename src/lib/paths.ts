@@ -141,14 +141,10 @@ export const DAEMON_REPO = {
  * systemd unit name for the co-located dev daemon.
  *
  * Matches `turbopanel_service_name` in the daemon's `daemon-launch` role and
- * `SERVICE_NAME` in `scripts/install-daemon-systemd.sh` (renamed from the legacy
- * `turbopanel-daemon`). The install script migrates old hosts by removing the
- * legacy unit; the console cleans it up on purge/reset too. Managed/production
+ * `SERVICE_NAME` in `scripts/install-daemon-systemd.sh`. Managed/production
  * installs run the same-named unit from `/opt/turbopanel/bin/turbopaneld`.
  */
 export const DAEMON_SYSTEMD_UNIT = "turbopaneld";
-/** Pre-rename unit name, still cleaned up for hosts installed before the rename. */
-export const LEGACY_DAEMON_SYSTEMD_UNIT = "turbopanel-daemon";
 
 export function consoleLogDir(): string {
   return `${resolveDevRoot()}/.local/console`;

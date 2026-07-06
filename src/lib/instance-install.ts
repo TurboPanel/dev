@@ -20,16 +20,11 @@ import {
   sanitizeInstallOutput,
 } from "./install-output.ts";
 import { ensureDevUserDockerAccess } from "./turbopanel-permissions.ts";
+import { shellQuote } from "./shell-quote.ts";
 
 const DAEMON_DIR = daemonRepoPath();
 
 export const DEV_ENV_CONVERGE_STEP = "Converge development environment (Ansible)";
-
-const SHELL_SINGLE_QUOTE_ESCAPE = String.raw`'\''`;
-
-function shellQuote(value: string): string {
-  return "'" + value.replaceAll("'", SHELL_SINGLE_QUOTE_ESCAPE) + "'";
-}
 
 function collectAnsibleHostMessages(hosts: unknown): string[] {
   if (typeof hosts !== "object" || hosts === null) {

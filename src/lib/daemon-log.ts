@@ -6,34 +6,8 @@ import { sanitizeInstallOutput } from "./install-output.ts";
 
 const HIDE_ANSIBLE_DEBUG = true;
 
-/** Legacy stderr noise before structured logging (skip when tailing old err.log). */
-function stripAnsi(text: string): string {
-  return text.replace(/\x1b\[[0-9;]*m/g, "");
-}
-
-function isLegacyNoiseLine(raw: string): boolean {
-  const trimmed = stripAnsi(raw).trim();
-  if (/^\d{4}-\d{2}-\d{2}T/.test(trimmed)) {
-    return false;
-  }
-  if (/^(DEBUG|INFO|WARN|ERROR)\s/.test(trimmed)) {
-    return false;
-  }
-  if (trimmed.startsWith("{")) {
-    return false;
-  }
-  return (
-    /^Warning/i.test(trimmed) ||
-    /--env-file/.test(trimmed) ||
-    /^Download\s+https?:\/\//i.test(trimmed) ||
-    /^\[instance\] waiting for instance:/i.test(trimmed)
-  );
-}
-
 export const STRUCTURED_TEXT_WITH_TIME_RE =
   /^(\d{4}-\d{2}-\d{2}T[\d:.]+Z)\s+(DEBUG|INFO|WARN|ERROR)\s+(\S+)\s{2,}(.*)$/;
-const STRUCTURED_TEXT_RE =
-  /^(DEBUG|INFO|WARN|ERROR)\s+(\S+)\s{2,}(.*)$/;
 const WAITING_MESSAGE_RE = /^waiting(?:\s+for\s+instance)?$/i;
 
 export type DaemonLogLevel = "debug" | "info" | "warn" | "error";
@@ -73,37 +47,20 @@ function waitingMessage(message: string): string {
     : message;
 }
 
-function estimateTimeFromFilePosition(
-  offset: number,
-  size: number,
-  birthMs: number,
-  mtimeMs: number,
-): string {
-  if (size <= 0) {
-    return new Date(mtimeMs).toISOString();
-  }
-  const span = Math.max(mtimeMs - birthMs, 0);
-  const ratio = Math.min(Math.max(offset / size, 0), 1);
-  return new Date(birthMs + ratio * span).toISOString();
-}
-
-function enrichLineTimestamps(
-  lines: DaemonLogLine[],
-  meta: Pick<FileTailMeta, "path" | "birthMs" | "mtimeMs" | "size">,
-  offsets: number[],
-): DaemonLogLine[] {
-  return lines.map((line, index) => {
-    if (line.time.trim().length > 0) {
-      return line;
-    }
-    // Legacy fallback for log lines written before structured logging was introduced;
-    // increasingly rare as old log files age out.
-    const offset = offsets[index] ?? meta.size;
-    return {
-      ...line,
-      time: cachedDerivedTimestamp(meta.path, offset, meta),
-    };
-  });
+function structuredLine(
+  time: string,
+  level: DaemonLogLevel,
+  component: string,
+  message: string,
+  err?: string,
+): DaemonLogLine {
+  return {
+    time: time.trim(),
+    level,
+    component,
+    message: waitingMessage(message),
+    err,
+  };
 }
 
 export const LOG_TIME_PLACEHOLDER = "──:──:──";
@@ -123,8 +80,9 @@ export function formatLogDisplayTime(iso: string): string {
   return iso;
 }
 
-export function parseDaemonLogLine(raw: string): DaemonLogLine {
+export function parseDaemonLogLine(raw: string): DaemonLogLine | null {
   const trimmed = raw.trim();
+  if (!trimmed) return null;
 
   if (trimmed.startsWith("{")) {
     try {
@@ -145,7 +103,7 @@ export function parseDaemonLogLine(raw: string): DaemonLogLine {
         );
       }
     } catch {
-      // fall through
+      return null;
     }
   }
 
@@ -161,43 +119,7 @@ export function parseDaemonLogLine(raw: string): DaemonLogLine {
     );
   }
 
-  const withoutTime = STRUCTURED_TEXT_RE.exec(trimmed);
-  if (withoutTime) {
-    const { message, err } = splitMessageAndErr(withoutTime[3]);
-    return structuredLine(
-      "",
-      normalizeLevel(withoutTime[1]),
-      withoutTime[2],
-      message,
-      err,
-    );
-  }
-
-  if (
-    trimmed === "waiting for instance" ||
-    /^\[(?:daemon|instance)\] waiting for instance/.test(trimmed)
-  ) {
-    return structuredLine("", "info", "instance", "waiting for instance");
-  }
-
-  if (/^\[docker-monitor\] poll failed:/.test(trimmed)) {
-    return structuredLine("", "warn", "docker", "monitor poll failed (check Docker socket access)");
-  }
-
-  if (/^\[docker\] Docker socket not reachable/.test(trimmed)) {
-    return structuredLine("", "warn", "docker", "Docker socket not reachable yet");
-  }
-
-  if (
-    /^Warning/i.test(trimmed) ||
-    /--env-file/.test(trimmed) ||
-    /^WARN\b/i.test(trimmed)
-  ) {
-    const message = trimmed.replace(/^Warning\s*/i, "");
-    return structuredLine("", "warn", "deno", message);
-  }
-
-  return structuredLine("", "info", "daemon", trimmed);
+  return null;
 }
 
 function collapseKey(line: DaemonLogLine): string {
@@ -236,61 +158,11 @@ type FileTailMeta = {
   size: number;
 };
 
-const derivedTimestampCache = new Map<string, string>();
-const derivedTimestampFileSize = new Map<string, number>();
-
 // Per-line byte budget for tail reads. Daemon logs can include Ansible output
 // and stack traces; 4 KB/line keeps the tail window generous while never
 // loading a multi-hundred-MB log file fully into memory.
 const TAIL_BYTES_PER_LINE = 4 * 1024;
 const TAIL_MIN_BYTES = 64 * 1024;
-
-function cachedDerivedTimestamp(
-  path: string,
-  offset: number,
-  meta: Pick<FileTailMeta, "birthMs" | "mtimeMs" | "size">,
-): string {
-  const previousSize = derivedTimestampFileSize.get(path);
-  if (previousSize !== undefined && meta.size < previousSize) {
-    for (const key of derivedTimestampCache.keys()) {
-      if (key.startsWith(`${path}:`)) {
-        derivedTimestampCache.delete(key);
-      }
-    }
-  }
-  derivedTimestampFileSize.set(path, meta.size);
-
-  const key = `${path}:${offset}`;
-  const cached = derivedTimestampCache.get(key);
-  if (cached) {
-    return cached;
-  }
-
-  const derived = estimateTimeFromFilePosition(
-    offset,
-    meta.size,
-    meta.birthMs,
-    meta.mtimeMs,
-  );
-  derivedTimestampCache.set(key, derived);
-  return derived;
-}
-
-function structuredLine(
-  time: string,
-  level: DaemonLogLevel,
-  component: string,
-  message: string,
-  err?: string,
-): DaemonLogLine {
-  return {
-    time: time.trim(),
-    level,
-    component,
-    message: waitingMessage(message),
-    err,
-  };
-}
 
 function fileStatMs(path: string): { birthMs: number; mtimeMs: number; size: number } | undefined {
   try {
@@ -444,18 +316,10 @@ function tailLinesWithMeta(
 }
 
 function parseTailedFile(meta: FileTailMeta): DaemonLogLine[] {
-  const filtered = meta.lines.filter((line) => !isLegacyNoiseLine(line.text));
-  if (filtered.length === 0) {
-    return [];
-  }
-  const parsed = filtered
+  return meta.lines
     .map((line) => parseDaemonLogLine(line.text))
+    .filter((line): line is DaemonLogLine => line !== null)
     .filter((line) => !shouldHideDaemonLogLine(line));
-  return enrichLineTimestamps(
-    parsed,
-    meta,
-    filtered.map((line) => line.offset),
-  );
 }
 
 function isDockerMonitorPollLine(line: DaemonLogLine): boolean {
@@ -536,46 +400,64 @@ function emptyLogHints(
 function collapseRepeatedStatus(lines: DaemonLogLine[]): DaemonLogLine[] {
   const collapsed = collapseConsecutiveLines(lines);
   const keep: DaemonLogLine[] = [];
-  let sawWaiting = false;
-  let sawDockerPoll = false;
-  let lastRecapKey: string | undefined;
-  let lastRecapIndex: number | undefined;
+  const state = {
+    sawWaiting: false,
+    sawDockerPoll: false,
+    lastRecapKey: undefined as string | undefined,
+    lastRecapIndex: undefined as number | undefined,
+  };
 
   for (const line of collapsed) {
-    if (line.component === "instance" && line.message === "waiting for instance") {
-      if (!sawWaiting) {
-        keep.push(line);
-        sawWaiting = true;
-      }
+    if (appendDedupedStatusLine(line, keep, state)) {
       continue;
     }
-    if (
-      line.component === "docker" &&
-      line.message === "monitor poll failed (check Docker socket access)"
-    ) {
-      if (!sawDockerPoll) {
-        keep.push(line);
-        sawDockerPoll = true;
-      }
-      continue;
-    }
-    if (line.component === "ansible" && line.message.startsWith("[recap]")) {
-      const key = collapseKey(line);
-      if (lastRecapKey === key && lastRecapIndex !== undefined) {
-        keep[lastRecapIndex] = line;
-      } else {
-        keep.push(line);
-        lastRecapKey = key;
-        lastRecapIndex = keep.length - 1;
-      }
-      continue;
-    }
-    lastRecapKey = undefined;
-    lastRecapIndex = undefined;
+    state.lastRecapKey = undefined;
+    state.lastRecapIndex = undefined;
     keep.push(line);
   }
 
   return keep;
+}
+
+function appendDedupedStatusLine(
+  line: DaemonLogLine,
+  keep: DaemonLogLine[],
+  state: {
+    sawWaiting: boolean;
+    sawDockerPoll: boolean;
+    lastRecapKey: string | undefined;
+    lastRecapIndex: number | undefined;
+  },
+): boolean {
+  if (line.component === "instance" && line.message === "waiting for instance") {
+    if (!state.sawWaiting) {
+      keep.push(line);
+      state.sawWaiting = true;
+    }
+    return true;
+  }
+  if (
+    line.component === "docker" &&
+    line.message === "monitor poll failed (check Docker socket access)"
+  ) {
+    if (!state.sawDockerPoll) {
+      keep.push(line);
+      state.sawDockerPoll = true;
+    }
+    return true;
+  }
+  if (line.component === "ansible" && line.message.startsWith("[recap]")) {
+    const key = collapseKey(line);
+    if (state.lastRecapKey === key && state.lastRecapIndex !== undefined) {
+      keep[state.lastRecapIndex] = line;
+    } else {
+      keep.push(line);
+      state.lastRecapKey = key;
+      state.lastRecapIndex = keep.length - 1;
+    }
+    return true;
+  }
+  return false;
 }
 
 export type DaemonLogFileStat = {
