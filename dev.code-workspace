@@ -17,38 +17,46 @@
 		}
 	],
 	"settings": {
-		"js/ts.tsdk.path": "node_modules/typescript/lib",
-		"sonarlint.pathToNodeExecutable": "/opt/turbopanel/vendor/node/current/bin/node",
-		"ansible.ansible.path": "/opt/turbopanel/vendor/ansible/current/bin/ansible",
-		"ansible.python.interpreterPath": "/opt/turbopanel/vendor/ansible/current/bin/python3",
-		"ansible.validation.lint.enabled": true,
-		"ansible.validation.lint.path": "/opt/turbopanel/vendor/ansible/current/bin/ansible-lint",
-		"deno.path": "/opt/turbopanel/vendor/deno/current/deno",
-		"deno.enablePaths": ["../daemon"],
-		"remote.restoreForwardedPorts": true,
-		"remote.portsAttributes": {
-			"4983": {
-				"label": "Drizzle Studio",
-				"protocol": "http",
-				"onAutoForward": "silent"
-			},
-			"8025": {
-				"label": "Mailpit",
-				"protocol": "http",
-				"onAutoForward": "silent"
-			},
-			"8443": {
-				"label": "Instance HTTPS",
-				"protocol": "https",
-				"onAutoForward": "silent"
-			},
-			"19820": {
-				"label": "Website (Next.js)",
-				"protocol": "http",
-				"onAutoForward": "silent"
-			}
-		}
-	},
+    "files.watcherExclude": {
+      "**/node_modules/**": true,
+      "**/.git/**": true,
+      "**/dist/**": true,
+      "**/.next/**": true,
+      "**/.expo/**": true,
+      "**/vendor/**": true,
+    },
+    "js/ts.tsdk.path": "node_modules/typescript/lib",
+    "sonarlint.pathToNodeExecutable": "/opt/turbopanel/vendor/node/current/bin/node",
+    "ansible.ansible.path": "/opt/turbopanel/vendor/ansible/current/bin/ansible",
+    "ansible.python.interpreterPath": "/opt/turbopanel/vendor/ansible/current/bin/python3",
+    "ansible.validation.lint.enabled": true,
+    "ansible.validation.lint.path": "/opt/turbopanel/vendor/ansible/current/bin/ansible-lint",
+    "deno.path": "/opt/turbopanel/vendor/deno/current/deno",
+    "deno.enablePaths": ["../daemon"],
+    "remote.restoreForwardedPorts": true,
+    "remote.portsAttributes": {
+      "4983": {
+        "label": "Drizzle Studio",
+        "protocol": "http",
+        "onAutoForward": "silent",
+      },
+      "8025": {
+        "label": "Mailpit",
+        "protocol": "http",
+        "onAutoForward": "silent",
+      },
+      "8443": {
+        "label": "Instance HTTPS",
+        "protocol": "https",
+        "onAutoForward": "silent",
+      },
+      "19820": {
+        "label": "Website (Next.js)",
+        "protocol": "http",
+        "onAutoForward": "silent",
+      },
+    },
+  },
 	"extensions": {
 		"recommendations": [
 			"redhat.ansible",
