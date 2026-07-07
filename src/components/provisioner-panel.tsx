@@ -39,6 +39,20 @@ function truncateLine(text: string, maxWidth: number): string {
 }
 
 type BootstrapPhase = "uv" | "python" | "ansible" | "converge";
+
+/** Maps the in-flight bootstrap sub-phase to the task-list label it corresponds to. */
+function bootstrapStepForPhase(phase: BootstrapPhase): string {
+  switch (phase) {
+    case "uv":
+      return BOOTSTRAP_UV;
+    case "python":
+      return BOOTSTRAP_PYTHON;
+    case "ansible":
+      return BOOTSTRAP_ANSIBLE;
+    case "converge":
+      return BOOTSTRAP_CONVERGE;
+  }
+}
 type ProvisionerPhase =
   | "daemon"
   | "dev-env"
@@ -194,6 +208,15 @@ export function ProvisionerPanel({
 
     void (async () => {
       let currentStep = "Clone daemon repository";
+      // True only while bootstrapOrchestration() is in flight: that single call covers
+      // four displayed steps (uv/python/ansible/converge), so on failure we must consult
+      // bootstrapPhase.current to find which of the four actually failed. Outside that
+      // window, `currentStep` already names the real failing step (installDaemon and
+      // installDaemonSystemd emit their own "failed" status before throwing) — without
+      // this flag, a later failure (e.g. starting the systemd unit) would incorrectly
+      // re-paint "Install uv package manager" as failed too, since currentStep was last
+      // set there and never advanced past it.
+      let duringBootstrapOrchestration = false;
       try {
         emitStep(currentStep, "running");
         await installDaemon(emitStep, appendOutput);
@@ -203,13 +226,16 @@ export function ProvisionerPanel({
         bootstrapPhase.current = "uv";
         currentStep = BOOTSTRAP_UV;
         emitStep(BOOTSTRAP_UV, "running");
+        duringBootstrapOrchestration = true;
         await bootstrapOrchestration(trackBootstrapEvent, trackBootstrapOutput);
+        duringBootstrapOrchestration = false;
         if (cancelled) return;
         emitStep(BOOTSTRAP_UV, "ok");
         emitStep(BOOTSTRAP_PYTHON, "ok");
         emitStep(BOOTSTRAP_ANSIBLE, "ok");
         emitStep(BOOTSTRAP_CONVERGE, "ok");
 
+        currentStep = "Install turbopaneld systemd unit";
         await installDaemonSystemd(appendOutput, emitStep);
         if (cancelled) return;
 
@@ -217,16 +243,10 @@ export function ProvisionerPanel({
         onDaemonInstallDone?.();
       } catch (caught) {
         if (cancelled) return;
-        emitStep(currentStep, "failed");
-        if (bootstrapPhase.current === "uv") {
-          emitStep(BOOTSTRAP_UV, "failed");
-        } else if (bootstrapPhase.current === "python") {
-          emitStep(BOOTSTRAP_PYTHON, "failed");
-        } else if (bootstrapPhase.current === "ansible") {
-          emitStep(BOOTSTRAP_ANSIBLE, "failed");
-        } else {
-          emitStep(BOOTSTRAP_CONVERGE, "failed");
+        if (duringBootstrapOrchestration) {
+          currentStep = bootstrapStepForPhase(bootstrapPhase.current);
         }
+        emitStep(currentStep, "failed");
         const message = caught instanceof Error ? caught.message : String(caught);
         const saved = await writeTaskErrorLog({
           title: "Install daemon",
