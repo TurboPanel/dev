@@ -1,52 +1,28 @@
-import { readFileSync } from "node:fs";
-import { spawnSync } from "node:child_process";
 import { DAEMON_ENV_PATH } from "./paths.ts";
 import {
   DRIZZLE_STUDIO_PORT,
   drizzleStudioBrowserUrl,
 } from "./drizzle-studio.ts";
+import { parseEnvEntries, readEnvFile } from "./env-file.ts";
 
 export const DEFAULT_CADDY_PORT = 8443;
 export const DEFAULT_WEBSITE_PORT = 19820;
 export const DEFAULT_MAILPIT_WEB_PORT = 8025;
 export const DEFAULT_RABBITMQ_MGMT_PORT = 15672;
+export const DEFAULT_REDIS_INSIGHT_WEB_PORT = 5540;
 
 const PORT_ENV_KEYS: Record<string, string> = {
   CADDY_PORT: "CADDY_PORT",
   WEBSITE_PORT: "WEBSITE_PORT",
   MAILPIT_WEB_PORT: "MAILPIT_WEB_PORT",
   RABBITMQ_MGMT_PORT: "RABBITMQ_MGMT_PORT",
+  REDIS_INSIGHT_WEB_PORT: "REDIS_INSIGHT_WEB_PORT",
 };
-
-function readEnvFile(path: string): string {
-  try {
-    return readFileSync(path, "utf8");
-  } catch {
-    const result = spawnSync("sudo", ["-n", "cat", path], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-    });
-    return result.status === 0 ? (result.stdout ?? "") : "";
-  }
-}
-
-function parseEnvEntries(content: string): Map<string, string> {
-  const entries = new Map<string, string>();
-  for (const line of content.split("\n")) {
-    const match = line.match(/^([A-Z_][A-Z0-9_]*)=(.*)$/);
-    if (match) {
-      entries.set(match[1]!, match[2]!);
-    }
-  }
-  return entries;
-}
 
 let cachedEnvEntries: Map<string, string> | null = null;
 
 function envEntries(): Map<string, string> {
-  if (!cachedEnvEntries) {
-    cachedEnvEntries = parseEnvEntries(readEnvFile(DAEMON_ENV_PATH));
-  }
+  cachedEnvEntries ??= parseEnvEntries(readEnvFile(DAEMON_ENV_PATH));
   return cachedEnvEntries;
 }
 
@@ -93,6 +69,14 @@ export function rabbitmqMgmtBrowserUrl(): string {
   return `http://127.0.0.1:${port}`;
 }
 
+export function redisInsightBrowserUrl(): string {
+  const port = resolvePort(
+    PORT_ENV_KEYS.REDIS_INSIGHT_WEB_PORT!,
+    DEFAULT_REDIS_INSIGHT_WEB_PORT,
+  );
+  return `http://127.0.0.1:${port}`;
+}
+
 export function serviceBrowserUrl(serviceId: string): string | null {
   switch (serviceId) {
     case "instance":
@@ -107,6 +91,8 @@ export function serviceBrowserUrl(serviceId: string): string | null {
       return mailpitBrowserUrl();
     case "queue":
       return rabbitmqMgmtBrowserUrl();
+    case "redisinsight":
+      return redisInsightBrowserUrl();
     default:
       return null;
   }

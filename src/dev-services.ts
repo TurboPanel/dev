@@ -1,8 +1,8 @@
 import { existsSync } from "node:fs";
-import { spawnSync } from "node:child_process";
 import { isDevInstanceEnabled, readInstanceRuntime } from "./lib/daemon-env.ts";
 import { daemonRepoPath, DAEMON_SYSTEMD_UNIT, platformRepoPath } from "./lib/paths.ts";
 import { spawnDocker } from "./lib/docker-access.ts";
+import { spawnSyncTrusted, spawnSyncTrustedText } from "./lib/spawn-trusted.ts";
 
 export type DevServiceStatus =
   | "running"
@@ -21,6 +21,7 @@ export type DevService = {
 const DAEMON_UNIT = DAEMON_SYSTEMD_UNIT;
 const POSTGRES_CONTAINER = "turbopaneldb";
 const MAILPIT_CONTAINER = "turbopanelmailpit";
+const REDIS_INSIGHT_CONTAINER = "turbopanelredisinsight";
 const POSTGRES_SOCKET = "/var/run/turbopanel/postgres/.s.PGSQL.5432";
 
 const DOWNSTREAM_SERVICE_DEFS = [
@@ -60,6 +61,7 @@ const ANCILLARY_DENO_DEFS = [
   { id: "db", label: "db", kind: "postgres" as const },
   { id: "smtp", label: "smtp", kind: "mailpit" as const },
   { id: "cache", label: "cache", unit: "turbopanel-redis" },
+  { id: "redisinsight", label: "redisinsight", kind: "redisinsight" as const },
   { id: "queue", label: "queue", unit: "turbopanel-rabbitmq" },
 ] as const;
 
@@ -69,10 +71,10 @@ const ANCILLARY_WORKERS_DEFS = [
 ] as const;
 
 function systemctlProperty(unit: string, property: string): string | null {
-  const result = spawnSync(
+  const result = spawnSyncTrustedText(
     "systemctl",
     ["show", unit, `--property=${property}`, "--value"],
-    { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
+    { stdio: ["ignore", "pipe", "ignore"] },
   );
   if (result.status !== 0) {
     return null;
@@ -148,7 +150,7 @@ function postgresSocketReady(): boolean {
     // The postgres socket dir is not traversable by the dev user.
   }
 
-  const sudoResult = spawnSync("sudo", ["-n", "test", "-S", POSTGRES_SOCKET], {
+  const sudoResult = spawnSyncTrusted("sudo", ["-n", "test", "-S", POSTGRES_SOCKET], {
     stdio: "ignore",
   });
   return sudoResult.status === 0;
@@ -182,6 +184,21 @@ function mailpitStatus(): DevServiceStatus {
     return "stopped";
   }
   if (dockerContainerExists(MAILPIT_CONTAINER)) {
+    return "stopped";
+  }
+
+  return "uninstalled";
+}
+
+function redisInsightStatus(): DevServiceStatus {
+  const running = dockerContainerRunning(REDIS_INSIGHT_CONTAINER);
+  if (running === true) {
+    return "running";
+  }
+  if (running === false) {
+    return "stopped";
+  }
+  if (dockerContainerExists(REDIS_INSIGHT_CONTAINER)) {
     return "stopped";
   }
 
@@ -272,6 +289,9 @@ function shouldShowAncillaryServices(): boolean {
   if (dockerContainerExists(MAILPIT_CONTAINER)) {
     return true;
   }
+  if (dockerContainerExists(REDIS_INSIGHT_CONTAINER)) {
+    return true;
+  }
   return downstreamServices().length > 0;
 }
 
@@ -298,6 +318,14 @@ function ancillaryServices(): DevService[] {
         id: def.id,
         label: def.label,
         status: mailpitStatus(),
+      };
+    }
+
+    if ("kind" in def && def.kind === "redisinsight") {
+      return {
+        id: def.id,
+        label: def.label,
+        status: redisInsightStatus(),
       };
     }
 

@@ -69,7 +69,7 @@ export async function resetDevEnvironment(
 
   await runShellStep(
     "Stop platform services",
-    `systemctl stop turbopanel-instance turbopanel-caddy turbopanel-ui turbopanel-website turbopanel-mailer turbopanel-rabbitmq turbopanel-mailpit turbopanel-redis ${DAEMON_SYSTEMD_UNIT} 2>/dev/null || true`,
+    `systemctl stop turbopanel-instance turbopanel-caddy turbopanel-ui turbopanel-website turbopanel-mailer turbopanel-rabbitmq turbopanel-mailpit turbopanel-redis-insight turbopanel-redis ${DAEMON_SYSTEMD_UNIT} 2>/dev/null || true`,
     onOutput,
     onStep,
   );

@@ -34,6 +34,7 @@ export type StackBadgeRuntime =
   | "next"
   | "mailpit"
   | "redis"
+  | "redisinsight"
   | "rabbitmq";
 
 /** Cloud emoji + double space — terminals often swallow one space after ☁️. */
@@ -64,6 +65,8 @@ export function stackBadgeLabel(
       return dockerLabel("Mailpit");
     case "redis":
       return `redis ${REDIS_VERSION}`;
+    case "redisinsight":
+      return dockerLabel("Redis Insight");
     case "rabbitmq":
       return dockerLabel(`rabbitmq ${RABBITMQ_VERSION}`);
     case "expo":

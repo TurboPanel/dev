@@ -41,12 +41,50 @@ const PINNED_SERVICE_BADGES: Partial<
     runtime: "redis",
     badgeReserve: stackBadgeReserveForRuntime("redis"),
   },
+  redisinsight: {
+    runtime: "redisinsight",
+    badgeReserve: stackBadgeReserveForRuntime("redisinsight"),
+  },
   queue: {
     runtime: "rabbitmq",
     badgeReserve: stackBadgeReserveForRuntime("rabbitmq"),
   },
   db: { runtime: "postgres", badgeReserve: POSTGRES_BADGE_RESERVE },
 };
+
+function ServiceDetailTitle({
+  service,
+  innerWidth,
+  pinnedBadge,
+}: Readonly<{
+  service: DevService;
+  innerWidth: number;
+  pinnedBadge: { runtime: StackBadgeRuntime; badgeReserve?: number } | undefined;
+}>) {
+  if (service.id === "instance") {
+    return <InstanceTitleHeader label={service.label} width={innerWidth} />;
+  }
+
+  if (pinnedBadge) {
+    return (
+      <RuntimeTitleHeader
+        serviceId={service.id}
+        label={service.label}
+        width={innerWidth}
+        runtime={pinnedBadge.runtime}
+        badgeReserve={pinnedBadge.badgeReserve}
+      />
+    );
+  }
+
+  return (
+    <ServiceTitle
+      serviceId={service.id}
+      label={service.label}
+      width={innerWidth}
+    />
+  );
+}
 
 export const ServiceDetailPanel = memo(function ServiceDetailPanel({
   service,
@@ -107,23 +145,11 @@ export const ServiceDetailPanel = memo(function ServiceDetailPanel({
       paddingX={1}
       paddingTop={0}
     >
-      {isInstance ? (
-        <InstanceTitleHeader label={service.label} width={innerWidth} />
-      ) : pinnedBadge ? (
-        <RuntimeTitleHeader
-          serviceId={service.id}
-          label={service.label}
-          width={innerWidth}
-          runtime={pinnedBadge.runtime}
-          badgeReserve={pinnedBadge.badgeReserve}
-        />
-      ) : (
-        <ServiceTitle
-          serviceId={service.id}
-          label={service.label}
-          width={innerWidth}
-        />
-      )}
+      <ServiceDetailTitle
+        service={service}
+        innerWidth={innerWidth}
+        pinnedBadge={pinnedBadge}
+      />
 
       <Box flexGrow={1} minHeight={0} height={logHeight}>
         <PlainLogView

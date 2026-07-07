@@ -22,6 +22,7 @@ const ANSIBLE_SERVICE_MAP: readonly [fragment: string, serviceId: string][] = [
   ["rabbitmq", "queue"],
   ["postgres", "db"],
   ["mailpit", "smtp"],
+  ["redis-insight", "redisinsight"],
   ["caddy", "web"],
   ["docker", "daemon"],
   ["redis", "cache"],

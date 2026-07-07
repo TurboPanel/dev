@@ -1,9 +1,9 @@
-import { spawnSync } from "node:child_process";
 import { writeDaemonInstanceEnv } from "./daemon-env.ts";
 import { requestDaemonRestart } from "./daemon-actions.ts";
 import { LogFileTailer } from "./log-file-tail.ts";
 import { runOrchestrationAction } from "./instance-install.ts";
 import { type InstallOutputHandler, runCaptured } from "./install-output.ts";
+import { spawnSyncTrustedText } from "./spawn-trusted.ts";
 import {
   consoleLogLine,
   queryServiceActiveState,
@@ -22,10 +22,10 @@ async function runSystemctl(
 }
 
 function isSystemdUnitInstalled(unit: string): boolean {
-  const result = spawnSync(
+  const result = spawnSyncTrustedText(
     "systemctl",
     ["show", unit, "--property=LoadState", "--value"],
-    { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
+    { stdio: ["ignore", "pipe", "ignore"] },
   );
   if (result.status !== 0) {
     return false;
@@ -39,6 +39,20 @@ async function ensureMailpitRunning(onOutput?: InstallOutputHandler): Promise<vo
     return;
   }
   await runSystemctl(["enable", "--now", "turbopanel-mailpit"], onOutput);
+}
+
+async function ensureRedisInsightRunning(onOutput?: InstallOutputHandler): Promise<void> {
+  if (!isSystemdUnitInstalled("turbopanel-redis-insight")) {
+    return;
+  }
+  await runSystemctl(["enable", "--now", "turbopanel-redis-insight"], onOutput);
+}
+
+async function stopRedisInsight(onOutput?: InstallOutputHandler): Promise<void> {
+  if (!isSystemdUnitInstalled("turbopanel-redis-insight")) {
+    return;
+  }
+  await runSystemctl(["disable", "--now", "turbopanel-redis-insight"], onOutput);
 }
 
 function runtimePlaybookExtraArgs(target: "deno" | "workers"): string[] {
@@ -78,6 +92,11 @@ export async function switchInstanceRuntime(
   );
 
   await ensureMailpitRunning(onOutput);
+  if (target === "deno") {
+    await ensureRedisInsightRunning(onOutput);
+  } else {
+    await stopRedisInsight(onOutput);
+  }
 
   // instance-launch-only handlers already restart turbopanel-instance when runtime
   // unit/env templates change; start is a no-op if already active (restart would

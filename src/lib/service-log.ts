@@ -5,7 +5,6 @@ import {
   openSync,
   readSync,
 } from "node:fs";
-import { spawnSync } from "node:child_process";
 import { STRUCTURED_TEXT_WITH_TIME_RE } from "./daemon-log.ts";
 import { dockerOutputLines, spawnDocker } from "./docker-access.ts";
 import {
@@ -15,6 +14,7 @@ import {
   LOG_DIR,
 } from "./paths.ts";
 import { shellQuote } from "./shell-quote.ts";
+import { spawnSyncTrustedText } from "./spawn-trusted.ts";
 
 export type ServiceLogLine = {
   text: string;
@@ -63,6 +63,7 @@ const SERVICE_UNITS: Record<string, string> = {
   ui: "turbopanel-ui",
   website: "turbopanel-website",
   cache: "turbopanel-redis",
+  redisinsight: "turbopanel-redis-insight",
   queue: "turbopanel-rabbitmq",
   smtp: "turbopanel-mailpit",
 };
@@ -70,6 +71,7 @@ const SERVICE_UNITS: Record<string, string> = {
 const DOCKER_LOG_CONTAINERS: Record<string, string> = {
   db: "turbopaneldb",
   smtp: "turbopanelmailpit",
+  redisinsight: "turbopanelredisinsight",
   queue: "turbopanelq",
 };
 
@@ -98,10 +100,10 @@ function fileSize(path: string): number | undefined {
     fd = openSync(path, "r");
     return fstatSync(fd).size;
   } catch {
-    const result = spawnSync(
+    const result = spawnSyncTrustedText(
       "sudo",
       ["-n", "stat", "-c", "%s", path],
-      { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
+      { stdio: ["ignore", "pipe", "ignore"] },
     );
     if (result.status !== 0 || !result.stdout) {
       return undefined;
@@ -207,8 +209,7 @@ function tailJournal(unit: string, maxLines: number): string[] {
   ];
 
   for (const cmd of attempts) {
-    const result = spawnSync(cmd[0]!, cmd.slice(1), {
-      encoding: "utf8",
+    const result = spawnSyncTrustedText(cmd[0]!, cmd.slice(1), {
       stdio: ["ignore", "pipe", "pipe"],
     });
     if (result.status === 0) {

@@ -1,10 +1,10 @@
-import { spawnSync } from "node:child_process";
 import type { DevServiceStatus } from "../dev-services.ts";
 import { spawnDocker } from "./docker-access.ts";
 import { type InstallOutputHandler, runCaptured } from "./install-output.ts";
 import { openServiceInBrowser } from "./service-open.ts";
 import { serviceSupportsOpen } from "./service-urls.ts";
 import { DAEMON_SYSTEMD_UNIT } from "./paths.ts";
+import { spawnSyncTrustedText } from "./spawn-trusted.ts";
 
 export type ServiceActionId =
   | "restart"
@@ -22,6 +22,7 @@ const SYSTEMD_UNITS: Record<string, string> = {
   ui: "turbopanel-ui",
   website: "turbopanel-website",
   cache: "turbopanel-redis",
+  redisinsight: "turbopanel-redis-insight",
   queue: "turbopanel-rabbitmq",
   smtp: "turbopanel-mailpit",
 };
@@ -29,6 +30,7 @@ const SYSTEMD_UNITS: Record<string, string> = {
 const DOCKER_CONTAINERS: Record<string, string> = {
   db: "turbopaneldb",
   smtp: "turbopanelmailpit",
+  redisinsight: "turbopanelredisinsight",
 };
 
 const OPEN_START_UNITS: Record<string, string> = {
@@ -39,6 +41,7 @@ const OPEN_START_UNITS: Record<string, string> = {
   dbstudio: "turbopanel-dbstudio",
   queue: "turbopanel-rabbitmq",
   smtp: "turbopanel-mailpit",
+  redisinsight: "turbopanel-redis-insight",
 };
 
 const MANAGED_SERVICE_IDS = new Set([
@@ -50,15 +53,16 @@ const MANAGED_SERVICE_IDS = new Set([
   "website",
   "db",
   "cache",
+  "redisinsight",
   "queue",
   "smtp",
 ]);
 
 function systemctlProperty(unit: string, property: string): string | null {
-  const result = spawnSync(
+  const result = spawnSyncTrustedText(
     "systemctl",
     ["show", unit, `--property=${property}`, "--value"],
-    { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
+    { stdio: ["ignore", "pipe", "ignore"] },
   );
   if (result.status !== 0) {
     return null;
@@ -169,15 +173,27 @@ export function canRunServiceAction(
     return serviceId === "instance" && instanceRuntime === "workers";
   }
   if (action === "open") {
-    if (!serviceSupportsOpen(serviceId)) {
-      return false;
-    }
-    const startUnit = OPEN_START_UNITS[serviceId];
-    if (startUnit && isSystemdUnitInstalled(startUnit)) {
-      return true;
-    }
-    return resolveDockerContainer(serviceId) !== null;
+    return canRunOpenAction(serviceId);
   }
+  return canRunLifecycleAction(serviceId, action, status);
+}
+
+function canRunOpenAction(serviceId: string): boolean {
+  if (!serviceSupportsOpen(serviceId)) {
+    return false;
+  }
+  const startUnit = OPEN_START_UNITS[serviceId];
+  if (startUnit && isSystemdUnitInstalled(startUnit)) {
+    return true;
+  }
+  return resolveDockerContainer(serviceId) !== null;
+}
+
+function canRunLifecycleAction(
+  serviceId: string,
+  action: ServiceActionId,
+  status: DevServiceStatus,
+): boolean {
   if (!isManagedService(serviceId)) {
     return false;
   }

@@ -6,15 +6,14 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { spawnSync } from "node:child_process";
 import { resolveDevIdentity } from "./dev-identity.ts";
+import { spawnSyncTrusted, spawnSyncTrustedText } from "./spawn-trusted.ts";
 
 export function readEnvFile(path: string): string {
   try {
     return readFileSync(path, "utf8");
   } catch {
-    const result = spawnSync("sudo", ["-n", "cat", path], {
-      encoding: "utf8",
+    const result = spawnSyncTrustedText("sudo", ["-n", "cat", path], {
       stdio: ["ignore", "pipe", "ignore"],
     });
     return result.status === 0 ? (result.stdout ?? "") : "";
@@ -34,20 +33,20 @@ export function writeEnvFile(path: string, content: string): void {
   try {
     writeFileSync(tmpPath, content);
     // /etc/turbopanel may not exist yet on the very first run (before any converge).
-    const mkdir = spawnSync("sudo", ["-n", "mkdir", "-p", dirname(path)], {
+    const mkdir = spawnSyncTrusted("sudo", ["-n", "mkdir", "-p", dirname(path)], {
       stdio: "ignore",
     });
     if (mkdir.status !== 0) {
       throw new Error(`Failed to create ${dirname(path)}`);
     }
-    const result = spawnSync("sudo", ["-n", "cp", tmpPath, path], {
+    const result = spawnSyncTrusted("sudo", ["-n", "cp", tmpPath, path], {
       stdio: "inherit",
     });
     if (result.status !== 0) {
       throw new Error(`Failed to write ${path}`);
     }
     const dev = resolveDevIdentity();
-    spawnSync(
+    spawnSyncTrusted(
       "sudo",
       ["-n", "chown", `${dev.user}:${dev.gid}`, path],
       { stdio: "ignore" },
@@ -61,15 +60,45 @@ export function writeEnvFile(path: string, content: string): void {
   }
 }
 
+const ENV_LINE_RE = /^([A-Z_][A-Z0-9_]*)=(.*)$/;
+const ENV_KEY_PREFIX_RE = /^([A-Z_][A-Z0-9_]*)=/;
+
 export function parseEnvEntries(content: string): Map<string, string> {
   const entries = new Map<string, string>();
   for (const line of content.split("\n")) {
-    const match = line.match(/^([A-Z_][A-Z0-9_]*)=(.*)$/);
+    const match = ENV_LINE_RE.exec(line);
     if (match) {
       entries.set(match[1]!, match[2]!);
     }
   }
   return entries;
+}
+
+function mergeEnvLine(
+  line: string,
+  entries: Record<string, string>,
+  managedKeys: Set<string>,
+  removeKeys: Set<string>,
+  updated: Set<string>,
+): string | null {
+  const match = ENV_KEY_PREFIX_RE.exec(line);
+  if (!match) {
+    return line;
+  }
+
+  const key = match[1]!;
+  if (removeKeys.has(key)) {
+    return null;
+  }
+  if (!managedKeys.has(key)) {
+    return line;
+  }
+  if (updated.has(key)) {
+    return null;
+  }
+
+  updated.add(key);
+  return `${key}=${entries[key]}`;
 }
 
 export function mergeEnvFile(
@@ -85,21 +114,10 @@ export function mergeEnvFile(
 
   if (content.length > 0) {
     for (const line of content.split("\n")) {
-      const match = line.match(/^([A-Z_][A-Z0-9_]*)=/);
-      if (match) {
-        const key = match[1]!;
-        if (removeKeys.has(key)) {
-          continue;
-        }
-        if (managedKeys.has(key)) {
-          if (!updated.has(key)) {
-            lines.push(`${key}=${entries[key]}`);
-            updated.add(key);
-          }
-          continue;
-        }
+      const merged = mergeEnvLine(line, entries, managedKeys, removeKeys, updated);
+      if (merged !== null) {
+        lines.push(merged);
       }
-      lines.push(line);
     }
   }
 
@@ -109,7 +127,7 @@ export function mergeEnvFile(
     }
   }
 
-  while (lines.length > 0 && lines[lines.length - 1] === "") {
+  while (lines.length > 0 && lines.at(-1) === "") {
     lines.pop();
   }
 
