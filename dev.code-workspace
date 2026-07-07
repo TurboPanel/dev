@@ -40,6 +40,11 @@
         "protocol": "http",
         "onAutoForward": "silent",
       },
+      "5540": {
+        "label": "Redis Insight",
+        "protocol": "http",
+        "onAutoForward": "silent",
+      },
       "8025": {
         "label": "Mailpit",
         "protocol": "http",

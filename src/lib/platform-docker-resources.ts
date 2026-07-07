@@ -11,6 +11,7 @@ export const MAILPIT_CONTAINER_NAME = "turbopanelmailpit";
 
 /** Dev Redis Insight container (daemon `redis-insight` role default). */
 export const REDIS_INSIGHT_CONTAINER_NAME = "turbopanelredisinsight";
+export const REDIS_INSIGHT_BRIDGE_CONTAINER_NAME = "turbopanelredisinsight-bridge";
 export const REDIS_INSIGHT_VOLUME_NAME = "turbopanelredisinsight";
 
 /** All TurboPanel-owned containers that can survive across dev installs. */
@@ -18,6 +19,7 @@ export const PLATFORM_DOCKER_CONTAINER_NAMES = [
   POSTGRES_CONTAINER_NAME,
   RABBITMQ_CONTAINER_NAME,
   MAILPIT_CONTAINER_NAME,
+  REDIS_INSIGHT_BRIDGE_CONTAINER_NAME,
   REDIS_INSIGHT_CONTAINER_NAME,
 ] as const;
 
