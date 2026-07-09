@@ -1,5 +1,6 @@
 .deno/
 node_modules/
+.pnpm-store/
 .cursor/debug-*.log
 
 # env and secret-bearing dotenv variants
