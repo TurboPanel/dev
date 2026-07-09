@@ -29,11 +29,20 @@ export const DEFAULT_RUNTIMES_DIR = `${TURBOPANEL_ROOT}/vendor`;
  * Honors `TURBOPANEL_RUNTIMES_DIR`, then `TURBOPANEL_RUNTIME_DIR`, then
  * {@link DEFAULT_RUNTIMES_DIR}. Mirrors daemon `resolveRuntimesDir()`.
  */
+/** Strip trailing `/` without a regex (Sonar typescript:S8786). */
+function stripTrailingSlashes(dir: string): string {
+  let end = dir.length;
+  while (end > 0 && dir[end - 1] === "/") {
+    end -= 1;
+  }
+  return end === 0 ? "/" : dir.slice(0, end);
+}
+
 export function resolveRuntimesDir(): string {
   const override = process.env.TURBOPANEL_RUNTIMES_DIR?.trim() ||
     process.env.TURBOPANEL_RUNTIME_DIR?.trim();
   const dir = override || DEFAULT_RUNTIMES_DIR;
-  return dir.replace(/\/+$/, "") || "/";
+  return stripTrailingSlashes(dir);
 }
 
 export const RUNTIMES_DIR = resolveRuntimesDir();
