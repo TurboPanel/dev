@@ -39,17 +39,27 @@ export function resolveHostDenoBin(): string {
   return bin;
 }
 
-function vendoredDenoUsable(): boolean {
-  const direct = spawnSync("/bin/sh", ["-c", `test -x ${shellQuote(VENDORED_DENO_BIN)}`], {
+function pathIsExecutable(path: string): boolean {
+  const direct = spawnSync("/bin/sh", ["-c", `test -x ${shellQuote(path)}`], {
     stdio: "ignore",
   });
   if (direct.status === 0) {
     return true;
   }
-  const sudo = spawnSync("sudo", ["-n", "test", "-x", VENDORED_DENO_BIN], {
+  const sudo = spawnSync("sudo", ["-n", "test", "-x", path], {
     stdio: "ignore",
   });
   return sudo.status === 0;
+}
+
+/** True when the pinned Deno binary exists under vendor/deno/<DENO_VERSION>/. */
+function pinnedVendoredDenoUsable(): boolean {
+  return pathIsExecutable(`${RUNTIMES_DIR}/deno/${DENO_VERSION}/deno`);
+}
+
+/** True when vendor/deno/current/deno resolves to an executable (any version). */
+function vendoredDenoUsable(): boolean {
+  return pathIsExecutable(VENDORED_DENO_BIN);
 }
 
 /** Prefer host Deno, then the vendored runtime at vendor/deno/current/deno. */
@@ -104,12 +114,37 @@ function hostPython3Available(): boolean {
   return result.status === 0;
 }
 
-/** Install Deno under vendor/deno (GitHub release zip + python3 stdlib extract). */
+/**
+ * Install the pinned Deno under vendor/deno/<DENO_VERSION> and point
+ * `current` / `bin/deno` at it (GitHub release zip + python3 stdlib extract).
+ *
+ * Host Deno on PATH short-circuits (dev preference). An older vendored
+ * `current` alone is not enough — the pinned version must exist and the
+ * symlinks must point at it (mirrors `tp_install_deno_runtime` in run.sh).
+ */
 export async function ensureBootstrapDeno(
   onOutput?: InstallOutputHandler,
 ): Promise<void> {
-  if (lookupHostDenoBin() || vendoredDenoUsable()) {
+  if (lookupHostDenoBin()) {
     return;
+  }
+  if (pinnedVendoredDenoUsable()) {
+    // Repair drifted symlinks even when the pinned binary is already present.
+    const linkScript = [
+      "set -euo pipefail",
+      `RUNTIMES_DIR=${shellQuote(RUNTIMES_DIR)}`,
+      `VERSION=${shellQuote(DENO_VERSION)}`,
+      'mkdir -p "$RUNTIMES_DIR/deno/bin"',
+      'ln -sfn "$RUNTIMES_DIR/deno/$VERSION" "$RUNTIMES_DIR/deno/current"',
+      'ln -sfn ../current/deno "$RUNTIMES_DIR/deno/bin/deno"',
+    ].join("\n");
+    const linkCode = await runCaptured(
+      ["sudo", "-n", "bash", "-c", linkScript],
+      onOutput,
+    );
+    if (linkCode === 0 && vendoredDenoUsable()) {
+      return;
+    }
   }
 
   if (!hostPython3Available()) {
@@ -124,12 +159,11 @@ export async function ensureBootstrapDeno(
     "set -euo pipefail",
     `RUNTIMES_DIR=${shellQuote(RUNTIMES_DIR)}`,
     `VERSION=${shellQuote(DENO_VERSION)}`,
-    `DENO_BIN=${shellQuote(VENDORED_DENO_BIN)}`,
-    'if [ -x "$DENO_BIN" ]; then exit 0; fi',
+    'DEST="$RUNTIMES_DIR/deno/$VERSION/deno"',
+    'if [ ! -x "$DEST" ]; then',
     `ASSET="deno-${triple}.zip"`,
     'URL="https://github.com/denoland/deno/releases/download/v${VERSION}/${ASSET}"',
     'TMP="$(mktemp -d)"',
-    'DEST="$RUNTIMES_DIR/deno/$VERSION/deno"',
     'curl -fsSL -o "$TMP/$ASSET" "$URL"',
     `python3 - "$TMP/$ASSET" "$DEST" <<'PY'
 import shutil, sys, tempfile, zipfile
@@ -147,15 +181,16 @@ with tempfile.TemporaryDirectory(prefix="deno-zip-") as tmp:
     shutil.copy2(candidates[0], dest)
 dest.chmod(0o755)
 PY`,
+    'rm -rf "$TMP"',
+    "fi",
     'mkdir -p "$RUNTIMES_DIR/deno/bin"',
     'ln -sfn "$RUNTIMES_DIR/deno/$VERSION" "$RUNTIMES_DIR/deno/current"',
     'ln -sfn ../current/deno "$RUNTIMES_DIR/deno/bin/deno"',
-    'rm -rf "$TMP"',
   ].join("\n");
 
   const code = await runCaptured(["sudo", "-n", "bash", "-c", installScript], onOutput);
-  if (code !== 0 || !vendoredDenoUsable()) {
-    throw new Error(`Failed to install Deno to ${VENDORED_DENO_BIN}`);
+  if (code !== 0 || !pinnedVendoredDenoUsable() || !vendoredDenoUsable()) {
+    throw new Error(`Failed to install Deno ${DENO_VERSION} to ${VENDORED_DENO_BIN}`);
   }
 }
 
