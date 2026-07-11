@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Box, Text, useInput } from "ink";
 import { ScrollList } from "ink-scroll-list";
 import type { DevService } from "../dev-services.ts";
@@ -34,6 +34,16 @@ import { DaemonDetailPanel } from "./daemon-detail-panel.tsx";
 import { RestartServiceModal } from "./restart-service-modal.tsx";
 import { ServiceDetailPanel } from "./service-detail-panel.tsx";
 import { serviceStatusColor } from "./service-status.tsx";
+import { prewarmTitleArt } from "./service-title.tsx";
+
+/**
+ * Wait for the list cursor to settle before swapping the detail pane.
+ * While moving, keep the previous detail mounted (frozen) so Ink does not
+ * tear down hundreds of log Text nodes on every arrow key.
+ */
+const PARENT_IDLE_MS = 500;
+
+const EMPTY_OVERLAY: ConsoleLogLine[] = [];
 
 const ARROW_WIDTH = 1;
 const LIST_PADDING_RIGHT = 1;
@@ -220,15 +230,60 @@ export function ServicesPanel({
     });
     return { displayServices: visible, visibleFullIndices: fullIndices };
   }, [services, servicePhases]);
-  const effectiveSelectedIndex = useMemo(
+
+  // Local list cursor — updating this must NOT call into useConsoleApp or the
+  // whole Ink tree (menu/status/detail) re-renders (~250ms per keypress).
+  const parentIndex = useMemo(
     () => nearestVisibleFullIndex(selectedIndex, visibleFullIndices),
     [selectedIndex, visibleFullIndices],
   );
-  const selectedService = services[effectiveSelectedIndex] ?? null;
+  const [listIndex, setListIndex] = useState(parentIndex);
+  const committedIndexRef = useRef(parentIndex);
+
+  // Adopt external parent selection (e.g. converge pin). Ignore echoes of our
+  // own idle commits so a late parent update cannot yank the cursor back.
+  useEffect(() => {
+    if (parentIndex === listIndex) {
+      return;
+    }
+    if (parentIndex === committedIndexRef.current) {
+      return;
+    }
+    committedIndexRef.current = parentIndex;
+    setListIndex(parentIndex);
+  }, [parentIndex, listIndex, services]);
+
+  // Detail tracks the cursor directly — the mount is ~10ms once the parent
+  // reconcile is off the hot path (Hypothesis K, confirmed), so no debounce.
+  const settledService = services[listIndex] ?? null;
   const displaySelectedIndex = useMemo(() => {
-    const index = visibleFullIndices.indexOf(effectiveSelectedIndex);
+    const index = visibleFullIndices.indexOf(listIndex);
     return index >= 0 ? index : 0;
-  }, [effectiveSelectedIndex, visibleFullIndices]);
+  }, [listIndex, visibleFullIndices]);
+
+  // Push the selection to the parent (status-bar hints only) on a longer idle
+  // so the full-app reconcile never runs mid-scroll.
+  useEffect(() => {
+    if (!onSelectedIndexChange) {
+      return;
+    }
+    const id = setTimeout(() => {
+      committedIndexRef.current = listIndex;
+      onSelectedIndexChange(listIndex);
+    }, PARENT_IDLE_MS);
+    return () => clearTimeout(id);
+  }, [listIndex, services, onSelectedIndexChange]);
+
+  // Warm figlet once per service-list change (not per keystroke — the list ref
+  // is stable during navigation, so this stays off the hot path).
+  useEffect(() => {
+    if (detailWidth <= 0) {
+      return;
+    }
+    const labels = displayServices.map((service) => service.label);
+    return prewarmTitleArt(labels, Math.max(1, detailWidth - 2));
+  }, [displayServices, detailWidth]);
+
   const needsConvergeAnimation = useMemo(
     () =>
       displayServices.some((service) =>
@@ -244,26 +299,16 @@ export function ServicesPanel({
   const convergeSpinnerFrame = useSpinnerFrame(needsConvergeAnimation ? 120 : 0);
   const [logFocused, setLogFocused] = useState(false);
   const daemonActions = useMemo(
-    () => (selectedService?.id === "daemon" ? daemonMenuActions(selectedService.status) : []),
-    [selectedService],
+    () => (settledService?.id === "daemon" ? daemonMenuActions(settledService.status) : []),
+    [settledService],
   );
 
   const overlayForService = (serviceId: string): ConsoleLogLine[] =>
-    restartOverlayServiceId === serviceId ? (restartLogOverlay ?? []) : [];
+    restartOverlayServiceId === serviceId ? (restartLogOverlay ?? EMPTY_OVERLAY) : EMPTY_OVERLAY;
 
   useEffect(() => {
     setLogFocused(false);
-  }, [effectiveSelectedIndex]);
-
-  useEffect(() => {
-    if (
-      visibleFullIndices.length > 0 &&
-      selectedIndex !== effectiveSelectedIndex &&
-      onSelectedIndexChange
-    ) {
-      onSelectedIndexChange(effectiveSelectedIndex);
-    }
-  }, [selectedIndex, effectiveSelectedIndex, visibleFullIndices, onSelectedIndexChange]);
+  }, [listIndex]);
 
   useEffect(() => {
     if (restartInProgress) {
@@ -290,26 +335,28 @@ export function ServicesPanel({
       return;
     }
 
-    const currentVisiblePos = visibleFullIndices.indexOf(effectiveSelectedIndex);
-    if (key.upArrow && onSelectedIndexChange && visibleFullIndices.length > 0) {
+    const currentVisiblePos = visibleFullIndices.indexOf(listIndex);
+    if (key.upArrow && visibleFullIndices.length > 0) {
       const nextPos = Math.max(0, currentVisiblePos - 1);
-      onSelectedIndexChange(visibleFullIndices[nextPos]);
+      const nextIndex = visibleFullIndices[nextPos]!;
+      setListIndex(nextIndex);
       return;
     }
-    if (key.downArrow && onSelectedIndexChange && visibleFullIndices.length > 0) {
+    if (key.downArrow && visibleFullIndices.length > 0) {
       const nextPos = Math.min(visibleFullIndices.length - 1, currentVisiblePos + 1);
-      onSelectedIndexChange(visibleFullIndices[nextPos]);
+      const nextIndex = visibleFullIndices[nextPos]!;
+      setListIndex(nextIndex);
       return;
     }
 
-    if (selectedService && onServiceAction) {
+    if (settledService && onServiceAction) {
       const runtime = readInstanceRuntime();
-      const action = serviceActionForKey(selectedService.id, _input, runtime);
+      const action = serviceActionForKey(settledService.id, _input, runtime);
       if (
         action &&
-        canRunServiceAction(selectedService.id, action, selectedService.status, runtime)
+        canRunServiceAction(settledService.id, action, settledService.status, runtime)
       ) {
-        void Promise.resolve(onServiceAction(selectedService.id, action));
+        void Promise.resolve(onServiceAction(settledService.id, action));
       }
     }
   });
@@ -386,7 +433,11 @@ export function ServicesPanel({
               />
             </Box>
           )}
-          {selectedService?.id === "daemon" && (
+          {/*
+            Keep the last settled detail mounted while the list cursor moves.
+            Swapping to a skeleton/unmounting logs was ~300ms per keypress.
+          */}
+          {settledService?.id === "daemon" && (
             <Box
               width={detailWidth}
               height={serviceDetailHeight}
@@ -394,7 +445,7 @@ export function ServicesPanel({
               position="relative"
             >
               <DaemonDetailPanel
-                service={selectedService}
+                service={settledService}
                 actions={daemonActions}
                 width={detailWidth}
                 height={serviceDetailHeight}
@@ -415,8 +466,8 @@ export function ServicesPanel({
               )}
             </Box>
           )}
-          {selectedService &&
-            selectedService.id !== "daemon" &&
+          {settledService &&
+            settledService.id !== "daemon" &&
             (!daemonOperation || daemonOperation === "dev-env") && (
             <Box
               width={detailWidth}
@@ -425,18 +476,17 @@ export function ServicesPanel({
               position="relative"
             >
               <ServiceDetailPanel
-                key={selectedService.id}
-                service={selectedService}
+                service={settledService}
                 width={detailWidth}
                 height={serviceDetailHeight}
                 focused={logFocused && !pendingRestart && !restartInProgress}
-                logOverlayLines={overlayForService(selectedService.id)}
+                logOverlayLines={overlayForService(settledService.id)}
                 logFollowResetKey={logFollowResetKey}
                 logByteFloor={
-                  selectedService.id === "instance" ? instanceLogByteFloor : null
+                  settledService.id === "instance" ? instanceLogByteFloor : null
                 }
               />
-              {pendingRestart?.serviceId === selectedService.id &&
+              {pendingRestart?.serviceId === settledService.id &&
                 onConfirmRestart &&
                 onCancelRestart && (
                 <RestartServiceModal

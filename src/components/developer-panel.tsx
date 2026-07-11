@@ -36,7 +36,7 @@ function DeveloperRestartOverlay({
   logFollowResetKey?: number;
   instanceLogByteFloor?: ServiceLogByteFloor | null;
 }) {
-  const fileLogLines = useServiceLog(restartOverlayServiceId, instanceLogByteFloor);
+  const { lines: fileLogLines } = useServiceLog(restartOverlayServiceId, instanceLogByteFloor);
   const logLines = useMemo(
     () => [
       ...fileLogLines,

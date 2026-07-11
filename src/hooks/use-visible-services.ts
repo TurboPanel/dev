@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { getVisibleServices, type DevService } from "../dev-services.ts";
 
 function servicesEqual(current: DevService[], next: DevService[]): boolean {
@@ -16,20 +16,38 @@ function servicesEqual(current: DevService[], next: DevService[]): boolean {
   });
 }
 
+/** Status polling is deliberately slow — systemctl/docker fan-out is ~100–180ms sync. */
+const STATUS_POLL_MS = 15_000;
+
 export function useVisibleServices(): {
   services: DevService[];
   refresh: () => void;
 } {
   const [services, setServices] = useState(() => getVisibleServices());
+  const busyRef = useRef(false);
 
   const refresh = useCallback(() => {
-    const next = getVisibleServices();
-    setServices((current) => (servicesEqual(current, next) ? current : next));
+    if (busyRef.current) {
+      return;
+    }
+    // Defer past the current input/frame so arrow keys stay responsive.
+    setTimeout(() => {
+      if (busyRef.current) {
+        return;
+      }
+      busyRef.current = true;
+      try {
+        const next = getVisibleServices();
+        setServices((current) => (servicesEqual(current, next) ? current : next));
+      } finally {
+        busyRef.current = false;
+      }
+    }, 0);
   }, []);
 
   useEffect(() => {
     refresh();
-    const id = setInterval(refresh, 5000);
+    const id = setInterval(refresh, STATUS_POLL_MS);
     return () => clearInterval(id);
   }, [refresh]);
 

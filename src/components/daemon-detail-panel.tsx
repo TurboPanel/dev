@@ -15,6 +15,7 @@ import { useLogScroll } from "../hooks/use-log-scroll.ts";
 import { useDaemonLog } from "../hooks/use-daemon-log.ts";
 import { LIST_SELECT_BG, LIST_SELECT_FG } from "../theme.ts";
 import { DaemonLogView } from "./daemon-log-view.tsx";
+import { LogLoadingPlaceholder } from "./log-loading-placeholder.tsx";
 import { RuntimeTitleHeader, runtimeTitleHeaderRows } from "./instance-title-header.tsx";
 
 type DetailFocus = "actions" | "log";
@@ -112,7 +113,10 @@ export const DaemonDetailPanel = memo(function DaemonDetailPanel({
   logFollowResetKey?: number;
   daemonLogByteFloor?: DaemonLogByteFloor | null;
 }) {
-  const fileLogLines = useDaemonLog(daemonLogByteFloor, logFollowResetKey);
+  const { lines: fileLogLines, loading: logLoading } = useDaemonLog(
+    daemonLogByteFloor,
+    logFollowResetKey,
+  );
   const logLines = useMemo(
     () => [...fileLogLines, ...overlayToDaemonLines(logOverlayLines)],
     [fileLogLines, logOverlayLines],
@@ -185,13 +189,17 @@ export const DaemonDetailPanel = memo(function DaemonDetailPanel({
       />
 
       <Box flexGrow={1} minHeight={0} height={logHeight}>
-        <DaemonLogView
-          lines={logLines}
-          width={innerWidth}
-          height={logHeight}
-          selectedIndex={logScrollIndex}
-          focused={logFocused}
-        />
+        {logLoading ? (
+          <LogLoadingPlaceholder width={innerWidth} height={logHeight} />
+        ) : (
+          <DaemonLogView
+            lines={logLines}
+            width={innerWidth}
+            height={logHeight}
+            selectedIndex={logScrollIndex}
+            focused={logFocused}
+          />
+        )}
       </Box>
 
       {actions.length > 0 && (

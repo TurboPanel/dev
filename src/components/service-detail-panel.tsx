@@ -11,6 +11,7 @@ import {
   stackBadgeReserveForRuntime,
   type StackBadgeRuntime,
 } from "../lib/stack-versions.ts";
+import { LogLoadingPlaceholder } from "./log-loading-placeholder.tsx";
 import { PlainLogView } from "./plain-log-view.tsx";
 import { measureTitleArtRows, ServiceTitle } from "./service-title.tsx";
 
@@ -103,7 +104,10 @@ export const ServiceDetailPanel = memo(function ServiceDetailPanel({
   logFollowResetKey?: number;
   logByteFloor?: ServiceLogByteFloor | null;
 }) {
-  const fileLogLines = useServiceLog(service.id, logByteFloor);
+  const { lines: fileLogLines, loading: logLoading } = useServiceLog(
+    service.id,
+    logByteFloor,
+  );
   const logLines = useMemo(
     () => [
       ...fileLogLines,
@@ -135,7 +139,7 @@ export const ServiceDetailPanel = memo(function ServiceDetailPanel({
 
   useInput((_input, key) => {
     handleLogKey(key);
-  }, { isActive: focused });
+  }, { isActive: focused && !logLoading });
 
   return (
     <Box
@@ -152,13 +156,17 @@ export const ServiceDetailPanel = memo(function ServiceDetailPanel({
       />
 
       <Box flexGrow={1} minHeight={0} height={logHeight}>
-        <PlainLogView
-          lines={logLines}
-          width={innerWidth}
-          height={logHeight}
-          selectedIndex={logScrollIndex}
-          focused={focused}
-        />
+        {logLoading ? (
+          <LogLoadingPlaceholder width={innerWidth} height={logHeight} />
+        ) : (
+          <PlainLogView
+            lines={logLines}
+            width={innerWidth}
+            height={logHeight}
+            selectedIndex={logScrollIndex}
+            focused={focused}
+          />
+        )}
       </Box>
     </Box>
   );

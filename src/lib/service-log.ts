@@ -264,5 +264,6 @@ export function readServiceLogTail(
     return [parseServiceLine(hint)];
   }
 
-  return collected.slice(-maxLines).map(parseServiceLine);
+  const result = collected.slice(-maxLines).map(parseServiceLine);
+  return result;
 }

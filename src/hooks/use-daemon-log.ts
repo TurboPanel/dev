@@ -8,7 +8,7 @@ import {
   readDaemonLogTail,
 } from "../lib/daemon-log.ts";
 
-const POLL_MS = 1000;
+const POLL_MS = 5_000;
 // Default tail window. Keep this small so initial render and scroll-back stay
 // cheap; reverse infinite scroll can raise it on demand later.
 const MAX_LINES = 100;
@@ -35,23 +35,102 @@ function snapshotEqual(current: DaemonLogSnapshot, next: DaemonLogSnapshot): boo
   );
 }
 
+const emptyDaemonSnapshot = (): DaemonLogSnapshot => ({
+  stat: {
+    stdoutSize: 0,
+    stdoutMtimeMs: 0,
+    stderrSize: 0,
+    stderrMtimeMs: 0,
+  },
+  lines: [],
+});
+
+let daemonLogCache: DaemonLogSnapshot | null = null;
+
+export type DaemonLogState = {
+  lines: DaemonLogLine[];
+  loading: boolean;
+};
+
+type DaemonHookState = {
+  refreshKey: number;
+  floorKey: string;
+  snapshot: DaemonLogSnapshot;
+  loading: boolean;
+};
+
+function floorKey(byteFloor?: DaemonLogByteFloor | null): string {
+  return `${byteFloor?.stdout ?? ""}:${byteFloor?.stderr ?? ""}`;
+}
+
+function initialDaemonState(
+  refreshKey: number,
+  byteFloor?: DaemonLogByteFloor | null,
+): DaemonHookState {
+  const cached = daemonLogCache;
+  return {
+    refreshKey,
+    floorKey: floorKey(byteFloor),
+    snapshot: cached ?? emptyDaemonSnapshot(),
+    loading: cached === null,
+  };
+}
+
 export function useDaemonLog(
   byteFloor?: DaemonLogByteFloor | null,
   refreshKey = 0,
-): DaemonLogLine[] {
-  const [snapshot, setSnapshot] = useState<DaemonLogSnapshot>(() =>
-    readSnapshot(byteFloor),
+): DaemonLogState {
+  const nextFloorKey = floorKey(byteFloor);
+  const [state, setState] = useState<DaemonHookState>(() =>
+    initialDaemonState(refreshKey, byteFloor),
   );
 
+  if (state.refreshKey !== refreshKey || state.floorKey !== nextFloorKey) {
+    setState(initialDaemonState(refreshKey, byteFloor));
+  }
+
   useEffect(() => {
+    let cancelled = false;
+    let pollId: ReturnType<typeof setInterval> | undefined;
+    const hadCache = daemonLogCache !== null;
+
     const refresh = () => {
       const next = readSnapshot(byteFloor);
-      setSnapshot((current) => (snapshotEqual(current, next) ? current : next));
+      if (cancelled) {
+        return;
+      }
+      daemonLogCache = next;
+      setState((current) => {
+        if (current.refreshKey !== refreshKey || current.floorKey !== nextFloorKey) {
+          return current;
+        }
+        if (snapshotEqual(current.snapshot, next) && !current.loading) {
+          return current;
+        }
+        return {
+          refreshKey,
+          floorKey: nextFloorKey,
+          snapshot: next,
+          loading: false,
+        };
+      });
     };
-    refresh();
-    const id = setInterval(refresh, POLL_MS);
-    return () => clearInterval(id);
-  }, [byteFloor?.stdout, byteFloor?.stderr, refreshKey]);
 
-  return snapshot.lines;
+    const deferId = setTimeout(() => {
+      if (!hadCache) {
+        refresh();
+      }
+      pollId = setInterval(() => refresh(), POLL_MS);
+    }, 50);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(deferId);
+      if (pollId !== undefined) {
+        clearInterval(pollId);
+      }
+    };
+  }, [byteFloor?.stdout, byteFloor?.stderr, refreshKey, nextFloorKey]);
+
+  return { lines: state.snapshot.lines, loading: state.loading };
 }

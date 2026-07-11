@@ -5,7 +5,6 @@ import type { DaemonActionId } from "../lib/daemon-actions.ts";
 import {
   canRunServiceAction,
   runServiceAction,
-  serviceActionForKey,
   type ServiceActionId,
 } from "../lib/service-actions.ts";
 import {
