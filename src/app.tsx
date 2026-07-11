@@ -30,6 +30,62 @@ export const BOOTSTRAP_AREA: AreaTab = {
 const MENU_ROWS = 2;
 const STATUS_ROWS = 1;
 
+type ProvisionerPhase =
+  | "daemon"
+  | "dev-env"
+  | "reset-dev-env"
+  | "reset-dev-db"
+  | "sync-dev-build";
+
+function provisionerPhaseForDaemonOperation(
+  operation: DaemonOperation | null | undefined,
+): ProvisionerPhase {
+  switch (operation) {
+    case "dev-env":
+      return "dev-env";
+    case "reset-dev-env":
+      return "reset-dev-env";
+    case "reset-dev-db":
+      return "reset-dev-db";
+    case "sync-dev-build":
+      return "sync-dev-build";
+    default:
+      return "daemon";
+  }
+}
+
+type MainContentProps = Readonly<{
+  activeArea: string;
+  width: number;
+  height: number;
+  selectedServiceIndex: number;
+  visibleServices: DevService[];
+  daemonOperation?: DaemonOperation | null;
+  serviceOperation?: ServiceOperation | null;
+  onServiceAction?: (serviceId: string, action: ServiceActionId) => void | Promise<void>;
+  onDaemonAction?: (action: DaemonActionId) => void | Promise<void>;
+  onDeveloperDaemonAction?: (action: DaemonActionId) => void | Promise<void>;
+  onSelectedServiceIndexChange?: (index: number) => void;
+  onProvisioningDone?: () => void;
+  onInstallFinished?: (success: boolean) => void;
+  onDaemonInstallDone?: () => void;
+  onPurgeDone?: () => void;
+  onRefreshServices?: () => void;
+  pendingRestart?: PendingRestart | null;
+  restartInProgress?: string | null;
+  restartOverlayServiceId?: string | null;
+  restartLogOverlay?: ConsoleLogLine[];
+  logFollowResetKey?: number;
+  daemonLogByteFloor?: DaemonLogByteFloor | null;
+  instanceLogByteFloor?: ServiceLogByteFloor | null;
+  onConfirmRestart?: () => void;
+  onCancelRestart?: () => void;
+  devEnvConverge?: DevEnvConvergeState | null;
+  onDismissDevEnvConvergeError?: () => void;
+  developerView?: DeveloperView;
+  onCloseCellTraceView?: () => void;
+}>;
+
 function MainContent({
   activeArea,
   width,
@@ -60,54 +116,14 @@ function MainContent({
   onDismissDevEnvConvergeError,
   developerView,
   onCloseCellTraceView,
-}: {
-  activeArea: string;
-  width: number;
-  height: number;
-  selectedServiceIndex: number;
-  visibleServices: DevService[];
-  daemonOperation?: DaemonOperation | null;
-  serviceOperation?: ServiceOperation | null;
-  onServiceAction?: (serviceId: string, action: ServiceActionId) => void | Promise<void>;
-  onDaemonAction?: (action: DaemonActionId) => void | Promise<void>;
-  onDeveloperDaemonAction?: (action: DaemonActionId) => void | Promise<void>;
-  onSelectedServiceIndexChange?: (index: number) => void;
-  onProvisioningDone?: () => void;
-  onInstallFinished?: (success: boolean) => void;
-  onDaemonInstallDone?: () => void;
-  onPurgeDone?: () => void;
-  onRefreshServices?: () => void;
-  pendingRestart?: PendingRestart | null;
-  restartInProgress?: string | null;
-  restartOverlayServiceId?: string | null;
-  restartLogOverlay?: ConsoleLogLine[];
-  logFollowResetKey?: number;
-  daemonLogByteFloor?: DaemonLogByteFloor | null;
-  instanceLogByteFloor?: ServiceLogByteFloor | null;
-  onConfirmRestart?: () => void;
-  onCancelRestart?: () => void;
-  devEnvConverge?: DevEnvConvergeState | null;
-  onDismissDevEnvConvergeError?: () => void;
-  developerView?: DeveloperView;
-  onCloseCellTraceView?: () => void;
-}) {
+}: MainContentProps) {
   const daemon = visibleServices.find((service) => service.id === "daemon");
 
   switch (activeArea) {
     case "bootstrap":
       return (
         <ProvisionerPanel
-          phase={
-            daemonOperation === "dev-env"
-              ? "dev-env"
-              : daemonOperation === "reset-dev-env"
-                ? "reset-dev-env"
-                : daemonOperation === "reset-dev-db"
-                  ? "reset-dev-db"
-                  : daemonOperation === "sync-dev-build"
-                    ? "sync-dev-build"
-                    : "daemon"
-          }
+          phase={provisionerPhaseForDaemonOperation(daemonOperation)}
           width={width}
           height={height}
           onDone={onProvisioningDone!}
@@ -165,6 +181,41 @@ function MainContent({
   }
 }
 
+type AppViewProps = Readonly<{
+  activeArea: string;
+  provisioning: boolean;
+  installFinished?: boolean;
+  columns: number;
+  rows: number;
+  selectedServiceIndex: number;
+  selectedServiceId?: string | null;
+  visibleServices: DevService[];
+  daemonOperation?: DaemonOperation | null;
+  serviceOperation?: ServiceOperation | null;
+  onServiceAction?: (serviceId: string, action: ServiceActionId) => void | Promise<void>;
+  onProvisioningDone?: () => void;
+  onInstallFinished?: (success: boolean) => void;
+  onDaemonInstallDone?: () => void;
+  onPurgeDone?: () => void;
+  onDaemonAction?: (action: DaemonActionId) => void | Promise<void>;
+  onDeveloperDaemonAction?: (action: DaemonActionId) => void | Promise<void>;
+  onSelectedServiceIndexChange?: (index: number) => void;
+  onRefreshServices?: () => void;
+  pendingRestart?: PendingRestart | null;
+  restartInProgress?: string | null;
+  restartOverlayServiceId?: string | null;
+  restartLogOverlay?: ConsoleLogLine[];
+  logFollowResetKey?: number;
+  daemonLogByteFloor?: DaemonLogByteFloor | null;
+  instanceLogByteFloor?: ServiceLogByteFloor | null;
+  onConfirmRestart?: () => void;
+  onCancelRestart?: () => void;
+  devEnvConverge?: DevEnvConvergeState | null;
+  onDismissDevEnvConvergeError?: () => void;
+  developerView?: DeveloperView;
+  onCloseCellTraceView?: () => void;
+}>;
+
 export function AppView({
   activeArea,
   provisioning,
@@ -198,42 +249,9 @@ export function AppView({
   onDismissDevEnvConvergeError,
   developerView,
   onCloseCellTraceView,
-}: {
-  activeArea: string;
-  provisioning: boolean;
-  installFinished?: boolean;
-  columns: number;
-  rows: number;
-  selectedServiceIndex: number;
-  selectedServiceId?: string | null;
-  visibleServices: DevService[];
-  daemonOperation?: DaemonOperation | null;
-  serviceOperation?: ServiceOperation | null;
-  onServiceAction?: (serviceId: string, action: ServiceActionId) => void | Promise<void>;
-  onProvisioningDone?: () => void;
-  onInstallFinished?: (success: boolean) => void;
-  onDaemonInstallDone?: () => void;
-  onPurgeDone?: () => void;
-  onDaemonAction?: (action: DaemonActionId) => void | Promise<void>;
-  onDeveloperDaemonAction?: (action: DaemonActionId) => void | Promise<void>;
-  onSelectedServiceIndexChange?: (index: number) => void;
-  onRefreshServices?: () => void;
-  pendingRestart?: PendingRestart | null;
-  restartInProgress?: string | null;
-  restartOverlayServiceId?: string | null;
-  restartLogOverlay?: ConsoleLogLine[];
-  logFollowResetKey?: number;
-  daemonLogByteFloor?: DaemonLogByteFloor | null;
-  instanceLogByteFloor?: ServiceLogByteFloor | null;
-  onConfirmRestart?: () => void;
-  onCancelRestart?: () => void;
-  devEnvConverge?: DevEnvConvergeState | null;
-  onDismissDevEnvConvergeError?: () => void;
-  developerView?: DeveloperView;
-  onCloseCellTraceView?: () => void;
-}) {
+}: AppViewProps) {
   const activeIndex = AREAS.findIndex((area) => area.id === activeArea);
-  const menuActiveIndex = activeIndex >= 0 ? activeIndex : 0;
+  const menuActiveIndex = Math.max(activeIndex, 0);
   const innerWidth = columns - 2;
   const contentHeight = rows - MENU_ROWS - STATUS_ROWS;
   const status = statusHints(

@@ -12,9 +12,8 @@
     "skipLibCheck": true,
     "allowImportingTsExtensions": true,
     "noEmit": true,
-    "baseUrl": ".",
     "paths": {
-      "@turbopanel/components/*": ["src/components/*"]
+      "@turbopanel/components/*": ["./src/components/*"]
     }
   },
   "include": ["scripts/hot-reload.tsx", "src", "vite.config.ts"]
