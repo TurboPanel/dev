@@ -55,6 +55,48 @@ async function stopRedisInsight(onOutput?: InstallOutputHandler): Promise<void> 
   await runSystemctl(["disable", "--now", "turbopanel-redis-insight"], onOutput);
 }
 
+async function ensureRabbitMqRunning(onOutput?: InstallOutputHandler): Promise<void> {
+  if (!isSystemdUnitInstalled("turbopanel-rabbitmq")) {
+    return;
+  }
+  await runSystemctl(["enable", "--now", "turbopanel-rabbitmq"], onOutput);
+}
+
+async function stopRabbitMq(onOutput?: InstallOutputHandler): Promise<void> {
+  if (!isSystemdUnitInstalled("turbopanel-rabbitmq")) {
+    return;
+  }
+  await runSystemctl(["disable", "--now", "turbopanel-rabbitmq"], onOutput);
+}
+
+async function ensureMailerRunning(onOutput?: InstallOutputHandler): Promise<void> {
+  if (!isSystemdUnitInstalled("turbopanel-mailer")) {
+    return;
+  }
+  await runSystemctl(["enable", "--now", "turbopanel-mailer"], onOutput);
+}
+
+async function ensureClickHouseRunning(onOutput?: InstallOutputHandler): Promise<void> {
+  if (!isSystemdUnitInstalled("turbopanel-clickhouse")) {
+    return;
+  }
+  await runSystemctl(["enable", "--now", "turbopanel-clickhouse"], onOutput);
+}
+
+async function ensureTabixRunning(onOutput?: InstallOutputHandler): Promise<void> {
+  if (!isSystemdUnitInstalled("turbopanel-tabix")) {
+    return;
+  }
+  await runSystemctl(["enable", "--now", "turbopanel-tabix"], onOutput);
+}
+
+async function stopMailer(onOutput?: InstallOutputHandler): Promise<void> {
+  if (!isSystemdUnitInstalled("turbopanel-mailer")) {
+    return;
+  }
+  await runSystemctl(["disable", "--now", "turbopanel-mailer"], onOutput);
+}
+
 function runtimePlaybookExtraArgs(target: "deno" | "workers"): string[] {
   return [
     "-e",
@@ -85,6 +127,24 @@ export async function switchInstanceRuntime(
     () => {},
     onOutput,
   );
+
+  if (target === "deno") {
+    onOutput?.("Provisioning metrics backend (ClickHouse)…");
+    await runOrchestrationAction(
+      ["playbook", "clickhouse-setup.yml"],
+      () => {},
+      onOutput,
+    );
+    await ensureClickHouseRunning(onOutput);
+    onOutput?.("Provisioning metrics GUI (Tabix)…");
+    await runOrchestrationAction(
+      ["playbook", "tabix-setup.yml"],
+      () => {},
+      onOutput,
+    );
+    await ensureTabixRunning(onOutput);
+  }
+
   await runOrchestrationAction(
     ["playbook", "instance-launch-only.yml", ...playbookExtra],
     () => {},
@@ -93,9 +153,18 @@ export async function switchInstanceRuntime(
 
   await ensureMailpitRunning(onOutput);
   if (target === "deno") {
+    await runOrchestrationAction(
+      ["playbook", "rabbitmq-setup.yml"],
+      () => {},
+      onOutput,
+    );
+    await ensureRabbitMqRunning(onOutput);
+    await ensureMailerRunning(onOutput);
     await ensureRedisInsightRunning(onOutput);
   } else {
     await stopRedisInsight(onOutput);
+    await stopRabbitMq(onOutput);
+    await stopMailer(onOutput);
   }
 
   // instance-launch-only handlers already restart turbopanel-instance when runtime

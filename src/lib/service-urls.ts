@@ -10,6 +10,7 @@ export const DEFAULT_WEBSITE_PORT = 19820;
 export const DEFAULT_MAILPIT_WEB_PORT = 8025;
 export const DEFAULT_RABBITMQ_MGMT_PORT = 15672;
 export const DEFAULT_REDIS_INSIGHT_WEB_PORT = 5540;
+export const DEFAULT_TABIX_WEB_PORT = 8125;
 
 const PORT_ENV_KEYS: Record<string, string> = {
   CADDY_PORT: "CADDY_PORT",
@@ -17,6 +18,7 @@ const PORT_ENV_KEYS: Record<string, string> = {
   MAILPIT_WEB_PORT: "MAILPIT_WEB_PORT",
   RABBITMQ_MGMT_PORT: "RABBITMQ_MGMT_PORT",
   REDIS_INSIGHT_WEB_PORT: "REDIS_INSIGHT_WEB_PORT",
+  TABIX_WEB_PORT: "TABIX_WEB_PORT",
 };
 
 let cachedEnvEntries: Map<string, string> | null = null;
@@ -77,6 +79,11 @@ export function redisInsightBrowserUrl(): string {
   return `http://127.0.0.1:${port}`;
 }
 
+export function tabixBrowserUrl(): string {
+  const port = resolvePort(PORT_ENV_KEYS.TABIX_WEB_PORT!, DEFAULT_TABIX_WEB_PORT);
+  return `http://127.0.0.1:${port}`;
+}
+
 export function serviceBrowserUrl(serviceId: string): string | null {
   switch (serviceId) {
     case "instance":
@@ -93,6 +100,8 @@ export function serviceBrowserUrl(serviceId: string): string | null {
       return rabbitmqMgmtBrowserUrl();
     case "redisinsight":
       return redisInsightBrowserUrl();
+    case "tabix":
+      return tabixBrowserUrl();
     default:
       return null;
   }

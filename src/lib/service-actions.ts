@@ -25,12 +25,15 @@ const SYSTEMD_UNITS: Record<string, string> = {
   redisinsight: "turbopanel-redis-insight",
   queue: "turbopanel-rabbitmq",
   smtp: "turbopanel-mailpit",
+  metrics: "turbopanel-clickhouse",
+  tabix: "turbopanel-tabix",
 };
 
 const DOCKER_CONTAINERS: Record<string, string> = {
   db: "turbopaneldb",
   smtp: "turbopanelmailpit",
   redisinsight: "turbopanelredisinsight",
+  tabix: "turbopaneltabix",
 };
 
 const OPEN_START_UNITS: Record<string, string> = {
@@ -56,6 +59,7 @@ const MANAGED_SERVICE_IDS = new Set([
   "redisinsight",
   "queue",
   "smtp",
+  "metrics",
 ]);
 
 function systemctlProperty(unit: string, property: string): string | null {

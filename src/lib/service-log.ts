@@ -1,3 +1,4 @@
+import { serviceDisplayName } from "../dev-services.ts";
 import {
   closeSync,
   existsSync,
@@ -66,6 +67,8 @@ const SERVICE_UNITS: Record<string, string> = {
   redisinsight: "turbopanel-redis-insight",
   queue: "turbopanel-rabbitmq",
   smtp: "turbopanel-mailpit",
+  metrics: "turbopanel-clickhouse",
+  tabix: "turbopanel-tabix",
 };
 
 const DOCKER_LOG_CONTAINERS: Record<string, string> = {
@@ -73,6 +76,7 @@ const DOCKER_LOG_CONTAINERS: Record<string, string> = {
   smtp: "turbopanelmailpit",
   redisinsight: "turbopanelredisinsight",
   queue: "turbopanelq",
+  tabix: "turbopaneltabix",
 };
 
 export function serviceSystemdUnit(serviceId: string): string | null {
@@ -253,13 +257,14 @@ export function readServiceLogTail(
   }
 
   if (collected.length === 0) {
+    const displayName = serviceDisplayName(serviceId);
     let hint: string;
     if (dockerContainer) {
-      hint = `No logs yet — docker logs ${dockerContainer}`;
+      hint = `No logs yet for ${displayName} — docker logs ${dockerContainer}`;
     } else if (unit) {
-      hint = `No logs yet — journalctl -u ${unit} (sudo may be required)`;
+      hint = `No logs yet for ${displayName} — journalctl -u ${unit} (sudo may be required)`;
     } else {
-      hint = "No logs available for this service";
+      hint = `No logs available for ${displayName}`;
     }
     return [parseServiceLine(hint)];
   }

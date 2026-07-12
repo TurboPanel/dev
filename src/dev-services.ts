@@ -22,6 +22,7 @@ const DAEMON_UNIT = DAEMON_SYSTEMD_UNIT;
 const POSTGRES_CONTAINER = "turbopaneldb";
 const MAILPIT_CONTAINER = "turbopanelmailpit";
 const REDIS_INSIGHT_CONTAINER = "turbopanelredisinsight";
+const TABIX_CONTAINER = "turbopaneltabix";
 const POSTGRES_SOCKET = "/var/run/turbopanel/postgres/.s.PGSQL.5432";
 
 const DOWNSTREAM_SERVICE_DEFS = [
@@ -63,6 +64,8 @@ const ANCILLARY_DENO_DEFS = [
   { id: "cache", label: "cache", unit: "turbopanel-redis" },
   { id: "redisinsight", label: "redisinsight", kind: "redisinsight" as const },
   { id: "queue", label: "queue", unit: "turbopanel-rabbitmq" },
+  { id: "metrics", label: "metrics", unit: "turbopanel-clickhouse" },
+  { id: "tabix", label: "tabix", kind: "tabix" as const },
 ] as const;
 
 const ANCILLARY_WORKERS_DEFS = [
@@ -205,6 +208,21 @@ function redisInsightStatus(): DevServiceStatus {
   return "uninstalled";
 }
 
+function tabixStatus(): DevServiceStatus {
+  const running = dockerContainerRunning(TABIX_CONTAINER);
+  if (running === true) {
+    return "running";
+  }
+  if (running === false) {
+    return "stopped";
+  }
+  if (dockerContainerExists(TABIX_CONTAINER)) {
+    return "stopped";
+  }
+
+  return "uninstalled";
+}
+
 function systemdServiceStatus(unit: string): DevServiceStatus | null {
   if (!isSystemdUnitInstalled(unit)) {
     return null;
@@ -286,10 +304,16 @@ function shouldShowAncillaryServices(): boolean {
   if (isSystemdUnitInstalled("turbopanel-rabbitmq")) {
     return true;
   }
+  if (isSystemdUnitInstalled("turbopanel-clickhouse")) {
+    return true;
+  }
   if (dockerContainerExists(MAILPIT_CONTAINER)) {
     return true;
   }
   if (dockerContainerExists(REDIS_INSIGHT_CONTAINER)) {
+    return true;
+  }
+  if (dockerContainerExists(TABIX_CONTAINER)) {
     return true;
   }
   return downstreamServices().length > 0;
@@ -329,6 +353,14 @@ function ancillaryServices(): DevService[] {
       };
     }
 
+    if ("kind" in def && def.kind === "tabix") {
+      return {
+        id: def.id,
+        label: def.label,
+        status: tabixStatus(),
+      };
+    }
+
     const status = systemdServiceStatus(def.unit);
     return {
       id: def.id,
@@ -340,6 +372,16 @@ function ancillaryServices(): DevService[] {
 
 export function isDaemonInstallable(status: DevServiceStatus): boolean {
   return status !== "running";
+}
+
+/** User-facing service label for progress, status, errors, and empty-log messages. */
+export function serviceDisplayName(serviceId: string, label?: string): string {
+  const fromDefs = [
+    ...DOWNSTREAM_SERVICE_DEFS,
+    ...ANCILLARY_DENO_DEFS,
+    ...ANCILLARY_WORKERS_DEFS,
+  ].find((def) => def.id === serviceId)?.label;
+  return label ?? fromDefs ?? serviceId;
 }
 
 export function getVisibleServices(): DevService[] {

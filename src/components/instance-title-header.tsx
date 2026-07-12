@@ -39,13 +39,13 @@ export function RuntimeTitleHeader({
   width,
   runtime,
   badgeReserve = DEFAULT_BADGE_RESERVE,
-}: {
+}: Readonly<{
   serviceId: string;
   label: string;
   width: number;
   runtime?: StackBadgeRuntime;
   badgeReserve?: number;
-}) {
+}>) {
   const titleWidth = titleWidthForBadge(width, badgeReserve);
 
   return (
@@ -57,8 +57,8 @@ export function RuntimeTitleHeader({
         shrinkWrap
       />
       <Box marginLeft={1} marginBottom={1} flexDirection="column">
-        <ServiceBrowserLink serviceId={serviceId} />
         <InstanceRuntimeBadge runtime={runtime} serviceId={serviceId} />
+        <ServiceBrowserLink serviceId={serviceId} />
       </Box>
     </Box>
   );
@@ -67,10 +67,10 @@ export function RuntimeTitleHeader({
 export function InstanceTitleHeader({
   label,
   width,
-}: {
+}: Readonly<{
   label: string;
   width: number;
-}) {
+}>) {
   return (
     <RuntimeTitleHeader serviceId="instance" label={label} width={width} />
   );

@@ -1,3 +1,4 @@
+import { serviceDisplayName } from "../dev-services.ts";
 import { LogFileTailer } from "./log-file-tail.ts";
 import { spawnDocker } from "./docker-access.ts";
 import { runCaptured } from "./install-output.ts";
@@ -16,12 +17,15 @@ const SYSTEMD_UNITS: Record<string, string> = {
   redisinsight: "turbopanel-redis-insight",
   queue: "turbopanel-rabbitmq",
   smtp: "turbopanel-mailpit",
+  metrics: "turbopanel-clickhouse",
+  tabix: "turbopanel-tabix",
 };
 
 const DOCKER_CONTAINERS: Record<string, string> = {
   db: "turbopaneldb",
   smtp: "turbopanelmailpit",
   redisinsight: "turbopanelredisinsight",
+  tabix: "turbopaneltabix",
 };
 
 export type ServiceActiveState =
@@ -137,14 +141,7 @@ export function consoleLogLine(text: string): ConsoleLogLine {
 }
 
 function restartDisplayName(serviceId: string, label: string): string {
-  const target = serviceRestartTarget(serviceId);
-  if (target?.kind === "systemd") {
-    return target.unit;
-  }
-  if (target?.kind === "docker") {
-    return target.container;
-  }
-  return label;
+  return serviceDisplayName(serviceId, label);
 }
 
 async function runSystemctl(args: string[]): Promise<void> {
