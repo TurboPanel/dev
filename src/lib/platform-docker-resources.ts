@@ -17,9 +17,13 @@ export const REDIS_INSIGHT_VOLUME_NAME = "turbopanelredisinsight";
 /** Dev Tabix container (daemon `tabix` role default; no named volume). */
 export const TABIX_CONTAINER_NAME = "turbopaneltabix";
 
-/** ClickHouse container/volume (daemon `clickhouse` role defaults). */
-export const CLICKHOUSE_CONTAINER_NAME = "turbopanelch";
-export const CLICKHOUSE_VOLUME_NAME = "turbopanelch";
+/** ClickHouse / analytics container/volume (daemon `clickhouse` role defaults). */
+export const CLICKHOUSE_CONTAINER_NAME = "turbopanela";
+export const CLICKHOUSE_VOLUME_NAME = "turbopanela";
+
+/** Pre-rename ClickHouse names — still purged on reset. */
+const LEGACY_CLICKHOUSE_CONTAINER_NAME = "turbopanelch";
+const LEGACY_CLICKHOUSE_VOLUME_NAME = "turbopanelch";
 
 /** All TurboPanel-owned containers that can survive across dev installs. */
 export const PLATFORM_DOCKER_CONTAINER_NAMES = [
@@ -30,6 +34,7 @@ export const PLATFORM_DOCKER_CONTAINER_NAMES = [
   REDIS_INSIGHT_CONTAINER_NAME,
   TABIX_CONTAINER_NAME,
   CLICKHOUSE_CONTAINER_NAME,
+  LEGACY_CLICKHOUSE_CONTAINER_NAME,
 ] as const;
 
 /** All TurboPanel-owned volumes that can repopulate fresh installs. */
@@ -38,4 +43,5 @@ export const PLATFORM_DOCKER_VOLUME_NAMES = [
   RABBITMQ_VOLUME_NAME,
   REDIS_INSIGHT_VOLUME_NAME,
   CLICKHOUSE_VOLUME_NAME,
+  LEGACY_CLICKHOUSE_VOLUME_NAME,
 ] as const;
