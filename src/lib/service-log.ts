@@ -67,7 +67,7 @@ const SERVICE_UNITS: Record<string, string> = {
   redisinsight: "turbopanel-redis-insight",
   queue: "turbopanel-rabbitmq",
   smtp: "turbopanel-mailpit",
-  metrics: "turbopanel-clickhouse",
+  analytics: "turbopanel-clickhouse",
   tabix: "turbopanel-tabix",
 };
 

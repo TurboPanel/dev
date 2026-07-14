@@ -25,7 +25,7 @@ const SYSTEMD_UNITS: Record<string, string> = {
   redisinsight: "turbopanel-redis-insight",
   queue: "turbopanel-rabbitmq",
   smtp: "turbopanel-mailpit",
-  metrics: "turbopanel-clickhouse",
+  analytics: "turbopanel-clickhouse",
   tabix: "turbopanel-tabix",
 };
 
@@ -59,7 +59,7 @@ const MANAGED_SERVICE_IDS = new Set([
   "redisinsight",
   "queue",
   "smtp",
-  "metrics",
+  "analytics",
 ]);
 
 function systemctlProperty(unit: string, property: string): string | null {

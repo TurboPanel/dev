@@ -64,7 +64,7 @@ const ANCILLARY_DENO_DEFS = [
   { id: "cache", label: "cache", unit: "turbopanel-redis" },
   { id: "redisinsight", label: "redisinsight", kind: "redisinsight" as const },
   { id: "queue", label: "queue", unit: "turbopanel-rabbitmq" },
-  { id: "metrics", label: "metrics", unit: "turbopanel-clickhouse" },
+  { id: "analytics", label: "analytics", unit: "turbopanel-clickhouse" },
   { id: "tabix", label: "tabix", kind: "tabix" as const },
 ] as const;
 

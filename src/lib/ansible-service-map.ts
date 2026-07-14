@@ -19,7 +19,7 @@ const ANSIBLE_SERVICE_MAP: readonly [fragment: string, serviceId: string][] = [
   ["daemon-logs", "daemon"],
   ["ui-repo", "ui"],
   ["ui-build", "ui"],
-  ["clickhouse", "metrics"],
+  ["clickhouse", "analytics"],
   ["rabbitmq", "queue"],
   ["postgres", "db"],
   ["mailpit", "smtp"],

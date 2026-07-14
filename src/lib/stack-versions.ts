@@ -36,7 +36,7 @@ export type StackBadgeRuntime =
   | "redis"
   | "redisinsight"
   | "rabbitmq"
-  | "metrics"
+  | "analytics"
   | "tabix";
 
 /** Cloud emoji + double space — terminals often swallow one space after ☁️. */
@@ -71,8 +71,8 @@ export function stackBadgeLabel(
       return dockerLabel("Redis Insight");
     case "rabbitmq":
       return dockerLabel(`rabbitmq ${RABBITMQ_VERSION}`);
-    case "metrics":
-      return "metrics";
+    case "analytics":
+      return "analytics";
     case "tabix":
       return dockerLabel("Tabix");
     case "expo":

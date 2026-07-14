@@ -50,9 +50,9 @@ const PINNED_SERVICE_BADGES: Partial<
     runtime: "rabbitmq",
     badgeReserve: stackBadgeReserveForRuntime("rabbitmq"),
   },
-  metrics: {
-    runtime: "metrics",
-    badgeReserve: stackBadgeReserveForRuntime("metrics"),
+  analytics: {
+    runtime: "analytics",
+    badgeReserve: stackBadgeReserveForRuntime("analytics"),
   },
   db: { runtime: "postgres", badgeReserve: POSTGRES_BADGE_RESERVE },
 };
