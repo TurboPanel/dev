@@ -19,10 +19,10 @@ export type DevService = {
 };
 
 const DAEMON_UNIT = DAEMON_SYSTEMD_UNIT;
-const POSTGRES_CONTAINER = "turbopaneldb";
-const MAILPIT_CONTAINER = "turbopanelmailpit";
-const REDIS_INSIGHT_CONTAINER = "turbopanelredisinsight";
-const TABIX_CONTAINER = "turbopaneltabix";
+const POSTGRES_CONTAINER = "turbopanel-database";
+const MAILPIT_CONTAINER = "turbopanel-dev-mailpit";
+const REDIS_INSIGHT_CONTAINER = "turbopanel-dev-redis-insight";
+const TABIX_CONTAINER = "turbopanel-dev-tablix";
 const POSTGRES_SOCKET = "/var/run/turbopanel/postgres/.s.PGSQL.5432";
 
 const DOWNSTREAM_SERVICE_DEFS = [

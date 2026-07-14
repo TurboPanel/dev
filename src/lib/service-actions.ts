@@ -30,10 +30,10 @@ const SYSTEMD_UNITS: Record<string, string> = {
 };
 
 const DOCKER_CONTAINERS: Record<string, string> = {
-  db: "turbopaneldb",
-  smtp: "turbopanelmailpit",
-  redisinsight: "turbopanelredisinsight",
-  tabix: "turbopaneltabix",
+  db: "turbopanel-database",
+  smtp: "turbopanel-dev-mailpit",
+  redisinsight: "turbopanel-dev-redis-insight",
+  tabix: "turbopanel-dev-tablix",
 };
 
 const OPEN_START_UNITS: Record<string, string> = {
