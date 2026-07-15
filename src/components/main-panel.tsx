@@ -31,7 +31,7 @@ export function MainPanel({
         borderTop={false}
         borderBottom={false}
       >
-        <Box flexDirection="column" flexGrow={1} minHeight={0} paddingX={1}>
+        <Box flexDirection="column" flexGrow={1} minHeight={0}>
           {children}
         </Box>
       </Box>

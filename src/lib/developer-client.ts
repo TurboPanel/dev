@@ -57,6 +57,30 @@ function readInstanceSecret(): string | undefined {
   }
 }
 
+function instanceSecretReadError(): Error {
+  try {
+    readFileSync(INSTANCE_SECRET_PATH, "utf8");
+  } catch (err) {
+    const code =
+      err && typeof err === "object" && "code" in err
+        ? String((err as NodeJS.ErrnoException).code)
+        : "";
+    if (code === "EACCES") {
+      return new Error(
+        `cannot read instance secret at ${INSTANCE_SECRET_PATH} (permission denied) — expected root:${process.env.USER ?? "dev-user"} mode 0640 so the console can authenticate local developer API calls`,
+      );
+    }
+    if (code === "ENOENT") {
+      return new Error(
+        `missing instance secret at ${INSTANCE_SECRET_PATH} — cannot authenticate local developer API calls`,
+      );
+    }
+  }
+  return new Error(
+    `missing instance secret at ${INSTANCE_SECRET_PATH} — cannot authenticate local developer API calls`,
+  );
+}
+
 function buildLocalConsoleAuthorization(
   method: string,
   path: string,
@@ -125,9 +149,7 @@ async function developerFetch<T>(
   }
 
   if (!readInstanceSecret()) {
-    throw new Error(
-      `missing instance secret at ${INSTANCE_SECRET_PATH} — cannot authenticate local developer API calls`,
-    );
+    throw instanceSecretReadError();
   }
 
   const bodyText = init.body === undefined ? "" : JSON.stringify(init.body);

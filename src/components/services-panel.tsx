@@ -47,9 +47,8 @@ const EMPTY_OVERLAY: ConsoleLogLine[] = [];
 
 const ARROW_WIDTH = 1;
 const LIST_PADDING_RIGHT = 1;
-const LIST_LEADING_WIDTH = ARROW_WIDTH;
-const LIST_TRAILING_WIDTH = LIST_PADDING_RIGHT;
-const SERVICE_LIST_BORDER_COLUMNS = 2;
+/** Right border only (`borderRight` on the list Box). */
+const SERVICE_LIST_BORDER_COLUMNS = 1;
 const MIN_DETAIL_WIDTH = 28;
 const CONVERGE_PANEL_MIN_HEIGHT = 8;
 
@@ -60,10 +59,7 @@ export function serviceListWidth(services: DevService[]): number {
   );
 
   return (
-    LIST_LEADING_WIDTH +
-    longestLabel +
-    LIST_TRAILING_WIDTH +
-    SERVICE_LIST_BORDER_COLUMNS
+    ARROW_WIDTH + longestLabel + LIST_PADDING_RIGHT + SERVICE_LIST_BORDER_COLUMNS
   );
 }
 
@@ -398,7 +394,7 @@ export function ServicesPanel({
             return (
               <Box
                 key={service.id}
-                width={Math.max(1, leftWidth - 1)}
+                width={Math.max(1, leftWidth - SERVICE_LIST_BORDER_COLUMNS)}
                 flexDirection="row"
                 paddingRight={LIST_PADDING_RIGHT}
               >

@@ -102,7 +102,7 @@ export function ProvisionerPanel({
     3,
     height - 1 - footerRows - syncLogSectionRows,
   );
-  const outputWidth = Math.max(20, width);
+  const outputWidth = Math.max(20, width - 2);
   const syncLogContentWidth = logContentWidth(outputWidth, false);
 
   const appendOutput = useCallback((line: string) => {
@@ -482,7 +482,7 @@ export function ProvisionerPanel({
           : "Development environment ready";
 
   return (
-    <Box flexDirection="column" width={width} height={height}>
+    <Box flexDirection="column" width={width} height={height} paddingX={1}>
       <Text color="cyan" bold>
         {title}
       </Text>

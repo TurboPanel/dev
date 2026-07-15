@@ -221,5 +221,10 @@ export async function syncDevBuildToDaemons(
   const synced = results.filter((result) => result.ok && !result.skipped);
   if (synced.length > 0) {
     append(`Synced ${synced.length} daemon(s) successfully.`);
+    return;
   }
+
+  append(
+    "No remote source checkouts to sync. Managed installs (compiled turbopaneld) and this co-located daemon skip Sync Dev Build — they update via normal daemon Update / local edits.",
+  );
 }
