@@ -77,8 +77,8 @@ tp_github_ssh_auth_works() {
   case $_gsaw_out in
     *"successfully authenticated"*) return 0 ;;
     *"You've successfully authenticated"*) return 0 ;;
+    *) return 1 ;;
   esac
-  return 1
 }
 
 tp_git_signing_configured() {
@@ -257,4 +257,5 @@ case $(basename "$0") in
     . "$(CDPATH= cd -- "$(dirname "$0")" && pwd)/privileges.sh"
     tp_ensure_github_ssh "${1:-turbopanel/dev}"
     ;;
+  *) ;;
 esac

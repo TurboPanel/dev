@@ -41,6 +41,7 @@ case $0 in
       _tp_install_lib_dir=$_tp_candidate
     fi
     ;;
+  *) ;;
 esac
 if [ -z "$_tp_install_lib_dir" ]; then
   _tp_lib_base=${TURBOPANEL_DEV_LIB_BASE:-https://raw.githubusercontent.com/turbopanel/dev/trunk/scripts/lib}
@@ -68,6 +69,7 @@ resolve_repo_dir() {
         return 0
       fi
       ;;
+    *) ;;
   esac
   _tp_dev_root=${TURBOPANEL_DEV_ROOT:-$HOME}
   printf '%s' "$_tp_dev_root/dev"

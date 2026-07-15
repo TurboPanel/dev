@@ -101,6 +101,7 @@ tp_resolve_script() {
     */*)
       _rs=$(CDPATH= cd -- "$(dirname "$_rs")" && pwd)/$(basename "$_rs")
       ;;
+    *) ;;
   esac
   printf '%s' "$_rs"
 }

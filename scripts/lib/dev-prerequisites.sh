@@ -122,4 +122,5 @@ case $(basename "$0") in
     tp_ensure_dev_prerequisites
     tp_success "Dev prerequisites OK (${TP_DEV_USER})"
     ;;
+  *) ;;
 esac

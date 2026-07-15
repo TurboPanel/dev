@@ -141,7 +141,7 @@ The **Ansible dev overlay** lives in `<dev checkout>/orchestration/` and overrid
 - Prefer **`mode: "0640"`** / **`0750"`** over world-readable **`0644"`** / **`0755"`** for scripts and systemd units; set explicit **`owner`** / **`group`** (`ansible:S2612`).
 
 - Default git branch is **`trunk`** everywhere.
-- Shell scripts are **POSIX `sh`** — no bashisms.
+- Shell scripts are **POSIX `sh`** — no bashisms. Sonar `shelldre:S7688` (`[[` vs `[`) and `shelldre:S7682` (explicit `return`) are ignored in `sonar-project.properties` / `.sonarcloud.properties` for that reason.
 - Git clones use **SSH** (`git@github.com:turbopanel/...`), not HTTPS.
 - **`scripts/develop.sh` only installs this repo** — no runtime, no platform repos.
 - **`console` owns the Node runtime** (for this repo) and starting the TUI. It does **not** install Deno or other platform runtimes.

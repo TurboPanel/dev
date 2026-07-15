@@ -128,10 +128,11 @@ tp_read_pnpm_version() {
       printf '%s' "${_rpv_pm#pnpm@}"
       return 0
       ;;
+    *)
+      tp_error "package.json must define \"packageManager\": \"pnpm@x.y.z\""
+      exit 1
+      ;;
   esac
-
-  tp_error "package.json must define \"packageManager\": \"pnpm@x.y.z\""
-  exit 1
 }
 
 tp_corepack_bin() {

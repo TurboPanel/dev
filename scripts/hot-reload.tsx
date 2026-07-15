@@ -24,10 +24,10 @@ async function loadAppModule(server: ViteDevServer): Promise<AppModule> {
 function HotReloadApp({
   server,
   initialModule,
-}: {
+}: Readonly<{
   server: ViteDevServer;
   initialModule: AppModule;
-}) {
+}>) {
   const { columns, rows } = useWindowSize();
   const [appModule, setAppModule] = useState(initialModule);
   const consoleApp = useConsoleApp();
@@ -152,7 +152,7 @@ function Root() {
     return () => {
       clearTimeout(slowTimer);
       clearTimeout(slowerTimer);
-      void server?.close();
+      server?.close()?.catch(() => undefined);
     };
   }, []);
 

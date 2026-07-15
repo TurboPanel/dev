@@ -274,7 +274,7 @@ export function useConsoleApp() {
     }
     const { serviceId } = pendingRestart;
     setPendingRestart(null);
-    void performServiceRestart(serviceId);
+    performServiceRestart(serviceId).catch(() => undefined);
   }, [pendingRestart, performServiceRestart]);
 
   const handleServiceAction = useCallback(async (
