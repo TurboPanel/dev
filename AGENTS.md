@@ -73,6 +73,8 @@ Node is a pinned `nodejs.org` tarball vendored under `/opt/turbopanel/vendor/nod
 | `./console --watch` | Same, but use `scripts/hot-reload.tsx` for live reload on `src/` changes. |
 | `pnpm dev` | Run `src/tui.tsx` directly via `vite-node` (requires Node on PATH). |
 | `pnpm dev:watch` | Run `scripts/hot-reload.tsx`, which keeps Ink mounted and rerenders on `src/` changes. |
+| `./scripts/sync.sh` | Push `instance/src/lib/db/schema.ts` → live Postgres (drizzle-kit push; Deno dev convenience). |
+| `./scripts/introspect.sh` | Pull live Postgres → `instance/src/lib/db/schema.ts` (drizzle-kit introspect). |
 
 **Typical flow:**
 
