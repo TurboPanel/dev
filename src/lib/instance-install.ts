@@ -9,6 +9,7 @@ import { orchestrationActionCommand } from "./daemon-exec.ts";
 import { resolveDevIdentity } from "./dev-identity.ts";
 import {
   daemonRepoPath,
+  devOrchestrationDir,
   PYTHON_RUNTIME_DIR,
   resolveDevRoot,
   UV_CACHE_DIR,
@@ -19,6 +20,7 @@ import {
   type InstallOutputHandler,
   sanitizeInstallOutput,
 } from "./install-output.ts";
+import { TRUSTED_SYSTEM_PATH } from "./spawn-trusted.ts";
 import { ensureDevUserDockerAccess } from "./turbopanel-permissions.ts";
 import { shellQuote } from "./shell-quote.ts";
 
@@ -84,6 +86,7 @@ function orchestrationEnv(): string[] {
     `TURBOPANEL_DEV_UID=${dev.uid}`,
     `TURBOPANEL_DEV_GID=${dev.gid}`,
     `TURBOPANEL_DEV_ROOT=${devRoot}`,
+    `TURBOPANEL_DEV_ORCHESTRATION_DIR=${devOrchestrationDir()}`,
     "UV_NO_MODIFY_PATH=1",
     "UV_PYTHON_DOWNLOADS=automatic",
     "UV_VENV_CLEAR=1",
@@ -110,7 +113,7 @@ export async function runOrchestrationAction(
   await new Promise<void>((resolve, reject) => {
     const child = spawn("env", [...orchestrationEnv(), "bash", "-c", command], {
       stdio: ["ignore", "pipe", "pipe"],
-      env: captureChildEnv(),
+      env: captureChildEnv({ PATH: TRUSTED_SYSTEM_PATH }),
       detached: false,
     });
 

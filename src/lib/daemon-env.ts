@@ -2,6 +2,7 @@ import {
   buildPlatformRepoEntries,
   DAEMON_ENV_PATH,
   DAEMON_ENV_TRUNK_BRANCH_KEY,
+  devOrchestrationDir,
   platformCaCertPath,
   resolveDevRoot,
   TURBOPANEL_TRUNK_BRANCH,
@@ -29,6 +30,7 @@ export function buildDaemonBaseEnvEntries(
   return {
     TURBOPANEL_MODE: "development",
     TURBOPANEL_DEV_ROOT: resolveDevRoot(),
+    TURBOPANEL_DEV_ORCHESTRATION_DIR: devOrchestrationDir(),
     ...buildPlatformRepoEntries(),
     [DAEMON_ENV_TRUNK_BRANCH_KEY]: TURBOPANEL_TRUNK_BRANCH,
     TURBOPANEL_DEV_USER: dev.user,

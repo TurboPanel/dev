@@ -109,7 +109,7 @@ src/
 
 ## Ansible dev overlay
 
-The **Ansible dev overlay** lives in `<daemon checkout>/dev/orchestration/` and overrides the daemon's production roles with dev-user parameters (the daemon still executes Ansible). Set `TURBOPANEL_MODE=development` during dev converge.
+The **Ansible dev overlay** lives in `<dev checkout>/orchestration/` and overrides the daemon's production roles with dev-user parameters (the daemon still executes Ansible). Set `TURBOPANEL_MODE=development` during dev converge.
 
 ## Shell libraries
 

@@ -51,9 +51,9 @@ export const NODE_VERSION = "24.17.0";
 export const NODE_BIN = `${RUNTIMES_DIR}/node/current/bin/node`;
 export const PNPM_BIN = `${RUNTIMES_DIR}/node/current/bin/pnpm`;
 
-/** Co-located dev Ansible overlay under the daemon checkout. */
+/** Co-located dev Ansible overlay under the dev checkout. */
 export function devOrchestrationDir(): string {
-  return `${daemonRepoPath()}/dev/orchestration`;
+  return `${resolveDevRoot()}/dev/orchestration`;
 }
 
 /** FHS mutable dirs (dev shares the production paths, dev-owned at runtime). */
