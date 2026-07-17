@@ -5,7 +5,9 @@ import {
   isDaemonServiceActive,
   requestDaemonRestart,
 } from "./daemon-actions.ts";
+import { installDaemonSystemd } from "./daemon-install.ts";
 import { orchestrationActionCommand } from "./daemon-exec.ts";
+import { isDaemonSystemdInstalled } from "../dev-services.ts";
 import { resolveDevIdentity } from "./dev-identity.ts";
 import {
   daemonRepoPath,
@@ -69,11 +71,12 @@ function extractAnsibleFailureMessage(event: unknown): string | null {
 }
 
 function lastNonEmptyLine(buffer: string): string | undefined {
-  return buffer
+  const lines = buffer
     .trim()
     .split("\n")
     .map((line) => line.trim())
-    .findLast((line) => line.length > 0);
+    .filter((line) => line.length > 0);
+  return lines.at(-1);
 }
 
 function orchestrationEnv(): string[] {
@@ -111,7 +114,7 @@ export async function runOrchestrationAction(
   };
 
   await new Promise<void>((resolve, reject) => {
-    const child = spawn("env", [...orchestrationEnv(), "bash", "-c", command], {
+    const child = spawn("/usr/bin/env", [...orchestrationEnv(), "/bin/bash", "-c", command], {
       stdio: ["ignore", "pipe", "pipe"],
       env: captureChildEnv({ PATH: TRUSTED_SYSTEM_PATH }),
       detached: false,
@@ -195,6 +198,16 @@ export async function installDevEnvironment(
   } catch (error) {
     onStep?.(DEV_ENV_CONVERGE_STEP, "failed");
     throw error;
+  }
+
+  // Start development environment can run when bootstrap never finished the
+  // turbopaneld unit install (e.g. prior apt failure). Install the unit first —
+  // enable --now alone fails with "Unit turbopaneld.service does not exist".
+  if (!isDaemonSystemdInstalled()) {
+    await installDaemonSystemd(onOutput, onStep);
+    // installDaemonSystemd → writeDaemonBaseEnv strips TURBOPANEL_DEV_INSTANCE;
+    // restore instance opt-in + connectivity written at the top of this flow.
+    writeDaemonInstanceEnv();
   }
 
   if (isDaemonServiceActive()) {

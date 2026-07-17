@@ -1,4 +1,3 @@
-import { spawnSync } from "node:child_process";
 import type { DevServiceStatus } from "../dev-services.ts";
 import { isDaemonSystemdInstalled } from "../dev-services.ts";
 import {
@@ -8,6 +7,7 @@ import {
   TURBOPANEL_ROOT,
 } from "./paths.ts";
 import { readInstanceRuntime } from "./daemon-env.ts";
+import { spawnSyncTrustedText } from "./spawn-trusted.ts";
 import { type InstallOutputHandler, runCaptured } from "./install-output.ts";
 import { syncDevToAllDaemons } from "./developer-client.ts";
 import { shellQuote } from "./shell-quote.ts";
@@ -74,8 +74,7 @@ export function canRestartDaemon(): boolean {
 }
 
 export function isDaemonServiceActive(): boolean {
-  const result = spawnSync("systemctl", ["is-active", DAEMON_UNIT], {
-    encoding: "utf8",
+  const result = spawnSyncTrustedText("systemctl", ["is-active", DAEMON_UNIT], {
     stdio: ["ignore", "pipe", "ignore"],
   });
   return (result.stdout ?? "").trim() === "active";
