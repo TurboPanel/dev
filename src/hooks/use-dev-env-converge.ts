@@ -183,7 +183,7 @@ export function useDevEnvConverge(onFinished: (success: boolean) => void) {
         emitStep(currentStep, "failed");
         const message = caught instanceof Error ? caught.message : String(caught);
         const saved = await writeTaskErrorLog({
-          title: "Start development environment",
+          title: "Converge / re-converge development environment",
           message: `step=${currentStep}\n${message}`,
           tasks: [{ label: currentStep, status: "failed" }],
           timestamp: new Date().toISOString(),

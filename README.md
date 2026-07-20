@@ -24,7 +24,7 @@ Debian 13, interactive terminal, `curl`, `sudo`, a sudo-capable development user
 
 1. Clone the five repos into `$HOME` (`~/dev`, `~/daemon`, `~/instance`, `~/ui`, `~/website`).
 2. From `~/dev`, run `./console` → prereqs, pinned Node **`24.17.0`**, `pnpm install`, TUI launch (exports `TURBOPANEL_MODE=development`, `TURBOPANEL_DEV_ROOT`, `TURBOPANEL_<DIR>_REPO`).
-3. **Start dev stack** → daemon bootstraps as the dev user, writes `/etc/turbopanel/daemon.env`, runs the `dev/orchestration` overlay: runtimes into `/opt/turbopanel/vendor`, systemd units + Docker (postgres/redis/rabbitmq/mailpit) as the dev user, mutable data under FHS trees dev-user-owned. No `turbopanel` / `turbopaneli` / `turbopanelc` accounts created.
+3. **Converge / re-converge** → daemon bootstraps as the dev user, writes `/etc/turbopanel/daemon.env`, runs the `dev/orchestration` overlay: runtimes into `/opt/turbopanel/vendor`, systemd units + Docker (postgres/redis/rabbitmq/mailpit) as the dev user, mutable data under FHS trees dev-user-owned. No `turbopanel` / `turbopaneli` / `turbopanelc` accounts created.
 4. Open `https://localhost:8443` (or dev `http://localhost:8880`); edit source in place under `$HOME`.
 
 See [Local development](https://turbopanel.io/docs/getting-started/development) for ports, runtime modes, and troubleshooting.

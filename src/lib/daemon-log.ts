@@ -374,7 +374,7 @@ function emptyLogHints(
         now,
         "info",
         "console",
-        "Install or repair the daemon, or run Start development environment from the Developer menu",
+        "Install or repair the daemon, or run Converge / re-converge from the Developer menu",
       ),
     ];
   }

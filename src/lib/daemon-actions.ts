@@ -33,7 +33,7 @@ export const DAEMON_ACTION_LABELS: Record<DaemonActionId, string> = {
   repair: "Repair install",
   restart: "Restart",
   purge: "Purge completely",
-  "start-dev-env": "Start development environment",
+  "start-dev-env": "Converge / re-converge development environment",
   "reset-dev-env": "Reset development environment",
   "reset-dev-db": "Reset dev database",
   "toggle-cell-trace": "Toggle verbose cell trace",

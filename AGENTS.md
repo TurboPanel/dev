@@ -30,7 +30,9 @@ The current entrypoint is a minimal launcher only (full multi-screen console was
 ```
 ~/dev/                    # turbopanel/dev checkout (develop.sh clones here via TURBOPANEL_DEV_ROOT)
 ├── console               # ensure Node, pnpm install, launch the TUI via vite-node
-├── orchestration/        # Ansible dev overlay (overrides daemon prod roles)
+├── orchestration/        # Ansible dev overlay + development Caddyfile
+│   ├── Caddyfile         # co-located control-plane proxy (Expo, :8880, wrangler)
+│   └── expo-loading.html # Expo cold-start page served by the development Caddyfile
 ├── scripts/develop.sh    # clone/update + exec ./console
 ├── package.json          # Node project (pnpm, pinned via packageManager); ink + react + vite
 ├── src/tui.tsx           # Ink entrypoint
@@ -62,7 +64,7 @@ Node is a pinned `nodejs.org` tarball vendored under `/opt/turbopanel/vendor/nod
 
 1. Clone the five repos into `$HOME` (`~/dev`, `~/daemon`, `~/instance`, `~/ui`, `~/website`).
 2. From `~/dev`, run `./console` → prereqs, pinned Node, `pnpm install`, TUI launch (exports `TURBOPANEL_MODE=development`, `TURBOPANEL_DEV_ROOT`, `TURBOPANEL_<DIR>_REPO`).
-3. **Start dev stack** → daemon bootstraps as the dev user, writes `/etc/turbopanel/daemon.env`, runs the `dev/orchestration` overlay: runtimes into `/opt/turbopanel/vendor`, systemd units + Docker (postgres/redis/rabbitmq/mailpit) as the dev user, mutable data under FHS trees dev-user-owned. No `turbopanel` / `turbopaneli` / `turbopanelc` accounts created.
+3. **Converge / re-converge** → daemon bootstraps as the dev user, writes `/etc/turbopanel/daemon.env`, runs the `dev/orchestration` overlay: runtimes into `/opt/turbopanel/vendor`, systemd units + Docker (postgres/redis/rabbitmq/mailpit) as the dev user, mutable data under FHS trees dev-user-owned. No `turbopanel` / `turbopaneli` / `turbopanelc` accounts created.
 4. Open `https://localhost:8443` (or dev `http://localhost:8880`); edit source in place under `$HOME`.
 
 ## Entry points
@@ -114,6 +116,17 @@ src/
 ## Ansible dev overlay
 
 The **Ansible dev overlay** lives in `<dev checkout>/orchestration/` and overrides the daemon's production roles with dev-user parameters (the daemon still executes Ansible). Set `TURBOPANEL_MODE=development` during dev converge.
+
+### Development Caddyfile
+
+Co-located hosts load **`orchestration/Caddyfile`** (not `~/instance/Caddyfile`) when `turbopanel_dev_user` is set — wired by the daemon `instance-launch` role via `turbopanel_caddyfile`. That file owns:
+
+- HTTPS `:8443` plus plaintext `:8880` (always on; no serve-time flag)
+- Expo reverse_proxy when `TURBOPANEL_UI_MODE=dev` (with `expo-loading.html` for cold-start 502s)
+- Optional wrangler upstream when `TURBOPANEL_INSTANCE_RUNTIME=workers`
+- `/downloads/daemon/*` and `/run.sh` from the daemon checkout when UI mode is `dev`
+
+The instance repo's `Caddyfile` stays production-only (HTTPS + Deno socket + static UI). See **`../instance/AGENTS.md`** (Caddy) and **`../daemon/AGENTS.md`** (plaintext HTTP client gate).
 
 ## Shell libraries
 

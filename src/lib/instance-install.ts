@@ -200,7 +200,7 @@ export async function installDevEnvironment(
     throw error;
   }
 
-  // Start development environment can run when bootstrap never finished the
+  // Converge / re-converge can run when bootstrap never finished the
   // turbopaneld unit install (e.g. prior apt failure). Install the unit first —
   // enable --now alone fails with "Unit turbopaneld.service does not exist".
   if (!isDaemonSystemdInstalled()) {
