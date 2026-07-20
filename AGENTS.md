@@ -21,7 +21,7 @@ model"). Deno is still installed for the **instance** stack (and mailer) via the
 
 **Target host:** Debian 13 (Vagrant support planned).
 
-**Bootstrap URL:** https://trbp.nl/develop.sh → `scripts/develop.sh` on the `trunk` branch of [turbopanel/dev](https://github.com/turbopanel/dev). When piped (`curl … | sh`), `$0` is `sh` so local `scripts/lib/` is not on disk yet — the script downloads those libs from `raw.githubusercontent.com/turbopanel/dev` (override with `TURBOPANEL_DEV_LIB_BASE`) before clone.
+**Bootstrap URL:** `trbp.nl/develop.sh` (Cloudflare HTTP→HTTPS 301) → `scripts/develop.sh` on the `trunk` branch of [turbopanel/dev](https://github.com/turbopanel/dev). When piped (`curl … | sh`), `$0` is `sh` so local `scripts/lib/` is not on disk yet — the script downloads those libs from `raw.githubusercontent.com/turbopanel/dev` (override with `TURBOPANEL_DEV_LIB_BASE`) before clone.
 
 The current entrypoint is a minimal launcher only (full multi-screen console was removed during a rewrite).
 
@@ -69,7 +69,7 @@ Node is a pinned `nodejs.org` tarball vendored under `/opt/turbopanel/vendor/nod
 
 | Script | Purpose |
 |--------|---------|
-| `curl -fsSL https://trbp.nl/develop.sh \| sh` | Clone/update `~/dev` via SSH, then launch the TUI. |
+| `curl -fsSL trbp.nl/develop.sh \| sh` | Clone/update `~/dev` via SSH, then launch the TUI. |
 | `sh scripts/develop.sh` | Same when run from inside the repo to update the checkout. |
 | `./console` | Ensure pinned Node (sudo on first run), `pnpm install`, launch `src/tui.tsx` via `vite-node`. |
 | `./console --watch` | Same, but use `scripts/hot-reload.tsx` for live reload on `src/` changes. |
@@ -81,7 +81,7 @@ Node is a pinned `nodejs.org` tarball vendored under `/opt/turbopanel/vendor/nod
 **Typical flow:**
 
 ```bash
-curl -fsSL https://trbp.nl/develop.sh | sh
+curl -fsSL trbp.nl/develop.sh | sh
 ```
 
 (`develop.sh` clones/updates the checkout and `exec`s `./console`.)
