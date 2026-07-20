@@ -10,10 +10,12 @@ orchestration and runs the **daemon from the dev user's home checkout**
 preferred, else the vendored runtime at
 `/opt/turbopanel/vendor/deno/current/deno`. It never runs a
 compiled daemon binary. Production installs (driven by `run.sh` + Ansible, **not**
-this console) run the compiled **`/opt/turbopanel/bin/turbopaneld`** binary — with
-a **`turbopaneld.js`** `deno run` fallback — as **`turbopaneld.service`** on the
-FHS tree (`/etc/turbopanel`, `/var/lib/turbopanel`, `/var/log/turbopanel`,
-`/run/turbopanel`; see the daemon repo's `AGENTS.md` → "Filesystem layout & path
+this console) run **`turbopaneld.service`** on the FHS tree
+(`/etc/turbopanel`, `/var/lib/turbopanel`, `/var/log/turbopanel`,
+`/run/turbopanel`): native **`/opt/turbopanel/bin/turbopaneld`** when that binary
+executes, otherwise **`turbopaneld.js`** via vendored Deno — the supported path
+on hosts where the native binary cannot load (e.g. some Raspberry Pi kernels with
+16 KiB pages; see the daemon repo's `AGENTS.md` → "Filesystem layout & path
 model"). Deno is still installed for the **instance** stack (and mailer) via the
 `deno-runtime` Ansible role during dev converge.
 
@@ -54,7 +56,7 @@ The current entrypoint is a minimal launcher only (full multi-screen console was
 ~/.local/console/         # console converge logs (consoleLogDir())
 ```
 
-Node is a pinned `nodejs.org` tarball vendored under `/opt/turbopanel/vendor/node/<version>/` with a `current` symlink (same layout as deno/caddy). pnpm is provisioned via Corepack and pinned by the `packageManager` field in `package.json`. Deno is **host-provided in development** (preferred) or bootstrap-installed to `/opt/turbopanel/vendor/deno/current/deno` when host Deno is absent; the dev console always runs the daemon and orchestration **from the source checkout** via Deno. Production daemon installs use the compiled `/opt/turbopanel/bin/turbopaneld` binary (with a `turbopaneld.js` `deno run` fallback), driven by `run.sh` + Ansible — never by this console.
+Node is a pinned `nodejs.org` tarball vendored under `/opt/turbopanel/vendor/node/<version>/` with a `current` symlink (same layout as deno/caddy). pnpm is provisioned via Corepack and pinned by the `packageManager` field in `package.json`. Deno is **host-provided in development** (preferred) or bootstrap-installed to `/opt/turbopanel/vendor/deno/current/deno` when host Deno is absent; the dev console always runs the daemon and orchestration **from the source checkout** via Deno. Production daemon installs use native `/opt/turbopanel/bin/turbopaneld` or, when that binary cannot execute on the host, `turbopaneld.js` via vendored Deno — driven by `run.sh` + Ansible, never by this console.
 
 ## Fresh-clone → working dev
 
@@ -106,7 +108,7 @@ src/
 - The `@turbopanel/components/` import alias is defined in **both** `vite.config.ts` (`resolve.alias`) and `tsconfig.json` (`paths`) — keep them in sync.
 - Keep the CLI **simple**. Platform repo install, service monitoring, and stack actions belong in the Ink app when rebuilt — not new shell scripts.
 - **`src/lib/paths.ts`** — `TURBOPANEL_TRUNK_BRANCH` (`trunk`) is the dev shim for git checkouts and `TURBOPANEL_TRUNK_BRANCH` in `/etc/turbopanel/daemon.env`; release/binary installs omit it. Path helpers: `resolveDevRoot()`, `platformRepoPath()`, `TURBOPANEL_DEV_ROOT`, `TURBOPANEL_<DIR>_REPO` env overrides. Mutable data: `CONFIG_DIR=/etc/turbopanel`, `LOG_DIR=/var/log/turbopanel`, `RUNTIMES_DIR=/opt/turbopanel/vendor`. Daemon: `DAEMON_ENV_PATH=/etc/turbopanel/daemon.env`, `DAEMON_LOG_PATH`/`DAEMON_ERR_LOG_PATH`=`/var/log/turbopanel/daemon.log` + `daemon.err.log`. Console logs: `consoleLogDir()` → `~/.local/console`. `DENO_VERSION` (**`2.9.3`**) is the console's bootstrap fallback + status label and **must** match `deno_version` in the daemon's `deno-runtime` role (pinned by the daemon's `src/orchestration/paths.test.ts`). The daemon systemd unit name is **`turbopaneld`** (`DAEMON_SYSTEMD_UNIT`), matching the daemon's `install-daemon-systemd.sh` and managed production installs.
-- **`src/lib/daemon-exec.ts`** — always resolves a **Deno** invocation of the source-checkout scripts (`scripts/bootstrap-orchestration.ts`, `scripts/run-orchestration-action.ts`): host Deno if on PATH, else `/opt/turbopanel/vendor/deno/current/deno`. It never runs `/opt/turbopanel/bin/turbopaneld`; that compiled entrypoint (and its `turbopaneld.js` fallback) exists only on managed/production installs, which the console does not drive.
+- **`src/lib/daemon-exec.ts`** — always resolves a **Deno** invocation of the source-checkout scripts (`scripts/bootstrap-orchestration.ts`, `scripts/run-orchestration-action.ts`): host Deno if on PATH, else `/opt/turbopanel/vendor/deno/current/deno`. It never runs `/opt/turbopanel/bin/turbopaneld` or `turbopaneld.js`; those managed/production ExecStart modes are outside this console.
 - **Cell trace (Developer area)** — the Developer menu (`src/lib/daemon-actions.ts` → `toggle-cell-trace` / `view-cell-trace` actions, dispatched in `src/hooks/use-console-app.ts`) lets you enable/disable verbose cell tracing and view it. The toggle (`src/lib/instance-trace-env.ts` — `readCellTraceEnabled`/`setCellTraceEnabled`) writes `TURBOPANEL_DAEMON_DEBUG` into **both** `/etc/turbopanel/instance/runtime.env` and `runtime.dev-vars` (so it applies to Deno and the Workers `wrangler dev` DO identically) and then restarts `turbopanel-instance` (reusing the existing restart-overlay flow) to apply it. The **Cell trace** viewer (`src/components/cell-trace-view.tsx`, `src/hooks/use-cell-trace-log.ts`, `src/lib/cell-trace-log.ts`) is a Developer sub-view that tails and filters the instance log (`/var/log/turbopanel/instance/instance.log` + `.err.log`) down to the `daemon-cell`/`command-consumer`-tagged trace lines, reached via the `view-cell-trace` action and rendered by `src/components/developer-panel.tsx`. Enabling `TURBOPANEL_DAEMON_DEBUG` now also surfaces per-call-site Durable Object storage-op counters (`storageReads`/`storageWrites`/`storageByCallSite`) on the cell diagnostics for billing audits; canonical detail lives in `~/instance/AGENTS.md` (Daemon Cell).
 
 ## Ansible dev overlay
