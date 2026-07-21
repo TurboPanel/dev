@@ -12,8 +12,8 @@ export const WRANGLER_VERSION = "4.109.0";
 /** website/package.json dependencies.next */
 export const NEXT_VERSION = "16.2.9";
 
-/** ui/package.json dependencies.expo (~56.x SDK) */
-export const EXPO_SDK_VERSION = "56";
+/** ui/package.json dependencies.expo */
+export const EXPO_SDK_VERSION = "56.0.16";
 
 /** daemon orchestration/roles/postgres/defaults/main.yml postgres_image */
 export const POSTGRES_VERSION = "18";
