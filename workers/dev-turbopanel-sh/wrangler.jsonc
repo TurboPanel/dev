@@ -13,7 +13,7 @@
   },
   "main": "src/worker.ts",
   "build": {
-    "command": "npm run stage"
+    "command": "pnpm run stage"
   },
   "assets": {
     "binding": "ASSETS",
