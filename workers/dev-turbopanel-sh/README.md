@@ -21,9 +21,13 @@ into a gitignored `public/develop.sh` before upload — nothing is duplicated in
 From this directory:
 
 ```bash
-npm install
+npm ci
 npm run deploy
 ```
+
+`package-lock.json` is committed so Cloudflare Workers Builds installs with npm
+(instead of picking up the dev repo root's pnpm toolchain). Local installs may
+use `npm install` instead of `npm ci` when the lockfile changes.
 
 `deploy` runs `wrangler deploy`, which executes the `build.command` in
 `wrangler.jsonc` first (staging `../../scripts/develop.sh` → `public/develop.sh`)
