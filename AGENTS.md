@@ -25,6 +25,17 @@ model"). Deno is still installed for the **instance** stack (and mailer) via the
 
 The current entrypoint is a minimal launcher only (full multi-screen console was removed during a rewrite).
 
+## Installer script hosting (`workers/dev-turbopanel-sh/`)
+
+**https://dev.turbopanel.sh** is the canonical **free** (Cloudflare Workers Static
+Assets) host for `scripts/develop.sh`. Deploy tooling lives in the isolated
+`workers/dev-turbopanel-sh/` package (Node + wrangler only — not part of the Vite/
+`tsconfig` graph). Manual deploy: `npm install` then `npm run deploy` from that
+directory; the stage step copies `scripts/develop.sh` into gitignored `public/` at
+deploy time so the script stays a single source of truth. Existing
+**trbp.nl/develop.sh** references remain valid via a dashboard redirect to
+`https://dev.turbopanel.sh`.
+
 ## Filesystem layout
 
 ```

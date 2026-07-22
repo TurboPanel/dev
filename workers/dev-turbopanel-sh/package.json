@@ -1,0 +1,10 @@
+{
+  "private": true,
+  "scripts": {
+    "stage": "mkdir -p public && cp ../../scripts/develop.sh public/develop.sh",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4.109.0"
+  }
+}

@@ -31,3 +31,7 @@ logs/
 .local/
 .cache/
 .config/
+
+# Isolated Workers deploy tooling
+workers/dev-turbopanel-sh/public/
+workers/dev-turbopanel-sh/node_modules/
