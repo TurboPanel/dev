@@ -87,7 +87,7 @@ export const PYTHON_INSTALL_DIR = PYTHON_RUNTIME_DIR;
  * host Deno is absent matches the one Ansible converges into
  * `/opt/turbopanel/vendor/deno`.
  */
-export const DENO_VERSION = "2.9.3";
+export const DENO_VERSION = "2.9.4";
 export const VENDORED_DENO_BIN = `${RUNTIMES_DIR}/deno/current/deno`;
 
 export function platformRepoPath(dir: string): string {

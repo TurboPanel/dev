@@ -18,7 +18,7 @@ The console is an [Ink](https://github.com/vadimdemedes/ink) TUI run on Node via
 
 ## Prerequisites
 
-Debian 13, interactive terminal, `curl`, `sudo`, a sudo-capable development user, and **Deno on PATH** (or let the dev stack install the pinned **`2.9.3`** runtime under `/opt/turbopanel/vendor/deno/`).
+Debian 13, interactive terminal, `curl`, `sudo`, a sudo-capable development user, and **Deno on PATH** (or let the dev stack install the pinned **`2.9.4`** runtime under `/opt/turbopanel/vendor/deno/`).
 
 ## Fresh-clone → working dev
 
