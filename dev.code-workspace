@@ -1,13 +1,21 @@
 {
 	"folders": [
 		{
-			"path": "."
+			"path": ".",
+			"name": "dev",
+			"settings": {
+				"ansible.config.path": "${workspaceFolder}/orchestration/ansible.cfg"
+			}
 		},
 		{
 			"path": "../instance"
 		},
 		{
-			"path": "../daemon"
+			"path": "../daemon",
+			"name": "daemon",
+			"settings": {
+				"ansible.config.path": "${workspaceFolder}/orchestration/ansible.cfg"
+			}
 		},
 		{
 			"path": "../ui"
