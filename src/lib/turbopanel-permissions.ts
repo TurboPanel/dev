@@ -49,7 +49,7 @@ function dockerIsPresent(): boolean {
  * - **Development:** everything under `/opt/turbopanel` (and the other FHS
  *   mutable dirs) is owned by the invoking dev user + primary group.
  * - **Production:** Ansible `turbopanel-user` owns the install root and vendor
- *   tree as `turbopanel:turbopanel` (uid/gid 9999). This helper never runs there.
+ *   tree as `tp:tp` (uid/gid 9999). This helper never runs there.
  */
 export async function ensureFhsTreeOwnership(
   onOutput?: InstallOutputHandler,

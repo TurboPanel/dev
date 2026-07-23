@@ -14,7 +14,7 @@
 			"path": "../daemon",
 			"name": "daemon",
 			"settings": {
-				"ansible.config.path": "${workspaceFolder}/orchestration/ansible.cfg"
+				"ansible.config.path": "${workspaceFolder}/ansible.cfg"
 			}
 		},
 		{
