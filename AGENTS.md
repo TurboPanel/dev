@@ -21,20 +21,24 @@ model"). Deno is still installed for the **instance** stack (and mailer) via the
 
 **Target host:** Debian 13 (Vagrant support planned).
 
-**Bootstrap URL:** `trbp.nl/develop.sh` (Cloudflare HTTP→HTTPS 301) → `scripts/develop.sh` on the `trunk` branch of [turbopanel/dev](https://github.com/turbopanel/dev). When piped (`curl … | sh`), `$0` is `sh` so local `scripts/lib/` is not on disk yet — the script downloads those libs from `raw.githubusercontent.com/turbopanel/dev` (override with `TURBOPANEL_DEV_LIB_BASE`) before clone.
+**Bootstrap URL:** `trbp.nl/develop.sh` (advertised one-liner; redirects to the canonical static URL `https://dev.turbopanel.sh/develop.sh`) → `scripts/develop.sh` on the `trunk` branch of [turbopanel/dev](https://github.com/turbopanel/dev). When piped (`curl … | sh`), `$0` is `sh` so local `scripts/lib/` is not on disk yet — the script downloads those libs from `raw.githubusercontent.com/turbopanel/dev` (override with `TURBOPANEL_DEV_LIB_BASE`) before clone.
 
 The current entrypoint is a minimal launcher only (full multi-screen console was removed during a rewrite).
 
 ## Installer script hosting (`workers/dev-turbopanel-sh/`)
 
-**https://dev.turbopanel.sh** is the canonical **free** (Cloudflare Workers Static
-Assets) host for `scripts/develop.sh`. Deploy tooling lives in the isolated
+**https://dev.turbopanel.sh** is the canonical **assets-only** Workers Static
+Assets host for `scripts/develop.sh` — **no Worker script**, so bootstrap
+traffic can never generate Worker invocation billing. `_redirects` `301`s the
+bare root to `/develop.sh`; `_headers` sets the shellscript content type +
+`no-store` on that path. Deploy tooling lives in the isolated
 `workers/dev-turbopanel-sh/` package (Node + wrangler only — not part of the Vite/
-`tsconfig` graph). Manual deploy: `npm install` then `npm run deploy` from that
-directory; the stage step copies `scripts/develop.sh` into gitignored `public/` at
-deploy time so the script stays a single source of truth. Existing
-**trbp.nl/develop.sh** references remain valid via a dashboard redirect to
-`https://dev.turbopanel.sh`.
+`tsconfig` graph). Manual deploy: `pnpm install` then `pnpm run deploy` from that
+directory; the stage step copies `scripts/develop.sh` (plus committed
+`assets/_headers` and `assets/_redirects`) into gitignored `public/` at deploy
+time so the script stays a single source of truth. Existing
+**trbp.nl/develop.sh** references remain valid via a path-preserving dashboard
+redirect to `https://dev.turbopanel.sh/develop.sh`.
 
 ## Filesystem layout
 
