@@ -124,6 +124,34 @@ src/
 - **`src/lib/daemon-exec.ts`** — always resolves a **Deno** invocation of the source-checkout scripts (`scripts/bootstrap-orchestration.ts`, `scripts/run-orchestration-action.ts`): host Deno if on PATH, else `/opt/turbopanel/vendor/deno/current/deno`. It never runs `/opt/turbopanel/bin/turbopaneld` or `turbopaneld.js`; those managed/production ExecStart modes are outside this console.
 - **Cell trace (Developer area)** — the Developer menu (`src/lib/daemon-actions.ts` → `toggle-cell-trace` / `view-cell-trace` actions, dispatched in `src/hooks/use-console-app.ts`) lets you enable/disable verbose cell tracing and view it. The toggle (`src/lib/instance-trace-env.ts` — `readCellTraceEnabled`/`setCellTraceEnabled`) writes `TURBOPANEL_DAEMON_DEBUG` into **both** `/etc/turbopanel/instance/runtime.env` and `runtime.dev-vars` (so it applies to Deno and the Workers `wrangler dev` DO identically) and then restarts `turbopanel-instance` (reusing the existing restart-overlay flow) to apply it. The **Cell trace** viewer (`src/components/cell-trace-view.tsx`, `src/hooks/use-cell-trace-log.ts`, `src/lib/cell-trace-log.ts`) is a Developer sub-view that tails and filters the instance log (`/var/log/turbopanel/instance/instance.log` + `.err.log`) down to the `daemon-cell`/`command-consumer`-tagged trace lines, reached via the `view-cell-trace` action and rendered by `src/components/developer-panel.tsx`. Enabling `TURBOPANEL_DAEMON_DEBUG` now also surfaces per-call-site Durable Object storage-op counters (`storageReads`/`storageWrites`/`storageByCallSite`) on the cell diagnostics for billing audits; canonical detail lives in `~/instance/AGENTS.md` (Daemon Cell).
 
+## Testing
+
+Local commands:
+
+| Command | Purpose |
+| ------- | ------- |
+| `pnpm test` | Vitest once (`vitest run`) |
+| `pnpm test:watch` | Vitest watch mode |
+| `pnpm test:coverage` | Vitest + LCOV (`coverage/lcov.info`) |
+| `pnpm typecheck` | `tsc --noEmit` |
+
+**Vitest convention:** place suites at `src/**/*.test.ts` / `src/**/*.test.tsx`. Use the `node` environment (Ink TUI, not a browser). Import `describe` / `it` / `expect` from `vitest` — do not use `node:test` + `node:assert/strict`. Assert shapes with `new TypeError()` per `typescript:S7786`.
+
+**Shared test helpers:** this repo has no local shared test-helper module. Daemon test authors must use the shared doubles in `../daemon/src/testing/` instead of hand-rolled ones (see that repo’s Testing section).
+
+**Pre-commit** (`.githooks/pre-commit`): runs `scripts/scan-secrets.sh` first (never skippable), then `pnpm typecheck` and `pnpm test`. Set `TURBOPANEL_SKIP_HOOK_TESTS` (any non-empty value) to skip typecheck/tests after the secret scan — useful when the toolchain or `node_modules/` is absent; the hook also exits 0 with a notice when pnpm or `node_modules/` is missing (run `./console` or `pnpm install`). `./console` idempotently sets `core.hooksPath=.githooks` via `tp_ensure_git_hooks_path` in `scripts/lib/git-github-ssh.sh`.
+
+**Gate matrix** (one policy with the daemon repo):
+
+| Stage | dev | daemon | Rationale |
+| ----- | --- | ------ | --------- |
+| pre-commit | scan-secrets → `pnpm typecheck` → `pnpm test` | scan-secrets → `fmt:check` → `lint` → tests | fast local feedback |
+| PR → `trunk` | `verify.yml` | `verify.yml` | blocks merge |
+| push `trunk` | `verify.yml` | `verify.yml`; `publish` job `needs: verify` | nothing compiles from failing code |
+| promote → canary/rc/release | n/a | **artifact integrity only** (S3 sha256/size + CDN fetch) | no new code enters after publish |
+
+**Coverage:** SonarCloud’s Sonar-way quality gate (enforced in `.github/workflows/verify.yml` with `sonar.qualitygate.wait=true`) requires **≥ 80% coverage on new code**.
+
 ## Ansible dev overlay
 
 The **Ansible dev overlay** lives in `<dev checkout>/orchestration/` and overrides the daemon's production roles with dev-user parameters (the daemon still executes Ansible). Set `TURBOPANEL_MODE=development` during dev converge.

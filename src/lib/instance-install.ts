@@ -180,39 +180,83 @@ export async function runOrchestrationAction(
   });
 }
 
+/** Injectable collaborators for {@link installDevEnvironment} (tests). */
+export type InstallDevEnvironmentDeps = {
+  ensureDevUserDockerAccess: (
+    onOutput?: InstallOutputHandler,
+  ) => Promise<boolean>;
+  runOrchestrationAction: (
+    actionArgs: string[],
+    onEvent: (event: unknown) => void,
+    onOutput?: InstallOutputHandler,
+  ) => Promise<void>;
+  writeDaemonInstanceEnv: () => void;
+  isDaemonSystemdInstalled: () => boolean;
+  installDaemonSystemd: (
+    onOutput?: InstallOutputHandler,
+    onStep?: InstallStepHandler,
+  ) => Promise<void>;
+  isDaemonServiceActive: () => boolean;
+  requestDaemonRestart: (onOutput?: InstallOutputHandler) => Promise<void>;
+  enableAndStartDaemon: (onOutput?: InstallOutputHandler) => Promise<void>;
+};
+
+const defaultInstallDevEnvironmentDeps: InstallDevEnvironmentDeps = {
+  ensureDevUserDockerAccess,
+  runOrchestrationAction,
+  writeDaemonInstanceEnv,
+  isDaemonSystemdInstalled,
+  installDaemonSystemd,
+  isDaemonServiceActive,
+  requestDaemonRestart,
+  enableAndStartDaemon,
+};
+
 export async function installDevEnvironment(
   onEvent: (event: unknown) => void,
   onOutput?: InstallOutputHandler,
   onStep?: InstallStepHandler,
+  deps: InstallDevEnvironmentDeps = defaultInstallDevEnvironmentDeps,
 ): Promise<void> {
-  // Pre-converge: best-effort docker group membership and daemon instance opt-in
-  // env before the daemon (re)starts. Ansible's converge is authoritative for
-  // FHS/checkout ownership and docker membership.
-  await ensureDevUserDockerAccess(onOutput);
-  writeDaemonInstanceEnv();
+  // Pre-converge: best-effort docker group membership. Ansible's converge is
+  // authoritative for FHS/checkout ownership and docker membership.
+  //
+  // Do NOT write TURBOPANEL_DEV_INSTANCE until Ansible succeeds — writing it
+  // first leaves a failed converge with docker-monitor enabled and no stack,
+  // which looks like the daemon is "stuck waiting for Docker" with nothing
+  // installing.
+  await deps.ensureDevUserDockerAccess(onOutput);
 
   onStep?.(DEV_ENV_CONVERGE_STEP, "running");
   try {
-    await runOrchestrationAction(["instance-dev-install"], onEvent, onOutput);
+    await deps.runOrchestrationAction(
+      ["instance-dev-install"],
+      onEvent,
+      onOutput,
+    );
     onStep?.(DEV_ENV_CONVERGE_STEP, "ok");
   } catch (error) {
     onStep?.(DEV_ENV_CONVERGE_STEP, "failed");
     throw error;
   }
 
+  // Opt in only after converge succeeds so the post-converge daemon restart
+  // picks up instance connectivity + docker integration.
+  deps.writeDaemonInstanceEnv();
+
   // Converge / re-converge can run when bootstrap never finished the
   // turbopaneld unit install (e.g. prior apt failure). Install the unit first —
   // enable --now alone fails with "Unit turbopaneld.service does not exist".
-  if (!isDaemonSystemdInstalled()) {
-    await installDaemonSystemd(onOutput, onStep);
+  if (!deps.isDaemonSystemdInstalled()) {
+    await deps.installDaemonSystemd(onOutput, onStep);
     // installDaemonSystemd → writeDaemonBaseEnv strips TURBOPANEL_DEV_INSTANCE;
-    // restore instance opt-in + connectivity written at the top of this flow.
-    writeDaemonInstanceEnv();
+    // restore instance opt-in + connectivity written above.
+    deps.writeDaemonInstanceEnv();
   }
 
-  if (isDaemonServiceActive()) {
-    await requestDaemonRestart(onOutput);
+  if (deps.isDaemonServiceActive()) {
+    await deps.requestDaemonRestart(onOutput);
   } else {
-    await enableAndStartDaemon(onOutput);
+    await deps.enableAndStartDaemon(onOutput);
   }
 }

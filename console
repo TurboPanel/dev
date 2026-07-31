@@ -17,6 +17,7 @@ CONSOLE_WATCH=
 . "$SCRIPT_DIR/scripts/lib/runtime.sh"      # tp_ensure_node_runtime
 . "$SCRIPT_DIR/scripts/lib/dev-identity.sh" # tp_resolve_dev_identity
 . "$SCRIPT_DIR/scripts/lib/dev-prerequisites.sh"  # tp_ensure_dev_prerequisites
+. "$SCRIPT_DIR/scripts/lib/git-github-ssh.sh"      # tp_ensure_git_hooks_path
 
 for _tp_arg in "$@"; do
   case $_tp_arg in
@@ -64,6 +65,8 @@ tp_ensure_corepack_pnpm "$SCRIPT_DIR"
 PNPM_BIN=${PNPM_BIN:-$NODE_PREFIX/bin/pnpm}
 
 cd "$SCRIPT_DIR"
+
+tp_ensure_git_hooks_path "$SCRIPT_DIR"
 
 tp_info "Installing JS dependencies…"
 if [ -f pnpm-lock.yaml ]; then

@@ -46,7 +46,7 @@ export function statusHints(
       return `Restarting ${restartInProgress} · watch logs · Ctrl-C exit`;
     }
     const actionHints = serviceActionHints(selectedServiceId);
-    return `← → tabs · ↑↓ select · Tab log · ↑↓ scroll${actionHints} · Ctrl-C exit`;
+    return `← → tabs · ↑↓ select · Tab log · ↑↓ scroll · T tail${actionHints} · Ctrl-C exit`;
   }
   if (activeAreaId === "developer") {
     if (restartInProgress) {

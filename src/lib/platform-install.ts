@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import {
   DAEMON_REPO,
@@ -101,6 +101,42 @@ async function ensureGit(
   onStep?.("Install git", "ok");
 }
 
+function ensureRepoGitHooksPath(
+  target: string,
+  onStep?: InstallStepHandler,
+): void {
+  const hook = `${target}/.githooks/pre-commit`;
+  if (!existsSync(hook)) {
+    return;
+  }
+
+  onStep?.(`Wire git hooksPath (${target})`, "running");
+  const current = runGitCapture([
+    "-C",
+    target,
+    "config",
+    "--local",
+    "--get",
+    "core.hooksPath",
+  ]);
+  if (current.stdout !== ".githooks") {
+    const result = runGitCapture([
+      "-C",
+      target,
+      "config",
+      "--local",
+      "core.hooksPath",
+      ".githooks",
+    ]);
+    if (!result.success) {
+      onStep?.(`Wire git hooksPath (${target})`, "failed");
+      throw new Error(`Failed to set core.hooksPath in ${target}`);
+    }
+  }
+  chmodSync(hook, 0o755);
+  onStep?.(`Wire git hooksPath (${target})`, "ok");
+}
+
 async function cloneOrUpdateRepo(
   dir: string,
   repo: string,
@@ -124,6 +160,7 @@ async function cloneOrUpdateRepo(
       throw new Error(`Failed to clone ${dir}`);
     }
     onStep?.(`Clone ${dir}`, "ok");
+    ensureRepoGitHooksPath(target, onStep);
     return "cloned";
   }
 
@@ -134,6 +171,7 @@ async function cloneOrUpdateRepo(
   await ensureOriginUrl(target, url, onOutput);
 
   if (hasUncommittedChanges(target)) {
+    ensureRepoGitHooksPath(target, onStep);
     onStep?.(`Update ${dir} (skipped — uncommitted changes)`, "ok");
     return "skipped";
   }
@@ -148,6 +186,7 @@ async function cloneOrUpdateRepo(
     throw new Error(`Failed to update ${dir}`);
   }
   onStep?.(`Update ${dir}`, "ok");
+  ensureRepoGitHooksPath(target, onStep);
   return "updated";
 }
 

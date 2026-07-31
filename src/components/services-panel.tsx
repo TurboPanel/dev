@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Box, Text, useInput } from "ink";
+import { Box, Text, useApp, useInput } from "ink";
 import { ScrollList } from "ink-scroll-list";
 import type { DevService } from "../dev-services.ts";
 import {
@@ -21,6 +21,7 @@ import {
 import type { ConsoleLogLine } from "../lib/service-restart.ts";
 import type { DaemonLogByteFloor } from "../lib/daemon-log.ts";
 import type { ServiceLogByteFloor } from "../lib/service-log.ts";
+import { openServiceLogPager } from "../lib/service-log-pager.ts";
 import type { DaemonOperation } from "../lib/spinners.ts";
 import {
   BORDER_COLOR,
@@ -154,6 +155,50 @@ function serviceInConverge(
   return phase === "installing" || phase === "compiling" || phase === "ready";
 }
 
+function handleServicesListInput(options: {
+  input: string;
+  key: { upArrow?: boolean; downArrow?: boolean };
+  listIndex: number;
+  visibleFullIndices: number[];
+  settledService: DevService | null;
+  onServiceAction?: (serviceId: string, action: ServiceActionId) => void | Promise<void>;
+  setListIndex: (index: number) => void;
+}): void {
+  const {
+    input,
+    key,
+    listIndex,
+    visibleFullIndices,
+    settledService,
+    onServiceAction,
+    setListIndex,
+  } = options;
+
+  const currentVisiblePos = visibleFullIndices.indexOf(listIndex);
+  if (key.upArrow && visibleFullIndices.length > 0) {
+    const nextPos = Math.max(0, currentVisiblePos - 1);
+    setListIndex(visibleFullIndices[nextPos]!);
+    return;
+  }
+  if (key.downArrow && visibleFullIndices.length > 0) {
+    const nextPos = Math.min(visibleFullIndices.length - 1, currentVisiblePos + 1);
+    setListIndex(visibleFullIndices[nextPos]!);
+    return;
+  }
+
+  if (!settledService || !onServiceAction) {
+    return;
+  }
+  const runtime = readInstanceRuntime();
+  const action = serviceActionForKey(settledService.id, input, runtime);
+  if (
+    action &&
+    canRunServiceAction(settledService.id, action, settledService.status, runtime)
+  ) {
+    void Promise.resolve(onServiceAction(settledService.id, action));
+  }
+}
+
 export function ServicesPanel({
   width,
   height,
@@ -199,6 +244,7 @@ export function ServicesPanel({
   devEnvConverge?: DevEnvConvergeState | null;
   onDismissDevEnvConvergeError?: () => void;
 }) {
+  const { suspendTerminal } = useApp();
   const { leftWidth, detailWidth } = resolvePaneWidths(width, services);
   const servicePhases = devEnvConverge?.servicePhases ?? {};
   const convergeSummaryVisible = Boolean(
@@ -208,7 +254,6 @@ export function ServicesPanel({
   const convergePanelHeight = convergeSummaryVisible
     ? Math.min(Math.floor(height * 0.4), Math.max(CONVERGE_PANEL_MIN_HEIGHT, height - 6))
     : 0;
-  const serviceDetailHeight = Math.max(1, height - convergePanelHeight);
   const { displayServices, visibleFullIndices } = useMemo(() => {
     const visible: DevService[] = [];
     const fullIndices: number[] = [];
@@ -226,6 +271,16 @@ export function ServicesPanel({
     });
     return { displayServices: visible, visibleFullIndices: fullIndices };
   }, [services, servicePhases]);
+  // Banner when only the daemon is up and converge is not already showing.
+  const needsConvergeHint = Boolean(
+    !convergeSummaryVisible &&
+      displayServices.length === 1 &&
+      displayServices[0]?.id === "daemon",
+  );
+  const serviceDetailHeight = Math.max(
+    1,
+    height - convergePanelHeight - (needsConvergeHint ? 2 : 0),
+  );
 
   // Local list cursor — updating this must NOT call into useConsoleApp or the
   // whole Ink tree (menu/status/detail) re-renders (~250ms per keypress).
@@ -327,34 +382,28 @@ export function ServicesPanel({
       return;
     }
 
+    // Break out of the Ink alternate screen into `less` / docker / journalctl.
+    // Works whether or not the in-TUI log pane is focused.
+    if (settledService && _input.toLowerCase() === "t") {
+      void suspendTerminal(() => {
+        openServiceLogPager(settledService.id);
+      });
+      return;
+    }
+
     if (logFocused) {
       return;
     }
 
-    const currentVisiblePos = visibleFullIndices.indexOf(listIndex);
-    if (key.upArrow && visibleFullIndices.length > 0) {
-      const nextPos = Math.max(0, currentVisiblePos - 1);
-      const nextIndex = visibleFullIndices[nextPos]!;
-      setListIndex(nextIndex);
-      return;
-    }
-    if (key.downArrow && visibleFullIndices.length > 0) {
-      const nextPos = Math.min(visibleFullIndices.length - 1, currentVisiblePos + 1);
-      const nextIndex = visibleFullIndices[nextPos]!;
-      setListIndex(nextIndex);
-      return;
-    }
-
-    if (settledService && onServiceAction) {
-      const runtime = readInstanceRuntime();
-      const action = serviceActionForKey(settledService.id, _input, runtime);
-      if (
-        action &&
-        canRunServiceAction(settledService.id, action, settledService.status, runtime)
-      ) {
-        void Promise.resolve(onServiceAction(settledService.id, action));
-      }
-    }
+    handleServicesListInput({
+      input: _input,
+      key,
+      listIndex,
+      visibleFullIndices,
+      settledService,
+      onServiceAction,
+      setListIndex,
+    });
   });
 
   return (
@@ -427,6 +476,14 @@ export function ServicesPanel({
                 onDismissError={onDismissDevEnvConvergeError}
                 spinnerFrame={convergeSpinnerFrame}
               />
+            </Box>
+          )}
+          {needsConvergeHint && (
+            <Box width={detailWidth} height={2} paddingX={1} flexShrink={0}>
+              <Text color={MENU_BLUE}>
+                Development stack not installed yet — open Developer → Converge /
+                re-converge development environment, then press Enter.
+              </Text>
             </Box>
           )}
           {/*

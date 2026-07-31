@@ -83,6 +83,10 @@ export function serviceSystemdUnit(serviceId: string): string | null {
   return SERVICE_UNITS[serviceId] ?? null;
 }
 
+export function serviceDockerLogContainer(serviceId: string): string | null {
+  return DOCKER_LOG_CONTAINERS[serviceId] ?? null;
+}
+
 function parseServiceLine(text: string): ServiceLogLine {
   const match = STRUCTURED_TEXT_WITH_TIME_RE.exec(text);
   if (match) {

@@ -16,5 +16,6 @@
       "@turbopanel/components/*": ["./src/components/*"]
     }
   },
-  "include": ["scripts/hot-reload.tsx", "src", "vite.config.ts"]
+  "include": ["scripts/hot-reload.tsx", "src", "vite.config.ts", "vitest.config.ts"]
 }
+

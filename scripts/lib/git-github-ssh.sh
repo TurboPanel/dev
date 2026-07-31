@@ -191,6 +191,28 @@ tp_prompt_git_identity() {
   printf '%s:%s' "$_pgi_name" "$_pgi_email"
 }
 
+# Idempotently wire core.hooksPath=.githooks for this checkout (no-op outside a
+# git work tree or when .githooks/pre-commit is missing).
+tp_ensure_git_hooks_path() {
+  _eghp_root=${1:-}
+  if [ -z "$_eghp_root" ]; then
+    return 0
+  fi
+  if [ ! -f "$_eghp_root/.githooks/pre-commit" ]; then
+    return 0
+  fi
+  if ! git -C "$_eghp_root" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    return 0
+  fi
+
+  _eghp_current=$(git -C "$_eghp_root" config --local --get core.hooksPath 2>/dev/null || true)
+  if [ "$_eghp_current" != ".githooks" ]; then
+    git -C "$_eghp_root" config --local core.hooksPath .githooks
+  fi
+
+  chmod +x "$_eghp_root"/.githooks/* 2>/dev/null || true
+}
+
 tp_ensure_github_ssh() {
   _egs_repo=$1
   command -v git >/dev/null 2>&1 || return 0
