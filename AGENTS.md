@@ -29,9 +29,9 @@ The current entrypoint is a minimal launcher only (full multi-screen console was
 
 **https://dev.turbopanel.sh** is the canonical **assets-only** Workers Static
 Assets host for `scripts/develop.sh` — **no Worker script**, so bootstrap
-traffic can never generate Worker invocation billing. `_redirects` `301`s the
-bare root to `/develop.sh`; `_headers` sets the shellscript content type +
-`no-store` on that path. Deploy tooling lives in the isolated
+traffic can never generate Worker invocation billing. `_redirects` `200`-proxies the
+bare root to `/develop.sh` (no client redirect); `_headers` sets the shellscript
+content type + `no-store` on both paths. Deploy tooling lives in the isolated
 `workers/dev-turbopanel-sh/` package (Node + wrangler only — not part of the Vite/
 `tsconfig` graph). Manual deploy: `pnpm install` then `pnpm run deploy` from that
 directory; the stage step copies `scripts/develop.sh` (plus committed

@@ -2,10 +2,10 @@
 
 Assets-only Workers Static Assets deployment of the dev bootstrap script
 (`develop.sh`) on **https://dev.turbopanel.sh** — no Worker script, so public
-bootstrap requests are free/unbilled. `/develop.sh` is the static asset, served
-with `Content-Type: text/x-shellscript; charset=utf-8` and
-`Cache-Control: no-store` so `curl | sh` fetches are always fresh. The bare root
-is a `301` redirect to `/develop.sh`.
+bootstrap requests are free/unbilled. `/develop.sh` is the static asset; the bare
+root is a `200` proxy rewrite to that file (no client redirect). Both paths are
+served with `Content-Type: text/x-shellscript; charset=utf-8` and
+`Cache-Control: no-store` so `curl | sh` fetches are always fresh.
 
 ## Source of truth
 
@@ -64,6 +64,6 @@ curl -fsSL https://dev.turbopanel.sh/develop.sh | head
 curl -sI https://dev.turbopanel.sh/develop.sh | grep -E '^(content-type|cache-control):'
 ```
 
-Expect `301` with `location: /develop.sh` on the bare host; `curl -fsSL` still
-works via `-L`. On `/develop.sh`, expect
-`Content-Type: text/x-shellscript; charset=utf-8` and `Cache-Control: no-store`.
+Expect `200` with the shell body on both the bare host and `/develop.sh`, and
+`Content-Type: text/x-shellscript; charset=utf-8` plus `Cache-Control: no-store`
+on each. No `-L` is required for the bare host.
