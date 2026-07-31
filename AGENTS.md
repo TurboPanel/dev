@@ -150,7 +150,7 @@ Local commands:
 | push `trunk` | `verify.yml` | `verify.yml`; `publish` job `needs: verify` | nothing compiles from failing code |
 | promote → canary/rc/release | n/a | **artifact integrity only** (S3 sha256/size + CDN fetch) | no new code enters after publish |
 
-**Coverage:** SonarCloud’s Sonar-way quality gate (enforced in `.github/workflows/verify.yml` with `sonar.qualitygate.wait=true`) requires **≥ 80% coverage on new code**.
+**Coverage:** SonarCloud’s Sonar-way quality gate (CI scan in `.github/workflows/verify.yml` with `sonar.qualitygate.wait=true`) requires **≥ 80% coverage on new code**. Missing `SONAR_TOKEN` soft-fails / skips the Sonar steps (`continue-on-error`) so typecheck/tests still gate; wire the secret on the repo/org when ready. Sibling repos (`instance`, `ui`, `website`) have no Actions verify — they use SonarCloud Automatic Analysis only.
 
 ## Ansible dev overlay
 
