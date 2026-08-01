@@ -158,7 +158,7 @@ Local commands:
 
 The **Ansible dev overlay** lives in `<dev checkout>/orchestration/` and overrides the daemon's production roles with dev-user parameters (the daemon still executes Ansible). Set `TURBOPANEL_MODE=development` during dev converge.
 
-The **`dev-shell-path`** role (dev-only) installs `/etc/profile.d/turbopanel-dev-deno.sh` and `/etc/zsh/zshrc.d/turbopanel-dev-deno.zsh` so login/interactive shells prepend **`/opt/turbopanel/vendor/deno/current`** to `PATH`. That directory is the `deno-runtime` `current` symlink — version bumps only require updating the pin in the daemon role and `DENO_VERSION` in `scripts/lib/paths.sh` / `src/lib/paths.ts`, then re-converging.
+The **`dev-shell-path`** role (dev-only) installs `/etc/profile.d/turbopanel-dev-deno.sh` (bash/login `sh`) and `/etc/zsh/zshenv.d/turbopanel-dev-deno` plus a guarded block in `/etc/zsh/zshenv` so **all zsh invocations** (including Oh My Zsh interactive shells — Debian does not source `/etc/zsh/zshrc.d`) prepend **`/opt/turbopanel/vendor/deno/current`** to `PATH`. That directory is the `deno-runtime` `current` symlink — version bumps only require updating the pin in the daemon role and `DENO_VERSION` in `scripts/lib/paths.sh` / `src/lib/paths.ts`, then re-converging.
 
 ### Development Caddyfile
 

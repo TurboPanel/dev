@@ -1,7 +1,7 @@
 ---
-# Co-located dev only — prepend vendored Deno to interactive shells. The binary
-# directory is vendor/deno/current (symlink refreshed by deno-runtime on converge),
-# so version bumps do not require editing these snippets.
+# Co-located dev only — prepend vendored Deno (vendor/deno/current) to shells.
+# deno-runtime refreshes the current symlink on converge; these snippets only
+# reference that stable path.
 - name: Install dev vendored Deno PATH snippet for login shells
   when: turbopanel_dev_user | length > 0
   ansible.builtin.copy:
@@ -22,31 +22,50 @@
       fi
       unset _tpd_deno
 
-- name: Ensure zshrc.d directory exists
+- name: Ensure zsh zshenv.d directory exists
   when: turbopanel_dev_user | length > 0
   ansible.builtin.file:
-    path: /etc/zsh/zshrc.d
+    path: /etc/zsh/zshenv.d
     state: directory
     owner: root
     group: root
-    # zsh sources /etc/zsh/zshrc.d for all interactive users (traverse + read).
+    # zsh sources zshenv.d for every zsh invocation (interactive + scripts).
     mode: "0755"
 
-- name: Install dev vendored Deno PATH snippet for interactive zsh
+- name: Install dev vendored Deno PATH snippet for zsh
   when: turbopanel_dev_user | length > 0
   ansible.builtin.copy:
-    dest: /etc/zsh/zshrc.d/turbopanel-dev-deno.zsh
+    dest: /etc/zsh/zshenv.d/turbopanel-dev-deno
     owner: root
     group: root
-    # Shared zshrc.d snippets must stay world-readable for interactive shells.
+    # Shared zshenv.d snippets must stay world-readable for all zsh users.
     mode: "0644"
     content: |
       # TurboPanel co-located dev — vendored Deno (vendor/deno/current, converge-managed).
       _tpd_deno="{{ turbopanel_vendor_dir }}/deno/current"
-      if [ -d "$_tpd_deno" ] && [ -x "$_tpd_deno/deno" ]; then
+      if [[ -d "$_tpd_deno" && -x "$_tpd_deno/deno" ]]; then
         case ":${PATH}:" in
-          *":${_tpd_deno}:"*) ;;
-          *) path=("$_tpd_deno" $path) ;;
+          (*":${_tpd_deno}:"*) ;;
+          (*) export PATH="${_tpd_deno}:${PATH}" ;;
         esac
       fi
       unset _tpd_deno
+
+- name: Ensure system zshenv sources vendored Deno drop-ins
+  when: turbopanel_dev_user | length > 0
+  ansible.builtin.blockinfile:
+    path: /etc/zsh/zshenv
+    marker: "# {mark} TurboPanel dev vendored Deno PATH"
+    block: |
+      if [[ -d /etc/zsh/zshenv.d ]]; then
+        for _tp_zshenv in /etc/zsh/zshenv.d/*(N); do
+          source "$_tp_zshenv"
+        done
+        unset _tp_zshenv
+      fi
+
+- name: Remove retired zshrc.d Deno snippet
+  when: turbopanel_dev_user | length > 0
+  ansible.builtin.file:
+    path: /etc/zsh/zshrc.d/turbopanel-dev-deno.zsh
+    state: absent
