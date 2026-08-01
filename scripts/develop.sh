@@ -138,7 +138,7 @@ clone_or_update_repo() {
 }
 
 if ! tp_is_interactive; then
-  tp_error "Run in an interactive terminal (curl -fsSL dev.turbopanel.sh/develop.sh | sh)."
+  tp_error "Run in an interactive terminal (curl -fsSL dev.turbopanel.sh | sh)."
   exit 1
 fi
 

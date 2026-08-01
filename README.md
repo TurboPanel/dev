@@ -7,7 +7,7 @@ GitHub repository: [turbopanel/dev](https://github.com/turbopanel/dev). Local ch
 ## Getting started
 
 ```sh
-curl -fsSL dev.turbopanel.sh/develop.sh | sh
+curl -fsSL dev.turbopanel.sh | sh
 ```
 
 That one-liner downloads `scripts/develop.sh` from `turbopanel/dev`, clones or updates this repo into `~/dev`, installs the pinned **Node** runtime to `/opt/turbopanel/vendor/node/` when needed, runs `pnpm install`, and starts the developer console via `vite-node`. On first run it may prompt for git identity, GitHub SSH setup, and sudo (for `git`, `openssh-client`, and the Node install). You can optionally configure passwordless sudo for your dev user to avoid repeated password prompts.
