@@ -30,7 +30,10 @@
 			"path": "../website"
 		}
 	],
-	"settings": {
+  "settings": {
+    "files.associations": {
+      ".secretscan-allowlist": "plaintext"
+    },
     "files.watcherExclude": {
       "**/node_modules/**": true,
       "**/.git/**": true,

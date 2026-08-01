@@ -4,6 +4,9 @@
   "ansible.python.interpreterPath": "/opt/turbopanel/vendor/ansible/current/bin/python3",
   "ansible.validation.lint.enabled": true,
   "ansible.validation.lint.path": "/opt/turbopanel/vendor/ansible/current/bin/ansible-lint",
+  "files.associations": {
+    ".secretscan-allowlist": "plaintext"
+  },
   "deno.enable": false,
   "typescript.tsdk": "node_modules/typescript/lib",
   "sonarlint.connectedMode.project": {
