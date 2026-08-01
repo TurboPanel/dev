@@ -50,3 +50,8 @@ NODE_BIN=${NODE_BIN:-$NODE_PREFIX/bin/node}
 NODE_RELEASE_BASE=https://nodejs.org/dist
 # pnpm is provisioned via Corepack; version comes from package.json "packageManager".
 PNPM_BIN=${PNPM_BIN:-$NODE_PREFIX/bin/pnpm}
+
+# Pinned Deno for platform services — must match daemon deno-runtime and src/lib/paths.ts.
+DENO_VERSION=2.9.4
+DENO_RUNTIME_DIR=${DENO_RUNTIME_DIR:-$TURBOPANEL_RUNTIMES_DIR/deno}
+VENDORED_DENO_BIN=${VENDORED_DENO_BIN:-$DENO_RUNTIME_DIR/current/deno}

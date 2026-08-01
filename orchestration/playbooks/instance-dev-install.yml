@@ -106,6 +106,7 @@
     - role: instance-dev-prereqs
     - role: node-runtime
     - role: deno-runtime
+    - role: dev-shell-path
     - role: caddy
     # Dev-console sudoers + dev-user ownership of the FHS trees and home checkouts,
     # before the repo roles run git/pnpm in those checkouts.

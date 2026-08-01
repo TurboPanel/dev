@@ -1,0 +1,15 @@
+---
+galaxy_info:
+  author: turbopanel
+  description: >-
+    Prepend vendored Deno to PATH for co-located dev login/interactive shells.
+    Follows vendor/deno/current (updated by deno-runtime on converge). No-op when
+    turbopanel_dev_user is unset.
+  license: AGPL-3.0
+  min_ansible_version: "2.14"
+  platforms:
+    - name: Debian
+      versions:
+        - all
+
+dependencies: []

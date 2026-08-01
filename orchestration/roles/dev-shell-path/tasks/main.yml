@@ -1,0 +1,52 @@
+---
+# Co-located dev only — prepend vendored Deno to interactive shells. The binary
+# directory is vendor/deno/current (symlink refreshed by deno-runtime on converge),
+# so version bumps do not require editing these snippets.
+- name: Install dev vendored Deno PATH snippet for login shells
+  when: turbopanel_dev_user | length > 0
+  ansible.builtin.copy:
+    dest: /etc/profile.d/turbopanel-dev-deno.sh
+    owner: root
+    group: root
+    # profile.d snippets must stay world-readable so every login shell can source them.
+    mode: "0644"
+    content: |
+      # TurboPanel co-located dev — vendored Deno (vendor/deno/current, converge-managed).
+      _tpd_deno="{{ turbopanel_vendor_dir }}/deno/current"
+      if [ -d "$_tpd_deno" ] && [ -x "$_tpd_deno/deno" ]; then
+        case ":${PATH}:" in
+          *":${_tpd_deno}:"*) ;;
+          *) PATH="${_tpd_deno}:${PATH}" ;;
+        esac
+        export PATH
+      fi
+      unset _tpd_deno
+
+- name: Ensure zshrc.d directory exists
+  when: turbopanel_dev_user | length > 0
+  ansible.builtin.file:
+    path: /etc/zsh/zshrc.d
+    state: directory
+    owner: root
+    group: root
+    # zsh sources /etc/zsh/zshrc.d for all interactive users (traverse + read).
+    mode: "0755"
+
+- name: Install dev vendored Deno PATH snippet for interactive zsh
+  when: turbopanel_dev_user | length > 0
+  ansible.builtin.copy:
+    dest: /etc/zsh/zshrc.d/turbopanel-dev-deno.zsh
+    owner: root
+    group: root
+    # Shared zshrc.d snippets must stay world-readable for interactive shells.
+    mode: "0644"
+    content: |
+      # TurboPanel co-located dev — vendored Deno (vendor/deno/current, converge-managed).
+      _tpd_deno="{{ turbopanel_vendor_dir }}/deno/current"
+      if [ -d "$_tpd_deno" ] && [ -x "$_tpd_deno/deno" ]; then
+        case ":${PATH}:" in
+          *":${_tpd_deno}:"*) ;;
+          *) path=("$_tpd_deno" $path) ;;
+        esac
+      fi
+      unset _tpd_deno

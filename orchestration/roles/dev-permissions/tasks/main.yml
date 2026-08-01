@@ -40,6 +40,7 @@
         state: directory
         owner: "{{ turbopanel_dev_user }}"
         group: "{{ turbopanel_group }}"
+        mode: "0755"
       loop: "{{ _dev_checkout_stats.results }}"
       loop_control:
         label: "{{ item.item }}"

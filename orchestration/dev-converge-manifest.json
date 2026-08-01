@@ -17,6 +17,7 @@
     "instance-dev-prereqs",
     "node-runtime",
     "deno-runtime",
+    "dev-shell-path",
     "caddy",
     "dev-host-access",
     "dev-permissions",
@@ -30,6 +31,7 @@
   ],
   "devRoles": [
     "instance-dev-prereqs",
+    "dev-shell-path",
     "dev-permissions",
     "dev-host-access"
   ]

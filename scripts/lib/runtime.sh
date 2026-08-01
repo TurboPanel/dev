@@ -203,3 +203,24 @@ tp_ensure_corepack_pnpm() {
 tp_ensure_node_runtime() {
   tp_install_node_runtime
 }
+
+tp_vendored_deno_bin_dir() {
+  dirname "$VENDORED_DENO_BIN"
+}
+
+# Prefer vendored Deno (vendor/deno/current) on PATH for hooks and child shells.
+tp_export_deno_path() {
+  if [ -x "$VENDORED_DENO_BIN" ]; then
+    DENO_BIN=$VENDORED_DENO_BIN
+    export DENO_BIN
+    PATH="$(tp_vendored_deno_bin_dir):${PATH:-}"
+    export PATH
+    return 0
+  fi
+  if [ -n "${DENO_BIN:-}" ] && [ -x "$DENO_BIN" ]; then
+    PATH="$(dirname "$DENO_BIN"):${PATH:-}"
+    export PATH
+    return 0
+  fi
+  return 1
+}

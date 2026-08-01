@@ -1,0 +1,4 @@
+---
+turbopanel_dev_user: ""  # noqa: var-naming[no-role-prefix]
+turbopanel_install_root: /opt/turbopanel
+turbopanel_vendor_dir: "{{ turbopanel_install_root }}/vendor"
