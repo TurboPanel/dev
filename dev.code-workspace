@@ -28,6 +28,10 @@
 		},
 		{
 			"path": "../website"
+		},
+		{
+			"path": "../.github",
+			"name": ".github"
 		}
 	],
   "settings": {

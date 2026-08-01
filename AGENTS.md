@@ -2,7 +2,9 @@
 
 ## What this repo is
 
-The **dev** repository ([turbopanel/dev](https://github.com/turbopanel/dev)) is the **TurboPanel development console** — a minimal terminal UI built on [Ink](https://github.com/vadimdemedes/ink) 7, run on **Node** via **Vite (`vite-node`)**. Watch mode uses a custom Vite dev runner (`scripts/hot-reload.tsx`) that keeps the Ink process mounted and reloads changed `src/` modules. It is installed via a one-liner into `~/dev` (or `${TURBOPANEL_DEV_ROOT}/dev` when set).
+The **dev** repository ([turbopanel/dev](https://github.com/turbopanel/dev)) is the **TurboPanel Development Environment** — contributor tooling only, not production or self-hosted install. It is a minimal terminal UI built on [Ink](https://github.com/vadimdemedes/ink) 7, run on **Node** via **Vite (`vite-node`)**. Watch mode uses a custom Vite dev runner (`scripts/hot-reload.tsx`) that keeps the Ink process mounted and reloads changed `src/` modules. It is installed via a one-liner into `~/dev` (or `${TURBOPANEL_DEV_ROOT}/dev` when set).
+
+**License:** AGPL-3.0-only. **Maturity:** **Public beta**. README is product-facing; AGENTS.md is maintainer-facing.
 
 **This repo runs on Node, not Deno.** In dev the console bootstraps
 orchestration and runs the **daemon from the dev user's home checkout**

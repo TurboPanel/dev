@@ -44,9 +44,11 @@
     instance_repo_url: https://github.com/turbopanel/turbopanel
     ui_repo_url: https://github.com/turbopanel/ui
     website_repo_url: https://github.com/turbopanel/website
+    github_repo_url: https://github.com/turbopanel/.github
     instance_branch: trunk
     ui_branch: trunk
     website_branch: trunk
+    github_branch: trunk
     turbopanel_ui_artifact_url: ""
     turbopanel_instance_runtime: deno
     # Caddy/UI/mailer follow instance_start; the instance unit also checks runtime.
@@ -115,6 +117,7 @@
     - role: instance-repo
     - role: ui-repo
     - role: website-repo
+    - role: github-repo
     - role: ui-build
     - role: instance-build
     # turbopanel_public_urls may be passed as an extra-var (from daemon .env via
