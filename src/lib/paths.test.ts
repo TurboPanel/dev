@@ -89,16 +89,14 @@ describe("version pins", () => {
 });
 
 describe("resolveRuntimesDir", () => {
-  test("prefers TURBOPANEL_RUNTIMES_DIR over TURBOPANEL_RUNTIME_DIR", () => {
+  test("honors TURBOPANEL_RUNTIMES_DIR override", () => {
     vi.stubEnv("TURBOPANEL_RUNTIMES_DIR", "/custom/runtimes");
-    vi.stubEnv("TURBOPANEL_RUNTIME_DIR", "/other/runtime");
     expect(resolveRuntimesDir()).toBe("/custom/runtimes");
   });
 
-  test("falls back to TURBOPANEL_RUNTIME_DIR then the default", () => {
+  test("falls back to the default when unset", () => {
     vi.stubEnv("TURBOPANEL_RUNTIMES_DIR", "  ");
-    vi.stubEnv("TURBOPANEL_RUNTIME_DIR", "/legacy/runtime");
-    expect(resolveRuntimesDir()).toBe("/legacy/runtime");
+    expect(resolveRuntimesDir()).toBe("/opt/turbopanel/vendor");
   });
 
   test("strips trailing slashes", () => {

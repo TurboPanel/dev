@@ -30,8 +30,8 @@ tp_export_dev_repo_contract() {
   export TURBOPANEL_WEBSITE_REPO="$(tp_platform_repo_path website)"
 }
 TURBOPANEL_ROOT=/opt/turbopanel
-# Vendored runtime root (override with TURBOPANEL_RUNTIMES_DIR / TURBOPANEL_RUNTIME_DIR).
-TURBOPANEL_RUNTIMES_DIR=${TURBOPANEL_RUNTIMES_DIR:-${TURBOPANEL_RUNTIME_DIR:-$TURBOPANEL_ROOT/vendor}}
+# Vendored runtime root (override with TURBOPANEL_RUNTIMES_DIR).
+TURBOPANEL_RUNTIMES_DIR=${TURBOPANEL_RUNTIMES_DIR:-$TURBOPANEL_ROOT/vendor}
 TURBOPANEL_RUNTIME=$TURBOPANEL_RUNTIMES_DIR
 
 # FHS mutable dirs (dev shares the production paths, dev-owned at runtime).

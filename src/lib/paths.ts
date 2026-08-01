@@ -26,8 +26,7 @@ export const DEFAULT_RUNTIMES_DIR = `${TURBOPANEL_ROOT}/vendor`;
 /**
  * Resolve the vendored runtime root.
  *
- * Honors `TURBOPANEL_RUNTIMES_DIR`, then `TURBOPANEL_RUNTIME_DIR`, then
- * {@link DEFAULT_RUNTIMES_DIR}. Mirrors daemon `resolveRuntimesDir()`.
+ * Honors `TURBOPANEL_RUNTIMES_DIR`, then {@link DEFAULT_RUNTIMES_DIR}.
  */
 /** Strip trailing `/` without a regex (Sonar typescript:S8786). */
 function stripTrailingSlashes(dir: string): string {
@@ -39,8 +38,7 @@ function stripTrailingSlashes(dir: string): string {
 }
 
 export function resolveRuntimesDir(): string {
-  const override = process.env.TURBOPANEL_RUNTIMES_DIR?.trim() ||
-    process.env.TURBOPANEL_RUNTIME_DIR?.trim();
+  const override = process.env.TURBOPANEL_RUNTIMES_DIR?.trim();
   const dir = override || DEFAULT_RUNTIMES_DIR;
   return stripTrailingSlashes(dir);
 }

@@ -21,7 +21,7 @@ model"). Deno is still installed for the **instance** stack (and mailer) via the
 
 **Target host:** Debian 13 (Vagrant support planned).
 
-**Bootstrap URL:** `dev.turbopanel.sh` (advertised one-liner; bare root `200`-proxies to `develop.sh`; legacy alias `trbp.nl/develop.sh` redirects here) → `scripts/develop.sh` on the `trunk` branch of [turbopanel/dev](https://github.com/turbopanel/dev). When piped (`curl … | sh`), `$0` is `sh` so local `scripts/lib/` is not on disk yet — the script downloads those libs from `raw.githubusercontent.com/turbopanel/dev` (override with `TURBOPANEL_DEV_LIB_BASE`) before clone.
+**Bootstrap URL:** `https://dev.turbopanel.sh` (advertised one-liner; bare root `200`-proxies to `develop.sh`) → `scripts/develop.sh` on the `trunk` branch of [turbopanel/dev](https://github.com/turbopanel/dev). When piped (`curl … | sh`), `$0` is `sh` so local `scripts/lib/` is not on disk yet — the script downloads those libs from `raw.githubusercontent.com/turbopanel/dev` (override with `TURBOPANEL_DEV_LIB_BASE`) before clone.
 
 The current entrypoint is a minimal launcher only (full multi-screen console was removed during a rewrite).
 
@@ -37,8 +37,7 @@ content type + `no-store` on both paths. Deploy tooling lives in the isolated
 directory; the stage step copies `scripts/develop.sh` (plus committed
 `assets/_headers` and `assets/_redirects`) into gitignored `public/` at deploy
 time so the script stays a single source of truth. Canonical advertised host is
-**dev.turbopanel.sh**; the legacy alias **trbp.nl/develop.sh** remains valid via
-a path-preserving dashboard redirect.
+**https://dev.turbopanel.sh**.
 
 ## Filesystem layout
 
