@@ -213,6 +213,26 @@ tp_ensure_git_hooks_path() {
   chmod +x "$_eghp_root"/.githooks/* 2>/dev/null || true
 }
 
+# Wire core.hooksPath for every co-located development checkout (dev + platform
+# repos). Skips missing directories and repos without .githooks/pre-commit.
+# LIB_DIR is the absolute path to scripts/lib inside the dev checkout (optional).
+tp_ensure_all_git_hooks_paths() {
+  _eahhp_lib=$1
+  if [ -z "$_eahhp_lib" ]; then
+    _eahhp_lib="${TURBOPANEL_DEV_ROOT:-$HOME}/dev/scripts/lib"
+  fi
+  # shellcheck source=scripts/lib/paths.sh
+  . "$_eahhp_lib/paths.sh"
+
+  for _eahhp_dir in dev daemon instance ui website; do
+    _eahhp_root=$(tp_platform_repo_path "$_eahhp_dir")
+    if [ ! -d "$_eahhp_root" ]; then
+      continue
+    fi
+    tp_ensure_git_hooks_path "$_eahhp_root"
+  done
+}
+
 tp_ensure_github_ssh() {
   _egs_repo=$1
   command -v git >/dev/null 2>&1 || return 0

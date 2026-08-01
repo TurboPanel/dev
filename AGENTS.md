@@ -21,23 +21,22 @@ model"). Deno is still installed for the **instance** stack (and mailer) via the
 
 **Target host:** Debian 13 (Vagrant support planned).
 
-**Bootstrap URL:** `https://dev.turbopanel.sh` (advertised one-liner; bare root `200`-proxies to `develop.sh`) → `scripts/develop.sh` on the `trunk` branch of [turbopanel/dev](https://github.com/turbopanel/dev). When piped (`curl … | sh`), `$0` is `sh` so local `scripts/lib/` is not on disk yet — the script downloads those libs from `raw.githubusercontent.com/turbopanel/dev` (override with `TURBOPANEL_DEV_LIB_BASE`) before clone.
+**Bootstrap URL:** `dev.turbopanel.sh` (advertised one-liner; root serves `scripts/develop.sh` from the `trunk` branch of [turbopanel/dev](https://github.com/turbopanel/dev)). When piped (`curl … | sh`), `$0` is `sh` so local `scripts/lib/` is not on disk yet — the script downloads those libs from `raw.githubusercontent.com/turbopanel/dev` (override with `TURBOPANEL_DEV_LIB_BASE`) before clone.
 
 The current entrypoint is a minimal launcher only (full multi-screen console was removed during a rewrite).
 
 ## Installer script hosting (`workers/dev-turbopanel-sh/`)
 
 **https://dev.turbopanel.sh** is the canonical **assets-only** Workers Static
-Assets host for `scripts/develop.sh` — **no Worker script**, so bootstrap
-traffic can never generate Worker invocation billing. `_redirects` `200`-proxies the
-bare root to `/develop.sh` (no client redirect); `_headers` sets the shellscript
-content type + `no-store` on both paths. Deploy tooling lives in the isolated
+Assets host for the dev bootstrap script — **no Worker script**, so bootstrap
+traffic can never generate Worker invocation billing. `_headers` sets the shellscript
+content type + `no-store` on `/`. Deploy tooling lives in the isolated
 `workers/dev-turbopanel-sh/` package (Node + wrangler only — not part of the Vite/
 `tsconfig` graph). Manual deploy: `pnpm install` then `pnpm run deploy` from that
-directory; the stage step copies `scripts/develop.sh` (plus committed
+directory; the stage step copies `scripts/develop.sh` to `public/bootstrap` (plus committed
 `assets/_headers` and `assets/_redirects`) into gitignored `public/` at deploy
 time so the script stays a single source of truth. Canonical advertised host is
-**https://dev.turbopanel.sh**.
+**dev.turbopanel.sh** (bare domain in curl one-liners).
 
 ## Filesystem layout
 
@@ -166,7 +165,7 @@ Co-located hosts load **`orchestration/Caddyfile`** (not `~/instance/Caddyfile`)
 - HTTPS `:8443` plus plaintext `:8880` (always on; no serve-time flag)
 - Expo reverse_proxy when `TURBOPANEL_UI_MODE=dev` (with `expo-loading.html` for cold-start 502s)
 - Optional wrangler upstream when `TURBOPANEL_INSTANCE_RUNTIME=workers`
-- `/downloads/daemon/*` and `/run.sh` from the daemon checkout when UI mode is `dev`
+- `/downloads/daemon/*` and the install script at `/` (non-browser requests) from the daemon checkout when UI mode is `dev`
 
 The instance repo's `Caddyfile` stays production-only (HTTPS + Deno socket + static UI). See **`../instance/AGENTS.md`** (Caddy) and **`../daemon/AGENTS.md`** (plaintext HTTP client gate).
 

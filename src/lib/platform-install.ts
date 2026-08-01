@@ -1,7 +1,7 @@
-import { spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import {
+  ALL_DEV_CHECKOUT_DIRS,
   DAEMON_REPO,
   platformRepoPath,
   sshRepoUrl,
@@ -12,6 +12,7 @@ import {
   type InstallOutputHandler,
   runCaptured,
 } from "./install-output.ts";
+import { spawnSyncTrusted, spawnSyncTrustedText } from "./spawn-trusted.ts";
 
 export type InstallStepHandler = (
   label: string,
@@ -19,7 +20,7 @@ export type InstallStepHandler = (
 ) => void;
 
 function commandExists(name: string): boolean {
-  const result = spawnSync(
+  const result = spawnSyncTrusted(
     "/bin/sh",
     ["-c", 'command -v "$1" >/dev/null 2>&1', "_", name],
     { stdio: "ignore" },
@@ -39,8 +40,7 @@ function runGitCapture(gitArgs: string[]): {
   stdout: string;
   stderr: string;
 } {
-  const result = spawnSync("git", gitArgs, {
-    encoding: "utf8",
+  const result = spawnSyncTrustedText("git", gitArgs, {
     stdio: ["ignore", "pipe", "pipe"],
   });
   return {
@@ -110,6 +110,10 @@ function ensureRepoGitHooksPath(
     return;
   }
 
+  if (!isGitRepo(target)) {
+    return;
+  }
+
   onStep?.(`Wire git hooksPath (${target})`, "running");
   const current = runGitCapture([
     "-C",
@@ -135,6 +139,13 @@ function ensureRepoGitHooksPath(
   }
   chmodSync(hook, 0o755);
   onStep?.(`Wire git hooksPath (${target})`, "ok");
+}
+
+/** Idempotently wire .githooks for every present development checkout. */
+export function ensureAllGitHooksPaths(onStep?: InstallStepHandler): void {
+  for (const dir of ALL_DEV_CHECKOUT_DIRS) {
+    ensureRepoGitHooksPath(platformRepoPath(dir), onStep);
+  }
 }
 
 async function cloneOrUpdateRepo(
@@ -198,5 +209,6 @@ export async function installDaemon(
 
   const { dir, repo } = DAEMON_REPO;
   await cloneOrUpdateRepo(dir, repo, onStep, onOutput);
+  ensureAllGitHooksPaths(onStep);
   onStep?.("Daemon repository ready", "ok");
 }

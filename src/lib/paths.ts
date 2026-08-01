@@ -3,6 +3,9 @@ export const TURBOPANEL_ROOT = "/opt/turbopanel";
 /** Co-located platform repo dir names (daemon/instance/ui/website). */
 export const PLATFORM_REPO_DIRS = ["daemon", "instance", "ui", "website"] as const;
 
+/** Every development checkout that may carry .githooks (dev console + platform repos). */
+export const ALL_DEV_CHECKOUT_DIRS = ["dev", ...PLATFORM_REPO_DIRS] as const;
+
 /**
  * Development source-repo root. Source repos live under this root — defaults to
  * the dev user's home (`$HOME`), overridable with `TURBOPANEL_DEV_ROOT`.
