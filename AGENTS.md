@@ -169,7 +169,7 @@ Co-located hosts load **`orchestration/Caddyfile`** (not `~/instance/Caddyfile`)
 - HTTPS `:8443` plus plaintext `:8880` (always on; no serve-time flag)
 - Expo reverse_proxy when `TURBOPANEL_UI_MODE=dev` (with `expo-loading.html` for cold-start 502s)
 - Optional wrangler upstream when `TURBOPANEL_INSTANCE_RUNTIME=workers`
-- `/downloads/daemon/*` and the install script at `/` (non-browser requests) from the daemon checkout when UI mode is `dev`
+- `/downloads/daemon/*` and the install script at **`/run.sh`** from the daemon checkout
 
 The instance repo's `Caddyfile` stays production-only (HTTPS + Deno socket + static UI). See **`../instance/AGENTS.md`** (Caddy) and **`../daemon/AGENTS.md`** (plaintext HTTP client gate).
 

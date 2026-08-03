@@ -13,7 +13,7 @@
 #   TURBOPANEL_UI_MODE           "dev" | "static" (default: static)
 #   EXPO_PORT                    Expo dev server port when UI_MODE=dev (default: 8081)
 #   TURBOPANEL_UI_ROOT           Static export directory when UI_MODE=static
-#   TURBOPANEL_DAEMON_REPO       Daemon checkout root; /downloads/daemon + install script at /
+#   TURBOPANEL_DAEMON_REPO       Daemon checkout root; /downloads/daemon + installer at /run.sh
 #   TURBOPANEL_SOCKET_DIAL       Unix socket dial path for Deno instance
 #   TURBOPANEL_INSTANCE_RUNTIME  "deno" | "workers" (default: deno)
 #   WRANGLER_DEV_PORT            wrangler dev port when runtime is workers
@@ -88,12 +88,10 @@
 		}
 	}
 
-	@dev_daemon_install {
-		path /
-		not header Accept *text/html*
-		expression `"{$TURBOPANEL_UI_MODE:static}" == "dev"`
-	}
+	@dev_daemon_install path /run.sh
 	handle @dev_daemon_install {
+		header Cache-Control "no-store"
+		header Content-Type "text/x-shellscript; charset=utf-8"
 		root * {$TURBOPANEL_DAEMON_REPO:../daemon}
 		rewrite * /scripts/run.sh
 		file_server
@@ -179,12 +177,10 @@
 		}
 	}
 
-	@dev_daemon_install {
-		path /
-		not header Accept *text/html*
-		expression `"{$TURBOPANEL_UI_MODE:static}" == "dev"`
-	}
+	@dev_daemon_install path /run.sh
 	handle @dev_daemon_install {
+		header Cache-Control "no-store"
+		header Content-Type "text/x-shellscript; charset=utf-8"
 		root * {$TURBOPANEL_DAEMON_REPO:../daemon}
 		rewrite * /scripts/run.sh
 		file_server
