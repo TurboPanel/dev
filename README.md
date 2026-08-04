@@ -7,7 +7,7 @@
 
 [![License: AGPL-3.0-only](https://img.shields.io/badge/License-AGPL--3.0--only-blue.svg)](./LICENSE)
 [![Docs](https://img.shields.io/badge/docs-development-3366cc)](https://turbopanel.io/docs/getting-started/development)
-[![Status: Public beta](https://img.shields.io/badge/status-public%20beta-3dd68c)](https://turbopanel.io/roadmap)
+[![Status: Private alpha](https://img.shields.io/badge/status-private%20alpha-3dd68c)](https://turbopanel.io/roadmap)
 
 GitHub: [turbopanel/dev](https://github.com/turbopanel/dev)
 
