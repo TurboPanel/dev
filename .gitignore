@@ -1,7 +1,11 @@
 .deno/
+deno.lock
 node_modules/
 .pnpm-store/
 .cursor/debug-*.log
+
+# Local Ansible state (committed config lives under orchestration/)
+.ansible/
 
 # env and secret-bearing dotenv variants
 .env
