@@ -100,6 +100,9 @@
       when: turbopanel_instance_runtime == 'deno'
     - role: clickhouse
       when: turbopanel_instance_runtime == 'deno'
+    # Brings postgres/rabbitmq/clickhouse up as one Docker Compose project
+    # (turbopanel-system); renders only whichever of those roles just ran.
+    - role: system-compose
     - role: tabix
       when: turbopanel_instance_runtime == 'deno'
     - role: mailpit
@@ -131,7 +134,9 @@
     - name: Resolve dev stack unit list base
       ansible.builtin.set_fact:
         _dev_stack_units_base:
-          - turbopanel-postgres
+          # Covers postgres always, plus rabbitmq/clickhouse when the
+          # system-compose role rendered them into the shared Compose project.
+          - turbopanel-system-stack
           - turbopanel-mailpit
           - turbopanel-instance
           - turbopanel-dbstudio
@@ -139,10 +144,8 @@
           - turbopanel-ui
           - turbopanel-website
         _dev_stack_units_deno_extra:
-          - turbopanel-rabbitmq
           - turbopanel-mailer
           - turbopanel-redis-insight
-          - turbopanel-clickhouse
           - turbopanel-tabix
 
     - name: Resolve dev stack unit list

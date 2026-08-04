@@ -11,6 +11,7 @@
     "redis-insight",
     "rabbitmq",
     "clickhouse",
+    "system-compose",
     "tabix",
     "mailpit",
     "instance-user",
