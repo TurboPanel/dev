@@ -56,17 +56,23 @@ async function stopRedisInsight(onOutput?: InstallOutputHandler): Promise<void> 
 }
 
 async function ensureRabbitMqRunning(onOutput?: InstallOutputHandler): Promise<void> {
-  if (!isSystemdUnitInstalled("turbopanel-rabbitmq")) {
+  // RabbitMQ lives in turbopanel-system Compose; rabbitmq-setup.yml already
+  // runs system-compose. Prefer the stack unit; fall back to the container.
+  if (isSystemdUnitInstalled("turbopanel-system-stack")) {
+    await runSystemctl(["enable", "--now", "turbopanel-system-stack"], onOutput);
     return;
   }
-  await runSystemctl(["enable", "--now", "turbopanel-rabbitmq"], onOutput);
+  if (isSystemdUnitInstalled("turbopanel-rabbitmq")) {
+    await runSystemctl(["enable", "--now", "turbopanel-rabbitmq"], onOutput);
+  }
 }
 
 async function stopRabbitMq(onOutput?: InstallOutputHandler): Promise<void> {
-  if (!isSystemdUnitInstalled("turbopanel-rabbitmq")) {
-    return;
+  // Workers mode drops queue via system-compose --remove-orphans. Stopping the
+  // whole stack would also kill Postgres — leave teardown to the playbook.
+  if (isSystemdUnitInstalled("turbopanel-rabbitmq")) {
+    await runSystemctl(["disable", "--now", "turbopanel-rabbitmq"], onOutput);
   }
-  await runSystemctl(["disable", "--now", "turbopanel-rabbitmq"], onOutput);
 }
 
 async function ensureMailerRunning(onOutput?: InstallOutputHandler): Promise<void> {
@@ -77,10 +83,13 @@ async function ensureMailerRunning(onOutput?: InstallOutputHandler): Promise<voi
 }
 
 async function ensureClickHouseRunning(onOutput?: InstallOutputHandler): Promise<void> {
-  if (!isSystemdUnitInstalled("turbopanel-clickhouse")) {
+  if (isSystemdUnitInstalled("turbopanel-system-stack")) {
+    await runSystemctl(["enable", "--now", "turbopanel-system-stack"], onOutput);
     return;
   }
-  await runSystemctl(["enable", "--now", "turbopanel-clickhouse"], onOutput);
+  if (isSystemdUnitInstalled("turbopanel-clickhouse")) {
+    await runSystemctl(["enable", "--now", "turbopanel-clickhouse"], onOutput);
+  }
 }
 
 async function ensureTabixRunning(onOutput?: InstallOutputHandler): Promise<void> {

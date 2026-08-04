@@ -4,6 +4,14 @@ import { type InstallOutputHandler, runCaptured } from "./install-output.ts";
 import { openServiceInBrowser } from "./service-open.ts";
 import { serviceSupportsOpen } from "./service-urls.ts";
 import { DAEMON_SYSTEMD_UNIT } from "./paths.ts";
+import {
+  CLICKHOUSE_CONTAINER_NAME,
+  MAILPIT_CONTAINER_NAME,
+  POSTGRES_CONTAINER_NAME,
+  RABBITMQ_CONTAINER_NAME,
+  REDIS_INSIGHT_CONTAINER_NAME,
+  TABIX_CONTAINER_NAME,
+} from "./platform-docker-resources.ts";
 import { spawnSyncTrustedText } from "./spawn-trusted.ts";
 
 export type ServiceActionId =
@@ -23,17 +31,17 @@ const SYSTEMD_UNITS: Record<string, string> = {
   website: "turbopanel-website",
   cache: "turbopanel-redis",
   redisinsight: "turbopanel-redis-insight",
-  queue: "turbopanel-rabbitmq",
   smtp: "turbopanel-mailpit",
-  analytics: "turbopanel-clickhouse",
   tabix: "turbopanel-tabix",
 };
 
 const DOCKER_CONTAINERS: Record<string, string> = {
-  db: "turbopanel-database",
-  smtp: "turbopanel-dev-mailpit",
-  redisinsight: "turbopanel-dev-redis-insight",
-  tabix: "turbopanel-dev-tablix",
+  db: POSTGRES_CONTAINER_NAME,
+  smtp: MAILPIT_CONTAINER_NAME,
+  redisinsight: REDIS_INSIGHT_CONTAINER_NAME,
+  queue: RABBITMQ_CONTAINER_NAME,
+  analytics: CLICKHOUSE_CONTAINER_NAME,
+  tabix: TABIX_CONTAINER_NAME,
 };
 
 const OPEN_START_UNITS: Record<string, string> = {
@@ -42,9 +50,12 @@ const OPEN_START_UNITS: Record<string, string> = {
   ui: "turbopanel-caddy",
   website: "turbopanel-website",
   dbstudio: "turbopanel-dbstudio",
-  queue: "turbopanel-rabbitmq",
   smtp: "turbopanel-mailpit",
   redisinsight: "turbopanel-redis-insight",
+};
+
+const OPEN_START_CONTAINERS: Record<string, string> = {
+  queue: RABBITMQ_CONTAINER_NAME,
 };
 
 const MANAGED_SERVICE_IDS = new Set([
@@ -220,13 +231,19 @@ export async function runServiceAction(
       serviceId,
       async () => {
         const unit = OPEN_START_UNITS[serviceId];
-        if (!unit) {
+        if (unit) {
+          if (!isSystemdUnitInstalled(unit)) {
+            throw new Error(`${unit} is not installed`);
+          }
+          await runSystemctl(["start", unit], onOutput);
+          return;
+        }
+        const container = OPEN_START_CONTAINERS[serviceId] ??
+          resolveDockerContainer(serviceId);
+        if (!container) {
           throw new Error(`No start unit configured for ${serviceId}`);
         }
-        if (!isSystemdUnitInstalled(unit)) {
-          throw new Error(`${unit} is not installed`);
-        }
-        await runSystemctl(["start", unit], onOutput);
+        await runDocker(["start", container], onOutput);
       },
       onOutput,
     );

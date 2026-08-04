@@ -65,9 +65,7 @@ const SERVICE_UNITS: Record<string, string> = {
   website: "turbopanel-website",
   cache: "turbopanel-redis",
   redisinsight: "turbopanel-redis-insight",
-  queue: "turbopanel-rabbitmq",
   smtp: "turbopanel-mailpit",
-  analytics: "turbopanel-clickhouse",
   tabix: "turbopanel-tabix",
 };
 
@@ -76,6 +74,7 @@ const DOCKER_LOG_CONTAINERS: Record<string, string> = {
   smtp: "turbopanel-dev-mailpit",
   redisinsight: "turbopanel-dev-redis-insight",
   queue: "turbopanel-queue",
+  analytics: "turbopanel-analytics",
   tabix: "turbopanel-dev-tablix",
 };
 

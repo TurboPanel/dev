@@ -2,6 +2,14 @@ import { existsSync } from "node:fs";
 import { isDevInstanceEnabled, readInstanceRuntime } from "./lib/daemon-env.ts";
 import { daemonRepoPath, DAEMON_SYSTEMD_UNIT, platformRepoPath } from "./lib/paths.ts";
 import { spawnDocker } from "./lib/docker-access.ts";
+import {
+  CLICKHOUSE_CONTAINER_NAME,
+  MAILPIT_CONTAINER_NAME,
+  POSTGRES_CONTAINER_NAME,
+  RABBITMQ_CONTAINER_NAME,
+  REDIS_INSIGHT_CONTAINER_NAME,
+  TABIX_CONTAINER_NAME,
+} from "./lib/platform-docker-resources.ts";
 import { spawnSyncTrusted, spawnSyncTrustedText } from "./lib/spawn-trusted.ts";
 
 export type DevServiceStatus =
@@ -19,10 +27,13 @@ export type DevService = {
 };
 
 const DAEMON_UNIT = DAEMON_SYSTEMD_UNIT;
-const POSTGRES_CONTAINER = "turbopanel-database";
-const MAILPIT_CONTAINER = "turbopanel-dev-mailpit";
-const REDIS_INSIGHT_CONTAINER = "turbopanel-dev-redis-insight";
-const TABIX_CONTAINER = "turbopanel-dev-tablix";
+const SYSTEM_STACK_UNIT = "turbopanel-system-stack";
+const POSTGRES_CONTAINER = POSTGRES_CONTAINER_NAME;
+const RABBITMQ_CONTAINER = RABBITMQ_CONTAINER_NAME;
+const CLICKHOUSE_CONTAINER = CLICKHOUSE_CONTAINER_NAME;
+const MAILPIT_CONTAINER = MAILPIT_CONTAINER_NAME;
+const REDIS_INSIGHT_CONTAINER = REDIS_INSIGHT_CONTAINER_NAME;
+const TABIX_CONTAINER = TABIX_CONTAINER_NAME;
 const POSTGRES_SOCKET = "/var/run/turbopanel/postgres/.s.PGSQL.5432";
 
 const DOWNSTREAM_SERVICE_DEFS = [
@@ -63,8 +74,9 @@ const ANCILLARY_DENO_DEFS = [
   { id: "smtp", label: "smtp", kind: "mailpit" as const },
   { id: "cache", label: "cache", unit: "turbopanel-redis" },
   { id: "redisinsight", label: "redisinsight", kind: "redisinsight" as const },
-  { id: "queue", label: "queue", unit: "turbopanel-rabbitmq" },
-  { id: "analytics", label: "analytics", unit: "turbopanel-clickhouse" },
+  // queue/analytics live in turbopanel-system Compose (not per-service units).
+  { id: "queue", label: "queue", kind: "queue" as const },
+  { id: "analytics", label: "analytics", kind: "analytics" as const },
   { id: "tabix", label: "tabix", kind: "tabix" as const },
 ] as const;
 
@@ -159,68 +171,47 @@ function postgresSocketReady(): boolean {
   return sudoResult.status === 0;
 }
 
+function dockerServiceStatus(container: string): DevServiceStatus {
+  const running = dockerContainerRunning(container);
+  if (running === true) {
+    return "running";
+  }
+  if (running === false) {
+    return "stopped";
+  }
+  if (dockerContainerExists(container)) {
+    return "stopped";
+  }
+
+  return "uninstalled";
+}
+
 function postgresStatus(): DevServiceStatus {
   if (postgresSocketReady()) {
     return "running";
   }
 
-  const running = dockerContainerRunning(POSTGRES_CONTAINER);
-  if (running === true) {
-    return "running";
-  }
-  if (running === false) {
-    return "stopped";
-  }
-  if (dockerContainerExists(POSTGRES_CONTAINER)) {
-    return "stopped";
-  }
-
-  return "uninstalled";
+  return dockerServiceStatus(POSTGRES_CONTAINER);
 }
 
 function mailpitStatus(): DevServiceStatus {
-  const running = dockerContainerRunning(MAILPIT_CONTAINER);
-  if (running === true) {
-    return "running";
-  }
-  if (running === false) {
-    return "stopped";
-  }
-  if (dockerContainerExists(MAILPIT_CONTAINER)) {
-    return "stopped";
-  }
-
-  return "uninstalled";
+  return dockerServiceStatus(MAILPIT_CONTAINER);
 }
 
 function redisInsightStatus(): DevServiceStatus {
-  const running = dockerContainerRunning(REDIS_INSIGHT_CONTAINER);
-  if (running === true) {
-    return "running";
-  }
-  if (running === false) {
-    return "stopped";
-  }
-  if (dockerContainerExists(REDIS_INSIGHT_CONTAINER)) {
-    return "stopped";
-  }
-
-  return "uninstalled";
+  return dockerServiceStatus(REDIS_INSIGHT_CONTAINER);
 }
 
 function tabixStatus(): DevServiceStatus {
-  const running = dockerContainerRunning(TABIX_CONTAINER);
-  if (running === true) {
-    return "running";
-  }
-  if (running === false) {
-    return "stopped";
-  }
-  if (dockerContainerExists(TABIX_CONTAINER)) {
-    return "stopped";
-  }
+  return dockerServiceStatus(TABIX_CONTAINER);
+}
 
-  return "uninstalled";
+function queueStatus(): DevServiceStatus {
+  return dockerServiceStatus(RABBITMQ_CONTAINER);
+}
+
+function analyticsStatus(): DevServiceStatus {
+  return dockerServiceStatus(CLICKHOUSE_CONTAINER);
 }
 
 function systemdServiceStatus(unit: string): DevServiceStatus | null {
@@ -301,10 +292,13 @@ function shouldShowAncillaryServices(): boolean {
   if (isSystemdUnitInstalled("turbopanel-redis")) {
     return true;
   }
-  if (isSystemdUnitInstalled("turbopanel-rabbitmq")) {
+  if (isSystemdUnitInstalled(SYSTEM_STACK_UNIT)) {
     return true;
   }
-  if (isSystemdUnitInstalled("turbopanel-clickhouse")) {
+  if (dockerContainerExists(RABBITMQ_CONTAINER)) {
+    return true;
+  }
+  if (dockerContainerExists(CLICKHOUSE_CONTAINER)) {
     return true;
   }
   if (dockerContainerExists(MAILPIT_CONTAINER)) {
@@ -358,6 +352,22 @@ function ancillaryServices(): DevService[] {
         id: def.id,
         label: def.label,
         status: tabixStatus(),
+      };
+    }
+
+    if ("kind" in def && def.kind === "queue") {
+      return {
+        id: def.id,
+        label: def.label,
+        status: queueStatus(),
+      };
+    }
+
+    if ("kind" in def && def.kind === "analytics") {
+      return {
+        id: def.id,
+        label: def.label,
+        status: analyticsStatus(),
       };
     }
 
