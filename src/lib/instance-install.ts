@@ -6,7 +6,10 @@ import {
   requestDaemonRestart,
 } from "./daemon-actions.ts";
 import { installDaemonSystemd } from "./daemon-install.ts";
-import { orchestrationActionCommand } from "./daemon-exec.ts";
+import {
+  ensureOrchestrationDenoBin,
+  orchestrationActionCommand,
+} from "./daemon-exec.ts";
 import { isDaemonSystemdInstalled } from "../dev-services.ts";
 import { resolveDevIdentity } from "./dev-identity.ts";
 import {
@@ -79,10 +82,10 @@ function lastNonEmptyLine(buffer: string): string | undefined {
   return lines.at(-1);
 }
 
-function orchestrationEnv(): string[] {
+function orchestrationEnv(mode?: "if-needed" | "force"): string[] {
   const dev = resolveDevIdentity();
   const devRoot = resolveDevRoot();
-  return [
+  const env = [
     `UV_PYTHON_INSTALL_DIR=${PYTHON_RUNTIME_DIR}`,
     `UV_CACHE_DIR=${UV_CACHE_DIR}`,
     `TURBOPANEL_DEV_USER=${dev.user}`,
@@ -94,14 +97,32 @@ function orchestrationEnv(): string[] {
     "UV_PYTHON_DOWNLOADS=automatic",
     "UV_VENV_CLEAR=1",
   ];
+  if (mode === "force") {
+    env.push("TURBOPANEL_FORCE_CONVERGE=1");
+  }
+  return env;
 }
+
+export type RunOrchestrationActionOptions = {
+  /**
+   * Already-ensured Deno binary. When set, skips {@link ensureOrchestrationDenoBin}
+   * so callers that surfaced a visible Ensure Deno step do not run a second ensure.
+   */
+  denoBin?: string;
+  /** Dev converge mode — `force` sets TURBOPANEL_FORCE_CONVERGE=1 for the child. */
+  mode?: "if-needed" | "force";
+};
 
 export async function runOrchestrationAction(
   actionArgs: string[],
   onEvent: (event: unknown) => void,
   onOutput?: InstallOutputHandler,
+  options?: RunOrchestrationActionOptions,
 ): Promise<void> {
-  const invocation = orchestrationActionCommand(...actionArgs);
+  // Direct callers (runtime switch, reset) still ensure here. Converge passes
+  // denoBin from its visible Ensure Deno step to avoid a second privileged ensure.
+  const denoBin = options?.denoBin ?? await ensureOrchestrationDenoBin(onOutput);
+  const invocation = orchestrationActionCommand(actionArgs, { denoBin });
   const command = `cd ${shellQuote(DAEMON_DIR)} && exec ${invocation}`;
   let lastFailureMessage: string | null = null;
 
@@ -114,7 +135,7 @@ export async function runOrchestrationAction(
   };
 
   await new Promise<void>((resolve, reject) => {
-    const child = spawn("/usr/bin/env", [...orchestrationEnv(), "/bin/bash", "-c", command], {
+    const child = spawn("/usr/bin/env", [...orchestrationEnv(options?.mode), "/bin/bash", "-c", command], {
       stdio: ["ignore", "pipe", "pipe"],
       env: captureChildEnv({ PATH: TRUSTED_SYSTEM_PATH }),
       detached: false,
@@ -185,10 +206,14 @@ export type InstallDevEnvironmentDeps = {
   ensureDevUserDockerAccess: (
     onOutput?: InstallOutputHandler,
   ) => Promise<boolean>;
+  ensureOrchestrationDeno: (
+    onOutput?: InstallOutputHandler,
+  ) => Promise<string>;
   runOrchestrationAction: (
     actionArgs: string[],
     onEvent: (event: unknown) => void,
     onOutput?: InstallOutputHandler,
+    options?: RunOrchestrationActionOptions,
   ) => Promise<void>;
   writeDaemonInstanceEnv: () => void;
   isDaemonSystemdInstalled: () => boolean;
@@ -203,6 +228,7 @@ export type InstallDevEnvironmentDeps = {
 
 const defaultInstallDevEnvironmentDeps: InstallDevEnvironmentDeps = {
   ensureDevUserDockerAccess,
+  ensureOrchestrationDeno: ensureOrchestrationDenoBin,
   runOrchestrationAction,
   writeDaemonInstanceEnv,
   isDaemonSystemdInstalled,
@@ -217,7 +243,26 @@ export async function installDevEnvironment(
   onOutput?: InstallOutputHandler,
   onStep?: InstallStepHandler,
   deps: InstallDevEnvironmentDeps = defaultInstallDevEnvironmentDeps,
+  /**
+   * Converge mode. Default is `"force"` so legacy callers (reset, provisioner)
+   * always rebuild — `"if-needed"` must be chosen explicitly (e.g. console
+   * startup converge) so teardown paths cannot inherit skip mode by accident.
+   */
+  mode: "if-needed" | "force" = "force",
 ): Promise<void> {
+  // Ensure Deno before any Docker-access side effects so a failed runtime
+  // install does not mutate the host first. Pass the resolved bin into
+  // runOrchestrationAction so converge does not trigger a second ensure.
+  onStep?.("Ensure Deno runtime", "running");
+  let denoBin: string;
+  try {
+    denoBin = await deps.ensureOrchestrationDeno(onOutput);
+    onStep?.("Ensure Deno runtime", "ok");
+  } catch (error) {
+    onStep?.("Ensure Deno runtime", "failed");
+    throw error;
+  }
+
   // Pre-converge: best-effort docker group membership. Ansible's converge is
   // authoritative for FHS/checkout ownership and docker membership.
   //
@@ -227,12 +272,17 @@ export async function installDevEnvironment(
   // installing.
   await deps.ensureDevUserDockerAccess(onOutput);
 
+  const actionArgs = mode === "if-needed"
+    ? ["instance-dev-install", "--if-needed"]
+    : ["instance-dev-install"];
+
   onStep?.(DEV_ENV_CONVERGE_STEP, "running");
   try {
     await deps.runOrchestrationAction(
-      ["instance-dev-install"],
+      actionArgs,
       onEvent,
       onOutput,
+      { denoBin, mode },
     );
     onStep?.(DEV_ENV_CONVERGE_STEP, "ok");
   } catch (error) {

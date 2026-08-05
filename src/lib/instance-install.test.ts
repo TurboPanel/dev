@@ -10,7 +10,7 @@ import {
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
-type Call = { name: string; args?: unknown };
+type Call = { name: string; args?: unknown; options?: unknown };
 
 function makeDeps(
   overrideFactory: (calls: Call[]) => Partial<InstallDevEnvironmentDeps> = () => ({}),
@@ -24,8 +24,12 @@ function makeDeps(
       calls.push({ name: "ensureDevUserDockerAccess" });
       return false;
     },
-    runOrchestrationAction: async (actionArgs) => {
-      calls.push({ name: "runOrchestrationAction", args: actionArgs });
+    ensureOrchestrationDeno: async () => {
+      calls.push({ name: "ensureOrchestrationDeno" });
+      return "/opt/turbopanel/vendor/deno/current/deno";
+    },
+    runOrchestrationAction: async (actionArgs, _onEvent, _onOutput, options) => {
+      calls.push({ name: "runOrchestrationAction", args: actionArgs, options });
     },
     writeDaemonInstanceEnv: () => {
       calls.push({ name: "writeDaemonInstanceEnv" });
@@ -65,6 +69,7 @@ test("failed Ansible converge must not write TURBOPANEL_DEV_INSTANCE opt-in", as
   ).rejects.toThrow(/geerlingguy\.docker/);
 
   expect(calls.map((call) => call.name)).toEqual([
+    "ensureOrchestrationDeno",
     "ensureDevUserDockerAccess",
     "runOrchestrationAction",
   ]);
@@ -86,6 +91,7 @@ test("successful converge writes opt-in only after Ansible, then restarts daemon
   );
 
   expect(calls.map((call) => call.name)).toEqual([
+    "ensureOrchestrationDeno",
     "ensureDevUserDockerAccess",
     "runOrchestrationAction",
     "writeDaemonInstanceEnv",
@@ -94,6 +100,8 @@ test("successful converge writes opt-in only after Ansible, then restarts daemon
     "requestDaemonRestart",
   ]);
   expect(steps).toEqual([
+    { label: "Ensure Deno runtime", status: "running" },
+    { label: "Ensure Deno runtime", status: "ok" },
     { label: DEV_ENV_CONVERGE_STEP, status: "running" },
     { label: DEV_ENV_CONVERGE_STEP, status: "ok" },
   ]);
@@ -104,7 +112,38 @@ test("successful converge writes opt-in only after Ansible, then restarts daemon
   expect(orchIndex).toBeGreaterThanOrEqual(0);
   expect(optInIndex).toBeGreaterThan(orchIndex);
   expect(restartIndex).toBeGreaterThan(optInIndex);
+  // Default mode is force so legacy callers never inherit skip-by-stamp.
   expect(calls[orchIndex]?.args).toEqual(["instance-dev-install"]);
+  expect(calls[orchIndex]?.options).toEqual({
+    denoBin: "/opt/turbopanel/vendor/deno/current/deno",
+    mode: "force",
+  });
+});
+
+test("if-needed mode passes --if-needed and mode option to orchestration", async () => {
+  const { deps, calls } = makeDeps();
+
+  await installDevEnvironment(() => {}, undefined, undefined, deps, "if-needed");
+
+  const orch = calls.find((call) => call.name === "runOrchestrationAction");
+  expect(orch?.args).toEqual(["instance-dev-install", "--if-needed"]);
+  expect(orch?.options).toEqual({
+    denoBin: "/opt/turbopanel/vendor/deno/current/deno",
+    mode: "if-needed",
+  });
+});
+
+test("force mode omits --if-needed and passes mode force", async () => {
+  const { deps, calls } = makeDeps();
+
+  await installDevEnvironment(() => {}, undefined, undefined, deps, "force");
+
+  const orch = calls.find((call) => call.name === "runOrchestrationAction");
+  expect(orch?.args).toEqual(["instance-dev-install"]);
+  expect(orch?.options).toEqual({
+    denoBin: "/opt/turbopanel/vendor/deno/current/deno",
+    mode: "force",
+  });
 });
 
 test("successful converge restores opt-in after systemd unit install", async () => {
@@ -122,6 +161,7 @@ test("successful converge restores opt-in after systemd unit install", async () 
   await installDevEnvironment(() => {}, undefined, undefined, deps);
 
   expect(calls.map((call) => call.name)).toEqual([
+    "ensureOrchestrationDeno",
     "ensureDevUserDockerAccess",
     "runOrchestrationAction",
     "writeDaemonInstanceEnv",
@@ -131,6 +171,27 @@ test("successful converge restores opt-in after systemd unit install", async () 
     "isDaemonServiceActive",
     "enableAndStartDaemon",
   ]);
+});
+
+test("failed Ensure Deno runtime must not mutate Docker access, run Ansible, or write opt-in", async () => {
+  const denoError = new Error("Failed to install Deno");
+  const { deps, calls } = makeDeps((calls) => ({
+    ensureOrchestrationDeno: async () => {
+      calls.push({ name: "ensureOrchestrationDeno" });
+      throw denoError;
+    },
+  }));
+
+  await expect(
+    installDevEnvironment(() => {}, undefined, undefined, deps),
+  ).rejects.toThrow(denoError);
+
+  expect(calls.map((call) => call.name)).toEqual([
+    "ensureOrchestrationDeno",
+  ]);
+  expect(calls.some((call) => call.name === "ensureDevUserDockerAccess")).toBe(false);
+  expect(calls.some((call) => call.name === "runOrchestrationAction")).toBe(false);
+  expect(calls.some((call) => call.name === "writeDaemonInstanceEnv")).toBe(false);
 });
 
 test("instance-install.ts source keeps opt-in after the Ansible try/catch", () => {

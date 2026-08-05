@@ -327,7 +327,14 @@ function useProvisionerPhaseEffects(opts: {
     void (async () => {
       const currentStep = DEV_ENV_CONVERGE_STEP;
       try {
-        await installDevEnvironment(trackBootstrapEvent, appendOutput, trackDevEnvStep);
+        // First-run provision must rebuild unconditionally — never inherit skip.
+        await installDevEnvironment(
+          trackBootstrapEvent,
+          appendOutput,
+          trackDevEnvStep,
+          undefined,
+          "force",
+        );
         if (cancelled) return;
         setDone(true);
       } catch (error_) {

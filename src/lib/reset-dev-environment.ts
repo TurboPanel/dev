@@ -1,5 +1,8 @@
 import { existsSync } from "node:fs";
-import { installDevEnvironment } from "./instance-install.ts";
+import {
+  installDevEnvironment,
+  type InstallDevEnvironmentDeps,
+} from "./instance-install.ts";
 import {
   type InstallOutputHandler,
   runCaptured,
@@ -60,28 +63,48 @@ async function resetRepo(
   onStep(label, "ok");
 }
 
+/** Injectable collaborators for {@link resetDevEnvironment} (tests). */
+export type ResetDevEnvironmentDeps = {
+  runShellStep: typeof runShellStep;
+  resetRepo: typeof resetRepo;
+  installDevEnvironment: (
+    onEvent: (event: unknown) => void,
+    onOutput?: InstallOutputHandler,
+    onStep?: InstallStepHandler,
+    deps?: InstallDevEnvironmentDeps,
+    mode?: "if-needed" | "force",
+  ) => Promise<void>;
+};
+
+const defaultResetDevEnvironmentDeps: ResetDevEnvironmentDeps = {
+  runShellStep,
+  resetRepo,
+  installDevEnvironment,
+};
+
 export async function resetDevEnvironment(
   onOutput: InstallOutputHandler,
   onStep: InstallStepHandler,
+  deps: ResetDevEnvironmentDeps = defaultResetDevEnvironmentDeps,
 ): Promise<void> {
   const containerNames = PLATFORM_DOCKER_CONTAINER_NAMES.join(" ");
   const volumeNames = PLATFORM_DOCKER_VOLUME_NAMES.join(" ");
 
-  await runShellStep(
+  await deps.runShellStep(
     "Stop platform services",
     `systemctl stop turbopanel-instance turbopanel-caddy turbopanel-ui turbopanel-website turbopanel-mailer turbopanel-system-stack turbopanel-mailpit turbopanel-redis-insight turbopanel-redis turbopanel-tabix ${DAEMON_SYSTEMD_UNIT} 2>/dev/null || true`,
     onOutput,
     onStep,
   );
 
-  await runShellStep(
+  await deps.runShellStep(
     "Remove Docker containers",
     `docker rm -f ${containerNames} 2>/dev/null || true`,
     onOutput,
     onStep,
   );
 
-  await runShellStep(
+  await deps.runShellStep(
     "Remove Docker volumes",
     `docker volume rm ${volumeNames} 2>/dev/null || true`,
     onOutput,
@@ -89,8 +112,10 @@ export async function resetDevEnvironment(
   );
 
   for (const repo of PLATFORM_REPOS) {
-    await resetRepo(repo, onOutput, onStep);
+    await deps.resetRepo(repo, onOutput, onStep);
   }
 
-  await installDevEnvironment(() => {}, onOutput, onStep);
+  // Always force-rebuild after teardown — `"if-needed"` would honor a stale
+  // converge stamp and exit without recreating the stack.
+  await deps.installDevEnvironment(() => {}, onOutput, onStep, undefined, "force");
 }

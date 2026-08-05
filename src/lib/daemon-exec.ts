@@ -72,8 +72,23 @@ export function resolveBootstrapDenoBin(): string {
     return VENDORED_DENO_BIN;
   }
   throw new Error(
-    "Deno is not installed — install Deno on the host or run stack converge to vendor it",
+    `Deno is not installed — expected ${VENDORED_DENO_BIN} (pinned ${DENO_VERSION}) ` +
+      "or Deno on PATH; re-run the Ensure Deno runtime step or install host Deno",
   );
+}
+
+/**
+ * Ensure Deno is available (host PATH or vendored pin), then resolve its path.
+ *
+ * Callers that invoke orchestration via Deno should await this before
+ * {@link orchestrationActionCommand} so converge/playbook paths do not fail
+ * with a missing binary when only `ensureBootstrapDeno` was never run.
+ */
+export async function ensureOrchestrationDenoBin(
+  onOutput?: InstallOutputHandler,
+): Promise<string> {
+  await ensureBootstrapDeno(onOutput);
+  return resolveBootstrapDenoBin();
 }
 
 function resolveProductionDenoBin(): string {
@@ -210,12 +225,20 @@ function denoRunOrchestrationInvocation(denoBin: string, actionArgs: string[]): 
   ].map(shellQuote).join(" ");
 }
 
+export type OrchestrationActionCommandOptions = {
+  /** Pre-resolved Deno binary; skips host/vendored resolution when set. */
+  denoBin?: string;
+};
+
 /** Shell command to exec run-orchestration-action.ts for the current runtime contract. */
-export function orchestrationActionCommand(...actionArgs: string[]): string {
-  if (isProductionRuntime()) {
-    return denoRunOrchestrationInvocation(resolveProductionDenoBin(), actionArgs);
-  }
-  return denoRunOrchestrationInvocation(resolveBootstrapDenoBin(), actionArgs);
+export function orchestrationActionCommand(
+  actionArgs: readonly string[],
+  options?: OrchestrationActionCommandOptions,
+): string {
+  const denoBin = options?.denoBin ?? (
+    isProductionRuntime() ? resolveProductionDenoBin() : resolveBootstrapDenoBin()
+  );
+  return denoRunOrchestrationInvocation(denoBin, [...actionArgs]);
 }
 
 /**

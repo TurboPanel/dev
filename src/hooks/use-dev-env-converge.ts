@@ -163,7 +163,7 @@ export function useDevEnvConverge(onFinished: (success: boolean) => void) {
     onEvent(event);
   }, [onEvent]);
 
-  const start = useCallback(() => {
+  const start = useCallback((mode: "if-needed" | "force") => {
     if (running.current) {
       return;
     }
@@ -175,9 +175,15 @@ export function useDevEnvConverge(onFinished: (success: boolean) => void) {
       const currentStep = DEV_ENV_CONVERGE_STEP;
       let success = true;
       try {
-        await installDevEnvironment(onConvergeEvent, undefined, (label, status) => {
-          emitStep(label, status);
-        });
+        await installDevEnvironment(
+          onConvergeEvent,
+          undefined,
+          (label, status) => {
+            emitStep(label, status);
+          },
+          undefined,
+          mode,
+        );
       } catch (caught) {
         success = false;
         emitStep(currentStep, "failed");

@@ -13,6 +13,7 @@ import {
   watchServiceRestart,
 } from "../lib/service-restart.ts";
 import { readInstanceRuntime } from "../lib/daemon-env.ts";
+import { resolveDevEnvStartupPlan } from "../lib/dev-env-readiness.ts";
 import {
   readCellTraceEnabled,
   setCellTraceEnabled,
@@ -39,14 +40,28 @@ export type PendingRestart = {
   label: string;
 };
 
+function initialDaemonOperation(
+  shouldAutoInstall: boolean,
+  shouldAutoConverge: boolean,
+): DaemonOperation | null {
+  if (shouldAutoInstall) {
+    return "install";
+  }
+  if (shouldAutoConverge) {
+    return "dev-env";
+  }
+  return null;
+}
+
 function initialAutoInstallState(): {
   shouldAutoInstall: boolean;
+  shouldAutoConverge: boolean;
   selectedServiceIndex: number;
 } {
-  const services = getVisibleServices();
-  const daemon = services.find((service) => service.id === "daemon");
+  const plan = resolveDevEnvStartupPlan();
   return {
-    shouldAutoInstall: daemon?.status === "uninstalled",
+    shouldAutoInstall: plan.action === "bootstrap",
+    shouldAutoConverge: plan.action === "converge",
     selectedServiceIndex: 0,
   };
 }
@@ -64,7 +79,10 @@ export function useConsoleApp() {
     initialAutoInstall.selectedServiceIndex,
   );
   const [daemonOperation, setDaemonOperation] = useState<DaemonOperation | null>(
-    initialAutoInstall.shouldAutoInstall ? "install" : null,
+    initialDaemonOperation(
+      initialAutoInstall.shouldAutoInstall,
+      initialAutoInstall.shouldAutoConverge,
+    ),
   );
   const [installFinished, setInstallFinished] = useState(false);
   const [serviceOperation, setServiceOperation] = useState<ServiceOperation | null>(null);
@@ -82,6 +100,8 @@ export function useConsoleApp() {
   const [developerView, setDeveloperView] = useState<DeveloperView>("menu");
   const { services: visibleServices, refresh: refreshServices } = useVisibleServices();
   const autoInstallStarted = useRef(initialAutoInstall.shouldAutoInstall);
+  const autoConvergeStarted = useRef(false);
+  const shouldAutoConvergeOnLaunch = useRef(initialAutoInstall.shouldAutoConverge);
   const devEnvConvergeSelectionPinned = useRef(false);
   const selectedServiceIdRef = useRef(
     getVisibleServices()[initialAutoInstall.selectedServiceIndex]?.id ?? "daemon",
@@ -123,12 +143,27 @@ export function useConsoleApp() {
     if (autoInstallStarted.current || daemonOperation) {
       return;
     }
-    const daemon = visibleServices.find((service) => service.id === "daemon");
-    if (daemon?.status === "uninstalled") {
+    const plan = resolveDevEnvStartupPlan();
+    if (plan.action === "bootstrap") {
       autoInstallStarted.current = true;
       startDaemonInstall();
     }
   }, [visibleServices, daemonOperation, startDaemonInstall]);
+
+  useEffect(() => {
+    if (
+      !shouldAutoConvergeOnLaunch.current ||
+      autoConvergeStarted.current ||
+      autoInstallStarted.current
+    ) {
+      return;
+    }
+    autoConvergeStarted.current = true;
+    setActiveArea("services");
+    setProvisioning(false);
+    setDaemonOperation("dev-env");
+    startDevEnvConverge("if-needed");
+  }, [startDevEnvConverge]);
 
   const restartInstanceWithOverlay = useCallback(async () => {
     const service = visibleServices.find((entry) => entry.id === "instance");
@@ -177,7 +212,7 @@ export function useConsoleApp() {
         setActiveArea("services");
         setProvisioning(false);
         setDaemonOperation("dev-env");
-        startDevEnvConverge();
+        startDevEnvConverge("force");
         return;
       }
       case "reset-dev-env": {
@@ -363,7 +398,7 @@ export function useConsoleApp() {
     setActiveArea("services");
     setProvisioning(false);
     setDaemonOperation("dev-env");
-    startDevEnvConverge();
+    startDevEnvConverge("if-needed");
   }, [startDevEnvConverge]);
 
   const handlePurgeDone = useCallback(() => {

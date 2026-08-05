@@ -91,6 +91,11 @@ export const PYTHON_INSTALL_DIR = PYTHON_RUNTIME_DIR;
 export const DENO_VERSION = "2.9.4";
 export const VENDORED_DENO_BIN = `${RUNTIMES_DIR}/deno/current/deno`;
 
+/** Must stay in step with daemon `ANSIBLE_*` / `DEV_CONVERGE_STAMP_FILE` paths. */
+export const ANSIBLE_CURRENT_DIR = `${RUNTIMES_DIR}/ansible/current`;
+export const ANSIBLE_PLAYBOOK_BIN = `${ANSIBLE_CURRENT_DIR}/bin/ansible-playbook`;
+export const DEV_CONVERGE_STAMP_PATH = `${RUNTIMES_DIR}/ansible/dev-converge.stamp`;
+
 export function platformRepoPath(dir: string): string {
   const override = process.env[platformRepoEnvKey(dir)]?.trim();
   return override || `${resolveDevRoot()}/${dir}`;

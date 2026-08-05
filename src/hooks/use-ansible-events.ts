@@ -1,7 +1,25 @@
 import { useCallback, useState } from "react";
 import type { AnsibleTaskRow } from "@turbopanel/components/ansible-task-list.tsx";
+import { parseDevConvergeSkippedEvent } from "../lib/dev-converge-skip-event.ts";
 import { CONSOLE_LAST_TASK_ERROR_LOG } from "../lib/paths.ts";
 import { writeTaskErrorLog } from "../lib/task-error-log.ts";
+
+/**
+ * Map a `dev_converge_skipped` JSONL event into the UI completion state.
+ * Returns null for unrelated events so the normal Ansible handler continues.
+ */
+export function resolveDevConvergeSkippedUi(
+  event: unknown,
+): { recap: string; done: true } | null {
+  const skippedReason = parseDevConvergeSkippedEvent(event);
+  if (skippedReason === null) {
+    return null;
+  }
+  return {
+    recap: `Development environment already converged — ${skippedReason}`,
+    done: true,
+  };
+}
 
 function parseTaskName(full: string): { role: string | null; task: string } {
   const match = full.match(/^\s*([^:]+)\s*:\s*(.+)$/);
@@ -160,6 +178,13 @@ export function useAnsibleEvents() {
   }, []);
 
   const onEvent = useCallback((event: unknown) => {
+    const skipped = resolveDevConvergeSkippedUi(event);
+    if (skipped !== null) {
+      setRecap(skipped.recap);
+      setDone(skipped.done);
+      return;
+    }
+
     if (typeof event !== "object" || event === null) return;
     const record = event as Record<string, unknown>;
     const eventType = record._event;
