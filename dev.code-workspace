@@ -16,10 +16,14 @@
 			"settings": {
 				"ansible.config.path": "${workspaceFolder}/ansible.cfg",
 				"files.exclude": {
-					"**/orchestration/roles/geerlingguy.docker": true
+					"**/orchestration/roles/geerlingguy.docker": true,
+					"**/orchestration/roles/geerlingguy.*": true,
+					"**/orchestration/roles/geerlingguy": true
 				},
 				"files.watcherExclude": {
-					"**/orchestration/roles/geerlingguy.docker/**": true
+					"**/orchestration/roles/geerlingguy.docker/**": true,
+					"**/orchestration/roles/geerlingguy.*/**": true,
+					"**/orchestration/roles/geerlingguy/**": true
 				}
 			}
 		},
@@ -46,6 +50,8 @@
       "**/.expo/**": true,
       "**/vendor/**": true,
       "**/orchestration/roles/geerlingguy.docker/**": true,
+      "**/orchestration/roles/geerlingguy.*/**": true,
+      "**/orchestration/roles/geerlingguy/**": true,
     },
     "js/ts.tsdk.path": "node_modules/typescript/lib",
     "sonarlint.pathToNodeExecutable": "/opt/turbopanel/vendor/node/current/bin/node",
