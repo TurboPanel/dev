@@ -72,6 +72,16 @@ export function instanceRuntimeEnvPath(): string {
 export function instanceRuntimeDevVarsPath(): string {
   return `${instanceConfigDir()}/runtime.dev-vars`;
 }
+
+/** Permanent decrypt-only v1 signing secret (`TURBOPANEL_SECRET`). */
+export function instanceSecretPath(): string {
+  return `${instanceConfigDir()}/.instance_secret`;
+}
+
+/** Versioned keyring (`TURBOPANEL_SECRETS`); first entry is current/signing. */
+export function instanceSecretsPath(): string {
+  return `${instanceConfigDir()}/.instance_secrets`;
+}
 export const UV_CACHE_DIR = `${RUNTIMES_DIR}/uv/cache`;
 /** Pinned managed Python (matches daemon `PYTHON_VERSION`). */
 export const PYTHON_VERSION = "3.14.6";

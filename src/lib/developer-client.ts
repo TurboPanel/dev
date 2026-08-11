@@ -2,7 +2,7 @@ import { createHash, createHmac } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { request as httpRequest, type IncomingMessage } from "node:http";
 import { readInstanceRuntime } from "./daemon-env.ts";
-import { CONFIG_DIR } from "./paths.ts";
+import { instanceSecretPath, instanceSecretsPath } from "./paths.ts";
 
 /**
  * Live developer-surface client for the co-located instance.
@@ -19,12 +19,32 @@ import { CONFIG_DIR } from "./paths.ts";
 export const DEVELOPER_API = "/api/developer/v1";
 
 const INSTANCE_SOCKET = "/run/turbopanel/instance.sock";
-const INSTANCE_SECRET_PATH = `${CONFIG_DIR}/instance/.instance_secret`;
 const LOCAL_CONSOLE_SCHEME = "Local-Console";
 const LOCAL_CONSOLE_INFO = "local-console-v1";
 const LOCAL_CONSOLE_CONTENT_SHA256_HEADER = "X-Local-Console-Content-SHA256";
 /** Generous: the instance waits up to ~180s for each daemon's dev-sync ack. */
 const REQUEST_TIMEOUT_MS = 240_000;
+
+/**
+ * Parse the current (first) secret value from a `.instance_secrets` keyring line.
+ *
+ * Format: comma-separated `<version>:<value>` entries; first entry is current.
+ *
+ * @internal Exported for unit tests.
+ */
+export function parseInstanceKeyringCurrentSecret(
+  text: string,
+): string | undefined {
+  const trimmed = text.trim();
+  if (!trimmed) return undefined;
+  const firstEntry = trimmed.split(",")[0] ?? "";
+  const colon = firstEntry.indexOf(":");
+  if (colon <= 0) return undefined;
+  const version = firstEntry.slice(0, colon);
+  const value = firstEntry.slice(colon + 1);
+  if (!/^\d+$/.test(version) || value.length === 0) return undefined;
+  return value;
+}
 
 export type DaemonSyncResult = {
   daemonId: string;
@@ -54,36 +74,94 @@ function collectBody(res: IncomingMessage): Promise<string> {
   });
 }
 
-function readInstanceSecret(): string | undefined {
+function errnoCode(err: unknown): string {
+  if (err && typeof err === "object" && "code" in err) {
+    return String((err as NodeJS.ErrnoException).code);
+  }
+  return "";
+}
+
+/**
+ * Resolve the Local-Console HMAC signing secret.
+ *
+ * Prefer the multi-version keyring (`.instance_secrets`). Fall back to the
+ * permanent singular file (`.instance_secret`) **only** when the keyring is
+ * absent (`ENOENT`). A present but unreadable or unparseable keyring must not
+ * silently sign with the legacy v1 secret (rotated installs would 401 and hide
+ * the real diagnostic).
+ *
+ * @internal Exported for unit tests.
+ */
+export function readInstanceSecret(): string | undefined {
   try {
-    const secret = readFileSync(INSTANCE_SECRET_PATH, "utf8").trim();
+    const keyring = readFileSync(instanceSecretsPath(), "utf8");
+    // Keyring file exists: use it exclusively (parse may yield undefined).
+    return parseInstanceKeyringCurrentSecret(keyring);
+  } catch (err) {
+    if (errnoCode(err) !== "ENOENT") {
+      // EACCES / other: no silent singular fallback — developerFetch() will call
+      // instanceSecretReadError() for the keyring-specific diagnostic.
+      return undefined;
+    }
+  }
+  try {
+    const secret = readFileSync(instanceSecretPath(), "utf8").trim();
     return secret || undefined;
   } catch {
     return undefined;
   }
 }
 
-function instanceSecretReadError(): Error {
+/**
+ * Diagnostic Error when {@link readInstanceSecret} returns undefined.
+ *
+ * Keyring parse failures and non-`ENOENT` keyring read errors are reported
+ * before checking the singular `.instance_secret` path.
+ *
+ * @internal Exported for unit tests.
+ */
+export function instanceSecretReadError(): Error {
+  const secretsPath = instanceSecretsPath();
   try {
-    readFileSync(INSTANCE_SECRET_PATH, "utf8");
+    const keyring = readFileSync(secretsPath, "utf8");
+    if (parseInstanceKeyringCurrentSecret(keyring) === undefined) {
+      return new Error(
+        `unreadable or unparseable instance secrets keyring at ${secretsPath} — cannot authenticate local developer API calls`,
+      );
+    }
   } catch (err) {
-    const code =
-      err && typeof err === "object" && "code" in err
-        ? String((err as NodeJS.ErrnoException).code)
-        : "";
+    const code = errnoCode(err);
     if (code === "EACCES") {
       return new Error(
-        `cannot read instance secret at ${INSTANCE_SECRET_PATH} (permission denied) — expected root:${process.env.USER ?? "dev-user"} mode 0640 so the console can authenticate local developer API calls`,
+        `cannot read instance secrets keyring at ${secretsPath} (permission denied) — expected root:${process.env.USER ?? "dev-user"} mode 0640 so the console can authenticate local developer API calls`,
+      );
+    }
+    if (code !== "ENOENT") {
+      return new Error(
+        `unreadable or unparseable instance secrets keyring at ${secretsPath} — cannot authenticate local developer API calls`,
+      );
+    }
+    // ENOENT only: fall through to singular-file diagnostics.
+  }
+
+  const secretPath = instanceSecretPath();
+  try {
+    readFileSync(secretPath, "utf8");
+  } catch (err) {
+    const code = errnoCode(err);
+    if (code === "EACCES") {
+      return new Error(
+        `cannot read instance secret at ${secretPath} (permission denied) — expected root:${process.env.USER ?? "dev-user"} mode 0640 so the console can authenticate local developer API calls`,
       );
     }
     if (code === "ENOENT") {
       return new Error(
-        `missing instance secret at ${INSTANCE_SECRET_PATH} — cannot authenticate local developer API calls`,
+        `missing instance secret at ${secretPath} — cannot authenticate local developer API calls`,
       );
     }
   }
   return new Error(
-    `missing instance secret at ${INSTANCE_SECRET_PATH} — cannot authenticate local developer API calls`,
+    `missing instance secret at ${secretPath} — cannot authenticate local developer API calls`,
   );
 }
 
@@ -174,7 +252,7 @@ function requestViaSocket(
 
 async function developerFetch<T>(
   path: string,
-  init: { method: string; body?: unknown } = { method: "GET" },
+  init?: { method: string; body?: unknown },
 ): Promise<T> {
   if (readInstanceRuntime() === "workers") {
     throw new Error(
@@ -186,11 +264,12 @@ async function developerFetch<T>(
     throw instanceSecretReadError();
   }
 
-  const bodyText = init.body === undefined ? "" : JSON.stringify(init.body);
+  const method = init?.method ?? "GET";
+  const bodyText = init?.body === undefined ? "" : JSON.stringify(init.body);
 
   let raw: RawResponse;
   try {
-    raw = await requestViaSocket(path, init.method, bodyText);
+    raw = await requestViaSocket(path, method, bodyText);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     throw new Error(
