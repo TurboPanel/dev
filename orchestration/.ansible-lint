@@ -1,4 +1,8 @@
 ---
+# Co-located with orchestration/ansible.cfg for CLI/converge local runs.
+# IDE ansible-lint (redhat.ansible language server) uses the workspace folder
+# as cwd and loads ~/dev/ansible.cfg for roles_path — see repo-root ansible.cfg.
+# Runtime converge still uses orchestration/ansible.cfg + ANSIBLE_ROLES_PATH.
 offline: true
 exclude_paths:
   - .cache/

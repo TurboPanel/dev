@@ -103,6 +103,9 @@
     # Brings postgres/rabbitmq/clickhouse up as one Docker Compose project
     # (turbopanel-system); renders only whichever of those roles just ran.
     - role: system-compose
+    # Host prep for shared managed-DB ingress (admin.cnf, unit, network).
+    # Compose content stays daemon-owned (managed.ingress.reconcile).
+    - role: proxysql
     - role: tabix
       when: turbopanel_instance_runtime == 'deno'
     - role: mailpit

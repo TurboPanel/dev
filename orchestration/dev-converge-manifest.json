@@ -12,6 +12,7 @@
     "rabbitmq",
     "clickhouse",
     "system-compose",
+    "proxysql",
     "tabix",
     "mailpit",
     "instance-user",

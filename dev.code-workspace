@@ -2,10 +2,7 @@
 	"folders": [
 		{
 			"path": ".",
-			"name": "dev",
-			"settings": {
-				"ansible.config.path": "${workspaceFolder}/orchestration/ansible.cfg"
-			}
+			"name": "dev"
 		},
 		{
 			"path": "../instance"
@@ -14,7 +11,6 @@
 			"path": "../daemon",
 			"name": "daemon",
 			"settings": {
-				"ansible.config.path": "${workspaceFolder}/ansible.cfg",
 				"files.exclude": {
 					"**/orchestration/roles/geerlingguy.docker": true,
 					"**/orchestration/roles/geerlingguy.*": true,
