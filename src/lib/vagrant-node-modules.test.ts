@@ -17,6 +17,14 @@ describe("Vagrant node_modules layout", () => {
     expect(VAGRANTFILE).toContain("tp-bind-node-modules");
     expect(VAGRANTFILE).toContain("turbopanel-virtfs-node-modules.service 2>&1");
   });
+
+  test("waits for Vagrant shares before binding dependencies and starting services", () => {
+    expect(VAGRANTFILE).toContain('while [ "$attempt" -lt 120 ]');
+    expect(VAGRANTFILE).toContain('"/home/vagrant/${repo}/package.json"');
+    expect(VAGRANTFILE).toContain(
+      "Before=turbopanel-ui.service turbopanel-website.service turbopanel-instance.service turbopanel-dbstudio.service",
+    );
+  });
 });
 
 describe("Vagrant host providers", () => {
@@ -35,6 +43,12 @@ describe("Vagrant host providers", () => {
   test("names the libvirt domain turbopanel-dev without a directory prefix", () => {
     expect(VAGRANTFILE).toContain('config.vm.define "turbopanel-dev", primary: true');
     expect(VAGRANTFILE).toContain('libvirt.default_prefix = ""');
+  });
+
+  test("forwards Drizzle Studio to its guest-loopback-only listener", () => {
+    expect(VAGRANTFILE).toMatch(
+      /guest:\s*4983,[\s\S]*?host:\s*4983,[\s\S]*?guest_ip:\s*"127\.0\.0\.1",[\s\S]*?host_ip:\s*"127\.0\.0\.1"/,
+    );
   });
 
   test("sets the guest vagrant user password to vagrant", () => {

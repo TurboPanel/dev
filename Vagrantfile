@@ -74,13 +74,24 @@ Vagrant.configure("2") do |config|
     [8880, 8880],
     [8088, 8088],
     [19820, 19820],
-    [4983, 4983],
   ].each do |guest_port, host_port|
     config.vm.network "forwarded_port",
                       guest: guest_port,
                       host: host_port,
                       host_ip: "0.0.0.0"
   end
+
+  # Drizzle Studio deliberately binds guest loopback because its database
+  # administration API is unauthenticated. vagrant-libvirt otherwise targets
+  # the guest's NIC address (e.g. 192.168.121.x), which resets the connection.
+  # Keep Studio loopback-only on both sides of the SSH forward. The hosted
+  # HTTPS Studio UI can connect to localhost with browser permission, while a
+  # private hostname such as studio.lan is blocked as mixed/private content.
+  config.vm.network "forwarded_port",
+                    guest: 4983,
+                    host: 4983,
+                    guest_ip: "127.0.0.1",
+                    host_ip: "127.0.0.1"
 
   config.vm.provider "utm" do |u|
     u.name = "turbopanel-dev"
@@ -193,6 +204,25 @@ EOF
 #!/bin/sh
 set -eu
 NODE_MODULES_BASE=/var/lib/turbopanel-dev/node_modules
+
+# Vagrant mounts VirtFS/9p shares over SSH after the guest reaches userspace;
+# this systemd unit can therefore run before the mounted package.json files are
+# visible. Wait for the required repo mounts instead of exiting successfully
+# without installing the bind mounts.
+attempt=0
+while [ "$attempt" -lt 120 ]; do
+  mounts_ready=1
+  for repo in dev instance ui website; do
+    if [ ! -f "/home/vagrant/${repo}/package.json" ]; then
+      mounts_ready=0
+      break
+    fi
+  done
+  [ "$mounts_ready" -eq 1 ] && break
+  attempt=$((attempt + 1))
+  sleep 1
+done
+
 for repo in dev instance ui website; do
   repo_dir="/home/vagrant/${repo}"
   [ -f "${repo_dir}/package.json" ] || continue
@@ -228,7 +258,7 @@ BINDSCRIPT
 Description=Bind guest-local node_modules over VirtFS checkouts
 DefaultDependencies=no
 After=remote-fs.target
-Before=turbopanel-ui.service turbopanel-website.service turbopanel-instance.service
+Before=turbopanel-ui.service turbopanel-website.service turbopanel-instance.service turbopanel-dbstudio.service
 
 [Service]
 Type=oneshot
