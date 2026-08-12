@@ -1,8 +1,12 @@
 .deno/
 deno.lock
-node_modules/
+node_modules
 .pnpm-store/
 .cursor/debug-*.log
+
+# Kernel core dumps (a guest `core` file is ~1 GB and is not source)
+/core
+*.core
 
 # Local Ansible state (committed config lives under orchestration/)
 .ansible/
