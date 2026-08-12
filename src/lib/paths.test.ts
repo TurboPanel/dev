@@ -86,6 +86,18 @@ describe("version pins", () => {
   test("NODE_VERSION matches scripts/lib/paths.sh pin", () => {
     expect(NODE_VERSION).toBe("24.17.0");
   });
+
+  test("ensureBootstrapDeno vendors Deno from dl.deno.land", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { fileURLToPath } = await import("node:url");
+    const { dirname, join } = await import("node:path");
+    const here = dirname(fileURLToPath(import.meta.url));
+    const source = readFileSync(join(here, "daemon-exec.ts"), "utf8");
+    expect(source).toContain("https://dl.deno.land/release/v${VERSION}/${ASSET}");
+    expect(source).not.toContain(
+      "https://github.com/denoland/deno/releases/download/",
+    );
+  });
 });
 
 describe("resolveRuntimesDir", () => {

@@ -131,7 +131,9 @@ function hostPython3Available(): boolean {
 
 /**
  * Install the pinned Deno under vendor/deno/<DENO_VERSION> and point
- * `current` / `bin/deno` at it (GitHub release zip + python3 stdlib extract).
+ * `current` / `bin/deno` at it (dl.deno.land release zip + python3 stdlib
+ * extract — same CDN as `run.sh` / the `deno-runtime` Ansible role; avoid
+ * `github.com/.../releases/download` which intermittently 503s from VMs).
  *
  * Host Deno on PATH short-circuits (dev preference). An older vendored
  * `current` alone is not enough — the pinned version must exist and the
@@ -177,7 +179,7 @@ export async function ensureBootstrapDeno(
     'DEST="$RUNTIMES_DIR/deno/$VERSION/deno"',
     'if [ ! -x "$DEST" ]; then',
     `ASSET="deno-${triple}.zip"`,
-    'URL="https://github.com/denoland/deno/releases/download/v${VERSION}/${ASSET}"',
+    'URL="https://dl.deno.land/release/v${VERSION}/${ASSET}"',
     'TMP="$(mktemp -d)"',
     'curl -fsSL -o "$TMP/$ASSET" "$URL"',
     `python3 - "$TMP/$ASSET" "$DEST" <<'PY'
@@ -205,7 +207,12 @@ PY`,
 
   const code = await runCaptured(["sudo", "-n", "bash", "-c", installScript], onOutput);
   if (code !== 0 || !pinnedVendoredDenoUsable() || !vendoredDenoUsable()) {
-    throw new Error(`Failed to install Deno ${DENO_VERSION} to ${VENDORED_DENO_BIN}`);
+    const hint = code !== 0
+      ? " — download or extract failed (often a transient dl.deno.land CDN error; retry)"
+      : "";
+    throw new Error(
+      `Failed to install Deno ${DENO_VERSION} to ${VENDORED_DENO_BIN}${hint}`,
+    );
   }
 }
 

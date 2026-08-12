@@ -26,6 +26,16 @@ import {
   bootstrapOrchestration,
   installDaemonSystemd,
 } from "../lib/daemon-install.ts";
+import { ensureBootstrapDeno } from "../lib/daemon-exec.ts";
+import {
+  BOOTSTRAP_ANSIBLE,
+  BOOTSTRAP_CONVERGE,
+  BOOTSTRAP_DENO,
+  BOOTSTRAP_PYTHON,
+  BOOTSTRAP_UV,
+  bootstrapStepForPhase,
+  type BootstrapPhase,
+} from "../lib/bootstrap-phase.ts";
 import { syncDevBuildToDaemons } from "../lib/daemon-actions.ts";
 import {
   DEV_ENV_CONVERGE_STEP,
@@ -37,31 +47,10 @@ import { resetDevDatabase } from "../lib/reset-dev-database.ts";
 const OUTPUT_LOG_ROWS = 6;
 const SYNC_OUTPUT_LOG_ROWS = 200;
 
-const BOOTSTRAP_UV = "Install uv package manager";
-const BOOTSTRAP_PYTHON = "Install Python runtime";
-const BOOTSTRAP_ANSIBLE = "Install Ansible tooling";
-const BOOTSTRAP_CONVERGE = "Converge daemon stack (Ansible)";
-
 function truncateLine(text: string, maxWidth: number): string {
   if (maxWidth < 4) return "…";
   if (text.length <= maxWidth) return text;
   return `${text.slice(0, maxWidth - 1)}…`;
-}
-
-type BootstrapPhase = "uv" | "python" | "ansible" | "converge";
-
-/** Maps the in-flight bootstrap sub-phase to the task-list label it corresponds to. */
-function bootstrapStepForPhase(phase: BootstrapPhase): string {
-  switch (phase) {
-    case "uv":
-      return BOOTSTRAP_UV;
-    case "python":
-      return BOOTSTRAP_PYTHON;
-    case "ansible":
-      return BOOTSTRAP_ANSIBLE;
-    case "converge":
-      return BOOTSTRAP_CONVERGE;
-  }
 }
 
 type ProvisionerPhase =
@@ -254,20 +243,29 @@ function useProvisionerPhaseEffects(opts: {
 
     void (async () => {
       let currentStep = "Ensure daemon repository";
-      // True only while bootstrapOrchestration() is in flight: that single call covers
-      // four displayed steps (uv/python/ansible/converge), so on failure we must consult
-      // bootstrapPhase.current to find which of the four actually failed. Outside that
-      // window, `currentStep` already names the real failing step (installDaemon and
-      // installDaemonSystemd emit their own "failed" status before throwing) — without
-      // this flag, a later failure (e.g. starting the systemd unit) would incorrectly
-      // re-paint "Install uv package manager" as failed too, since currentStep was last
-      // set there and never advanced past it.
+      // True only while bootstrapOrchestration()'s uv→converge work is in flight.
+      // Deno is ensured *before* that call (own step) so a GitHub/curl Deno failure
+      // does not paint "Install uv package manager" as failed. During the
+      // orchestration window we consult bootstrapPhase.current for which of the
+      // four uv/python/ansible/converge steps actually failed. Outside that window,
+      // `currentStep` already names the real failing step (installDaemon and
+      // installDaemonSystemd emit their own "failed" status before throwing).
       let duringBootstrapOrchestration = false;
       try {
         emitStep(currentStep, "running");
         await installDaemon(emitStep, appendOutput);
         if (cancelled) return;
         emitStep(currentStep, "ok");
+
+        // Vendored Deno must exist before the orchestration script can run.
+        // Keep this as its own task-list row — ensureBootstrapDeno also runs
+        // again inside bootstrapOrchestration (no-op when already usable).
+        bootstrapPhase.current = "deno";
+        currentStep = BOOTSTRAP_DENO;
+        emitStep(BOOTSTRAP_DENO, "running");
+        await ensureBootstrapDeno(trackBootstrapOutput);
+        if (cancelled) return;
+        emitStep(BOOTSTRAP_DENO, "ok");
 
         bootstrapPhase.current = "uv";
         currentStep = BOOTSTRAP_UV;
@@ -494,7 +492,7 @@ export function ProvisionerPanel({
   onDaemonInstallDone?: () => void;
 }>) {
   const [outputLines, setOutputLines] = useState<string[]>([]);
-  const bootstrapPhase = useRef<BootstrapPhase>("uv");
+  const bootstrapPhase = useRef<BootstrapPhase>("deno");
   const {
     tasks,
     recap,
