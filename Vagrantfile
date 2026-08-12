@@ -169,7 +169,9 @@ WantedBy=multi-user.target
 UNIT
     chmod 0640 /etc/systemd/system/turbopanel-virtfs-node-modules.service
     systemctl daemon-reload
-    systemctl enable --now turbopanel-virtfs-node-modules.service
+    # `enable` prints "Created symlink …" on stderr; Vagrant colors all
+    # provisioner stderr red even when the command succeeded.
+    systemctl enable --now turbopanel-virtfs-node-modules.service 2>&1
 
     # 8 GiB swapfile when the root disk has room. Bookworm cloud images can be
     # small; filling the disk with swap makes pnpm report "disk I/O error" from

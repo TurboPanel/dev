@@ -15,6 +15,6 @@ describe("Vagrant node_modules layout", () => {
   test("bind-mounts guest-local node_modules so Turbopack does not follow an escaped symlink", () => {
     expect(VAGRANTFILE).toContain("mount --bind");
     expect(VAGRANTFILE).toContain("tp-bind-node-modules");
-    expect(VAGRANTFILE).toContain("turbopanel-virtfs-node-modules.service");
+    expect(VAGRANTFILE).toContain("turbopanel-virtfs-node-modules.service 2>&1");
   });
 });
