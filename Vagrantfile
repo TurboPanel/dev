@@ -1,8 +1,9 @@
 # frozen_string_literal: true
 
-# TurboPanel development VM (UTM on macOS).
+# TurboPanel development VM (libvirt on Linux, UTM on macOS).
 #
-# Preferred entry from a Mac host (boots the guest, then lands in the Ink console):
+# Plain `vagrant up` selects the native provider for the host. The macOS helper
+# also boots the guest, then lands in the Ink console:
 #   ./scripts/vagrant-up.sh
 #
 # Mounts sibling checkouts from the host workspace (parent of this repo) into the
@@ -12,12 +13,35 @@
 # turbopanel_dev_user is set; /opt/turbopanel is vendor/bin/share only, never source).
 # Guest-only FHS paths (/etc|/var|/run|/opt/turbopanel) stay on the VM disk.
 #
-# Box is Debian 12 (utm/bookworm) until a Debian 13 / Trixie UTM box is published.
+# Linux/libvirt uses Debian 13 (debian/trixie64). macOS/UTM uses Debian 12
+# (utm/bookworm) until a Debian 13 / Trixie UTM box is published.
+
+require "rbconfig"
+
+HOST_OS = RbConfig::CONFIG.fetch("host_os")
+HOST_PROVIDER =
+  if HOST_OS.match?(/linux/)
+    "libvirt"
+  elsif HOST_OS.match?(/darwin/)
+    "utm"
+  else
+    raise "Unsupported Vagrant host OS: #{HOST_OS}"
+  end
+
+# Keep `vagrant up` deterministic when several providers are installed while
+# still allowing an explicit VAGRANT_DEFAULT_PROVIDER override.
+ENV["VAGRANT_DEFAULT_PROVIDER"] ||= HOST_PROVIDER
+
+HOST_BOX = HOST_PROVIDER == "libvirt" ? "debian/trixie64" : "utm/bookworm"
+SYNCED_FOLDER_OPTIONS = HOST_PROVIDER == "libvirt" ? { type: "virtiofs" } : {}
 
 GITHUB_HOST_DIR = File.join(__dir__, "..", ".github")
 
 Vagrant.configure("2") do |config|
-  config.vm.box = "utm/bookworm"
+  # Libvirt domain / Vagrant machine name — avoid directory_default (dev_default).
+  config.vm.define "turbopanel-dev", primary: true
+
+  config.vm.box = HOST_BOX
   config.vm.hostname = "turbopanel-dev"
 
   config.ssh.forward_agent = true
@@ -25,21 +49,38 @@ Vagrant.configure("2") do |config|
   # Avoid a second mount of this repo at /vagrant; we sync into ~/dev instead.
   config.vm.synced_folder ".", "/vagrant", disabled: true
 
-  config.vm.synced_folder ".", "/home/vagrant/dev"
-  config.vm.synced_folder "../daemon", "/home/vagrant/daemon"
-  config.vm.synced_folder "../instance", "/home/vagrant/instance"
-  config.vm.synced_folder "../ui", "/home/vagrant/ui"
-  config.vm.synced_folder "../website", "/home/vagrant/website"
+  config.vm.synced_folder ".", "/home/vagrant/dev", **SYNCED_FOLDER_OPTIONS
+  config.vm.synced_folder "../daemon", "/home/vagrant/daemon", **SYNCED_FOLDER_OPTIONS
+  config.vm.synced_folder "../instance", "/home/vagrant/instance", **SYNCED_FOLDER_OPTIONS
+  config.vm.synced_folder "../ui", "/home/vagrant/ui", **SYNCED_FOLDER_OPTIONS
+  config.vm.synced_folder "../website", "/home/vagrant/website", **SYNCED_FOLDER_OPTIONS
 
   # Optional: turbopanel/.github (community health files). Ansible's github-repo
   # role auto-clones this to $HOME/.github via HTTPS when absent, so only mount
   # it when you already have a sibling checkout to keep local edits in sync.
   if Dir.exist?(GITHUB_HOST_DIR)
-    config.vm.synced_folder "../.github", "/home/vagrant/.github"
+    config.vm.synced_folder "../.github", "/home/vagrant/.github", **SYNCED_FOLDER_OPTIONS
   end
 
-  config.vm.network "forwarded_port", guest: 8443, host: 8443, host_ip: "127.0.0.1"
-  config.vm.network "forwarded_port", guest: 8880, host: 8880, host_ip: "127.0.0.1"
+  # Bind 0.0.0.0 so the libvirt/UTM host's LAN IP can reach guest services —
+  # not only Cursor/localhost SSH tunnels. Guest ports:
+  #   8443  control-plane Caddy HTTPS
+  #   8880  control-plane Caddy plaintext HTTP (dev overlay)
+  #   8088  optional extra forward (guest must listen)
+  #   19820 website (Next.js)
+  #   4983  Drizzle Studio
+  [
+    [8443, 8443],
+    [8880, 8880],
+    [8088, 8088],
+    [19820, 19820],
+    [4983, 4983],
+  ].each do |guest_port, host_port|
+    config.vm.network "forwarded_port",
+                      guest: guest_port,
+                      host: host_port,
+                      host_ip: "0.0.0.0"
+  end
 
   config.vm.provider "utm" do |u|
     u.name = "turbopanel-dev"
@@ -48,15 +89,44 @@ Vagrant.configure("2") do |config|
     u.directory_share_mode = "virtFS"
   end
 
+  config.vm.provider "libvirt" do |libvirt|
+    # Domain name is just the machine name (turbopanel-dev), not {cwd}_{name}.
+    libvirt.default_prefix = ""
+    # 4 cores / 8 threads (1 socket × 4 cores × 2 threads).
+    libvirt.cpus = 8
+    libvirt.cputopology sockets: "1", cores: "4", threads: "2"
+    libvirt.memory = 8192
+    # VirtioFS is bidirectional and avoids the NFS/rsync fallback. Libvirt
+    # requires shared memory backing for VirtioFS devices. Use memfd explicitly:
+    # access-only defaults to a sparse file under /var/lib/libvirt/qemu/ram,
+    # which turns guest memory churn into host disk writeback and I/O stalls.
+    libvirt.memorybacking :source, type: "memfd"
+    libvirt.memorybacking :access, mode: "shared"
+  end
+
   config.vm.provision "shell", inline: <<~SHELL
     set -eu
 
     export DEBIAN_FRONTEND=noninteractive
 
-    if ! command -v curl >/dev/null 2>&1; then
-      apt-get update -qq
-      apt-get install -y -qq curl
-    fi
+    # Console / login password for the vagrant user (local dev VM only).
+    # Official boxes often ship with the account locked or a random hash;
+    # set a known password before the rest of guest setup.
+    echo 'vagrant:vagrant' | chpasswd
+    passwd -u vagrant 2>/dev/null || true
+
+    # Bring the box packages current before guest setup. curl (and other
+    # host tools) are left to ./console / develop.sh when needed.
+    apt-get update -qq
+    apt-get -y \
+      -o Dpkg::Options::="--force-confdef" \
+      -o Dpkg::Options::="--force-confold" \
+      upgrade
+    apt-get -y \
+      -o Dpkg::Options::="--force-confdef" \
+      -o Dpkg::Options::="--force-confold" \
+      dist-upgrade
+    apt-get -y autoremove
 
     # ./console requires the dev user to be a member of the sudo/wheel/admin group
     # (scripts/lib/dev-prerequisites.sh: tp_dev_user_is_sudoer) — a direct sudoers

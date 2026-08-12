@@ -3,16 +3,22 @@
 # TURBOPANEL_SKIP_HOOK_TESTS is set (checked by the hook before sourcing).
 
 # Resolve the turbopanel/dev checkout (hosts paths.sh, runtime.sh, …).
+# Prefer ROOT from the calling pre-commit (never trust $0 when this file is
+# sourced — $0 stays the hook path, so dirname walks out of the repo).
 tp_hook_dev_checkout() {
   if [ -n "${TURBOPANEL_DEV_CHECKOUT:-}" ]; then
     printf '%s' "$TURBOPANEL_DEV_CHECKOUT"
     return 0
   fi
-  _thdc_lib=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
-  _thdc_candidate=$(CDPATH= cd -- "$_thdc_lib/../.." && pwd)
-  if [ -f "$_thdc_candidate/package.json" ] && grep -q '"@turbopanel/dev"' "$_thdc_candidate/package.json" 2>/dev/null; then
-    printf '%s' "$_thdc_candidate"
-    return 0
+  if [ -n "${ROOT:-}" ]; then
+    if [ -f "$ROOT/package.json" ] && grep -q '"@turbopanel/dev"' "$ROOT/package.json" 2>/dev/null; then
+      printf '%s' "$ROOT"
+      return 0
+    fi
+    if [ -f "$ROOT/../dev/package.json" ] && grep -q '"@turbopanel/dev"' "$ROOT/../dev/package.json" 2>/dev/null; then
+      CDPATH= cd -- "$ROOT/../dev" && pwd
+      return 0
+    fi
   fi
   printf '%s/dev' "${TURBOPANEL_DEV_ROOT:-$HOME}"
 }

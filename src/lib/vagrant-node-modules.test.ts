@@ -18,3 +18,33 @@ describe("Vagrant node_modules layout", () => {
     expect(VAGRANTFILE).toContain("turbopanel-virtfs-node-modules.service 2>&1");
   });
 });
+
+describe("Vagrant host providers", () => {
+  test("uses libvirt and Debian Trixie by default on Linux", () => {
+    expect(VAGRANTFILE).toContain('"libvirt"');
+    expect(VAGRANTFILE).toContain('"debian/trixie64"');
+    expect(VAGRANTFILE).toContain('ENV["VAGRANT_DEFAULT_PROVIDER"] ||= HOST_PROVIDER');
+  });
+
+  test("uses bidirectional VirtioFS shares with shared memory on libvirt", () => {
+    expect(VAGRANTFILE).toContain('{ type: "virtiofs" }');
+    expect(VAGRANTFILE).toContain('libvirt.memorybacking :source, type: "memfd"');
+    expect(VAGRANTFILE).toContain('libvirt.memorybacking :access, mode: "shared"');
+  });
+
+  test("names the libvirt domain turbopanel-dev without a directory prefix", () => {
+    expect(VAGRANTFILE).toContain('config.vm.define "turbopanel-dev", primary: true');
+    expect(VAGRANTFILE).toContain('libvirt.default_prefix = ""');
+  });
+
+  test("sets the guest vagrant user password to vagrant", () => {
+    expect(VAGRANTFILE).toContain("echo 'vagrant:vagrant' | chpasswd");
+  });
+
+  test("refreshes guest packages instead of installing curl early", () => {
+    expect(VAGRANTFILE).toContain("apt-get update -qq");
+    expect(VAGRANTFILE).toContain("dist-upgrade");
+    expect(VAGRANTFILE).toContain("apt-get -y autoremove");
+    expect(VAGRANTFILE).not.toContain("apt-get install -y -qq curl");
+  });
+});

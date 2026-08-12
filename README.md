@@ -14,12 +14,37 @@ GitHub: [turbopanel/dev](https://github.com/turbopanel/dev)
 ## Supported contributor environment
 
 - **Debian 13** (Trixie) recommended for bare-metal guests
+- **Linux:** KVM/libvirt + Vagrant (Debian 13 / `debian/trixie64` guest)
 - **macOS:** UTM + Vagrant (guest is Debian 12 / `utm/bookworm` until a Trixie UTM box is published)
 - Interactive terminal with `curl` and `sudo`
 - Sudo-capable development user (passwordless sudo optional — see below)
 - **Deno** on PATH, or vendored Deno installed during daemon bootstrap (`2.9.4`)
 
 ## Bootstrap
+
+### Linux (Vagrant + libvirt)
+
+Install Vagrant, QEMU/KVM, libvirt, dnsmasq, VirtioFS, and the
+[`vagrant-libvirt`](https://vagrant-libvirt.github.io/vagrant-libvirt/)
+plugin. Ensure the development user belongs to the `libvirt` group and that
+libvirt's default network and storage pool are active.
+
+Clone the sibling repos in the layout shown in the macOS section below, then
+run this from the `dev` checkout:
+
+```sh
+vagrant up
+```
+
+The Vagrantfile automatically selects libvirt on Linux, even when another
+provider is installed, and boots the Debian 13 `debian/trixie64` box. Source
+checkouts are mounted bidirectionally into the guest with VirtioFS; guest RAM
+uses libvirt's in-memory `memfd` backend so VirtioFS does not cause host-disk
+writeback. To open the developer console after the guest is ready:
+
+```sh
+vagrant ssh -- -t 'cd "$HOME/dev" && exec ./console'
+```
 
 ### macOS (Vagrant + UTM)
 

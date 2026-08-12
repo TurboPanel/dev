@@ -21,11 +21,36 @@ on hosts where the native binary cannot load (e.g. some Raspberry Pi kernels wit
 model"). Deno is still installed for the **instance** stack (and mailer) via the
 `deno-runtime` Ansible role during dev converge.
 
-**Target host:** Debian 13 (Trixie) on bare metal; **macOS contributors** use **Vagrant + UTM** with guest box **`utm/bookworm`** (Debian 12) until a Trixie UTM box is available.
+**Target host:** Debian 13 (Trixie) on bare metal. **Linux contributors** may
+use **Vagrant + libvirt** with the `debian/trixie64` box; **macOS
+contributors** use **Vagrant + UTM** with guest box **`utm/bookworm`** (Debian
+12) until a Trixie UTM box is available.
 
 **Bootstrap URL:** `dev.turbopanel.sh` (advertised one-liner; root serves `scripts/develop.sh` from the `trunk` branch of [turbopanel/dev](https://github.com/turbopanel/dev)). When piped (`curl … | sh`), `$0` is `sh` so local `scripts/lib/` is not on disk yet — the script downloads those libs from `raw.githubusercontent.com/turbopanel/dev` (override with `TURBOPANEL_DEV_LIB_BASE`) before clone.
 
-**Vagrant (macOS):** root [`Vagrantfile`](./Vagrantfile) + [`scripts/vagrant-up.sh`](./scripts/vagrant-up.sh). Provider is **UTM** only for now (`vagrant_utm` plugin). Synced folders map host siblings `../{daemon,instance,ui,website}` and this repo (`.`) to guest `$HOME/{dev,daemon,instance,ui,website}` (VirtFS) so default `TURBOPANEL_DEV_ROOT=$HOME` matches bare metal — confirmed against the daemon's Ansible roles (`daemon-launch`, `instance-launch`, etc.): source always resolves to `<dev_root>/<repo>` when `turbopanel_dev_user` is set, and `/opt/turbopanel` in dev holds **only** vendored runtimes, the production binary, and the built static UI — never source checkouts. `../.github` (community health files) mounts to `$HOME/.github` when present on the host; otherwise the `github-repo` Ansible role clones it inside the guest via HTTPS. FHS trees stay **guest-local**. The launcher does `vagrant up --provider=utm` then `vagrant ssh -t` into `./console` (not provisioned interactively). Ports `8443` / `8880` forward to the host. Other providers and Debian 13 boxes are future work.
+**Vagrant:** root [`Vagrantfile`](./Vagrantfile) +
+[`scripts/vagrant-up.sh`](./scripts/vagrant-up.sh). Plain `vagrant up`
+auto-selects **libvirt** on Linux (`vagrant-libvirt`, Debian 13
+`debian/trixie64`) and **UTM** on macOS (`vagrant_utm`, Debian 12
+`utm/bookworm`); `VAGRANT_DEFAULT_PROVIDER` still permits an explicit
+override. Linux shares use bidirectional VirtioFS with explicit **memfd**
+shared-memory backing; do not leave only `access mode=shared`, because libvirt
+then file-backs all guest RAM under `/var/lib/libvirt/qemu/ram` and guest
+memory churn causes severe host disk writeback/I/O pressure.
+UTM uses VirtFS. Synced folders map host siblings
+`../{daemon,instance,ui,website}` and this repo (`.`) to guest
+`$HOME/{dev,daemon,instance,ui,website}` so default
+`TURBOPANEL_DEV_ROOT=$HOME` matches bare metal — confirmed against the daemon's
+Ansible roles (`daemon-launch`, `instance-launch`, etc.): source always
+resolves to `<dev_root>/<repo>` when `turbopanel_dev_user` is set, and
+`/opt/turbopanel` in dev holds **only** vendored runtimes, the production
+binary, and the built static UI — never source checkouts. `../.github`
+(community health files) mounts to `$HOME/.github` when present on the host;
+otherwise the `github-repo` Ansible role clones it inside the guest via HTTPS.
+FHS trees stay **guest-local**. The macOS launcher does
+`vagrant up --provider=utm` then `vagrant ssh -t` into `./console` (not
+provisioned interactively). Ports `8443` / `8880` / `8088` / `19820` /
+`4983` forward to the host on `0.0.0.0` (LAN-reachable, not localhost-only).
 
 The current entrypoint is a minimal launcher only (full multi-screen console was removed during a rewrite).
 
@@ -120,7 +145,9 @@ curl -fsSL dev.turbopanel.sh | sh
 ## Responsibilities
 
 - **`scripts/vagrant-up.sh`** — host-side Mac entry: requires Vagrant + `vagrant_utm`, checks sibling checkouts, warns if the SSH agent looks empty, runs `vagrant up --provider=utm`, then `exec vagrant ssh -- -t` into `./console` on the guest. Does not provision the interactive TUI inside Vagrant (TTY must come from the host SSH session).
-- **`Vagrantfile`** — UTM provider config, VirtFS mounts of the five workspace repos plus optional `.github`, SSH agent forwarding, port forwards `8443`/`8880`, and idempotent shell provision (`curl`, passwordless sudo for `vagrant`, `/etc/profile.d/turbopanel-vagrant.sh`, pnpm's `~/.config/pnpm/config.yaml` pointing `storeDir` at guest-local `/var/lib/pnpm/store`, per-repo `node_modules` **bind mounts** from `/var/lib/turbopanel-dev/node_modules/<repo>/node_modules` (systemd `turbopanel-virtfs-node-modules.service` at boot), 8 GiB `/swapfile`). Does not clone platform repos or run `./console`. Why bind-mount `node_modules`: on ARM64, FUSE-backed filesystems (9p/virtiofs, which is how UTM VirtFS is implemented) don't invalidate the instruction cache for pages faulted in from mmap'd executable files, so native Node addons (esbuild, `@rolldown/binding-*`, lightningcss, ...) crash with `SIGSEGV`/`SIGILL` when `node_modules` lives directly on the VirtFS mount — the pnpm store already being local isn't enough, since `packageImportMethod: copy` still writes the actual files into `node_modules` on the mount. A **symlink** is not enough: Next.js Turbopack rejects `node_modules` that points outside the project (`Symlink [project]/node_modules is invalid, it points out of the filesystem root`), and Node ESM/CJS realpath walks miss packages unless the physical path ends in a directory named `node_modules` (flat `<repo>/drizzle-orm` makes `drizzle-kit` fail with "Please install latest version of drizzle-orm"; Tamagui fails with `Cannot find module 'typescript'`). The provisioner runs for every mounted repo with a `package.json` (`dev`, `instance`, `ui`, `website`; `daemon` has none) and is idempotent across `vagrant provision` re-runs. Ansible `instance-repo` / `ui-repo` / `website-repo` must probe a nested package (`drizzle-kit`, `expo`, `next`) before skipping `pnpm install` — the mount point exists while the guest tree is still empty. A provisioner layout change wipes a flat tree; the next `pnpm install` (console for `dev`, converge for the others) refills it from the guest pnpm store. Do not `vagrant provision` while `./console` is running if that would rebuild the `dev` tree.
+- **`Vagrantfile`** — host-aware libvirt/UTM provider config, bidirectional VirtioFS/VirtFS mounts of the five workspace repos plus optional `.github`, SSH agent forwarding, port forwards `8443`/`8880`/`8088`/`19820`/`4983`
+(bound on `0.0.0.0` so the host LAN IP can reach them), and idempotent shell
+provision (`apt-get update` + `upgrade` + `dist-upgrade` + `autoremove`, sets `vagrant` login password to `vagrant`, passwordless sudo for `vagrant`, `/etc/profile.d/turbopanel-vagrant.sh`, pnpm's `~/.config/pnpm/config.yaml` pointing `storeDir` at guest-local `/var/lib/pnpm/store`, per-repo `node_modules` **bind mounts** from `/var/lib/turbopanel-dev/node_modules/<repo>/node_modules` (systemd `turbopanel-virtfs-node-modules.service` at boot), 8 GiB `/swapfile`). Linux defaults to libvirt + `debian/trixie64`; macOS defaults to UTM + `utm/bookworm`. Does not clone platform repos or run `./console`. Why bind-mount `node_modules`: on ARM64, FUSE-backed filesystems (9p/virtiofs, which is how UTM VirtFS is implemented) don't invalidate the instruction cache for pages faulted in from mmap'd executable files, so native Node addons (esbuild, `@rolldown/binding-*`, lightningcss, ...) crash with `SIGSEGV`/`SIGILL` when `node_modules` lives directly on the VirtFS mount — the pnpm store already being local isn't enough, since `packageImportMethod: copy` still writes the actual files into `node_modules` on the mount. A **symlink** is not enough: Next.js Turbopack rejects `node_modules` that points outside the project (`Symlink [project]/node_modules is invalid, it points out of the filesystem root`), and Node ESM/CJS realpath walks miss packages unless the physical path ends in a directory named `node_modules` (flat `<repo>/drizzle-orm` makes `drizzle-kit` fail with "Please install latest version of drizzle-orm"; Tamagui fails with `Cannot find module 'typescript'`). The provisioner runs for every mounted repo with a `package.json` (`dev`, `instance`, `ui`, `website`; `daemon` has none) and is idempotent across `vagrant provision` re-runs. Ansible `instance-repo` / `ui-repo` / `website-repo` must probe a nested package (`drizzle-kit`, `expo`, `next`) before skipping `pnpm install` — the mount point exists while the guest tree is still empty. A provisioner layout change wipes a flat tree; the next `pnpm install` (console for `dev`, converge for the others) refills it from the guest pnpm store. Do not `vagrant provision` while `./console` is running if that would rebuild the `dev` tree.
 - **`scripts/develop.sh`** — clones/updates **only** [turbopanel/dev](https://github.com/turbopanel/dev) via `git@github.com:turbopanel/dev.git` into `~/dev`. Requires **`curl`**, **`sudo`**, and a **sudo-capable development user** before it runs (`scripts/lib/dev-prerequisites.sh`). On first run, prompts for git `user.name` and `user.email`, generates `~/.ssh/id_ed25519` if missing, configures SSH commit signing, and verifies GitHub SSH before cloning. May use sudo for `git` / `openssh-client` apt installs. Uses `tp_is_interactive()` so `curl | sh` works when a controlling terminal is available (`/dev/tty`).
 - **`console`** — runs the prerequisite check, ensures pinned **Node** (`/opt/turbopanel/vendor/node/current/bin/node`, runs this repo) is installed, enables Corepack/pnpm, runs `pnpm install`, and launches the Ink TUI via `vite-node`. Add `--watch` to use `scripts/hot-reload.tsx`, which keeps the Ink process alive and rerenders when imported `src/` modules change. When stdin/stdout/stderr are not TTYs (e.g. after `exec` from a piped bootstrap), reattaches stdio to `/dev/tty` when `tp_is_interactive()` succeeds. Does **not** install Deno via `./console` itself (Deno bootstrap is via `ensureBootstrapDeno` during daemon install).
 - **`src/tui.tsx`** — minimal Ink app: full-height shell with a one-row `MenuBar`, a bordered `MainPanel`, and a one-row `StatusBar`. `← →` switches areas; Ctrl-C exits. Uses `alternateScreen`. No stack orchestration or platform install yet — rebuild features in `src/` incrementally.
@@ -162,13 +189,18 @@ Local commands:
 
 **Shared test helpers:** this repo has no local shared test-helper module. Daemon test authors must use the shared doubles in `../daemon/src/testing/` instead of hand-rolled ones (see that repo’s Testing section).
 
-**Pre-commit** (`.githooks/pre-commit`): runs `scripts/scan-secrets.sh` first (never skippable), then `pnpm typecheck` and `pnpm test`. Set `TURBOPANEL_SKIP_HOOK_TESTS` (any non-empty value) to skip typecheck/tests after the secret scan — useful when the toolchain or `node_modules/` is absent; the hook also exits 0 with a notice when pnpm or `node_modules/` is missing (run `./console` or `pnpm install`). `./console` idempotently sets `core.hooksPath=.githooks` via `tp_ensure_git_hooks_path` in `scripts/lib/git-github-ssh.sh`.
+**Pre-commit** (`.githooks/pre-commit`): runs `scripts/scan-secrets.sh` only
+(never skippable). Typecheck/tests are **temporarily disabled** in the hook
+until the toolchain can run inside the Vagrant guest (host VirtFS checkouts
+often lack a usable Node/pnpm tree). CI `verify.yml` still gates PRs.
+`./console` idempotently sets `core.hooksPath=.githooks` via
+`tp_ensure_git_hooks_path` in `scripts/lib/git-github-ssh.sh`.
 
 **Gate matrix** (one policy with the daemon repo):
 
 | Stage | dev | daemon | Rationale |
 | ----- | --- | ------ | --------- |
-| pre-commit | scan-secrets → `pnpm typecheck` → `pnpm test` | scan-secrets → `fmt:check` → `lint` → tests | fast local feedback |
+| pre-commit | scan-secrets only (tests deferred) | scan-secrets only (tests deferred) | secret scan on commit; suites in CI / guest |
 | PR → `trunk` | `verify.yml` | `verify.yml` | blocks merge |
 | push `trunk` | `verify.yml` | `verify.yml`; `publish` job `needs: verify` | nothing compiles from failing code |
 | promote → canary/rc/release | n/a | **artifact integrity only** (S3 sha256/size + CDN fetch) | no new code enters after publish |
