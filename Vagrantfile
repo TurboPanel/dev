@@ -115,8 +115,8 @@ Vagrant.configure("2") do |config|
     echo 'vagrant:vagrant' | chpasswd
     passwd -u vagrant 2>/dev/null || true
 
-    # Bring the box packages current before guest setup. curl (and other
-    # host tools) are left to ./console / develop.sh when needed.
+    # Bring the box packages current, then ensure curl for ./console
+    # (dev-prerequisites.sh requires it before packages.sh can apt-install).
     apt-get update -qq
     apt-get -y \
       -o Dpkg::Options::="--force-confdef" \
@@ -127,6 +127,7 @@ Vagrant.configure("2") do |config|
       -o Dpkg::Options::="--force-confold" \
       dist-upgrade
     apt-get -y autoremove
+    apt-get install -y curl
 
     # ./console requires the dev user to be a member of the sudo/wheel/admin group
     # (scripts/lib/dev-prerequisites.sh: tp_dev_user_is_sudoer) — a direct sudoers
