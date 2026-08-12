@@ -37,6 +37,103 @@ SYNCED_FOLDER_OPTIONS = HOST_PROVIDER == "libvirt" ? { type: "virtiofs" } : {}
 
 GITHUB_HOST_DIR = File.join(__dir__, "..", ".github")
 
+# Conditional guest reboot after apt upgrades (pending kernel / reboot-required).
+# Vagrant's shell `reboot: true` always reboots; this provisioner only reboots
+# when needed and waits for SSH like the built-in reboot capability.
+#
+# VirtioFS mounts are applied once during `vagrant up` / `reload` and are NOT
+# restored automatically after a mid-provision reboot — without remounting,
+# ~/dev (and siblings) stay as empty guest-local mount-point directories.
+module TurbopanelVagrant
+  class RebootIfNeeded < Vagrant.plugin("2", :provisioner)
+    def provision
+      unless guest_needs_reboot?
+        @machine.ui.info("No pending kernel reboot required.")
+        return
+      end
+
+      @machine.ui.warn(
+        "Package updates left a pending kernel reboot — rebooting the guest now."
+      )
+      @machine.ui.warn(
+        "SSH will drop for about a minute; this is expected. Do not Ctrl-C."
+      )
+      @machine.ui.info(
+        "Vagrant will wait until the guest is reachable again, then continue."
+      )
+      @machine.guest.capability(:reboot)
+      # Marker is guest-local; clear after a successful reboot wait.
+      @machine.communicate.sudo("rm -f /var/lib/turbopanel-dev/reboot-pending")
+      remount_virtiofs_synced_folders
+    end
+
+    def guest_needs_reboot?
+      script = <<~'SCRIPT'
+        set -eu
+        if [ -f /var/lib/turbopanel-dev/reboot-pending ] || [ -f /var/run/reboot-required ]; then
+          echo TURBOPANEL_REBOOT=yes
+          exit 0
+        fi
+        running=$(uname -r)
+        newest=
+        if [ -d /boot ]; then
+          newest=$(ls -1 /boot/vmlinuz-* 2>/dev/null | sed 's|.*/vmlinuz-||' | sort -V | tail -n1 || true)
+        fi
+        if [ -n "$newest" ] && [ "$running" != "$newest" ]; then
+          echo TURBOPANEL_REBOOT=yes
+          exit 0
+        fi
+        echo TURBOPANEL_REBOOT=no
+      SCRIPT
+      out = +""
+      @machine.communicate.sudo(script) do |type, data|
+        out << data if type == :stdout
+      end
+      out.include?("TURBOPANEL_REBOOT=yes")
+    end
+
+    def remount_virtiofs_synced_folders
+      require "json"
+      require "shellwords"
+
+      path = @machine.data_dir.join("synced_folders")
+      unless path.file?
+        @machine.ui.warn(
+          "No synced_folders metadata; skipping VirtioFS remount after reboot."
+        )
+        return
+      end
+
+      folders = JSON.parse(path.read).fetch("virtiofs", {})
+      if folders.empty?
+        @machine.ui.info("No VirtioFS synced folders to remount.")
+        return
+      end
+
+      @machine.ui.info("Remounting VirtioFS synced folders after reboot…")
+      folders.each_value do |opts|
+        guestpath = opts["guestpath"]
+        tag = opts["mount_tag"]
+        next if guestpath.to_s.empty? || tag.to_s.empty?
+
+        # Quote for the remote shell; paths/tags are Vagrant-generated.
+        gp = Shellwords.escape(guestpath)
+        mt = Shellwords.escape(tag)
+        @machine.communicate.sudo("mkdir -p #{gp}")
+        @machine.communicate.sudo(
+          "findmnt -n -o FSTYPE #{gp} 2>/dev/null | grep -qx virtiofs || " \
+          "mount -t virtiofs #{mt} #{gp}"
+        )
+      end
+    end
+  end
+
+  class Plugin < Vagrant.plugin("2")
+    name "turbopanel_reboot_if_needed"
+    provisioner(:turbopanel_reboot_if_needed) { RebootIfNeeded }
+  end
+end
+
 Vagrant.configure("2") do |config|
   # Libvirt domain / Vagrant machine name — avoid directory_default (dev_default).
   config.vm.define "turbopanel-dev", primary: true
@@ -115,7 +212,9 @@ Vagrant.configure("2") do |config|
     libvirt.memorybacking :access, mode: "shared"
   end
 
-  config.vm.provision "shell", inline: <<~SHELL
+  # Package upgrades can leave a pending kernel; reboot (when needed) before
+  # the rest of guest setup so uname matches the installed linux-image.
+  config.vm.provision "shell", name: "system-upgrade", inline: <<~SHELL
     set -eu
 
     export DEBIAN_FRONTEND=noninteractive
@@ -139,6 +238,38 @@ Vagrant.configure("2") do |config|
       dist-upgrade
     apt-get -y autoremove
     apt-get install -y curl
+
+    install -d -m 0750 /var/lib/turbopanel-dev
+    needs_reboot=0
+    if [ -f /var/run/reboot-required ]; then
+      needs_reboot=1
+    fi
+    running=$(uname -r)
+    newest=
+    if [ -d /boot ]; then
+      newest=$(ls -1 /boot/vmlinuz-* 2>/dev/null | sed 's|.*/vmlinuz-||' | sort -V | tail -n1 || true)
+    fi
+    if [ -n "$newest" ] && [ "$running" != "$newest" ]; then
+      needs_reboot=1
+    fi
+    if [ "$needs_reboot" -eq 1 ]; then
+      printf '%s\n' "$running" > /var/lib/turbopanel-dev/reboot-pending
+      if [ -n "$newest" ]; then
+        printf '%s\n' "$newest" >> /var/lib/turbopanel-dev/reboot-pending
+      fi
+      echo ">>> System packages updated; a kernel/package reboot is pending"
+      echo ">>>   running kernel: ${running}"
+      echo ">>>   newest installed: ${newest:-unknown}"
+    else
+      rm -f /var/lib/turbopanel-dev/reboot-pending
+      echo ">>> System packages updated; running kernel is current (${running})."
+    fi
+  SHELL
+
+  config.vm.provision "turbopanel_reboot_if_needed"
+
+  config.vm.provision "shell", name: "guest-setup", inline: <<~SHELL
+    set -eu
 
     # ./console requires the dev user to be a member of the sudo/wheel/admin group
     # (scripts/lib/dev-prerequisites.sh: tp_dev_user_is_sudoer) — a direct sudoers
