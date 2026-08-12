@@ -1,0 +1,176 @@
+# frozen_string_literal: true
+
+# TurboPanel development VM (UTM on macOS).
+#
+# Preferred entry from a Mac host (boots the guest, then lands in the Ink console):
+#   ./scripts/vagrant-up.sh
+#
+# Mounts sibling checkouts from the host workspace (parent of this repo) into the
+# guest home so default TURBOPANEL_DEV_ROOT=$HOME matches bare-metal layout — this
+# is exactly where dev.turbopanel.sh + ./console would place them (confirmed against
+# the daemon's Ansible roles: source lives at "<dev_root>/<repo>" whenever
+# turbopanel_dev_user is set; /opt/turbopanel is vendor/bin/share only, never source).
+# Guest-only FHS paths (/etc|/var|/run|/opt/turbopanel) stay on the VM disk.
+#
+# Box is Debian 12 (utm/bookworm) until a Debian 13 / Trixie UTM box is published.
+
+GITHUB_HOST_DIR = File.join(__dir__, "..", ".github")
+
+Vagrant.configure("2") do |config|
+  config.vm.box = "utm/bookworm"
+  config.vm.hostname = "turbopanel-dev"
+
+  config.ssh.forward_agent = true
+
+  # Avoid a second mount of this repo at /vagrant; we sync into ~/dev instead.
+  config.vm.synced_folder ".", "/vagrant", disabled: true
+
+  config.vm.synced_folder ".", "/home/vagrant/dev"
+  config.vm.synced_folder "../daemon", "/home/vagrant/daemon"
+  config.vm.synced_folder "../instance", "/home/vagrant/instance"
+  config.vm.synced_folder "../ui", "/home/vagrant/ui"
+  config.vm.synced_folder "../website", "/home/vagrant/website"
+
+  # Optional: turbopanel/.github (community health files). Ansible's github-repo
+  # role auto-clones this to $HOME/.github via HTTPS when absent, so only mount
+  # it when you already have a sibling checkout to keep local edits in sync.
+  if Dir.exist?(GITHUB_HOST_DIR)
+    config.vm.synced_folder "../.github", "/home/vagrant/.github"
+  end
+
+  config.vm.network "forwarded_port", guest: 8443, host: 8443, host_ip: "127.0.0.1"
+  config.vm.network "forwarded_port", guest: 8880, host: 8880, host_ip: "127.0.0.1"
+
+  config.vm.provider "utm" do |u|
+    u.name = "turbopanel-dev"
+    u.cpus = 4
+    u.memory = 8192
+    u.directory_share_mode = "virtFS"
+  end
+
+  config.vm.provision "shell", inline: <<~SHELL
+    set -eu
+
+    export DEBIAN_FRONTEND=noninteractive
+
+    if ! command -v curl >/dev/null 2>&1; then
+      apt-get update -qq
+      apt-get install -y -qq curl
+    fi
+
+    # ./console requires the dev user to be a member of the sudo/wheel/admin group
+    # (scripts/lib/dev-prerequisites.sh: tp_dev_user_is_sudoer) — a direct sudoers
+    # NOPASSWD rule alone does not satisfy that check.
+    if ! id -nG vagrant | tr ' ' '\n' | grep -qx sudo; then
+      usermod -aG sudo vagrant
+    fi
+
+    # Passwordless sudo for the Vagrant user (local dev VM only).
+    SUDOERS=/etc/sudoers.d/turbopanel-dev-nopasswd
+    if [ ! -f "$SUDOERS" ]; then
+      cat >"$SUDOERS" <<'EOF'
+# TurboPanel development passwordless sudo for vagrant
+# Installed by turbopanel/dev Vagrantfile — remove this file to revert.
+vagrant ALL=(ALL) NOPASSWD: ALL
+EOF
+      chmod 440 "$SUDOERS"
+    fi
+
+    PROFILE=/etc/profile.d/turbopanel-vagrant.sh
+    cat >"$PROFILE" <<'EOF'
+# TurboPanel Vagrant guest defaults (sourced for login shells).
+# ./console also exports TURBOPANEL_MODE=development and repo paths under $HOME.
+export TURBOPANEL_MODE="${TURBOPANEL_MODE:-development}"
+EOF
+    chmod 644 "$PROFILE"
+
+    # pnpm 11's content-addressable store is SQLite-backed (WAL mode) and, with no
+    # explicit storeDir, is auto-placed inside whichever filesystem the project sits
+    # on — here that is a VirtFS/9p mount from the Mac host (~/dev, ~/daemon, ~/instance,
+    # ~/ui, ~/website are each their own 9p mount). SQLite's WAL requires shared-memory
+    # mmap that 9p/virtiofs doesn't support across the VM boundary, so installs fail
+    # with "[ERR_SQLITE_ERROR] disk I/O error". Force a guest-local (ext4) store instead.
+    #
+    # pnpm 11 also stopped reading pnpm-specific settings from .npmrc (auth/registry
+    # only now) — storeDir/packageImportMethod must go in the global YAML config.
+    install -d -o vagrant -g vagrant -m 0755 /var/lib/pnpm /var/lib/pnpm/store
+    install -d -o vagrant -g vagrant -m 0755 /home/vagrant/.config/pnpm
+    cat >/home/vagrant/.config/pnpm/config.yaml <<'EOF'
+storeDir: /var/lib/pnpm/store
+packageImportMethod: copy
+EOF
+    chown vagrant:vagrant /home/vagrant/.config/pnpm/config.yaml
+    chmod 644 /home/vagrant/.config/pnpm/config.yaml
+
+    # ARM64 + FUSE-backed filesystems (9p/virtiofs) don't invalidate the instruction
+    # cache for pages faulted in from mmap'd executable files, so native Node addons
+    # (esbuild, @rolldown/binding-*, lightningcss, …) SIGSEGV/SIGILL when node_modules
+    # lives directly on a VirtFS mount — even though the pnpm *store* is already local.
+    # Keep node_modules on guest-local ext4 via a symlink for every mounted repo that
+    # has a package.json; source stays on VirtFS for editing from the Mac.
+    NODE_MODULES_BASE=/var/lib/turbopanel-dev/node_modules
+    for repo in dev instance ui website; do
+      repo_dir="/home/vagrant/${repo}"
+      [ -f "${repo_dir}/package.json" ] || continue
+      target="${NODE_MODULES_BASE}/${repo}"
+      install -d -o vagrant -g vagrant -m 0755 "$target"
+      link="${repo_dir}/node_modules"
+      if [ -L "$link" ]; then
+        [ "$(readlink "$link")" = "$target" ] || ln -sfn "$target" "$link"
+      elif [ -e "$link" ]; then
+        rm -rf "$link"
+        ln -sn "$target" "$link"
+      else
+        ln -sn "$target" "$link"
+      fi
+      chown -h vagrant:vagrant "$link"
+    done
+
+    # 8 GiB swapfile when the root disk has room. Bookworm cloud images can be
+    # small; filling the disk with swap makes pnpm report "disk I/O error" from
+    # SQLite (typically ENOSPC). Keep a 12 GiB free reserve for vendor/runtimes.
+    SWAPFILE=/swapfile
+    SWAP_BYTES=$((8 * 1024 * 1024 * 1024))
+    ROOT_RESERVE=$((12 * 1024 * 1024 * 1024))
+    ROOT_AVAIL=$(df -B1 --output=avail / | tail -n 1 | tr -d ' ')
+    SWAP_CUR=0
+    if [ -f "$SWAPFILE" ]; then
+      SWAP_CUR=$(stat -c%s "$SWAPFILE" 2>/dev/null || echo 0)
+    fi
+    # Count existing swapfile size toward avail if we're about to rebuild it.
+    ROOT_EFFECTIVE=$ROOT_AVAIL
+    if [ "$SWAP_CUR" -gt 0 ] && [ "$SWAP_CUR" -ne "$SWAP_BYTES" ]; then
+      ROOT_EFFECTIVE=$((ROOT_AVAIL + SWAP_CUR))
+    fi
+    if [ "$ROOT_EFFECTIVE" -lt $((SWAP_BYTES + ROOT_RESERVE)) ]; then
+      echo "Skipping ${SWAP_BYTES}-byte swapfile: root has ${ROOT_AVAIL} bytes free (need ${SWAP_BYTES}+${ROOT_RESERVE})." >&2
+      if [ -f "$SWAPFILE" ]; then
+        swapoff "$SWAPFILE" 2>/dev/null || true
+        rm -f "$SWAPFILE"
+      fi
+      if grep -qE "^${SWAPFILE}[[:space:]]" /etc/fstab; then
+        # Drop the stale fstab line without leaving a partial match.
+        grep -vE "^${SWAPFILE}[[:space:]]" /etc/fstab >/etc/fstab.tp-new
+        mv /etc/fstab.tp-new /etc/fstab
+      fi
+    else
+      if [ "$SWAP_CUR" -ne "$SWAP_BYTES" ]; then
+        if [ -f "$SWAPFILE" ]; then
+          swapoff "$SWAPFILE" 2>/dev/null || true
+          rm -f "$SWAPFILE"
+        fi
+        if ! fallocate -l "$SWAP_BYTES" "$SWAPFILE" 2>/dev/null; then
+          dd if=/dev/zero of="$SWAPFILE" bs=1M count=8192 status=none
+        fi
+        chmod 600 "$SWAPFILE"
+        mkswap "$SWAPFILE" >/dev/null
+      fi
+      if ! grep -q "^${SWAPFILE} " /proc/swaps 2>/dev/null; then
+        swapon "$SWAPFILE"
+      fi
+      if ! grep -qE "^${SWAPFILE}[[:space:]]" /etc/fstab; then
+        printf '%s none swap sw 0 0\n' "$SWAPFILE" >>/etc/fstab
+      fi
+    fi
+  SHELL
+end

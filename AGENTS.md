@@ -21,9 +21,11 @@ on hosts where the native binary cannot load (e.g. some Raspberry Pi kernels wit
 model"). Deno is still installed for the **instance** stack (and mailer) via the
 `deno-runtime` Ansible role during dev converge.
 
-**Target host:** Debian 13 (Vagrant support planned).
+**Target host:** Debian 13 (Trixie) on bare metal; **macOS contributors** use **Vagrant + UTM** with guest box **`utm/bookworm`** (Debian 12) until a Trixie UTM box is available.
 
 **Bootstrap URL:** `dev.turbopanel.sh` (advertised one-liner; root serves `scripts/develop.sh` from the `trunk` branch of [turbopanel/dev](https://github.com/turbopanel/dev)). When piped (`curl … | sh`), `$0` is `sh` so local `scripts/lib/` is not on disk yet — the script downloads those libs from `raw.githubusercontent.com/turbopanel/dev` (override with `TURBOPANEL_DEV_LIB_BASE`) before clone.
+
+**Vagrant (macOS):** root [`Vagrantfile`](./Vagrantfile) + [`scripts/vagrant-up.sh`](./scripts/vagrant-up.sh). Provider is **UTM** only for now (`vagrant_utm` plugin). Synced folders map host siblings `../{daemon,instance,ui,website}` and this repo (`.`) to guest `$HOME/{dev,daemon,instance,ui,website}` (VirtFS) so default `TURBOPANEL_DEV_ROOT=$HOME` matches bare metal — confirmed against the daemon's Ansible roles (`daemon-launch`, `instance-launch`, etc.): source always resolves to `<dev_root>/<repo>` when `turbopanel_dev_user` is set, and `/opt/turbopanel` in dev holds **only** vendored runtimes, the production binary, and the built static UI — never source checkouts. `../.github` (community health files) mounts to `$HOME/.github` when present on the host; otherwise the `github-repo` Ansible role clones it inside the guest via HTTPS. FHS trees stay **guest-local**. The launcher does `vagrant up --provider=utm` then `vagrant ssh -t` into `./console` (not provisioned interactively). Ports `8443` / `8880` forward to the host. Other providers and Debian 13 boxes are future work.
 
 The current entrypoint is a minimal launcher only (full multi-screen console was removed during a rewrite).
 
@@ -44,11 +46,13 @@ time so the script stays a single source of truth. Canonical advertised host is
 
 ```
 ~/dev/                    # turbopanel/dev checkout (develop.sh clones here via TURBOPANEL_DEV_ROOT)
+├── Vagrantfile           # UTM guest: mounts + port forwards + light provision
 ├── console               # ensure Node, pnpm install, launch the TUI via vite-node
 ├── orchestration/        # Ansible dev overlay + development Caddyfile
 │   ├── Caddyfile         # co-located control-plane proxy (Expo, :8880, wrangler)
 │   └── expo-loading.html # Expo cold-start page served by the development Caddyfile
-├── scripts/develop.sh    # clone/update + exec ./console
+├── scripts/develop.sh    # clone/update + exec ./console (bare Debian)
+├── scripts/vagrant-up.sh # macOS: vagrant up then ssh into ./console
 ├── package.json          # Node project (pnpm, pinned via packageManager); ink + react + vite
 ├── src/tui.tsx           # Ink entrypoint
 └── …
@@ -57,6 +61,7 @@ time so the script stays a single source of truth. Canonical advertised host is
 ~/instance/               # TURBOPANEL_INSTANCE_REPO
 ~/ui/                     # TURBOPANEL_UI_REPO
 ~/website/                # TURBOPANEL_WEBSITE_REPO
+~/.github/                # turbopanel_github_dir (github-repo Ansible role; not a TURBOPANEL_*_REPO var)
 
 /opt/turbopanel/vendor/
 ├── node/current/bin/node   # pinned Node (installed by ./console + node-runtime role)
@@ -86,7 +91,8 @@ Node is a pinned `nodejs.org` tarball vendored under `/opt/turbopanel/vendor/nod
 
 | Script | Purpose |
 |--------|---------|
-| `curl -fsSL dev.turbopanel.sh \| sh` | Clone/update `~/dev` via SSH, then launch the TUI. |
+| `./scripts/vagrant-up.sh` | **macOS:** `vagrant up --provider=utm`, then SSH into guest `./console`. |
+| `curl -fsSL dev.turbopanel.sh \| sh` | **Bare Debian:** clone/update `~/dev` via SSH, then launch the TUI. |
 | `sh scripts/develop.sh` | Same when run from inside the repo to update the checkout. |
 | `./console` | Ensure pinned Node (sudo on first run), `pnpm install`, launch `src/tui.tsx` via `vite-node`. |
 | `./console --watch` | Same, but use `scripts/hot-reload.tsx` for live reload on `src/` changes. |
@@ -95,7 +101,15 @@ Node is a pinned `nodejs.org` tarball vendored under `/opt/turbopanel/vendor/nod
 | `./scripts/sync.sh` | Push `instance/src/lib/db/schema.ts` → live Postgres (drizzle-kit push; Deno dev convenience). |
 | `./scripts/introspect.sh` | Pull live Postgres → `instance/src/lib/db/schema.ts` (drizzle-kit introspect). |
 
-**Typical flow:**
+**Typical flow (macOS):**
+
+```bash
+# siblings: …/turbopanel/{dev,daemon,instance,ui,website}
+cd …/turbopanel/dev
+./scripts/vagrant-up.sh
+```
+
+**Typical flow (bare Debian):**
 
 ```bash
 curl -fsSL dev.turbopanel.sh | sh
@@ -105,6 +119,8 @@ curl -fsSL dev.turbopanel.sh | sh
 
 ## Responsibilities
 
+- **`scripts/vagrant-up.sh`** — host-side Mac entry: requires Vagrant + `vagrant_utm`, checks sibling checkouts, warns if the SSH agent looks empty, runs `vagrant up --provider=utm`, then `exec vagrant ssh -- -t` into `./console` on the guest. Does not provision the interactive TUI inside Vagrant (TTY must come from the host SSH session).
+- **`Vagrantfile`** — UTM provider config, VirtFS mounts of the five workspace repos plus optional `.github`, SSH agent forwarding, port forwards `8443`/`8880`, and idempotent shell provision (`curl`, passwordless sudo for `vagrant`, `/etc/profile.d/turbopanel-vagrant.sh`, pnpm's `~/.config/pnpm/config.yaml` pointing `storeDir` at guest-local `/var/lib/pnpm/store`, per-repo `node_modules` symlinks into `/var/lib/turbopanel-dev/node_modules/<repo>`, 8 GiB `/swapfile`). Does not clone platform repos or run `./console`. Why the `node_modules` symlinks: on ARM64, FUSE-backed filesystems (9p/virtiofs, which is how UTM VirtFS is implemented) don't invalidate the instruction cache for pages faulted in from mmap'd executable files, so native Node addons (esbuild, `@rolldown/binding-*`, lightningcss, ...) crash with `SIGSEGV`/`SIGILL` when `node_modules` lives directly on the VirtFS mount — the pnpm store already being local isn't enough, since `packageImportMethod: copy` still writes the actual files into `node_modules` on the mount. The provisioner runs for every mounted repo with a `package.json` (`dev`, `instance`, `ui`, `website`; `daemon` has none) and is idempotent across `vagrant provision` re-runs.
 - **`scripts/develop.sh`** — clones/updates **only** [turbopanel/dev](https://github.com/turbopanel/dev) via `git@github.com:turbopanel/dev.git` into `~/dev`. Requires **`curl`**, **`sudo`**, and a **sudo-capable development user** before it runs (`scripts/lib/dev-prerequisites.sh`). On first run, prompts for git `user.name` and `user.email`, generates `~/.ssh/id_ed25519` if missing, configures SSH commit signing, and verifies GitHub SSH before cloning. May use sudo for `git` / `openssh-client` apt installs. Uses `tp_is_interactive()` so `curl | sh` works when a controlling terminal is available (`/dev/tty`).
 - **`console`** — runs the prerequisite check, ensures pinned **Node** (`/opt/turbopanel/vendor/node/current/bin/node`, runs this repo) is installed, enables Corepack/pnpm, runs `pnpm install`, and launches the Ink TUI via `vite-node`. Add `--watch` to use `scripts/hot-reload.tsx`, which keeps the Ink process alive and rerenders when imported `src/` modules change. When stdin/stdout/stderr are not TTYs (e.g. after `exec` from a piped bootstrap), reattaches stdio to `/dev/tty` when `tp_is_interactive()` succeeds. Does **not** install Deno via `./console` itself (Deno bootstrap is via `ensureBootstrapDeno` during daemon install).
 - **`src/tui.tsx`** — minimal Ink app: full-height shell with a one-row `MenuBar`, a bordered `MainPanel`, and a one-row `StatusBar`. `← →` switches areas; Ctrl-C exits. Uses `alternateScreen`. No stack orchestration or platform install yet — rebuild features in `src/` incrementally.

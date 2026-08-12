@@ -7,6 +7,9 @@ node_modules/
 # Local Ansible state (committed config lives under orchestration/)
 .ansible/
 
+# Vagrant machine state (UTM guest; Vagrantfile is committed)
+.vagrant/
+
 # env and secret-bearing dotenv variants
 .env
 .env.*
