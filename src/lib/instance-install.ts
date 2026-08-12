@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { formatAnsibleHostFailure } from "./ansible-failure.ts";
 import { writeDaemonInstanceEnv } from "./daemon-env.ts";
 import {
   enableAndStartDaemon,
@@ -33,21 +34,6 @@ const DAEMON_DIR = daemonRepoPath();
 
 export const DEV_ENV_CONVERGE_STEP = "Converge development environment (Ansible)";
 
-function collectAnsibleHostMessages(hosts: unknown): string[] {
-  if (typeof hosts !== "object" || hosts === null) {
-    return [];
-  }
-
-  const messages: string[] = [];
-  for (const result of Object.values(hosts as Record<string, Record<string, unknown>>)) {
-    const msg = result.msg;
-    if (typeof msg === "string" && msg.length > 0) {
-      messages.push(msg);
-    }
-  }
-  return messages;
-}
-
 function extractAnsibleTaskName(task: unknown): string | undefined {
   if (typeof task !== "object" || task === null) {
     return undefined;
@@ -65,7 +51,11 @@ function extractAnsibleFailureMessage(event: unknown): string | null {
     return null;
   }
 
-  const detail = collectAnsibleHostMessages(record.hosts).join("; ");
+  const hosts = record.hosts;
+  const detail =
+    typeof hosts === "object" && hosts !== null
+      ? formatAnsibleHostFailure(hosts as Record<string, Record<string, unknown>>)
+      : "";
   const taskName = extractAnsibleTaskName(record.task);
   if (taskName && detail) {
     return `${taskName}: ${detail}`;

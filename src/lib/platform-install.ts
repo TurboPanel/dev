@@ -54,33 +54,23 @@ function daemonCheckoutExists(target: string): boolean {
   return existsSync(target);
 }
 
+/**
+ * True when `target` looks like a runnable daemon source tree.
+ *
+ * Matches the daemon's `detectInstallMode()` markers (`main.ts` or
+ * `orchestration/ansible.cfg`). Used so Vagrant VirtFS mounts (and other
+ * host-managed checkouts) can be accepted without requiring a working `.git`
+ * directory — guest Git often rejects those mounts via `safe.directory`.
+ */
+export function isUsableDaemonCheckout(target: string): boolean {
+  return (
+    existsSync(`${target}/main.ts`) ||
+    existsSync(`${target}/orchestration/ansible.cfg`)
+  );
+}
+
 function isGitRepo(path: string): boolean {
   return runGitCapture(["-C", path, "rev-parse", "--git-dir"]).success;
-}
-
-function hasUncommittedChanges(path: string): boolean {
-  const result = runGitCapture(["-C", path, "status", "--porcelain"]);
-  if (!result.success) {
-    return true;
-  }
-  return result.stdout.length > 0;
-}
-
-async function ensureOriginUrl(
-  path: string,
-  url: string,
-  onOutput?: InstallOutputHandler,
-): Promise<void> {
-  const result = runGitCapture(["-C", path, "remote", "get-url", "origin"]);
-  if (!result.success) {
-    return;
-  }
-
-  if (result.stdout === url) {
-    return;
-  }
-
-  await runGit(["-C", path, "remote", "set-url", "origin", url], onOutput);
 }
 
 async function ensureGit(
@@ -148,57 +138,49 @@ export function ensureAllGitHooksPaths(onStep?: InstallStepHandler): void {
   }
 }
 
-async function cloneOrUpdateRepo(
+/**
+ * Ensure the daemon source checkout is present and usable.
+ *
+ * - Missing path → clone (bare-metal / first-time hosts without a sibling tree).
+ * - Existing usable tree → use as-is. Vagrant VirtFS mounts and pre-cloned
+ *   siblings are the source of truth; do not clone or pull from the guest.
+ *   Guest Git may also refuse mounted trees via `safe.directory`, so a working
+ *   `.git` is not required when the tree already looks like the daemon.
+ */
+async function ensureDaemonCheckout(
   dir: string,
   repo: string,
   onStep?: InstallStepHandler,
   onOutput?: InstallOutputHandler,
-): Promise<"cloned" | "updated" | "skipped"> {
+): Promise<"cloned" | "present"> {
   const target = platformRepoPath(dir);
-  const url = sshRepoUrl(repo);
 
-  if (!daemonCheckoutExists(target)) {
-    onStep?.(`Clone ${dir}`, "running");
-    // The checkout lives under the dev user's home, which the dev user owns —
-    // create the parent and clone directly (no sudo/service-user dance).
-    mkdirSync(dirname(target), { recursive: true });
-    const code = await runGit(
-      ["clone", "--branch", TURBOPANEL_TRUNK_BRANCH, url, target],
-      onOutput,
-    );
-    if (code !== 0) {
-      onStep?.(`Clone ${dir}`, "failed");
-      throw new Error(`Failed to clone ${dir}`);
+  if (daemonCheckoutExists(target)) {
+    if (!isUsableDaemonCheckout(target)) {
+      throw new Error(
+        `${target} exists but is not a usable daemon checkout (expected main.ts or orchestration/ansible.cfg)`,
+      );
     }
-    onStep?.(`Clone ${dir}`, "ok");
     ensureRepoGitHooksPath(target, onStep);
-    return "cloned";
+    onStep?.(`Use existing ${dir} checkout`, "ok");
+    return "present";
   }
 
-  if (!isGitRepo(target)) {
-    throw new Error(`${target} exists but is not a git repository`);
-  }
-
-  await ensureOriginUrl(target, url, onOutput);
-
-  if (hasUncommittedChanges(target)) {
-    ensureRepoGitHooksPath(target, onStep);
-    onStep?.(`Update ${dir} (skipped — uncommitted changes)`, "ok");
-    return "skipped";
-  }
-
-  onStep?.(`Update ${dir}`, "running");
+  onStep?.(`Clone ${dir}`, "running");
+  // The checkout lives under the dev user's home, which the dev user owns —
+  // create the parent and clone directly (no sudo/service-user dance).
+  mkdirSync(dirname(target), { recursive: true });
   const code = await runGit(
-    ["-C", target, "pull", "--ff-only", "origin", TURBOPANEL_TRUNK_BRANCH],
+    ["clone", "--branch", TURBOPANEL_TRUNK_BRANCH, sshRepoUrl(repo), target],
     onOutput,
   );
   if (code !== 0) {
-    onStep?.(`Update ${dir}`, "failed");
-    throw new Error(`Failed to update ${dir}`);
+    onStep?.(`Clone ${dir}`, "failed");
+    throw new Error(`Failed to clone ${dir}`);
   }
-  onStep?.(`Update ${dir}`, "ok");
+  onStep?.(`Clone ${dir}`, "ok");
   ensureRepoGitHooksPath(target, onStep);
-  return "updated";
+  return "cloned";
 }
 
 export async function installDaemon(
@@ -208,7 +190,7 @@ export async function installDaemon(
   await ensureGit(onStep, onOutput);
 
   const { dir, repo } = DAEMON_REPO;
-  await cloneOrUpdateRepo(dir, repo, onStep, onOutput);
+  await ensureDaemonCheckout(dir, repo, onStep, onOutput);
   ensureAllGitHooksPaths(onStep);
   onStep?.("Daemon repository ready", "ok");
 }

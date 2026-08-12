@@ -1,6 +1,7 @@
 import { useCallback, useState } from "react";
 import type { AnsibleTaskRow } from "@turbopanel/components/ansible-task-list.tsx";
 import { parseDevConvergeSkippedEvent } from "../lib/dev-converge-skip-event.ts";
+import { formatAnsibleHostFailure } from "../lib/ansible-failure.ts";
 import { CONSOLE_LAST_TASK_ERROR_LOG } from "../lib/paths.ts";
 import { writeTaskErrorLog } from "../lib/task-error-log.ts";
 
@@ -32,17 +33,6 @@ function parseTaskName(full: string): { role: string | null; task: string } {
 function taskLabel(full: string): string {
   const { role, task } = parseTaskName(full);
   return role ? `${role} › ${task}` : task;
-}
-
-function hostMessages(hosts: Record<string, Record<string, unknown>>): string {
-  const messages: string[] = [];
-  for (const result of Object.values(hosts)) {
-    const msg = result.msg;
-    if (typeof msg === "string" && msg.length > 0) {
-      messages.push(msg);
-    }
-  }
-  return messages.join("; ");
 }
 
 function buildRecap(stats: Record<string, Record<string, number>>): string {
@@ -270,7 +260,7 @@ export function useAnsibleEvents() {
         return;
       }
 
-      const message = hosts ? hostMessages(hosts) : "task failed";
+      const message = hosts ? formatAnsibleHostFailure(hosts) : "task failed";
       setTasks((current) =>
         upsertTask(current, {
           id,

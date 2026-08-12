@@ -81,6 +81,9 @@ EOF
 # TurboPanel Vagrant guest defaults (sourced for login shells).
 # ./console also exports TURBOPANEL_MODE=development and repo paths under $HOME.
 export TURBOPANEL_MODE="${TURBOPANEL_MODE:-development}"
+# Apple Silicon hypervisors (UTM) often advertise SVE2 without implementing it;
+# cryptography 47+ / OpenSSL then SIGILL on ansible-playbook. Harmless elsewhere.
+export OPENSSL_armcap="${OPENSSL_armcap:-0}"
 EOF
     chmod 644 "$PROFILE"
 
@@ -106,25 +109,67 @@ EOF
     # cache for pages faulted in from mmap'd executable files, so native Node addons
     # (esbuild, @rolldown/binding-*, lightningcss, …) SIGSEGV/SIGILL when node_modules
     # lives directly on a VirtFS mount — even though the pnpm *store* is already local.
-    # Keep node_modules on guest-local ext4 via a symlink for every mounted repo that
-    # has a package.json; source stays on VirtFS for editing from the Mac.
-    NODE_MODULES_BASE=/var/lib/turbopanel-dev/node_modules
-    for repo in dev instance ui website; do
-      repo_dir="/home/vagrant/${repo}"
-      [ -f "${repo_dir}/package.json" ] || continue
-      target="${NODE_MODULES_BASE}/${repo}"
-      install -d -o vagrant -g vagrant -m 0755 "$target"
-      link="${repo_dir}/node_modules"
-      if [ -L "$link" ]; then
-        [ "$(readlink "$link")" = "$target" ] || ln -sfn "$target" "$link"
-      elif [ -e "$link" ]; then
-        rm -rf "$link"
-        ln -sn "$target" "$link"
-      else
-        ln -sn "$target" "$link"
-      fi
-      chown -h vagrant:vagrant "$link"
-    done
+    # Keep node_modules on guest-local ext4 via a bind mount for every mounted repo
+    # that has a package.json; source stays on VirtFS for editing from the Mac.
+    # A symlink is not enough: Next.js Turbopack rejects node_modules that points
+    # outside the project ("Symlink … is invalid, it points out of the filesystem
+    # root"), and Node ESM/CJS realpath walks miss packages unless the physical
+    # path ends in /node_modules (drizzle-kit → drizzle-orm; Tamagui → typescript).
+    # Ansible *-repo roles must probe a nested package (drizzle-kit / expo / next),
+    # not the mount point — this directory starts empty.
+    install -d -o root -g root -m 0750 /usr/local/sbin
+    cat >/usr/local/sbin/tp-bind-node-modules <<'BINDSCRIPT'
+#!/bin/sh
+set -eu
+NODE_MODULES_BASE=/var/lib/turbopanel-dev/node_modules
+for repo in dev instance ui website; do
+  repo_dir="/home/vagrant/${repo}"
+  [ -f "${repo_dir}/package.json" ] || continue
+  store="${NODE_MODULES_BASE}/${repo}"
+  target="${store}/node_modules"
+  if [ -e "${store}/.pnpm" ] && [ ! -e "${target}/.pnpm" ]; then
+    # A running ./console holds the flat `dev` tree; wiping it unloads Ink.
+    if [ "$repo" = "dev" ] && pgrep -u vagrant -f 'vite-node|hot-reload' >/dev/null 2>&1; then
+      continue
+    fi
+    rm -rf "${store}"
+  fi
+  install -d -o vagrant -g vagrant -m 0755 "$target"
+  link="${repo_dir}/node_modules"
+  if mountpoint -q "$link" 2>/dev/null; then
+    continue
+  fi
+  if [ -L "$link" ]; then
+    rm -f "$link"
+  elif [ -e "$link" ] && [ ! -d "$link" ]; then
+    rm -f "$link"
+  fi
+  if [ ! -d "$link" ]; then
+    mkdir -p "$link"
+    chown vagrant:vagrant "$link" || true
+  fi
+  mount --bind "$target" "$link"
+done
+BINDSCRIPT
+    chmod 0750 /usr/local/sbin/tp-bind-node-modules
+    cat >/etc/systemd/system/turbopanel-virtfs-node-modules.service <<'UNIT'
+[Unit]
+Description=Bind guest-local node_modules over VirtFS checkouts
+DefaultDependencies=no
+After=remote-fs.target
+Before=turbopanel-ui.service turbopanel-website.service turbopanel-instance.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/tp-bind-node-modules
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+    chmod 0640 /etc/systemd/system/turbopanel-virtfs-node-modules.service
+    systemctl daemon-reload
+    systemctl enable --now turbopanel-virtfs-node-modules.service
 
     # 8 GiB swapfile when the root disk has room. Bookworm cloud images can be
     # small; filling the disk with swap makes pnpm report "disk I/O error" from

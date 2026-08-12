@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { formatAnsibleHostFailure } from "../lib/ansible-failure.ts";
 import { resolveDevConvergeSkippedUi } from "./use-ansible-events.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -37,6 +38,49 @@ describe("resolveDevConvergeSkippedUi", () => {
         reason: 12,
       }),
     ).toBeNull();
+  });
+});
+
+describe("formatAnsibleHostFailure", () => {
+  it("appends stderr when Ansible only reports non-zero return code", () => {
+    expect(
+      formatAnsibleHostFailure({
+        localhost: {
+          msg: "non-zero return code",
+          stderr: "bootstrap-dev-db: missing drizzle-kit — run pnpm install\n",
+        },
+      }),
+    ).toBe(
+      "non-zero return code\nbootstrap-dev-db: missing drizzle-kit — run pnpm install",
+    );
+  });
+
+  it("falls back to stdout when stderr is empty", () => {
+    expect(
+      formatAnsibleHostFailure({
+        localhost: {
+          msg: "non-zero return code",
+          stdout: "pnpm migrate failed",
+        },
+      }),
+    ).toBe("non-zero return code\npnpm migrate failed");
+  });
+
+  it("returns task failed when the host result has no text", () => {
+    expect(formatAnsibleHostFailure({ localhost: {} })).toBe("task failed");
+  });
+
+  it("surfaces drizzle-kit stderr when msg is only non-zero return code", () => {
+    expect(
+      formatAnsibleHostFailure({
+        localhost: {
+          msg: "non-zero return code",
+          stderr: "Please install latest version of drizzle-orm\n",
+        },
+      }),
+    ).toBe(
+      "non-zero return code\nPlease install latest version of drizzle-orm",
+    );
   });
 });
 

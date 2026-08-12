@@ -2,6 +2,10 @@
 # Co-located dev only — prepend vendored Deno (vendor/deno/current) to shells.
 # deno-runtime refreshes the current symlink on converge; these snippets only
 # reference that stable path.
+#
+# Bash / login sh always get /etc/profile.d. Zsh drop-ins run only when zsh is
+# installed — Debian/Vagrant images often ship bash only, and /etc/zsh/zshenv
+# is a zsh-package conffile (do not create it on zsh-less hosts).
 - name: Install dev vendored Deno PATH snippet for login shells
   when: turbopanel_dev_user | length > 0
   ansible.builtin.copy:
@@ -22,18 +26,27 @@
       fi
       unset _tpd_deno
 
+- name: Check whether zsh is installed
+  ansible.builtin.stat:
+    path: /usr/bin/zsh
+  register: _dev_zsh
+
 - name: Ensure zsh zshenv.d directory exists
-  when: turbopanel_dev_user | length > 0
+  when:
+    - turbopanel_dev_user | length > 0
+    - _dev_zsh.stat.exists
   ansible.builtin.file:
     path: /etc/zsh/zshenv.d
     state: directory
     owner: root
     group: root
-    # zsh sources zshenv.d for every zsh invocation (interactive + scripts).
+    # Sourced from /etc/zsh/zshenv (Debian does not auto-load zshenv.d).
     mode: "0755"
 
 - name: Install dev vendored Deno PATH snippet for zsh
-  when: turbopanel_dev_user | length > 0
+  when:
+    - turbopanel_dev_user | length > 0
+    - _dev_zsh.stat.exists
   ansible.builtin.copy:
     dest: /etc/zsh/zshenv.d/turbopanel-dev-deno
     owner: root
@@ -52,9 +65,15 @@
       unset _tpd_deno
 
 - name: Ensure system zshenv sources vendored Deno drop-ins
-  when: turbopanel_dev_user | length > 0
+  when:
+    - turbopanel_dev_user | length > 0
+    - _dev_zsh.stat.exists
   ansible.builtin.blockinfile:
     path: /etc/zsh/zshenv
+    create: true
+    owner: root
+    group: root
+    mode: "0644"
     marker: "# {mark} TurboPanel dev vendored Deno PATH"
     block: |
       if [[ -d /etc/zsh/zshenv.d ]]; then
@@ -63,6 +82,14 @@
         done
         unset _tp_zshenv
       fi
+
+- name: Remove zsh Deno PATH drop-in when zsh is not installed
+  when:
+    - turbopanel_dev_user | length > 0
+    - not _dev_zsh.stat.exists
+  ansible.builtin.file:
+    path: /etc/zsh/zshenv.d/turbopanel-dev-deno
+    state: absent
 
 - name: Remove retired zshrc.d Deno snippet
   when: turbopanel_dev_user | length > 0

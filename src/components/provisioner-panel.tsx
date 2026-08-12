@@ -253,7 +253,7 @@ function useProvisionerPhaseEffects(opts: {
     let cancelled = false;
 
     void (async () => {
-      let currentStep = "Clone daemon repository";
+      let currentStep = "Ensure daemon repository";
       // True only while bootstrapOrchestration() is in flight: that single call covers
       // four displayed steps (uv/python/ansible/converge), so on failure we must consult
       // bootstrapPhase.current to find which of the four actually failed. Outside that

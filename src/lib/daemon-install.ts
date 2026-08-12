@@ -44,6 +44,9 @@ function bootstrapEnv(): string[] {
     "UV_NO_MODIFY_PATH=1",
     "UV_PYTHON_DOWNLOADS=automatic",
     "UV_VENV_CLEAR=1",
+    // Match daemon runtimeEnv(): cryptography 47+ SIGILLs on Apple Silicon VMs
+    // that advertise SVE2 without implementing it (UTM). Harmless elsewhere.
+    "OPENSSL_armcap=0",
   ];
 }
 
