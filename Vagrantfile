@@ -44,6 +44,11 @@ GITHUB_HOST_DIR = File.join(__dir__, "..", ".github")
 # VirtioFS mounts are applied once during `vagrant up` / `reload` and are NOT
 # restored automatically after a mid-provision reboot — without remounting,
 # ~/dev (and siblings) stay as empty guest-local mount-point directories.
+#
+# Libvirt `forwarded_port` is implemented as host-side SSH `-L` tunnels that
+# also die on guest reboot. `EnsureLibvirtPortForwards` (run: always) clears
+# stale tunnel pids and re-invokes vagrant-libvirt's ForwardPorts action so
+# localhost/LAN binds (8443, …) come back after provision.
 module TurbopanelVagrant
   class RebootIfNeeded < Vagrant.plugin("2", :provisioner)
     def provision
@@ -128,9 +133,89 @@ module TurbopanelVagrant
     end
   end
 
+  # vagrant-libvirt keeps one SSH `-L` process per forwarded_port. Mid-provision
+  # (or later guest) reboots close those sessions; this restores them.
+  class EnsureLibvirtPortForwards < Vagrant.plugin("2", :provisioner)
+    def provision
+      return unless @machine.provider_name.to_s == "libvirt"
+
+      expected = forwarded_host_ports
+      if expected.empty?
+        @machine.ui.info("No forwarded ports configured; skipping libvirt tunnel check.")
+        return
+      end
+
+      if libvirt_port_forwards_healthy?(expected)
+        @machine.ui.info(
+          "Libvirt SSH port forwards already active (#{expected.join(', ')})."
+        )
+        return
+      end
+
+      clear_cls = libvirt_action(:ClearForwardedPorts)
+      forward_cls = libvirt_action(:ForwardPorts)
+      if clear_cls.nil? || forward_cls.nil?
+        @machine.ui.warn(
+          "vagrant-libvirt port-forward actions unavailable; " \
+          "run `vagrant reload` to restore host binds (8443, 8880, …)."
+        )
+        return
+      end
+
+      @machine.ui.warn(
+        "Libvirt SSH port forwards missing or dead after guest lifecycle — " \
+        "re-establishing host binds (#{expected.join(', ')})…"
+      )
+      env = { machine: @machine, ui: @machine.ui }
+      noop = ->(_env) {}
+      clear_cls.new(noop, env).call(env)
+      forward_cls.new(noop, env).call(env)
+    end
+
+    def forwarded_host_ports
+      ports = []
+      @machine.config.vm.networks.each do |type, options|
+        next unless type == :forwarded_port
+        next if options[:disabled]
+        next if options[:protocol].to_s == "udp"
+        # Match vagrant-libvirt: skip the auto ssh forward unless enabled.
+        if options[:id].to_s == "ssh" &&
+           !@machine.provider_config.forward_ssh_port
+          next
+        end
+
+        host = options[:host]
+        ports << host.to_i if host
+      end
+      ports.sort.uniq
+    end
+
+    def libvirt_port_forwards_healthy?(expected_ports)
+      pid_dir = @machine.data_dir.join("pids")
+      expected_ports.all? do |host_port|
+        pid_file = pid_dir.join("ssh_#{host_port}.pid")
+        next false unless pid_file.file?
+
+        pid = pid_file.read.strip
+        next false if pid.empty?
+        next false unless pid.match?(/\A\d+\z/)
+
+        cmd = `ps -o command= #{pid} 2>/dev/null`.strip
+        cmd.match?(/\bssh\b/)
+      end
+    end
+
+    def libvirt_action(name)
+      VagrantPlugins::ProviderLibvirt::Action.const_get(name)
+    rescue NameError
+      nil
+    end
+  end
+
   class Plugin < Vagrant.plugin("2")
-    name "turbopanel_reboot_if_needed"
+    name "turbopanel_vagrant"
     provisioner(:turbopanel_reboot_if_needed) { RebootIfNeeded }
+    provisioner(:turbopanel_ensure_libvirt_port_forwards) { EnsureLibvirtPortForwards }
   end
 end
 
@@ -166,6 +251,10 @@ Vagrant.configure("2") do |config|
   #   8088  optional extra forward (guest must listen)
   #   19820 website (Next.js)
   #   4983  Drizzle Studio
+  #
+  # Libvirt implements these as SSH `-L` tunnels (not QEMU hostfwd). 
+  # `gateway_ports: true` is a vagrant-libvirt option that passes ssh `-g` so
+  # non-localhost clients can use the 0.0.0.0 bind; UTM ignores the key.
   [
     [8443, 8443],
     [8880, 8880],
@@ -175,7 +264,8 @@ Vagrant.configure("2") do |config|
     config.vm.network "forwarded_port",
                       guest: guest_port,
                       host: host_port,
-                      host_ip: "0.0.0.0"
+                      host_ip: "0.0.0.0",
+                      gateway_ports: true
   end
 
   # Drizzle Studio deliberately binds guest loopback because its database
@@ -452,4 +542,9 @@ UNIT
       fi
     fi
   SHELL
+
+  # After guest-setup (and after any mid-provision reboot), restore libvirt SSH
+  # port-forward tunnels when they are missing/dead. `run: "always"` so a later
+  # `vagrant provision` also heals host binds without a full reload.
+  config.vm.provision "turbopanel_ensure_libvirt_port_forwards", run: "always"
 end
