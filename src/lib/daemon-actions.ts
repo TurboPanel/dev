@@ -18,6 +18,7 @@ export type DaemonActionId =
   | "restart"
   | "purge"
   | "start-dev-env"
+  | "optional-services"
   | "reset-dev-env"
   | "reset-dev-db"
   | "toggle-cell-trace"
@@ -35,6 +36,7 @@ export const DAEMON_ACTION_LABELS: Record<DaemonActionId, string> = {
   restart: "Restart",
   purge: "Purge completely",
   "start-dev-env": "Converge / re-converge development environment",
+  "optional-services": "Optional services…",
   "reset-dev-env": "Reset development environment",
   "reset-dev-db": "Reset dev database",
   "toggle-cell-trace": "Toggle verbose cell trace",
@@ -57,6 +59,7 @@ export function developerMenuActions(status: DevServiceStatus | undefined): Daem
   const actions: DaemonActionId[] = [
     "repair",
     "start-dev-env",
+    "optional-services",
     "reset-dev-env",
     "reset-dev-db",
     "run-tests",

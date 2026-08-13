@@ -74,12 +74,15 @@ export type DevEnvStartupPlan = {
   reasons: string[];
 };
 
-/** Env var that disables auto-converge on console launch (any non-empty value). */
+/**
+ * Legacy env var — auto-converge on launch is always off; this flag is retained
+ * only so older docs/scripts that set it stay harmless.
+ */
 export const CONSOLE_NO_AUTO_CONVERGE_ENV = "TURBOPANEL_CONSOLE_NO_AUTO_CONVERGE";
 
 /**
  * True when {@link CONSOLE_NO_AUTO_CONVERGE_ENV} is set to any non-empty value.
- * Bootstrap-on-missing-prereqs is unaffected; only auto-converge is skipped.
+ * Launch never auto-converges; prefer Developer → Converge instead.
  */
 export function isConsoleAutoConvergeDisabled(
   env: NodeJS.ProcessEnv = process.env,
@@ -88,18 +91,17 @@ export function isConsoleAutoConvergeDisabled(
 }
 
 /**
- * Resolve whether the console should full-bootstrap, re-converge, or sit idle
- * for the co-located development environment.
+ * Resolve whether the console should full-bootstrap or sit idle on launch.
  *
  * Pure/synchronous — all probes are sync filesystem or systemctl checks.
- * Informative stamp / instance-enabled notes are appended when converging;
- * fast-skip of already-converged hosts is handled server-side later via
- * `instance-dev-install --if-needed`. Set
- * {@link CONSOLE_NO_AUTO_CONVERGE_ENV} to skip auto-converge on launch.
+ * Missing checkout / Deno / ansible / turbopaneld unit → **bootstrap**.
+ * Otherwise → **idle** (no auto-converge). Operators converge explicitly via
+ * Developer → Converge / re-converge (optional-services picker first).
+ * Post-bootstrap still chains into converge via `handleDaemonInstallDone`.
  */
 export function resolveDevEnvStartupPlan(
   probe: DevEnvReadinessProbe = defaultDevEnvReadinessProbe,
-  env: NodeJS.ProcessEnv = process.env,
+  _env: NodeJS.ProcessEnv = process.env,
 ): DevEnvStartupPlan {
   const reasons: string[] = [];
 
@@ -120,11 +122,6 @@ export function resolveDevEnvStartupPlan(
     return { action: "bootstrap", reasons };
   }
 
-  if (isConsoleAutoConvergeDisabled(env)) {
-    reasons.push(`${CONSOLE_NO_AUTO_CONVERGE_ENV} set`);
-    return { action: "idle", reasons };
-  }
-
   if (probe.hasDevConvergeStamp()) {
     reasons.push("dev converge previously completed");
   } else {
@@ -137,5 +134,6 @@ export function resolveDevEnvStartupPlan(
     reasons.push("dev instance opt-in not set");
   }
 
-  return { action: "converge", reasons };
+  reasons.push("auto-converge disabled — use Developer → Converge");
+  return { action: "idle", reasons };
 }

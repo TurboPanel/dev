@@ -5,7 +5,7 @@ import { isManagedService } from "../lib/service-actions.ts";
 import { serviceSupportsOpen } from "../lib/service-urls.ts";
 import { BORDER_COLOR } from "../theme.ts";
 
-import type { PendingRestart, DeveloperView } from "../hooks/use-console-app.ts";
+import type { PendingRestart, PendingOptionalServices, DeveloperView } from "../hooks/use-console-app.ts";
 
 function serviceActionHints(selectedServiceId?: string | null): string {
   if (!selectedServiceId || !isManagedService(selectedServiceId)) {
@@ -34,7 +34,13 @@ export function statusHints(
   restartInProgress?: string | null,
   devEnvConverging?: boolean,
   developerView?: DeveloperView,
+  pendingOptionalServices?: PendingOptionalServices | null,
 ): string {
+  if (pendingOptionalServices) {
+    return pendingOptionalServices.mode === "converge"
+      ? "↑ ↓ · Space toggle · Enter continue · Esc cancel · auto in 5s · Ctrl-C exit"
+      : "↑ ↓ · Space toggle · Enter apply · Esc cancel · Ctrl-C exit";
+  }
   if (activeAreaId === "services") {
     if (devEnvConverging) {
       return "Converging development environment · watch tasks · Ctrl-C exit";

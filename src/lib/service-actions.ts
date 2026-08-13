@@ -52,6 +52,7 @@ const OPEN_START_UNITS: Record<string, string> = {
   dbstudio: "turbopanel-dbstudio",
   smtp: "turbopanel-mailpit",
   redisinsight: "turbopanel-redis-insight",
+  tabix: "turbopanel-tabix",
 };
 
 const OPEN_START_CONTAINERS: Record<string, string> = {
@@ -71,6 +72,7 @@ const MANAGED_SERVICE_IDS = new Set([
   "queue",
   "smtp",
   "analytics",
+  "tabix",
 ]);
 
 function systemctlProperty(unit: string, property: string): string | null {

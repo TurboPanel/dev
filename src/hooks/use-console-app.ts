@@ -25,6 +25,12 @@ import type { ServiceLogByteFloor } from "../lib/service-log.ts";
 import { readServiceLogFileStat } from "../lib/service-log.ts";
 import type { DaemonOperation } from "../lib/spinners.ts";
 import { refreshDevPermissionsQuietly } from "../lib/turbopanel-permissions.ts";
+import {
+  applyOptionalDevServices,
+  readOptionalDevServices,
+  type OptionalDevServiceSelection,
+} from "../lib/optional-dev-services.ts";
+import type { OptionalServicesModalMode } from "../components/optional-services-modal.tsx";
 import { useDevEnvConverge } from "./use-dev-env-converge.ts";
 import { useVisibleServices } from "./use-visible-services.ts";
 
@@ -40,28 +46,27 @@ export type PendingRestart = {
   label: string;
 };
 
-function initialDaemonOperation(
-  shouldAutoInstall: boolean,
-  shouldAutoConverge: boolean,
-): DaemonOperation | null {
+export type PendingOptionalServices = {
+  mode: OptionalServicesModalMode;
+  /** When mode is converge, which installDevEnvironment mode to run after confirm. */
+  convergeMode?: "if-needed" | "force";
+  selection: OptionalDevServiceSelection;
+};
+
+function initialDaemonOperation(shouldAutoInstall: boolean): DaemonOperation | null {
   if (shouldAutoInstall) {
     return "install";
-  }
-  if (shouldAutoConverge) {
-    return "dev-env";
   }
   return null;
 }
 
 function initialAutoInstallState(): {
   shouldAutoInstall: boolean;
-  shouldAutoConverge: boolean;
   selectedServiceIndex: number;
 } {
   const plan = resolveDevEnvStartupPlan();
   return {
     shouldAutoInstall: plan.action === "bootstrap",
-    shouldAutoConverge: plan.action === "converge",
     selectedServiceIndex: 0,
   };
 }
@@ -79,14 +84,13 @@ export function useConsoleApp() {
     initialAutoInstall.selectedServiceIndex,
   );
   const [daemonOperation, setDaemonOperation] = useState<DaemonOperation | null>(
-    initialDaemonOperation(
-      initialAutoInstall.shouldAutoInstall,
-      initialAutoInstall.shouldAutoConverge,
-    ),
+    initialDaemonOperation(initialAutoInstall.shouldAutoInstall),
   );
   const [installFinished, setInstallFinished] = useState(false);
   const [serviceOperation, setServiceOperation] = useState<ServiceOperation | null>(null);
   const [pendingRestart, setPendingRestart] = useState<PendingRestart | null>(null);
+  const [pendingOptionalServices, setPendingOptionalServices] =
+    useState<PendingOptionalServices | null>(null);
   const [restartInProgress, setRestartInProgress] = useState<string | null>(null);
   const [restartOverlayServiceId, setRestartOverlayServiceId] = useState<string | null>(null);
   const [restartLogOverlay, setRestartLogOverlay] = useState<ConsoleLogLine[]>([]);
@@ -100,8 +104,6 @@ export function useConsoleApp() {
   const [developerView, setDeveloperView] = useState<DeveloperView>("menu");
   const { services: visibleServices, refresh: refreshServices } = useVisibleServices();
   const autoInstallStarted = useRef(initialAutoInstall.shouldAutoInstall);
-  const autoConvergeStarted = useRef(false);
-  const shouldAutoConvergeOnLaunch = useRef(initialAutoInstall.shouldAutoConverge);
   const devEnvConvergeSelectionPinned = useRef(false);
   const selectedServiceIdRef = useRef(
     getVisibleServices()[initialAutoInstall.selectedServiceIndex]?.id ?? "daemon",
@@ -122,6 +124,28 @@ export function useConsoleApp() {
 
   const { state: devEnvConverge, start: startDevEnvConverge, dismissError: dismissDevEnvConvergeError } =
     useDevEnvConverge(handleDevEnvConvergeFinished);
+
+  const openOptionalServicesPicker = useCallback((
+    mode: OptionalServicesModalMode,
+    convergeMode?: "if-needed" | "force",
+  ) => {
+    setPendingOptionalServices({
+      mode,
+      convergeMode,
+      selection: readOptionalDevServices(),
+    });
+  }, []);
+
+  const beginConverge = useCallback((
+    mode: "if-needed" | "force",
+    selection: OptionalDevServiceSelection,
+  ) => {
+    setInstallFinished(false);
+    setActiveArea("services");
+    setProvisioning(false);
+    setDaemonOperation("dev-env");
+    startDevEnvConverge(mode, selection);
+  }, [startDevEnvConverge]);
 
   const startDaemonInstall = useCallback(() => {
     selectedServiceIdRef.current = "daemon";
@@ -149,21 +173,6 @@ export function useConsoleApp() {
       startDaemonInstall();
     }
   }, [visibleServices, daemonOperation, startDaemonInstall]);
-
-  useEffect(() => {
-    if (
-      !shouldAutoConvergeOnLaunch.current ||
-      autoConvergeStarted.current ||
-      autoInstallStarted.current
-    ) {
-      return;
-    }
-    autoConvergeStarted.current = true;
-    setActiveArea("services");
-    setProvisioning(false);
-    setDaemonOperation("dev-env");
-    startDevEnvConverge("if-needed");
-  }, [startDevEnvConverge]);
 
   const restartInstanceWithOverlay = useCallback(async () => {
     const service = visibleServices.find((entry) => entry.id === "instance");
@@ -208,11 +217,11 @@ export function useConsoleApp() {
             "Install the daemon before starting the development environment.",
           );
         }
-        setInstallFinished(false);
-        setActiveArea("services");
-        setProvisioning(false);
-        setDaemonOperation("dev-env");
-        startDevEnvConverge("force");
+        openOptionalServicesPicker("converge", "force");
+        return;
+      }
+      case "optional-services": {
+        openOptionalServicesPicker("manage");
         return;
       }
       case "reset-dev-env": {
@@ -258,8 +267,15 @@ export function useConsoleApp() {
       case "run-tests":
         setDeveloperView("run-tests");
         return;
+      case "restart":
+        return;
     }
-  }, [restartInstanceWithOverlay, startDaemonInstall, startDevEnvConverge, visibleServices]);
+  }, [
+    openOptionalServicesPicker,
+    restartInstanceWithOverlay,
+    startDaemonInstall,
+    visibleServices,
+  ]);
 
   const requestServiceRestart = useCallback((serviceId: string) => {
     const service = visibleServices.find((entry) => entry.id === serviceId);
@@ -314,6 +330,35 @@ export function useConsoleApp() {
     setPendingRestart(null);
     performServiceRestart(serviceId).catch(() => undefined);
   }, [pendingRestart, performServiceRestart]);
+
+  const cancelOptionalServices = useCallback(() => {
+    setPendingOptionalServices(null);
+  }, []);
+
+  const confirmOptionalServices = useCallback((
+    selection: OptionalDevServiceSelection,
+  ) => {
+    const pending = pendingOptionalServices;
+    setPendingOptionalServices(null);
+    if (!pending) {
+      return;
+    }
+
+    if (pending.mode === "converge") {
+      beginConverge(pending.convergeMode ?? "force", selection);
+      return;
+    }
+
+    setRestartInProgress("optional services");
+    void (async () => {
+      try {
+        await applyOptionalDevServices(selection);
+        refreshServices();
+      } finally {
+        setRestartInProgress(null);
+      }
+    })();
+  }, [beginConverge, pendingOptionalServices, refreshServices]);
 
   const handleServiceAction = useCallback(async (
     serviceId: string,
@@ -400,9 +445,10 @@ export function useConsoleApp() {
   const handleDaemonInstallDone = useCallback(() => {
     setActiveArea("services");
     setProvisioning(false);
-    setDaemonOperation("dev-env");
-    startDevEnvConverge("if-needed");
-  }, [startDevEnvConverge]);
+    setDaemonOperation(null);
+    setInstallFinished(false);
+    openOptionalServicesPicker("converge", "if-needed");
+  }, [openOptionalServicesPicker]);
 
   const handlePurgeDone = useCallback(() => {
     exit();
@@ -454,7 +500,14 @@ export function useConsoleApp() {
   }, []);
 
   useInput((_input, key) => {
-    if (provisioning || daemonOperation || serviceOperation || pendingRestart || restartInProgress) {
+    if (
+      provisioning ||
+      daemonOperation ||
+      serviceOperation ||
+      pendingRestart ||
+      pendingOptionalServices ||
+      restartInProgress
+    ) {
       return;
     }
 
@@ -481,6 +534,7 @@ export function useConsoleApp() {
     daemonOperation,
     serviceOperation,
     pendingRestart,
+    pendingOptionalServices,
     restartInProgress,
     restartOverlayServiceId,
     restartLogOverlay,
@@ -498,6 +552,8 @@ export function useConsoleApp() {
     dismissDevEnvConvergeError,
     confirmServiceRestart,
     cancelServiceRestart,
+    confirmOptionalServices,
+    cancelOptionalServices,
     developerView,
     closeDeveloperView,
     setSelectedServiceIndex: setSelectedServiceIndexById,

@@ -7,7 +7,7 @@ import {
   type DaemonActionId,
 } from "../lib/daemon-actions.ts";
 import { readInstanceRuntime } from "../lib/daemon-env.ts";
-import type { PendingRestart, ServiceOperation } from "../hooks/use-console-app.ts";
+import type { PendingRestart, PendingOptionalServices, ServiceOperation } from "../hooks/use-console-app.ts";
 import type {
   ConvergeServicePhase,
   DevEnvConvergeState,
@@ -219,6 +219,7 @@ export function ServicesPanel({
   instanceLogByteFloor,
   onConfirmRestart,
   onCancelRestart,
+  pendingOptionalServices,
   devEnvConverge,
   onDismissDevEnvConvergeError,
 }: {
@@ -241,6 +242,7 @@ export function ServicesPanel({
   instanceLogByteFloor?: ServiceLogByteFloor | null;
   onConfirmRestart?: () => void;
   onCancelRestart?: () => void;
+  pendingOptionalServices?: PendingOptionalServices | null;
   devEnvConverge?: DevEnvConvergeState | null;
   onDismissDevEnvConvergeError?: () => void;
 }) {
@@ -368,7 +370,7 @@ export function ServicesPanel({
   }, [restartInProgress, onRefreshServices]);
 
   useInput((_input, key) => {
-    if (pendingRestart || restartInProgress || serviceOperation) {
+    if (pendingRestart || restartInProgress || serviceOperation || pendingOptionalServices) {
       return;
     }
 

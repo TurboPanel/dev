@@ -62,6 +62,14 @@
     mailpit_smtp_port: 1025
     redis_socket_path: /run/turbopanel/redis.sock
     redis_insight_web_port: 5540
+    # Optional tooling — console picker / TURBOPANEL_OPTIONAL_* env. Core stack
+    # (instance, caddy, system-stack, redis, mailpit, mailer) always starts.
+    # Defaults: Drizzle Studio + Expo UI + website on; Redis Insight + Tabix off.
+    turbopanel_optional_dbstudio: true
+    turbopanel_optional_ui: true
+    turbopanel_optional_website: true
+    turbopanel_optional_redis_insight: false
+    turbopanel_optional_tabix: false
 
   pre_tasks:
     - name: Refresh apt cache once per converge (Debian)
@@ -134,34 +142,59 @@
   post_tasks:
     # If converge aborts after instance-user stops the stack (uid migration) or
     # any later failure, bring enabled units back up instead of leaving a partial stack.
-    - name: Resolve dev stack unit list base
+    - name: Resolve core + optional unit lists
       ansible.builtin.set_fact:
-        _dev_stack_units_base:
+        _dev_stack_units_core:
           # Covers postgres always, plus rabbitmq/clickhouse when the
           # system-compose role rendered them into the shared Compose project.
           - turbopanel-system-stack
           - turbopanel-mailpit
           - turbopanel-instance
-          - turbopanel-dbstudio
           - turbopanel-caddy
-          - turbopanel-ui
-          - turbopanel-website
-        _dev_stack_units_deno_extra:
+        _dev_stack_units_core_deno:
           - turbopanel-mailer
-          - turbopanel-redis-insight
-          - turbopanel-tabix
+        _dev_optional_unit_map:
+          - unit: turbopanel-dbstudio
+            enabled: "{{ turbopanel_optional_dbstudio | default(true) | bool }}"
+          - unit: turbopanel-ui
+            enabled: "{{ turbopanel_optional_ui | default(true) | bool }}"
+          - unit: turbopanel-website
+            enabled: "{{ turbopanel_optional_website | default(true) | bool }}"
+          - unit: turbopanel-redis-insight
+            enabled: "{{ (turbopanel_instance_runtime == 'deno') and (turbopanel_optional_redis_insight | default(false) | bool) }}"
+          - unit: turbopanel-tabix
+            enabled: "{{ (turbopanel_instance_runtime == 'deno') and (turbopanel_optional_tabix | default(false) | bool) }}"
+
+    - name: Resolve optional units to start
+      ansible.builtin.set_fact:
+        _dev_optional_start_units: "{{ _dev_optional_unit_map | selectattr('enabled') | map(attribute='unit') | list }}"
+        _dev_optional_stop_units: "{{ _dev_optional_unit_map | rejectattr('enabled') | map(attribute='unit') | list }}"
 
     - name: Resolve dev stack unit list
       ansible.builtin.set_fact:
-        _dev_stack_units: "{{ _dev_stack_units_base + (_dev_stack_units_deno_extra if turbopanel_instance_runtime == 'deno' else []) }}"
+        _dev_stack_units: >-
+          {{
+            _dev_stack_units_core
+            + (_dev_stack_units_core_deno if turbopanel_instance_runtime == 'deno' else [])
+            + _dev_optional_start_units
+          }}
 
-    - name: Ensure dev stack services are running after converge
+    - name: Ensure core + selected optional services are running after converge
       when: instance_start | default(true) | bool
       ansible.builtin.systemd:
         name: "{{ item }}"
         enabled: true
         state: started
       loop: "{{ _dev_stack_units }}"
+      failed_when: false
+
+    - name: Stop and disable deselected optional services after converge
+      when: instance_start | default(true) | bool
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        enabled: false
+        state: stopped
+      loop: "{{ _dev_optional_stop_units }}"
       failed_when: false
 
     - name: Recursively ensure vendored runtime trees are owned by the dev user

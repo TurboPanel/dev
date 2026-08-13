@@ -104,31 +104,30 @@ test("missing orchestration runtime only → bootstrap", () => {
   assertReasons(plan.reasons);
 });
 
-test("all four present, no converge stamp → converge", () => {
+test("all four present, no converge stamp → idle (no auto-converge)", () => {
   const plan = resolveDevEnvStartupPlan(
     makeProbe({ hasDevConvergeStamp: () => false }),
     emptyEnv,
   );
-  expect(plan.action).toBe("converge");
+  expect(plan.action).toBe("idle");
   expect(plan.reasons.some((r) => /no prior.*stamp/i.test(r))).toBe(true);
+  expect(plan.reasons.some((r) => /auto-converge disabled/i.test(r))).toBe(true);
   assertReasons(plan.reasons);
 });
 
-test("fully converged host → converge", () => {
+test("fully ready host → idle (no auto-converge on launch)", () => {
   const plan = resolveDevEnvStartupPlan(makeProbe(), emptyEnv);
-  expect(plan.action).toBe("converge");
+  expect(plan.action).toBe("idle");
   expect(plan.reasons.some((r) => /previously completed/i.test(r))).toBe(true);
+  expect(plan.reasons.some((r) => /auto-converge disabled/i.test(r))).toBe(true);
   assertReasons(plan.reasons);
 });
 
-test("TURBOPANEL_CONSOLE_NO_AUTO_CONVERGE set → idle (prereqs present)", () => {
+test("TURBOPANEL_CONSOLE_NO_AUTO_CONVERGE is legacy and does not change idle", () => {
   const plan = resolveDevEnvStartupPlan(makeProbe(), {
     [CONSOLE_NO_AUTO_CONVERGE_ENV]: "1",
   });
   expect(plan.action).toBe("idle");
-  expect(plan.reasons.some((r) => r.includes(CONSOLE_NO_AUTO_CONVERGE_ENV))).toBe(
-    true,
-  );
   assertReasons(plan.reasons);
 });
 

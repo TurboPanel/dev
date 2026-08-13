@@ -7,6 +7,12 @@ import {
   DEV_ENV_CONVERGE_STEP,
   installDevEnvironment,
 } from "../lib/instance-install.ts";
+import {
+  applyOptionalDevServices,
+  type OptionalDevServiceSelection,
+  readOptionalDevServices,
+  writeOptionalDevServices,
+} from "../lib/optional-dev-services.ts";
 import { writeTaskErrorLog } from "../lib/task-error-log.ts";
 import { useAnsibleEvents } from "./use-ansible-events.ts";
 
@@ -163,13 +169,19 @@ export function useDevEnvConverge(onFinished: (success: boolean) => void) {
     onEvent(event);
   }, [onEvent]);
 
-  const start = useCallback((mode: "if-needed" | "force") => {
+  const start = useCallback((
+    mode: "if-needed" | "force",
+    optionalServices?: OptionalDevServiceSelection,
+  ) => {
     if (running.current) {
       return;
     }
     running.current = true;
     setActive(true);
     resetConverge();
+
+    const selection = optionalServices ?? readOptionalDevServices();
+    writeOptionalDevServices(selection);
 
     void (async () => {
       const currentStep = DEV_ENV_CONVERGE_STEP;
@@ -183,7 +195,11 @@ export function useDevEnvConverge(onFinished: (success: boolean) => void) {
           },
           undefined,
           mode,
+          selection,
         );
+        // Belt-and-suspenders: Ansible should honor optional flags, but apply
+        // again so a stale enabled unit from a prior converge stays off.
+        await applyOptionalDevServices(selection);
       } catch (caught) {
         success = false;
         emitStep(currentStep, "failed");

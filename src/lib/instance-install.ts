@@ -14,6 +14,11 @@ import {
 import { isDaemonSystemdInstalled } from "../dev-services.ts";
 import { resolveDevIdentity } from "./dev-identity.ts";
 import {
+  type OptionalDevServiceSelection,
+  optionalServicesOrchestrationEnv,
+  readOptionalDevServices,
+} from "./optional-dev-services.ts";
+import {
   daemonRepoPath,
   devOrchestrationDir,
   PYTHON_RUNTIME_DIR,
@@ -72,7 +77,10 @@ function lastNonEmptyLine(buffer: string): string | undefined {
   return lines.at(-1);
 }
 
-function orchestrationEnv(mode?: "if-needed" | "force"): string[] {
+function orchestrationEnv(
+  mode?: "if-needed" | "force",
+  optionalServices?: OptionalDevServiceSelection,
+): string[] {
   const dev = resolveDevIdentity();
   const devRoot = resolveDevRoot();
   const env = [
@@ -86,6 +94,9 @@ function orchestrationEnv(mode?: "if-needed" | "force"): string[] {
     "UV_NO_MODIFY_PATH=1",
     "UV_PYTHON_DOWNLOADS=automatic",
     "UV_VENV_CLEAR=1",
+    ...optionalServicesOrchestrationEnv(
+      optionalServices ?? readOptionalDevServices(),
+    ),
   ];
   if (mode === "force") {
     env.push("TURBOPANEL_FORCE_CONVERGE=1");
@@ -101,6 +112,8 @@ export type RunOrchestrationActionOptions = {
   denoBin?: string;
   /** Dev converge mode — `force` sets TURBOPANEL_FORCE_CONVERGE=1 for the child. */
   mode?: "if-needed" | "force";
+  /** Optional tooling selection passed as TURBOPANEL_OPTIONAL_* env to Ansible. */
+  optionalServices?: OptionalDevServiceSelection;
 };
 
 export async function runOrchestrationAction(
@@ -125,7 +138,12 @@ export async function runOrchestrationAction(
   };
 
   await new Promise<void>((resolve, reject) => {
-    const child = spawn("/usr/bin/env", [...orchestrationEnv(options?.mode), "/bin/bash", "-c", command], {
+    const child = spawn("/usr/bin/env", [
+      ...orchestrationEnv(options?.mode, options?.optionalServices),
+      "/bin/bash",
+      "-c",
+      command,
+    ], {
       stdio: ["ignore", "pipe", "pipe"],
       env: captureChildEnv({ PATH: TRUSTED_SYSTEM_PATH }),
       detached: false,
@@ -235,10 +253,11 @@ export async function installDevEnvironment(
   deps: InstallDevEnvironmentDeps = defaultInstallDevEnvironmentDeps,
   /**
    * Converge mode. Default is `"force"` so legacy callers (reset, provisioner)
-   * always rebuild — `"if-needed"` must be chosen explicitly (e.g. console
-   * startup converge) so teardown paths cannot inherit skip mode by accident.
+   * always rebuild — `"if-needed"` must be chosen explicitly (e.g. post-bootstrap
+   * converge) so teardown paths cannot inherit skip mode by accident.
    */
   mode: "if-needed" | "force" = "force",
+  optionalServices?: OptionalDevServiceSelection,
 ): Promise<void> {
   // Ensure Deno before any Docker-access side effects so a failed runtime
   // install does not mutate the host first. Pass the resolved bin into
@@ -272,7 +291,7 @@ export async function installDevEnvironment(
       actionArgs,
       onEvent,
       onOutput,
-      { denoBin, mode },
+      { denoBin, mode, optionalServices },
     );
     onStep?.(DEV_ENV_CONVERGE_STEP, "ok");
   } catch (error) {

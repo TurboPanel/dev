@@ -101,8 +101,13 @@ function HotReloadApp({
       instanceLogByteFloor={consoleApp.instanceLogByteFloor}
       onConfirmRestart={consoleApp.confirmServiceRestart}
       onCancelRestart={consoleApp.cancelServiceRestart}
+      pendingOptionalServices={consoleApp.pendingOptionalServices}
+      onConfirmOptionalServices={consoleApp.confirmOptionalServices}
+      onCancelOptionalServices={consoleApp.cancelOptionalServices}
       devEnvConverge={consoleApp.devEnvConverge}
       onDismissDevEnvConvergeError={consoleApp.dismissDevEnvConvergeError}
+      developerView={consoleApp.developerView}
+      onCloseDeveloperView={consoleApp.closeDeveloperView}
     />
   );
 }

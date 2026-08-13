@@ -88,11 +88,13 @@ function DeveloperMenuPanel({
   height,
   daemonStatus,
   onDaemonAction,
+  inputBlocked = false,
 }: {
   width: number;
   height: number;
   daemonStatus?: DevServiceStatus;
   onDaemonAction?: (action: DaemonActionId) => void | Promise<void>;
+  inputBlocked?: boolean;
 }) {
   const actions = developerMenuActions(daemonStatus);
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -110,6 +112,9 @@ function DeveloperMenuPanel({
   }, [actions.length, selectedIndex]);
 
   useInput((_input, key) => {
+    if (inputBlocked) {
+      return;
+    }
     if (actions.length === 0 || !onDaemonAction) {
       return;
     }
@@ -191,6 +196,7 @@ export function DeveloperPanel({
   restartLogOverlay,
   logFollowResetKey,
   instanceLogByteFloor,
+  inputBlocked = false,
 }: {
   width: number;
   height: number;
@@ -206,6 +212,7 @@ export function DeveloperPanel({
   restartLogOverlay?: ConsoleLogLine[];
   logFollowResetKey?: number;
   instanceLogByteFloor?: ServiceLogByteFloor | null;
+  inputBlocked?: boolean;
 }) {
   useEffect(() => {
     if (restartInProgress) {
@@ -265,6 +272,7 @@ export function DeveloperPanel({
       height={height}
       daemonStatus={daemonStatus}
       onDaemonAction={onDaemonAction}
+      inputBlocked={inputBlocked}
     />
   );
 }

@@ -9,12 +9,14 @@ import { statusHints } from "@turbopanel/components/status-bar.tsx";
 import type { DevService } from "./dev-services.ts";
 import type { DaemonActionId } from "./lib/daemon-actions.ts";
 import type { ServiceActionId } from "./lib/service-actions.ts";
-import type { PendingRestart, ServiceOperation, DeveloperView } from "./hooks/use-console-app.ts";
+import type { PendingRestart, PendingOptionalServices, ServiceOperation, DeveloperView } from "./hooks/use-console-app.ts";
 import type { DevEnvConvergeState } from "./hooks/use-dev-env-converge.ts";
 import type { DaemonLogByteFloor } from "./lib/daemon-log.ts";
 import type { ServiceLogByteFloor } from "./lib/service-log.ts";
 import type { ConsoleLogLine } from "./lib/service-restart.ts";
 import type { DaemonOperation } from "./lib/spinners.ts";
+import type { OptionalDevServiceSelection } from "./lib/optional-dev-services.ts";
+import { OptionalServicesModal } from "@turbopanel/components/optional-services-modal.tsx";
 
 export const AREAS: AreaTab[] = [
   { id: "services", label: "Services", emoji: "📦" },
@@ -80,6 +82,9 @@ type MainContentProps = Readonly<{
   instanceLogByteFloor?: ServiceLogByteFloor | null;
   onConfirmRestart?: () => void;
   onCancelRestart?: () => void;
+  pendingOptionalServices?: PendingOptionalServices | null;
+  onConfirmOptionalServices?: (selection: OptionalDevServiceSelection) => void;
+  onCancelOptionalServices?: () => void;
   devEnvConverge?: DevEnvConvergeState | null;
   onDismissDevEnvConvergeError?: () => void;
   developerView?: DeveloperView;
@@ -112,6 +117,9 @@ function MainContent({
   instanceLogByteFloor,
   onConfirmRestart,
   onCancelRestart,
+  pendingOptionalServices,
+  onConfirmOptionalServices,
+  onCancelOptionalServices,
   devEnvConverge,
   onDismissDevEnvConvergeError,
   developerView,
@@ -119,62 +127,88 @@ function MainContent({
 }: MainContentProps) {
   const daemon = visibleServices.find((service) => service.id === "daemon");
 
+  const optionalModal = pendingOptionalServices &&
+    onConfirmOptionalServices &&
+    onCancelOptionalServices
+    ? (
+      <OptionalServicesModal
+        width={width}
+        height={height}
+        mode={pendingOptionalServices.mode}
+        initialSelection={pendingOptionalServices.selection}
+        onConfirm={onConfirmOptionalServices}
+        onCancel={onCancelOptionalServices}
+      />
+    )
+    : null;
+
   switch (activeArea) {
     case "bootstrap":
       return (
-        <ProvisionerPanel
-          phase={provisionerPhaseForDaemonOperation(daemonOperation)}
-          width={width}
-          height={height}
-          onDone={onProvisioningDone!}
-          onInstallFinished={onInstallFinished}
-          onDaemonInstallDone={onDaemonInstallDone}
-        />
+        <Box width={width} height={height}>
+          <ProvisionerPanel
+            phase={provisionerPhaseForDaemonOperation(daemonOperation)}
+            width={width}
+            height={height}
+            onDone={onProvisioningDone!}
+            onInstallFinished={onInstallFinished}
+            onDaemonInstallDone={onDaemonInstallDone}
+          />
+          {optionalModal}
+        </Box>
       );
     case "developer":
       return (
-        <DeveloperPanel
-          width={width}
-          height={height}
-          daemonStatus={daemon?.status}
-          daemonOperation={daemonOperation}
-          developerView={developerView}
-          onCloseDeveloperView={onCloseDeveloperView}
-          onDaemonAction={onDeveloperDaemonAction}
-          onPurgeDone={onPurgeDone}
-          onRefreshServices={onRefreshServices}
-          restartInProgress={restartInProgress}
-          restartOverlayServiceId={restartOverlayServiceId}
-          restartLogOverlay={restartLogOverlay}
-          logFollowResetKey={logFollowResetKey}
-          instanceLogByteFloor={instanceLogByteFloor}
-        />
+        <Box width={width} height={height}>
+          <DeveloperPanel
+            width={width}
+            height={height}
+            daemonStatus={daemon?.status}
+            daemonOperation={daemonOperation}
+            developerView={developerView}
+            onCloseDeveloperView={onCloseDeveloperView}
+            onDaemonAction={onDeveloperDaemonAction}
+            onPurgeDone={onPurgeDone}
+            onRefreshServices={onRefreshServices}
+            restartInProgress={restartInProgress}
+            restartOverlayServiceId={restartOverlayServiceId}
+            restartLogOverlay={restartLogOverlay}
+            logFollowResetKey={logFollowResetKey}
+            instanceLogByteFloor={instanceLogByteFloor}
+            inputBlocked={Boolean(pendingOptionalServices)}
+          />
+          {optionalModal}
+        </Box>
       );
     case "services":
       return (
-        <ServicesPanel
-          width={width}
-          height={height}
-          services={visibleServices}
-          selectedIndex={selectedServiceIndex}
-          daemonOperation={daemonOperation}
-          onDaemonAction={onDaemonAction}
-          onSelectedIndexChange={onSelectedServiceIndexChange}
-          onRefreshServices={onRefreshServices}
-          serviceOperation={serviceOperation}
-          onServiceAction={onServiceAction}
-          pendingRestart={pendingRestart}
-          restartInProgress={restartInProgress}
-          restartOverlayServiceId={restartOverlayServiceId}
-          restartLogOverlay={restartLogOverlay}
-          logFollowResetKey={logFollowResetKey}
-          daemonLogByteFloor={daemonLogByteFloor}
-          instanceLogByteFloor={instanceLogByteFloor}
-          onConfirmRestart={onConfirmRestart}
-          onCancelRestart={onCancelRestart}
-          devEnvConverge={devEnvConverge}
-          onDismissDevEnvConvergeError={onDismissDevEnvConvergeError}
-        />
+        <Box width={width} height={height}>
+          <ServicesPanel
+            width={width}
+            height={height}
+            services={visibleServices}
+            selectedIndex={selectedServiceIndex}
+            daemonOperation={daemonOperation}
+            onDaemonAction={onDaemonAction}
+            onSelectedIndexChange={onSelectedServiceIndexChange}
+            onRefreshServices={onRefreshServices}
+            serviceOperation={serviceOperation}
+            onServiceAction={onServiceAction}
+            pendingRestart={pendingRestart}
+            restartInProgress={restartInProgress}
+            restartOverlayServiceId={restartOverlayServiceId}
+            restartLogOverlay={restartLogOverlay}
+            logFollowResetKey={logFollowResetKey}
+            daemonLogByteFloor={daemonLogByteFloor}
+            instanceLogByteFloor={instanceLogByteFloor}
+            onConfirmRestart={onConfirmRestart}
+            onCancelRestart={onCancelRestart}
+            pendingOptionalServices={pendingOptionalServices}
+            devEnvConverge={devEnvConverge}
+            onDismissDevEnvConvergeError={onDismissDevEnvConvergeError}
+          />
+          {optionalModal}
+        </Box>
       );
     default:
       return null;
@@ -210,6 +244,9 @@ type AppViewProps = Readonly<{
   instanceLogByteFloor?: ServiceLogByteFloor | null;
   onConfirmRestart?: () => void;
   onCancelRestart?: () => void;
+  pendingOptionalServices?: PendingOptionalServices | null;
+  onConfirmOptionalServices?: (selection: OptionalDevServiceSelection) => void;
+  onCancelOptionalServices?: () => void;
   devEnvConverge?: DevEnvConvergeState | null;
   onDismissDevEnvConvergeError?: () => void;
   developerView?: DeveloperView;
@@ -245,6 +282,9 @@ export function AppView({
   instanceLogByteFloor,
   onConfirmRestart,
   onCancelRestart,
+  pendingOptionalServices,
+  onConfirmOptionalServices,
+  onCancelOptionalServices,
   devEnvConverge,
   onDismissDevEnvConvergeError,
   developerView,
@@ -262,6 +302,7 @@ export function AppView({
     restartInProgress,
     daemonOperation === "dev-env" || Boolean(devEnvConverge?.active),
     developerView,
+    pendingOptionalServices,
   );
 
   return (
@@ -305,6 +346,9 @@ export function AppView({
           instanceLogByteFloor={instanceLogByteFloor}
           onConfirmRestart={onConfirmRestart}
           onCancelRestart={onCancelRestart}
+          pendingOptionalServices={pendingOptionalServices}
+          onConfirmOptionalServices={onConfirmOptionalServices}
+          onCancelOptionalServices={onCancelOptionalServices}
           devEnvConverge={devEnvConverge}
           onDismissDevEnvConvergeError={onDismissDevEnvConvergeError}
           developerView={developerView}
