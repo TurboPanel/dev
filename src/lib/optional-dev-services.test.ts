@@ -8,6 +8,7 @@ import {
   defaultOptionalSelection,
   normalizeOptionalSelection,
   optionalServicesOrchestrationEnv,
+  persistOptionalServiceToggle,
   readOptionalDevServices,
   writeOptionalDevServices,
 } from "./optional-dev-services.ts";
@@ -26,9 +27,10 @@ function tempPrefsPath(): string {
   return join(dir, "optional-services.json");
 }
 
-test("defaults enable studio, ui, and website only", () => {
+test("defaults enable ui, website, and mailpit", () => {
   expect(DEFAULT_OPTIONAL_DEV_SERVICES).toEqual({
-    dbstudio: true,
+    dbstudio: false,
+    smtp: true,
     ui: true,
     website: true,
     redisinsight: false,
@@ -38,7 +40,8 @@ test("defaults enable studio, ui, and website only", () => {
 
 test("normalizeOptionalSelection fills missing keys from defaults", () => {
   expect(normalizeOptionalSelection({ ui: false, tabix: true })).toEqual({
-    dbstudio: true,
+    dbstudio: false,
+    smtp: true,
     ui: false,
     website: true,
     redisinsight: false,
@@ -77,6 +80,7 @@ test("readOptionalDevServices returns defaults when file missing", () => {
 test("optionalServicesOrchestrationEnv emits TURBOPANEL_OPTIONAL_* flags", () => {
   const env = optionalServicesOrchestrationEnv({
     dbstudio: true,
+    smtp: false,
     ui: false,
     website: true,
     redisinsight: false,
@@ -84,6 +88,7 @@ test("optionalServicesOrchestrationEnv emits TURBOPANEL_OPTIONAL_* flags", () =>
   });
   expect(env).toEqual([
     "TURBOPANEL_OPTIONAL_DBSTUDIO=true",
+    "TURBOPANEL_OPTIONAL_MAILPIT=false",
     "TURBOPANEL_OPTIONAL_UI=false",
     "TURBOPANEL_OPTIONAL_WEBSITE=true",
     "TURBOPANEL_OPTIONAL_REDIS_INSIGHT=false",
@@ -93,5 +98,17 @@ test("optionalServicesOrchestrationEnv emits TURBOPANEL_OPTIONAL_* flags", () =>
 
 test("assertOptionalDevServiceId rejects unknown ids", () => {
   expect(assertOptionalDevServiceId("ui")).toBe("ui");
+  expect(assertOptionalDevServiceId("smtp")).toBe("smtp");
   expect(() => assertOptionalDevServiceId("daemon")).toThrow(TypeError);
+});
+
+test("persistOptionalServiceToggle writes E/X into prefs", () => {
+  const path = tempPrefsPath();
+  expect(persistOptionalServiceToggle("dbstudio", true, path)).toEqual({
+    ...defaultOptionalSelection(),
+    dbstudio: true,
+  });
+  expect(readOptionalDevServices(path).dbstudio).toBe(true);
+  expect(persistOptionalServiceToggle("smtp", false, path)?.smtp).toBe(false);
+  expect(persistOptionalServiceToggle("daemon", true, path)).toBeNull();
 });

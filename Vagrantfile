@@ -45,10 +45,11 @@ GITHUB_HOST_DIR = File.join(__dir__, "..", ".github")
 # restored automatically after a mid-provision reboot — without remounting,
 # ~/dev (and siblings) stay as empty guest-local mount-point directories.
 #
-# Libvirt `forwarded_port` is implemented as host-side SSH `-L` tunnels that
-# also die on guest reboot. `EnsureLibvirtPortForwards` (run: always) clears
-# stale tunnel pids and re-invokes vagrant-libvirt's ForwardPorts action so
-# localhost/LAN binds (8443, …) come back after provision.
+# Libvirt `forwarded_port` is implemented as host-side SSH `-L` tunnels.
+# Guest sshd (OpenSSH 9.8+) closes idle `-N` sessions via UnusedConnectionTimeout,
+# and apt/sshd reloads during converge drop them too. `EnsureLibvirtPortForwards`
+# replaces one-shot vagrant-libvirt tunnels with a restarting supervisor so
+# localhost/LAN binds (8443, 8880, 8025, 4983, …) survive guest lifecycle.
 module TurbopanelVagrant
   class RebootIfNeeded < Vagrant.plugin("2", :provisioner)
     def provision
@@ -133,82 +134,247 @@ module TurbopanelVagrant
     end
   end
 
-  # vagrant-libvirt keeps one SSH `-L` process per forwarded_port. Mid-provision
-  # (or later guest) reboots close those sessions; this restores them.
+  # vagrant-libvirt's ForwardPorts is a single `ssh -N -L` with no keepalive
+  # and no restart. Replace those with a supervisor that reconnects, and
+  # always target guest loopback so Caddy/Mailpit/Studio do not depend on
+  # the DHCP NIC address.
   class EnsureLibvirtPortForwards < Vagrant.plugin("2", :provisioner)
+    SUPERVISOR_NAME = "ssh_forward_supervisor.sh"
+
     def provision
       return unless @machine.provider_name.to_s == "libvirt"
 
-      expected = forwarded_host_ports
-      if expected.empty?
+      specs = forwarded_port_specs
+      if specs.empty?
         @machine.ui.info("No forwarded ports configured; skipping libvirt tunnel check.")
         return
       end
 
-      if libvirt_port_forwards_healthy?(expected)
-        @machine.ui.info(
-          "Libvirt SSH port forwards already active (#{expected.join(', ')})."
+      ssh_info = @machine.ssh_info
+      if ssh_info.nil? || ssh_info[:host].to_s.empty?
+        @machine.ui.warn(
+          "Guest SSH info unavailable; skip libvirt port-forward supervisors."
         )
         return
       end
 
-      clear_cls = libvirt_action(:ClearForwardedPorts)
-      forward_cls = libvirt_action(:ForwardPorts)
-      if clear_cls.nil? || forward_cls.nil?
-        @machine.ui.warn(
-          "vagrant-libvirt port-forward actions unavailable; " \
-          "run `vagrant reload` to restore host binds (8443, 8880, …)."
+      if supervisors_healthy?(specs) && our_supervisors_running?(specs)
+        @machine.ui.info(
+          "Libvirt SSH port forwards already listening " \
+          "(#{specs.map { |spec| spec[:host_port] }.join(', ')})."
         )
         return
       end
 
       @machine.ui.warn(
-        "Libvirt SSH port forwards missing or dead after guest lifecycle — " \
-        "re-establishing host binds (#{expected.join(', ')})…"
+        "Libvirt SSH port forwards missing or dead — starting supervised " \
+        "tunnels (#{specs.map { |spec| spec[:host_port] }.join(', ')})…"
       )
-      env = { machine: @machine, ui: @machine.ui }
-      noop = ->(_env) {}
-      clear_cls.new(noop, env).call(env)
-      forward_cls.new(noop, env).call(env)
+      stop_existing_forwards
+      stop_stale_ssh_forwards(specs)
+      wait_for_ports_free(specs)
+      write_supervisor_script
+      specs.each { |spec| start_supervisor(spec, ssh_info) }
+      warn_unbound_ports(specs)
     end
 
-    def forwarded_host_ports
-      ports = []
+    def forwarded_port_specs
+      specs = []
       @machine.config.vm.networks.each do |type, options|
         next unless type == :forwarded_port
         next if options[:disabled]
         next if options[:protocol].to_s == "udp"
-        # Match vagrant-libvirt: skip the auto ssh forward unless enabled.
         if options[:id].to_s == "ssh" &&
            !@machine.provider_config.forward_ssh_port
           next
         end
 
-        host = options[:host]
-        ports << host.to_i if host
+        host_port = options[:host]
+        guest_port = options[:guest]
+        next unless host_port && guest_port
+
+        specs << {
+          host_port: host_port.to_i,
+          guest_port: guest_port.to_i,
+          host_ip: options[:host_ip].to_s.strip.empty? ? "*" : options[:host_ip],
+          guest_ip: options[:guest_ip].to_s.strip.empty? ? "127.0.0.1" : options[:guest_ip],
+          gateway_ports: options[:gateway_ports] == true,
+        }
       end
-      ports.sort.uniq
+      specs.sort_by { |spec| spec[:host_port] }
     end
 
-    def libvirt_port_forwards_healthy?(expected_ports)
+    def supervisors_healthy?(specs)
+      specs.all? { |spec| host_port_listening?(spec[:host_ip], spec[:host_port]) }
+    end
+
+    def our_supervisors_running?(specs)
       pid_dir = @machine.data_dir.join("pids")
-      expected_ports.all? do |host_port|
-        pid_file = pid_dir.join("ssh_#{host_port}.pid")
+      specs.all? do |spec|
+        pid_file = pid_dir.join("ssh_#{spec[:host_port]}.pid")
         next false unless pid_file.file?
 
         pid = pid_file.read.strip
-        next false if pid.empty?
         next false unless pid.match?(/\A\d+\z/)
 
-        cmd = `ps -o command= #{pid} 2>/dev/null`.strip
-        cmd.match?(/\bssh\b/)
+        cmd = `ps -o command= -p #{pid} 2>/dev/null`.strip
+        cmd.include?(SUPERVISOR_NAME)
       end
     end
 
-    def libvirt_action(name)
-      VagrantPlugins::ProviderLibvirt::Action.const_get(name)
-    rescue NameError
+    def host_port_listening?(host_ip, host_port)
+      require "socket"
+      probe_ip = loopback_probe_ip(host_ip)
+      begin
+        Socket.tcp(probe_ip, host_port, connect_timeout: 0.4, &:close)
+      rescue ArgumentError
+        Socket.tcp(probe_ip, host_port, &:close)
+      end
+      true
+    rescue StandardError
+      false
+    end
+
+    def loopback_probe_ip(host_ip)
+      return "127.0.0.1" if host_ip.to_s.empty? || host_ip == "*" || host_ip == "0.0.0.0"
+
+      host_ip
+    end
+
+    def stop_existing_forwards
+      pid_dir = @machine.data_dir.join("pids")
+      return unless pid_dir.directory?
+
+      Dir[pid_dir.join("ssh_*.pid").to_s].each do |path|
+        pid = File.read(path).strip
+        stop_pid(pid) if pid.match?(/\A\d+\z/)
+        File.delete(path)
+      rescue Errno::ENOENT
+        next
+      end
+    end
+
+    def stop_pid(pid)
+      pid_i = Integer(pid)
+      begin
+        Process.kill("TERM", -pid_i)
+      rescue Errno::ESRCH, Errno::EPERM, Errno::EINVAL
+        Process.kill("TERM", pid_i)
+      end
+    rescue Errno::ESRCH, Errno::EPERM, ArgumentError
       nil
+    end
+
+    # Pid files can be stale after a host reboot; vagrant-libvirt's one-shot
+    # `ssh -L` may still own the bind. Match the exact forward spec.
+    def stop_stale_ssh_forwards(specs)
+      specs.each do |spec|
+        pattern = "#{spec[:host_ip]}:#{spec[:host_port]}:" \
+                  "#{spec[:guest_ip]}:#{spec[:guest_port]}"
+        system("pkill", "-TERM", "-f", pattern)
+      end
+    end
+
+    def wait_for_ports_free(specs)
+      deadline = Time.now + 3
+      busy = specs.dup
+      while Time.now < deadline && !busy.empty?
+        busy.reject! { |spec| !host_port_listening?(spec[:host_ip], spec[:host_port]) }
+        sleep 0.1 unless busy.empty?
+      end
+    end
+
+    def write_supervisor_script
+      path = supervisor_path
+      path.write(<<~'SCRIPT')
+        #!/bin/sh
+        # Restart ssh -N -L until this supervisor is killed.
+        # argv: ssh [args...]  (script name contains "ssh" so vagrant-libvirt
+        # ClearForwardedPorts still recognises the pid on halt/destroy.)
+        trap 'if [ -n "${child:-}" ]; then kill "$child" 2>/dev/null; wait "$child" 2>/dev/null; fi; exit 0' INT TERM HUP
+        while true; do
+          "$@" &
+          child=$!
+          wait "$child" || true
+          child=
+          sleep 2
+        done
+      SCRIPT
+      path.chmod(0o750)
+    end
+
+    def supervisor_path
+      @machine.data_dir.join(SUPERVISOR_NAME)
+    end
+
+    def start_supervisor(spec, ssh_info)
+      log_dir = @machine.data_dir.join("logs")
+      log_dir.mkdir unless log_dir.directory?
+      pid_dir = @machine.data_dir.join("pids")
+      pid_dir.mkdir unless pid_dir.directory?
+
+      log_file = File.join(
+        log_dir,
+        format(
+          "ssh-forwarding-%s_%s-%s_%s.log",
+          spec[:host_ip], spec[:host_port], spec[:guest_ip], spec[:guest_port]
+        )
+      )
+      ssh_cmd = ssh_forward_command(spec, ssh_info)
+      pid = spawn(
+        supervisor_path.to_s,
+        *ssh_cmd,
+        [:out, :err] => [log_file, "a"],
+        pgroup: true
+      )
+      Process.detach(pid)
+      pid_dir.join("ssh_#{spec[:host_port]}.pid").write(pid.to_s)
+    end
+
+    def ssh_forward_command(spec, ssh_info)
+      params = %W(
+        -n
+        -L
+        #{spec[:host_ip]}:#{spec[:host_port]}:#{spec[:guest_ip]}:#{spec[:guest_port]}
+        -N
+        #{ssh_info[:host]}
+      )
+      params << "-g" if spec[:gateway_ports]
+
+      options = (
+        %W(
+          User=#{ssh_info[:username]}
+          Port=#{ssh_info[:port]}
+          UserKnownHostsFile=/dev/null
+          ExitOnForwardFailure=yes
+          ControlMaster=no
+          StrictHostKeyChecking=no
+          PasswordAuthentication=no
+          ServerAliveInterval=15
+          ServerAliveCountMax=4
+          TCPKeepAlive=yes
+          ForwardX11=#{ssh_info[:forward_x11] ? 'yes' : 'no'}
+          IdentitiesOnly=#{ssh_info[:keys_only] ? 'yes' : 'no'}
+        ) + ssh_info[:private_key_path].map { |pk| "IdentityFile=\"#{pk}\"" }
+      ).map { |s| ["-o", s] }.flatten
+
+      ["ssh"] + options + params
+    end
+
+    def warn_unbound_ports(specs)
+      deadline = Time.now + 8
+      pending = specs.dup
+      while Time.now < deadline && !pending.empty?
+        pending.reject! { |spec| host_port_listening?(spec[:host_ip], spec[:host_port]) }
+        sleep 0.2 unless pending.empty?
+      end
+      return if pending.empty?
+
+      ports = pending.map { |spec| spec[:host_port] }.join(", ")
+      @machine.ui.warn(
+        "Host still not listening on #{ports}. Check " \
+        "#{@machine.data_dir.join('logs')} / ssh_forward_supervisor after SSH is up."
+      )
     end
   end
 
@@ -244,15 +410,21 @@ Vagrant.configure("2") do |config|
     config.vm.synced_folder "../.github", "/home/vagrant/.github", **SYNCED_FOLDER_OPTIONS
   end
 
-  # Bind 0.0.0.0 so the libvirt/UTM host's LAN IP can reach guest services —
-  # not only Cursor/localhost SSH tunnels. Guest ports:
+  # Bind 0.0.0.0 so the libvirt/UTM host's LAN IP can reach Caddy / website —
+  # not only Cursor/localhost SSH tunnels. Always forward to guest loopback:
+  # vagrant-libvirt otherwise targets the DHCP NIC (192.168.121.x), which
+  # misses Mailpit/Studio/Tabix (127.0.0.1-only) and breaks when the lease
+  # changes. Guest ports:
   #   8443  control-plane Caddy HTTPS
   #   8880  control-plane Caddy plaintext HTTP (dev overlay)
   #   8088  optional extra forward (guest must listen)
   #   19820 website (Next.js)
-  #   4983  Drizzle Studio
+  #   4983  Drizzle Studio (unauthenticated — host loopback only)
+  #   8025  Mailpit web UI (unauthenticated — host loopback only)
+  #   5540  Redis Insight (unauthenticated — host loopback only)
+  #   8125  Tabix (unauthenticated — host loopback only)
   #
-  # Libvirt implements these as SSH `-L` tunnels (not QEMU hostfwd). 
+  # Libvirt implements these as SSH `-L` tunnels (not QEMU hostfwd).
   # `gateway_ports: true` is a vagrant-libvirt option that passes ssh `-g` so
   # non-localhost clients can use the 0.0.0.0 bind; UTM ignores the key.
   [
@@ -264,21 +436,23 @@ Vagrant.configure("2") do |config|
     config.vm.network "forwarded_port",
                       guest: guest_port,
                       host: host_port,
+                      guest_ip: "127.0.0.1",
                       host_ip: "0.0.0.0",
                       gateway_ports: true
   end
 
-  # Drizzle Studio deliberately binds guest loopback because its database
-  # administration API is unauthenticated. vagrant-libvirt otherwise targets
-  # the guest's NIC address (e.g. 192.168.121.x), which resets the connection.
-  # Keep Studio loopback-only on both sides of the SSH forward. The hosted
-  # HTTPS Studio UI can connect to localhost with browser permission, while a
-  # private hostname such as studio.lan is blocked as mixed/private content.
-  config.vm.network "forwarded_port",
-                    guest: 4983,
-                    host: 4983,
-                    guest_ip: "127.0.0.1",
-                    host_ip: "127.0.0.1"
+  [
+    [4983, 4983],
+    [8025, 8025],
+    [5540, 5540],
+    [8125, 8125],
+  ].each do |guest_port, host_port|
+    config.vm.network "forwarded_port",
+                      guest: guest_port,
+                      host: host_port,
+                      guest_ip: "127.0.0.1",
+                      host_ip: "127.0.0.1"
+  end
 
   config.vm.provider "utm" do |u|
     u.name = "turbopanel-dev"
@@ -541,6 +715,30 @@ UNIT
         printf '%s none swap sw 0 0\n' "$SWAPFILE" >>/etc/fstab
       fi
     fi
+  SHELL
+
+  # OpenSSH 9.8+ reaps idle `ssh -N` port-forward sessions. Apply on every
+  # provision so existing guests pick it up without a reload/destroy.
+  config.vm.provision "shell", name: "sshd-port-forward-keepalives", run: "always", inline: <<~SHELL
+    set -eu
+    SSHD_DROPIN=/etc/ssh/sshd_config.d/turbopanel-vagrant.conf
+    SSHD_BIN=/usr/sbin/sshd
+    install -d -m 0755 /etc/ssh/sshd_config.d
+    cat >"$SSHD_DROPIN" <<'EOF'
+# TurboPanel Vagrant: idle SSH port-forward tunnels must not be reaped.
+TCPKeepAlive yes
+ClientAliveInterval 15
+ClientAliveCountMax 12
+MaxSessions 50
+MaxStartups 30:30:100
+EOF
+    printf '%s\n' "UnusedConnectionTimeout 0" >>"$SSHD_DROPIN"
+    if [ -x "$SSHD_BIN" ] && ! "$SSHD_BIN" -t >/dev/null 2>&1; then
+      grep -v '^UnusedConnectionTimeout ' "$SSHD_DROPIN" >"${SSHD_DROPIN}.new"
+      mv "${SSHD_DROPIN}.new" "$SSHD_DROPIN"
+    fi
+    chmod 644 "$SSHD_DROPIN"
+    systemctl reload ssh 2>/dev/null || systemctl reload sshd 2>/dev/null || true
   SHELL
 
   # After guest-setup (and after any mid-provision reboot), restore libvirt SSH

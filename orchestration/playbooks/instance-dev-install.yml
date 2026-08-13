@@ -63,11 +63,13 @@
     redis_socket_path: /run/turbopanel/redis.sock
     redis_insight_web_port: 5540
     # Optional tooling — console picker / TURBOPANEL_OPTIONAL_* env. Core stack
-    # (instance, caddy, system-stack, redis, mailpit, mailer) always starts.
-    # Defaults: Drizzle Studio + Expo UI + website on; Redis Insight + Tabix off.
-    turbopanel_optional_dbstudio: true
+    # (instance, caddy, system-stack, redis, mailer) always starts.
+    # Defaults: Expo UI + website + Mailpit on; Drizzle Studio, Redis Insight,
+    # and Tabix off (those three stay listed in the TUI, gray until enabled).
+    turbopanel_optional_dbstudio: false
     turbopanel_optional_ui: true
     turbopanel_optional_website: true
+    turbopanel_optional_mailpit: true
     turbopanel_optional_redis_insight: false
     turbopanel_optional_tabix: false
 
@@ -148,18 +150,19 @@
           # Covers postgres always, plus rabbitmq/clickhouse when the
           # system-compose role rendered them into the shared Compose project.
           - turbopanel-system-stack
-          - turbopanel-mailpit
           - turbopanel-instance
           - turbopanel-caddy
         _dev_stack_units_core_deno:
           - turbopanel-mailer
         _dev_optional_unit_map:
           - unit: turbopanel-dbstudio
-            enabled: "{{ turbopanel_optional_dbstudio | default(true) | bool }}"
+            enabled: "{{ turbopanel_optional_dbstudio | default(false) | bool }}"
           - unit: turbopanel-ui
             enabled: "{{ turbopanel_optional_ui | default(true) | bool }}"
           - unit: turbopanel-website
             enabled: "{{ turbopanel_optional_website | default(true) | bool }}"
+          - unit: turbopanel-mailpit
+            enabled: "{{ turbopanel_optional_mailpit | default(true) | bool }}"
           - unit: turbopanel-redis-insight
             enabled: "{{ (turbopanel_instance_runtime == 'deno') and (turbopanel_optional_redis_insight | default(false) | bool) }}"
           - unit: turbopanel-tabix

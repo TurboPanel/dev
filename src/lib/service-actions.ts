@@ -180,9 +180,6 @@ export function canRunServiceAction(
   status: DevServiceStatus,
   instanceRuntime: "deno" | "workers",
 ): boolean {
-  if (status === "uninstalled") {
-    return false;
-  }
   if (action === "switch-workers") {
     return serviceId === "instance" && instanceRuntime === "deno";
   }
@@ -191,6 +188,9 @@ export function canRunServiceAction(
   }
   if (action === "open") {
     return canRunOpenAction(serviceId);
+  }
+  if (status === "uninstalled" && action !== "enable") {
+    return false;
   }
   return canRunLifecycleAction(serviceId, action, status);
 }

@@ -27,6 +27,7 @@ import type { DaemonOperation } from "../lib/spinners.ts";
 import { refreshDevPermissionsQuietly } from "../lib/turbopanel-permissions.ts";
 import {
   applyOptionalDevServices,
+  persistOptionalServiceToggle,
   readOptionalDevServices,
   type OptionalDevServiceSelection,
 } from "../lib/optional-dev-services.ts";
@@ -413,6 +414,9 @@ export function useConsoleApp() {
     setServiceOperation({ serviceId, action });
     try {
       await runServiceAction(serviceId, action);
+      if (action === "enable" || action === "disable") {
+        persistOptionalServiceToggle(serviceId, action === "enable");
+      }
       refreshServices();
     } finally {
       setServiceOperation(null);

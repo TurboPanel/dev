@@ -45,10 +45,32 @@ describe("Vagrant host providers", () => {
     expect(VAGRANTFILE).toContain('libvirt.default_prefix = ""');
   });
 
+  test("forwards Caddy and website to guest loopback on LAN host binds", () => {
+    expect(VAGRANTFILE).toContain("[8443, 8443]");
+    expect(VAGRANTFILE).toContain("[8880, 8880]");
+    expect(VAGRANTFILE).toContain("[19820, 19820]");
+    expect(VAGRANTFILE).toContain('guest_ip: "127.0.0.1"');
+    expect(VAGRANTFILE).toContain('host_ip: "0.0.0.0"');
+    expect(VAGRANTFILE).toContain("gateway_ports: true");
+  });
+
   test("forwards Drizzle Studio to its guest-loopback-only listener", () => {
-    expect(VAGRANTFILE).toMatch(
-      /guest:\s*4983,[\s\S]*?host:\s*4983,[\s\S]*?guest_ip:\s*"127\.0\.0\.1",[\s\S]*?host_ip:\s*"127\.0\.0\.1"/,
-    );
+    expect(VAGRANTFILE).toContain("[4983, 4983]");
+    expect(VAGRANTFILE).toContain('host_ip: "127.0.0.1"');
+  });
+
+  test("forwards Mailpit, Redis Insight, and Tabix on host loopback", () => {
+    expect(VAGRANTFILE).toContain("[8025, 8025]");
+    expect(VAGRANTFILE).toContain("[5540, 5540]");
+    expect(VAGRANTFILE).toContain("[8125, 8125]");
+  });
+
+  test("supervises libvirt SSH port forwards and keeps idle sshd tunnels alive", () => {
+    expect(VAGRANTFILE).toContain("ssh_forward_supervisor.sh");
+    expect(VAGRANTFILE).toContain("UnusedConnectionTimeout 0");
+    expect(VAGRANTFILE).toContain("ServerAliveInterval=15");
+    expect(VAGRANTFILE).toContain('name: "sshd-port-forward-keepalives", run: "always"');
+    expect(VAGRANTFILE).toContain("stop_stale_ssh_forwards");
   });
 
   test("sets the guest vagrant user password to vagrant", () => {

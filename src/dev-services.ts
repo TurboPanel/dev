@@ -11,6 +11,7 @@ import {
   TABIX_CONTAINER_NAME,
 } from "./lib/platform-docker-resources.ts";
 import { spawnSyncTrusted, spawnSyncTrustedText } from "./lib/spawn-trusted.ts";
+import { mergeCatalogOptionalServices } from "./lib/service-list-visibility.ts";
 
 export type DevServiceStatus =
   | "running"
@@ -194,16 +195,20 @@ function postgresStatus(): DevServiceStatus {
   return dockerServiceStatus(POSTGRES_CONTAINER);
 }
 
+function unitOrDockerStatus(unit: string, container: string): DevServiceStatus {
+  return systemdServiceStatus(unit) ?? dockerServiceStatus(container);
+}
+
 function mailpitStatus(): DevServiceStatus {
-  return dockerServiceStatus(MAILPIT_CONTAINER);
+  return unitOrDockerStatus("turbopanel-mailpit", MAILPIT_CONTAINER);
 }
 
 function redisInsightStatus(): DevServiceStatus {
-  return dockerServiceStatus(REDIS_INSIGHT_CONTAINER);
+  return unitOrDockerStatus("turbopanel-redis-insight", REDIS_INSIGHT_CONTAINER);
 }
 
 function tabixStatus(): DevServiceStatus {
-  return dockerServiceStatus(TABIX_CONTAINER);
+  return unitOrDockerStatus("turbopanel-tabix", TABIX_CONTAINER);
 }
 
 function queueStatus(): DevServiceStatus {
@@ -269,10 +274,7 @@ function daemonStatus(): DevServiceStatus {
 
 function downstreamServices(): DevService[] {
   return DOWNSTREAM_SERVICE_DEFS
-    .filter(({ id, unit, repoDir }) => {
-      if (id === "dbstudio") {
-        return isSystemdUnitInstalled(unit);
-      }
+    .filter(({ unit, repoDir }) => {
       return isSystemdUnitInstalled(unit) || isRepoInstalled(repoDir);
     })
     .map(({ id, label, unit, repoDir }) => ({
@@ -406,8 +408,32 @@ export function getVisibleServices(): DevService[] {
   const restDownstream = downstream.filter((service) => service.id !== "instance");
 
   if (instance) {
-    return [instance, daemon, ...restDownstream, ...ancillaryServices()];
+    return mergeCatalogIfStackPresent(
+      [instance, daemon, ...restDownstream, ...ancillaryServices()],
+    );
   }
 
-  return [daemon, ...downstream, ...ancillaryServices()];
+  return mergeCatalogIfStackPresent([
+    daemon,
+    ...downstream,
+    ...ancillaryServices(),
+  ]);
+}
+
+function mergeCatalogIfStackPresent(services: DevService[]): DevService[] {
+  const stackInstalled = services.some((service) => {
+    switch (service.status) {
+      case "running":
+      case "starting":
+      case "failed":
+      case "stopped":
+        return true;
+      default:
+        return false;
+    }
+  });
+  if (!stackInstalled) {
+    return services;
+  }
+  return mergeCatalogOptionalServices(services, readInstanceRuntime());
 }

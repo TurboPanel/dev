@@ -4,6 +4,7 @@ import { type InstallOutputHandler, runCaptured } from "./install-output.ts";
 import { CONSOLE_LOG_DIR } from "./paths.ts";
 import { spawnDocker } from "./docker-access.ts";
 import {
+  MAILPIT_CONTAINER_NAME,
   REDIS_INSIGHT_CONTAINER_NAME,
   TABIX_CONTAINER_NAME,
 } from "./platform-docker-resources.ts";
@@ -12,6 +13,7 @@ import { spawnSyncTrustedText } from "./spawn-trusted.ts";
 /** Optional co-located tooling — not required for core control-plane work. */
 export const OPTIONAL_DEV_SERVICE_IDS = [
   "dbstudio",
+  "smtp",
   "ui",
   "website",
   "redisinsight",
@@ -45,6 +47,14 @@ export const OPTIONAL_DEV_SERVICE_DEFS: readonly OptionalDevServiceDef[] = [
     unit: "turbopanel-dbstudio",
   },
   {
+    id: "smtp",
+    label: "Mailpit",
+    hint: "SMTP catcher on :8025 (loopback)",
+    ansibleStem: "mailpit",
+    unit: "turbopanel-mailpit",
+    container: MAILPIT_CONTAINER_NAME,
+  },
+  {
     id: "ui",
     label: "UI (Expo)",
     hint: "Web console via Caddy; skip if testing native elsewhere",
@@ -76,9 +86,10 @@ export const OPTIONAL_DEV_SERVICE_DEFS: readonly OptionalDevServiceDef[] = [
   },
 ] as const;
 
-/** Defaults when no preference file exists: studio + UI + website on; GUIs off. */
+/** Defaults: UI, website, and Mailpit on; Drizzle Studio / Redis Insight / Tabix off. */
 export const DEFAULT_OPTIONAL_DEV_SERVICES: OptionalDevServiceSelection = {
-  dbstudio: true,
+  dbstudio: false,
+  smtp: true,
   ui: true,
   website: true,
   redisinsight: false,
@@ -144,6 +155,24 @@ export function writeOptionalDevServices(
   const normalized = normalizeOptionalSelection(selection);
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, `${JSON.stringify(normalized, null, 2)}\n`);
+}
+
+/**
+ * Persist an E/X toggle from the Services list so the next converge does not
+ * revert it. Unknown service ids are ignored.
+ */
+export function persistOptionalServiceToggle(
+  serviceId: string,
+  enabled: boolean,
+  path: string = OPTIONAL_SERVICES_PREFS_PATH,
+): OptionalDevServiceSelection | null {
+  if (!isOptionalDevServiceId(serviceId)) {
+    return null;
+  }
+  const next = readOptionalDevServices(path);
+  next[serviceId] = enabled;
+  writeOptionalDevServices(next, path);
+  return next;
 }
 
 /**

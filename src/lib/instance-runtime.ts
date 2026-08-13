@@ -10,6 +10,10 @@ import {
   type ConsoleLogLine,
 } from "./service-restart.ts";
 import { SERVICE_FILE_LOG_PATHS } from "./service-log.ts";
+import {
+  readOptionalDevServices,
+  type OptionalDevServiceId,
+} from "./optional-dev-services.ts";
 
 async function runSystemctl(
   args: string[],
@@ -34,8 +38,15 @@ function isSystemdUnitInstalled(unit: string): boolean {
   return loadState === "loaded" || loadState === "masked";
 }
 
+function optionalServiceWanted(id: OptionalDevServiceId): boolean {
+  return readOptionalDevServices()[id];
+}
+
 async function ensureMailpitRunning(onOutput?: InstallOutputHandler): Promise<void> {
   if (!isSystemdUnitInstalled("turbopanel-mailpit")) {
+    return;
+  }
+  if (!optionalServiceWanted("smtp")) {
     return;
   }
   await runSystemctl(["enable", "--now", "turbopanel-mailpit"], onOutput);
@@ -43,6 +54,9 @@ async function ensureMailpitRunning(onOutput?: InstallOutputHandler): Promise<vo
 
 async function ensureRedisInsightRunning(onOutput?: InstallOutputHandler): Promise<void> {
   if (!isSystemdUnitInstalled("turbopanel-redis-insight")) {
+    return;
+  }
+  if (!optionalServiceWanted("redisinsight")) {
     return;
   }
   await runSystemctl(["enable", "--now", "turbopanel-redis-insight"], onOutput);
@@ -94,6 +108,9 @@ async function ensureClickHouseRunning(onOutput?: InstallOutputHandler): Promise
 
 async function ensureTabixRunning(onOutput?: InstallOutputHandler): Promise<void> {
   if (!isSystemdUnitInstalled("turbopanel-tabix")) {
+    return;
+  }
+  if (!optionalServiceWanted("tabix")) {
     return;
   }
   await runSystemctl(["enable", "--now", "turbopanel-tabix"], onOutput);

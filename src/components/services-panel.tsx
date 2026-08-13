@@ -18,6 +18,11 @@ import {
   serviceActionForKey,
   type ServiceActionId,
 } from "../lib/service-actions.ts";
+import {
+  catalogOptionalIdleColor,
+  isCatalogOptionalServiceId,
+  isServiceListRowVisible,
+} from "../lib/service-list-visibility.ts";
 import type { ConsoleLogLine } from "../lib/service-restart.ts";
 import type { DaemonLogByteFloor } from "../lib/daemon-log.ts";
 import type { ServiceLogByteFloor } from "../lib/service-log.ts";
@@ -147,6 +152,65 @@ function ConvergeServiceLabel({
   );
 }
 
+function shouldShowConvergeHint(
+  displayServices: DevService[],
+  convergeSummaryVisible: boolean,
+): boolean {
+  if (convergeSummaryVisible) {
+    return false;
+  }
+  const coreVisible = displayServices.filter(
+    (service) => !isCatalogOptionalServiceId(service.id),
+  );
+  return coreVisible.length === 1 && coreVisible[0]?.id === "daemon";
+}
+
+function resolveServiceListLabelColor(
+  service: DevService,
+  options: {
+    animatePhase: boolean;
+    phase: ConvergeServicePhase | undefined;
+    daemonOperation?: DaemonOperation | null;
+    restarting: boolean;
+    serviceOperation?: ServiceOperation | null;
+  },
+): string | undefined {
+  if (options.animatePhase) {
+    return undefined;
+  }
+  const idleCatalogColor = catalogOptionalIdleColor(service);
+  if (idleCatalogColor) {
+    return idleCatalogColor;
+  }
+  if (options.phase === "ready" && service.status !== "running") {
+    return STATUS_PENDING;
+  }
+  return serviceStatusColor(service.status, {
+    operation: resolveListOperation(
+      service.id,
+      options.daemonOperation,
+      options.restarting,
+    ),
+    busy:
+      options.serviceOperation?.serviceId === service.id &&
+      options.serviceOperation.action !== "restart",
+  });
+}
+
+function resolveListOperation(
+  serviceId: string,
+  daemonOperation: DaemonOperation | null | undefined,
+  restarting: boolean,
+): DaemonOperation | null {
+  if (serviceId === "daemon" && daemonOperation) {
+    return daemonOperation;
+  }
+  if (restarting) {
+    return "restart";
+  }
+  return null;
+}
+
 function serviceInConverge(
   serviceId: string,
   servicePhases: Record<string, ConvergeServicePhase>,
@@ -260,13 +324,7 @@ export function ServicesPanel({
     const visible: DevService[] = [];
     const fullIndices: number[] = [];
     services.forEach((service, index) => {
-      if (
-        service.status === "running" ||
-        service.status === "starting" ||
-        service.status === "failed" ||
-        service.status === "stopped" ||
-        serviceInConverge(service.id, servicePhases)
-      ) {
+      if (isServiceListRowVisible(service, serviceInConverge(service.id, servicePhases))) {
         visible.push(service);
         fullIndices.push(index);
       }
@@ -274,10 +332,9 @@ export function ServicesPanel({
     return { displayServices: visible, visibleFullIndices: fullIndices };
   }, [services, servicePhases]);
   // Banner when only the daemon is up and converge is not already showing.
-  const needsConvergeHint = Boolean(
-    !convergeSummaryVisible &&
-      displayServices.length === 1 &&
-      displayServices[0]?.id === "daemon",
+  const needsConvergeHint = shouldShowConvergeHint(
+    displayServices,
+    convergeSummaryVisible,
   );
   const serviceDetailHeight = Math.max(
     1,
@@ -427,21 +484,13 @@ export function ServicesPanel({
             const restarting = restartInProgress === service.id;
             const phase = servicePhases[service.id];
             const animatePhase = shouldAnimateConvergeLabel(service, phase);
-            const labelColor = animatePhase
-              ? undefined
-              : phase === "ready" && service.status !== "running"
-              ? STATUS_PENDING
-              : serviceStatusColor(service.status, {
-                  operation:
-                    service.id === "daemon" && daemonOperation
-                      ? daemonOperation
-                      : restarting
-                      ? "restart"
-                      : null,
-                  busy:
-                    serviceOperation?.serviceId === service.id &&
-                    serviceOperation.action !== "restart",
-                });
+            const labelColor = resolveServiceListLabelColor(service, {
+              animatePhase,
+              phase,
+              daemonOperation,
+              restarting,
+              serviceOperation,
+            });
             return (
               <Box
                 key={service.id}
