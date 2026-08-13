@@ -22,7 +22,11 @@
 #   CADDY_TLS_CERT / CADDY_TLS_KEY
 {
 	auto_https off
-	admin off
+	# Localhost-only admin so `systemctl reload` / `caddy reload` can swap leaf
+	# certs without killing the process. Public-urls apply runs through this
+	# reverse proxy (incl. Cloudflare → origin); a full restart mid-request
+	# surfaces as HTTP 502 at the edge.
+	admin localhost:2019
 }
 
 # Shared site body — included conceptually by both :8443 and :8880 listeners.
