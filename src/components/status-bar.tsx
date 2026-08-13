@@ -55,6 +55,9 @@ export function statusHints(
     if (developerView === "cell-trace") {
       return "↑ ↓ scroll · Esc back · Ctrl-C exit";
     }
+    if (developerView === "run-tests") {
+      return "↑ ↓ choose · Enter · Esc back/cancel · Ctrl-C exit";
+    }
     return "↑ ↓ choose action · Enter run · ← → switch tabs · Ctrl-C exit";
   }
   if (activeAreaId === "bootstrap") {

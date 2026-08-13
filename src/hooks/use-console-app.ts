@@ -66,7 +66,7 @@ function initialAutoInstallState(): {
   };
 }
 
-export type DeveloperView = "menu" | "cell-trace";
+export type DeveloperView = "menu" | "cell-trace" | "run-tests";
 
 export function useConsoleApp() {
   const { exit } = useApp();
@@ -254,6 +254,9 @@ export function useConsoleApp() {
         return;
       case "view-cell-trace":
         setDeveloperView("cell-trace");
+        return;
+      case "run-tests":
+        setDeveloperView("run-tests");
         return;
     }
   }, [restartInstanceWithOverlay, startDaemonInstall, startDevEnvConverge, visibleServices]);
@@ -446,7 +449,7 @@ export function useConsoleApp() {
     setSelectedServiceIndex(index);
   }, [visibleServices]);
 
-  const closeCellTraceView = useCallback(() => {
+  const closeDeveloperView = useCallback(() => {
     setDeveloperView("menu");
   }, []);
 
@@ -455,7 +458,7 @@ export function useConsoleApp() {
       return;
     }
 
-    if (developerView === "cell-trace") {
+    if (developerView === "cell-trace" || developerView === "run-tests") {
       return;
     }
 
@@ -496,7 +499,7 @@ export function useConsoleApp() {
     confirmServiceRestart,
     cancelServiceRestart,
     developerView,
-    closeCellTraceView,
+    closeDeveloperView,
     setSelectedServiceIndex: setSelectedServiceIndexById,
     refreshServices,
   };

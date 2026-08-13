@@ -54,11 +54,23 @@ function withNonInteractiveSudo(cmd: string[]): string[] {
   return ["sudo", "-n", ...cmd.slice(1)];
 }
 
+export type RunCapturedOptions = Pick<SpawnOptions, "env" | "cwd"> & {
+  /** When aborted, SIGTERM the child and resolve with exit code 130. */
+  signal?: AbortSignal;
+};
+
+/** Conventional exit status used when {@link RunCapturedOptions.signal} aborts. */
+export const RUN_CAPTURED_ABORTED_EXIT = 130;
+
 export async function runCaptured(
   cmd: string[],
   onLine?: InstallOutputHandler,
-  options: Pick<SpawnOptions, "env" | "cwd"> = {},
+  options: RunCapturedOptions = {},
 ): Promise<number> {
+  if (options.signal?.aborted) {
+    return RUN_CAPTURED_ABORTED_EXIT;
+  }
+
   const argv = withNonInteractiveSudo(cmd);
 
   return new Promise((resolve) => {
@@ -69,9 +81,25 @@ export async function runCaptured(
       detached: false,
     });
 
+    const onAbort = () => {
+      child.kill("SIGTERM");
+    };
+    options.signal?.addEventListener("abort", onAbort, { once: true });
+
+    const finish = (code: number) => {
+      options.signal?.removeEventListener("abort", onAbort);
+      resolve(code);
+    };
+
     child.stdout?.on("data", (chunk) => emitChunk(chunk, onLine));
     child.stderr?.on("data", (chunk) => emitChunk(chunk, onLine));
-    child.on("error", () => resolve(1));
-    child.on("close", (code) => resolve(code ?? 1));
+    child.on("error", () => finish(1));
+    child.on("close", (code) => {
+      if (options.signal?.aborted) {
+        finish(RUN_CAPTURED_ABORTED_EXIT);
+        return;
+      }
+      finish(code ?? 1);
+    });
   });
 }

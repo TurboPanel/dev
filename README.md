@@ -18,7 +18,7 @@ GitHub: [turbopanel/dev](https://github.com/turbopanel/dev)
 - **macOS:** UTM + Vagrant (guest is Debian 12 / `utm/bookworm` until a Trixie UTM box is published)
 - Interactive terminal with `curl` and `sudo`
 - Sudo-capable development user (passwordless sudo optional — see below)
-- **Deno** on PATH, or vendored Deno installed during daemon bootstrap (`2.9.4`)
+- **Deno** on PATH, or vendored Deno installed during daemon bootstrap (`2.9.5`)
 
 ## Bootstrap
 

@@ -98,7 +98,7 @@ export const PYTHON_INSTALL_DIR = PYTHON_RUNTIME_DIR;
  * host Deno is absent matches the one Ansible converges into
  * `/opt/turbopanel/vendor/deno`.
  */
-export const DENO_VERSION = "2.9.4";
+export const DENO_VERSION = "2.9.5";
 export const VENDORED_DENO_BIN = `${RUNTIMES_DIR}/deno/current/deno`;
 
 /** Must stay in step with daemon `ANSIBLE_*` / `DEV_CONVERGE_STAMP_FILE` paths. */
@@ -179,9 +179,24 @@ export const CONSOLE_LOG_DIR = consoleLogDir();
 export const CONVERGE_SERVICE_LOG_DIR = `${CONSOLE_LOG_DIR}/converge`;
 export const CONSOLE_LAST_TASK_ERROR_LOG =
   `${CONSOLE_LOG_DIR}/last-task-error.log`;
+/** Per-run Developer → Run tests transcripts. */
+export const CONSOLE_TEST_RUN_LOG_DIR = `${CONSOLE_LOG_DIR}/test-runs`;
+/** Latest Run tests transcript (overwritten each run). */
+export const CONSOLE_LAST_TEST_RUN_LOG = `${CONSOLE_LOG_DIR}/last-test-run.log`;
 
 export function convergeServiceLogPath(serviceId: string): string {
   return `${CONVERGE_SERVICE_LOG_DIR}/${serviceId}.log`;
+}
+
+/** Timestamped path under {@link CONSOLE_TEST_RUN_LOG_DIR} for one suite run. */
+export function testRunLogPath(
+  repoId: string,
+  suiteId: string,
+  at: Date = new Date(),
+): string {
+  const stamp = at.toISOString().replaceAll(":", "-");
+  const suite = suiteId.replaceAll(":", "-");
+  return `${CONSOLE_TEST_RUN_LOG_DIR}/${repoId}-${suite}-${stamp}.log`;
 }
 
 /**

@@ -22,6 +22,7 @@ export type DaemonActionId =
   | "reset-dev-db"
   | "toggle-cell-trace"
   | "view-cell-trace"
+  | "run-tests"
   | "sync-dev-build";
 
 const DAEMON_UNIT = DAEMON_SYSTEMD_UNIT;
@@ -38,6 +39,7 @@ export const DAEMON_ACTION_LABELS: Record<DaemonActionId, string> = {
   "reset-dev-db": "Reset dev database",
   "toggle-cell-trace": "Toggle verbose cell trace",
   "view-cell-trace": "View cell trace log",
+  "run-tests": "Run tests…",
   "sync-dev-build": "Sync dev build to attached daemons",
 };
 
@@ -57,6 +59,7 @@ export function developerMenuActions(status: DevServiceStatus | undefined): Daem
     "start-dev-env",
     "reset-dev-env",
     "reset-dev-db",
+    "run-tests",
     "toggle-cell-trace",
     "view-cell-trace",
   ];

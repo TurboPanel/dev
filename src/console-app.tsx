@@ -40,7 +40,7 @@ export function ConsoleApp() {
       devEnvConverge={consoleApp.devEnvConverge}
       onDismissDevEnvConvergeError={consoleApp.dismissDevEnvConvergeError}
       developerView={consoleApp.developerView}
-      onCloseCellTraceView={consoleApp.closeCellTraceView}
+      onCloseDeveloperView={consoleApp.closeDeveloperView}
     />
   );
 }

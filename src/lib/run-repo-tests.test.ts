@@ -1,0 +1,153 @@
+import { expect, test } from "vitest";
+import {
+  buildTestCommand,
+  findTestRepo,
+  findTestSuite,
+  listAvailableTestRepos,
+  runRepoTests,
+  TEST_REPO_CATALOG,
+  testRunnerPathEnv,
+} from "./run-repo-tests.ts";
+import { RUN_CAPTURED_ABORTED_EXIT } from "./install-output.ts";
+
+test("TEST_REPO_CATALOG covers every checkout dir with at least one suite", () => {
+  const ids = TEST_REPO_CATALOG.map((repo) => repo.id).sort((a, b) =>
+    a.localeCompare(b)
+  );
+  expect(ids).toEqual(["daemon", "dev", "instance", "ui", "website"]);
+  for (const repo of TEST_REPO_CATALOG) {
+    expect(repo.suites.length).toBeGreaterThan(0);
+  }
+});
+
+test("findTestRepo / findTestSuite locate catalog entries", () => {
+  const instance = findTestRepo("instance");
+  expect(instance?.label).toBe("instance");
+  expect(findTestSuite(instance!, "test:coverage")?.detail).toBe(
+    "pnpm test:coverage",
+  );
+  expect(findTestSuite(instance!, "test")).toBeUndefined();
+});
+
+test("listAvailableTestRepos filters by presence probe", () => {
+  const available = listAvailableTestRepos(
+    [
+      {
+        id: "daemon",
+        label: "daemon",
+        suites: [{ id: "test", label: "Unit tests", detail: "deno task test" }],
+      },
+      {
+        id: "website",
+        label: "website",
+        suites: [{ id: "typecheck", label: "Typecheck", detail: "pnpm typecheck" }],
+      },
+      {
+        id: "ui",
+        label: "ui",
+        suites: [{ id: "test", label: "Unit tests", detail: "pnpm test" }],
+      },
+    ],
+    (repo) => repo === "daemon" || repo === "website",
+  );
+  expect(available.map((repo) => repo.id)).toEqual(["daemon", "website"]);
+});
+
+test("buildTestCommand uses Deno tasks for daemon and pnpm elsewhere", () => {
+  const daemon = buildTestCommand("daemon", "test:coverage", {
+    resolveDenoBin: () => "/opt/fake/deno",
+  });
+  expect(daemon.cmd).toEqual(["/opt/fake/deno", "task", "test:coverage"]);
+  expect(daemon.cwd).toMatch(/\/daemon$/);
+
+  const instance = buildTestCommand("instance", "test:do", {
+    pnpmBin: "/opt/fake/pnpm",
+  });
+  expect(instance.cmd).toEqual(["/opt/fake/pnpm", "test:do"]);
+  expect(instance.cwd).toMatch(/\/instance$/);
+});
+
+test("buildTestCommand rejects suites not offered for the repo", () => {
+  expect(() => buildTestCommand("website", "test")).toThrow(TypeError);
+});
+
+test("testRunnerPathEnv prepends vendored Node and Deno bins", () => {
+  const env = testRunnerPathEnv("/usr/bin:/bin");
+  const parts = env.PATH.split(":");
+  expect(parts[0]).toMatch(/\/node\/current\/bin$/);
+  expect(parts[1]).toMatch(/\/deno\/current$/);
+  expect(parts.slice(-2)).toEqual(["/usr/bin", "/bin"]);
+});
+
+test("runRepoTests streams banner lines and reports exit code", async () => {
+  const lines: string[] = [];
+  const result = await runRepoTests("ui", "test", (line) => lines.push(line), {
+    persistLog: false,
+    deps: {
+      buildCommand: () => ({
+        cwd: "/tmp/ui",
+        cmd: ["echo", "ok"],
+        label: "pnpm test",
+      }),
+      run: async (_cmd, onLine) => {
+        onLine?.("ok");
+        return 0;
+      },
+      pathEnv: () => ({ PATH: "/tmp" }),
+    },
+  });
+
+  expect(result).toEqual({ exitCode: 0, aborted: false, logPath: null });
+  expect(lines[0]).toBe("$ pnpm test");
+  expect(lines[1]).toBe("cwd: /tmp/ui");
+  expect(lines[2]).toBe("ok");
+});
+
+test("runRepoTests marks aborted exits", async () => {
+  const result = await runRepoTests("dev", "typecheck", undefined, {
+    persistLog: false,
+    signal: AbortSignal.abort(),
+    deps: {
+      buildCommand: () => ({
+        cwd: "/tmp/dev",
+        cmd: ["true"],
+        label: "pnpm typecheck",
+      }),
+      run: async () => RUN_CAPTURED_ABORTED_EXIT,
+      pathEnv: () => ({ PATH: "/tmp" }),
+    },
+  });
+  expect(result.aborted).toBe(true);
+  expect(result.exitCode).toBe(RUN_CAPTURED_ABORTED_EXIT);
+  expect(result.logPath).toBeNull();
+});
+
+test("runRepoTests persists a transcript when openLog is provided", async () => {
+  const written: string[] = [];
+  let closed = false;
+  const result = await runRepoTests("instance", "test:do", undefined, {
+    deps: {
+      buildCommand: () => ({
+        cwd: "/tmp/instance",
+        cmd: ["echo", "fail"],
+        label: "pnpm test:do",
+      }),
+      run: async (_cmd, onLine) => {
+        onLine?.("AssertionError: boom");
+        return 1;
+      },
+      pathEnv: () => ({ PATH: "/tmp" }),
+      openLog: async () => ({
+        path: "/tmp/fake-test-run.log",
+        writeLine: (line) => written.push(line),
+        close: async () => {
+          closed = true;
+        },
+      }),
+    },
+  });
+
+  expect(result.logPath).toBe("/tmp/fake-test-run.log");
+  expect(written.some((line) => line.includes("AssertionError: boom"))).toBe(true);
+  expect(closed).toBe(true);
+});

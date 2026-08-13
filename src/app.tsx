@@ -83,7 +83,7 @@ type MainContentProps = Readonly<{
   devEnvConverge?: DevEnvConvergeState | null;
   onDismissDevEnvConvergeError?: () => void;
   developerView?: DeveloperView;
-  onCloseCellTraceView?: () => void;
+  onCloseDeveloperView?: () => void;
 }>;
 
 function MainContent({
@@ -115,7 +115,7 @@ function MainContent({
   devEnvConverge,
   onDismissDevEnvConvergeError,
   developerView,
-  onCloseCellTraceView,
+  onCloseDeveloperView,
 }: MainContentProps) {
   const daemon = visibleServices.find((service) => service.id === "daemon");
 
@@ -139,7 +139,7 @@ function MainContent({
           daemonStatus={daemon?.status}
           daemonOperation={daemonOperation}
           developerView={developerView}
-          onCloseCellTraceView={onCloseCellTraceView}
+          onCloseDeveloperView={onCloseDeveloperView}
           onDaemonAction={onDeveloperDaemonAction}
           onPurgeDone={onPurgeDone}
           onRefreshServices={onRefreshServices}
@@ -213,7 +213,7 @@ type AppViewProps = Readonly<{
   devEnvConverge?: DevEnvConvergeState | null;
   onDismissDevEnvConvergeError?: () => void;
   developerView?: DeveloperView;
-  onCloseCellTraceView?: () => void;
+  onCloseDeveloperView?: () => void;
 }>;
 
 export function AppView({
@@ -248,7 +248,7 @@ export function AppView({
   devEnvConverge,
   onDismissDevEnvConvergeError,
   developerView,
-  onCloseCellTraceView,
+  onCloseDeveloperView,
 }: AppViewProps) {
   const activeIndex = AREAS.findIndex((area) => area.id === activeArea);
   const menuActiveIndex = Math.max(activeIndex, 0);
@@ -308,7 +308,7 @@ export function AppView({
           devEnvConverge={devEnvConverge}
           onDismissDevEnvConvergeError={onDismissDevEnvConvergeError}
           developerView={developerView}
-          onCloseCellTraceView={onCloseCellTraceView}
+          onCloseDeveloperView={onCloseDeveloperView}
         />
       </MainPanel>
     </Box>

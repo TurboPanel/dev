@@ -16,6 +16,7 @@ import { LIST_SELECT_BG, LIST_SELECT_FG } from "../theme.ts";
 import { CellTraceView } from "./cell-trace-view.tsx";
 import { PlainLogView } from "./plain-log-view.tsx";
 import { PurgeDaemonPanel } from "./purge-daemon-panel.tsx";
+import { RunTestsView } from "./run-tests-view.tsx";
 
 const RESTART_HEADER_ROWS = 2;
 
@@ -181,7 +182,7 @@ export function DeveloperPanel({
   daemonStatus,
   daemonOperation,
   developerView = "menu",
-  onCloseCellTraceView,
+  onCloseDeveloperView,
   onDaemonAction,
   onPurgeDone,
   onRefreshServices,
@@ -195,8 +196,8 @@ export function DeveloperPanel({
   height: number;
   daemonStatus?: DevServiceStatus;
   daemonOperation?: DaemonOperation | null;
-  developerView?: "menu" | "cell-trace";
-  onCloseCellTraceView?: () => void;
+  developerView?: "menu" | "cell-trace" | "run-tests";
+  onCloseDeveloperView?: () => void;
   onDaemonAction?: (action: DaemonActionId) => void | Promise<void>;
   onPurgeDone?: () => void;
   onRefreshServices?: () => void;
@@ -236,13 +237,24 @@ export function DeveloperPanel({
     );
   }
 
-  if (developerView === "cell-trace" && onCloseCellTraceView) {
+  if (developerView === "cell-trace" && onCloseDeveloperView) {
     return (
       <CellTraceView
         width={width}
         height={height}
         focused
-        onClose={onCloseCellTraceView}
+        onClose={onCloseDeveloperView}
+      />
+    );
+  }
+
+  if (developerView === "run-tests" && onCloseDeveloperView) {
+    return (
+      <RunTestsView
+        width={width}
+        height={height}
+        focused
+        onClose={onCloseDeveloperView}
       />
     );
   }
