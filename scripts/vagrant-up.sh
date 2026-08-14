@@ -2,7 +2,7 @@
 # Boot the TurboPanel UTM guest (vagrant up) and land in the Ink console over SSH.
 #
 # Host prerequisites: Vagrant, UTM, vagrant_utm plugin; sibling repos next to this
-# checkout (../daemon, ../instance, ../ui, ../website; ../.github is optional).
+# checkout (../turbopaneld, ../turbopanel, ../ui, ../website; ../.github is optional).
 # Prefer SSH agent with a GitHub key loaded (agent is forwarded into the guest).
 #
 # Usage (from the dev repo root or any cwd):
@@ -79,14 +79,14 @@ warn_missing_ssh_agent() {
 
 require_sibling_repos() {
   _missing=
-  for _dir in daemon instance ui website; do
+  for _dir in turbopaneld turbopanel ui website; do
     if [ ! -d "$REPO_ROOT/../$_dir" ]; then
       _missing="${_missing} ../${_dir}"
     fi
   done
   if [ -n "$_missing" ]; then
     tp_error "Expected sibling checkout directories next to this repo:${_missing}"
-    echo "  Layout: …/turbopanel/{dev,daemon,instance,ui,website}" >&2
+    echo "  Layout: …/turbopanel/{dev,turbopaneld,turbopanel,ui,website}" >&2
     exit 1
   fi
   if [ ! -d "$REPO_ROOT/../.github" ]; then

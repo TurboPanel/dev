@@ -2,16 +2,26 @@
 # Source after privileges.sh when needed.
 
 TURBOPANEL_ROOT=/opt/turbopanel
-# Development source-repo root (daemon/instance/ui/website live here). Defaults to
-# the dev user's home; override with TURBOPANEL_DEV_ROOT.
+# Development source-repo root (turbopaneld/turbopanel/ui/website live here).
+# Defaults to the dev user's home; override with TURBOPANEL_DEV_ROOT.
 TURBOPANEL_DEV_ROOT=${TURBOPANEL_DEV_ROOT:-$HOME}
 # Development mode marker (published to daemon.env and the Node console).
 TURBOPANEL_MODE=${TURBOPANEL_MODE:-development}
 
-# Resolve a co-located platform repo checkout (override via TURBOPANEL_<DIR>_REPO).
+# Env key for a platform checkout override. Dir names match GitHub
+# (turbopaneld/turbopanel); keys stay TURBOPANEL_DAEMON_REPO / INSTANCE_REPO.
+tp_platform_repo_env_key() {
+  case "$1" in
+    turbopaneld) printf 'TURBOPANEL_DAEMON_REPO' ;;
+    turbopanel) printf 'TURBOPANEL_INSTANCE_REPO' ;;
+    *) printf 'TURBOPANEL_%s_REPO' "$(printf '%s' "$1" | tr '[:lower:]' '[:upper:]')" ;;
+  esac
+}
+
+# Resolve a co-located platform repo checkout (override via TURBOPANEL_*_REPO).
 tp_platform_repo_path() {
   _tp_dir=$1
-  _tp_key=$(printf 'TURBOPANEL_%s_REPO' "$(printf '%s' "$_tp_dir" | tr '[:lower:]' '[:upper:]')")
+  _tp_key=$(tp_platform_repo_env_key "$_tp_dir")
   eval "_tp_override=\${$_tp_key-}"
   if [ -n "$_tp_override" ]; then
     printf '%s' "$_tp_override"
@@ -24,8 +34,8 @@ tp_platform_repo_path() {
 tp_export_dev_repo_contract() {
   export TURBOPANEL_MODE
   export TURBOPANEL_DEV_ROOT
-  export TURBOPANEL_DAEMON_REPO="$(tp_platform_repo_path daemon)"
-  export TURBOPANEL_INSTANCE_REPO="$(tp_platform_repo_path instance)"
+  export TURBOPANEL_DAEMON_REPO="$(tp_platform_repo_path turbopaneld)"
+  export TURBOPANEL_INSTANCE_REPO="$(tp_platform_repo_path turbopanel)"
   export TURBOPANEL_UI_REPO="$(tp_platform_repo_path ui)"
   export TURBOPANEL_WEBSITE_REPO="$(tp_platform_repo_path website)"
 }

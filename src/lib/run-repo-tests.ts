@@ -93,13 +93,13 @@ const DENO_SUITES = {
 /** Static catalog of repos and suites (presence gated at runtime). */
 export const TEST_REPO_CATALOG: readonly TestRepoDef[] = [
   {
-    id: "daemon",
-    label: "daemon",
+    id: "turbopaneld",
+    label: "turbopaneld",
     suites: [DENO_SUITES.test, DENO_SUITES["test:coverage"], DENO_SUITES.check],
   },
   {
-    id: "instance",
-    label: "instance",
+    id: "turbopanel",
+    label: "turbopanel",
     suites: [
       PNPM_SUITES["test:do"],
       PNPM_SUITES["test:coverage"],
@@ -129,7 +129,7 @@ export const TEST_REPO_CATALOG: readonly TestRepoDef[] = [
 
 function repoLooksPresent(repo: TestRepoId): boolean {
   const root = platformRepoPath(repo);
-  if (repo === "daemon") {
+  if (repo === "turbopaneld") {
     return (
       existsSync(`${root}/deno.json`) ||
       existsSync(`${root}/main.ts`) ||
@@ -206,7 +206,7 @@ export function buildTestCommand(
   }
 
   const cwd = platformRepoPath(repoId);
-  if (repoId === "daemon") {
+  if (repoId === "turbopaneld") {
     const denoBin = (options.resolveDenoBin ?? resolveBootstrapDenoBin)();
     return {
       cwd,

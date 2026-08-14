@@ -83,7 +83,7 @@
 	handle @dev_daemon_downloads {
 		header Cache-Control "no-store"
 		route {
-			root * {$TURBOPANEL_DAEMON_REPO:../daemon}/dist
+			root * {$TURBOPANEL_DAEMON_REPO:../turbopaneld}/dist
 			uri strip_prefix /downloads/daemon
 			file_server {
 				browse
@@ -95,7 +95,7 @@
 	handle @dev_daemon_install {
 		header Cache-Control "no-store"
 		header Content-Type "text/x-shellscript; charset=utf-8"
-		root * {$TURBOPANEL_DAEMON_REPO:../daemon}
+		root * {$TURBOPANEL_DAEMON_REPO:../turbopaneld}
 		rewrite * /scripts/run.sh
 		file_server
 	}
@@ -170,7 +170,7 @@
 	handle @dev_daemon_downloads {
 		header Cache-Control "no-store"
 		route {
-			root * {$TURBOPANEL_DAEMON_REPO:../daemon}/dist
+			root * {$TURBOPANEL_DAEMON_REPO:../turbopaneld}/dist
 			uri strip_prefix /downloads/daemon
 			file_server {
 				browse
@@ -182,7 +182,7 @@
 	handle @dev_daemon_install {
 		header Cache-Control "no-store"
 		header Content-Type "text/x-shellscript; charset=utf-8"
-		root * {$TURBOPANEL_DAEMON_REPO:../daemon}
+		root * {$TURBOPANEL_DAEMON_REPO:../turbopaneld}
 		rewrite * /scripts/run.sh
 		file_server
 	}

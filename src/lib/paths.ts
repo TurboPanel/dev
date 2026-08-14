@@ -1,7 +1,16 @@
 export const TURBOPANEL_ROOT = "/opt/turbopanel";
 
-/** Co-located platform repo dir names (daemon/instance/ui/website). */
-export const PLATFORM_REPO_DIRS = ["daemon", "instance", "ui", "website"] as const;
+/**
+ * Co-located platform repo dir names (match GitHub repo names 1:1).
+ * Env overrides stay `TURBOPANEL_DAEMON_REPO` / `TURBOPANEL_INSTANCE_REPO`
+ * (see {@link platformRepoEnvKey}).
+ */
+export const PLATFORM_REPO_DIRS = [
+  "turbopaneld",
+  "turbopanel",
+  "ui",
+  "website",
+] as const;
 
 /** Every development checkout that may carry .githooks (dev console + platform repos). */
 export const ALL_DEV_CHECKOUT_DIRS = ["dev", ...PLATFORM_REPO_DIRS] as const;
@@ -18,8 +27,16 @@ export function resolveDevRoot(): string {
   );
 }
 
-/** Env key for an explicit repo checkout override (`TURBOPANEL_<DIR>_REPO`). */
+/**
+ * Env key for an explicit repo checkout override.
+ *
+ * Directory names match GitHub (`turbopaneld` / `turbopanel`), but the env
+ * keys stay `TURBOPANEL_DAEMON_REPO` / `TURBOPANEL_INSTANCE_REPO` for the
+ * daemon and control-plane checkouts.
+ */
 export function platformRepoEnvKey(dir: string): string {
+  if (dir === "turbopaneld") return "TURBOPANEL_DAEMON_REPO";
+  if (dir === "turbopanel") return "TURBOPANEL_INSTANCE_REPO";
   return `TURBOPANEL_${dir.toUpperCase()}_REPO`;
 }
 
@@ -112,11 +129,11 @@ export function platformRepoPath(dir: string): string {
 }
 
 export function daemonRepoPath(): string {
-  return platformRepoPath("daemon");
+  return platformRepoPath("turbopaneld");
 }
 
 export function instanceRepoPath(): string {
-  return platformRepoPath("instance");
+  return platformRepoPath("turbopanel");
 }
 
 export function platformCaCertPath(): string {
@@ -158,7 +175,7 @@ export const TURBOPANEL_TRUNK_BRANCH = "trunk";
 export const DAEMON_ENV_TRUNK_BRANCH_KEY = "TURBOPANEL_TRUNK_BRANCH" as const;
 
 export const DAEMON_REPO = {
-  dir: "daemon",
+  dir: "turbopaneld",
   repo: "turbopanel/turbopaneld",
 } as const;
 

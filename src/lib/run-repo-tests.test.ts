@@ -14,15 +14,15 @@ test("TEST_REPO_CATALOG covers every checkout dir with at least one suite", () =
   const ids = TEST_REPO_CATALOG.map((repo) => repo.id).sort((a, b) =>
     a.localeCompare(b)
   );
-  expect(ids).toEqual(["daemon", "dev", "instance", "ui", "website"]);
+  expect(ids).toEqual(["dev", "turbopanel", "turbopaneld", "ui", "website"]);
   for (const repo of TEST_REPO_CATALOG) {
     expect(repo.suites.length).toBeGreaterThan(0);
   }
 });
 
 test("findTestRepo / findTestSuite locate catalog entries", () => {
-  const instance = findTestRepo("instance");
-  expect(instance?.label).toBe("instance");
+  const instance = findTestRepo("turbopanel");
+  expect(instance?.label).toBe("turbopanel");
   expect(findTestSuite(instance!, "test:coverage")?.detail).toBe(
     "pnpm test:coverage",
   );
@@ -33,8 +33,8 @@ test("listAvailableTestRepos filters by presence probe", () => {
   const available = listAvailableTestRepos(
     [
       {
-        id: "daemon",
-        label: "daemon",
+        id: "turbopaneld",
+        label: "turbopaneld",
         suites: [{ id: "test", label: "Unit tests", detail: "deno task test" }],
       },
       {
@@ -48,23 +48,23 @@ test("listAvailableTestRepos filters by presence probe", () => {
         suites: [{ id: "test", label: "Unit tests", detail: "pnpm test" }],
       },
     ],
-    (repo) => repo === "daemon" || repo === "website",
+    (repo) => repo === "turbopaneld" || repo === "website",
   );
-  expect(available.map((repo) => repo.id)).toEqual(["daemon", "website"]);
+  expect(available.map((repo) => repo.id)).toEqual(["turbopaneld", "website"]);
 });
 
-test("buildTestCommand uses Deno tasks for daemon and pnpm elsewhere", () => {
-  const daemon = buildTestCommand("daemon", "test:coverage", {
+test("buildTestCommand uses Deno tasks for turbopaneld and pnpm elsewhere", () => {
+  const daemon = buildTestCommand("turbopaneld", "test:coverage", {
     resolveDenoBin: () => "/opt/fake/deno",
   });
   expect(daemon.cmd).toEqual(["/opt/fake/deno", "task", "test:coverage"]);
-  expect(daemon.cwd).toMatch(/\/daemon$/);
+  expect(daemon.cwd).toMatch(/\/turbopaneld$/);
 
-  const instance = buildTestCommand("instance", "test:do", {
+  const instance = buildTestCommand("turbopanel", "test:do", {
     pnpmBin: "/opt/fake/pnpm",
   });
   expect(instance.cmd).toEqual(["/opt/fake/pnpm", "test:do"]);
-  expect(instance.cwd).toMatch(/\/instance$/);
+  expect(instance.cwd).toMatch(/\/turbopanel$/);
 });
 
 test("buildTestCommand rejects suites not offered for the repo", () => {
@@ -125,10 +125,10 @@ test("runRepoTests marks aborted exits", async () => {
 test("runRepoTests persists a transcript when openLog is provided", async () => {
   const written: string[] = [];
   let closed = false;
-  const result = await runRepoTests("instance", "test:do", undefined, {
+  const result = await runRepoTests("turbopanel", "test:do", undefined, {
     deps: {
       buildCommand: () => ({
-        cwd: "/tmp/instance",
+        cwd: "/tmp/turbopanel",
         cmd: ["echo", "fail"],
         label: "pnpm test:do",
       }),

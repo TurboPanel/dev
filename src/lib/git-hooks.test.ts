@@ -16,7 +16,7 @@ afterEach(() => {
 describe("ALL_DEV_CHECKOUT_DIRS", () => {
   test("includes dev and every platform repo", () => {
     expect([...ALL_DEV_CHECKOUT_DIRS].sort((a, b) => a.localeCompare(b))).toEqual(
-      ["daemon", "dev", "instance", "ui", "website"].sort((a, b) =>
+      ["dev", "turbopanel", "turbopaneld", "ui", "website"].sort((a, b) =>
         a.localeCompare(b),
       ),
     );

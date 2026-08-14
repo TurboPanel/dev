@@ -16,7 +16,7 @@ runtime_socket_dir: /run/turbopanel
 # Dev source-repo root (dev user's home); the playbook overrides this from getent.
 turbopanel_dev_root: "{{ ansible_env.HOME }}"
 _dev_home_checkouts:
-  - "{{ turbopanel_dev_root }}/daemon"
-  - "{{ turbopanel_dev_root }}/instance"
+  - "{{ turbopanel_dev_root }}/turbopaneld"
+  - "{{ turbopanel_dev_root }}/turbopanel"
   - "{{ turbopanel_dev_root }}/ui"
   - "{{ turbopanel_dev_root }}/website"

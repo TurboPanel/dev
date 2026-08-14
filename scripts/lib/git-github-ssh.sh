@@ -224,7 +224,7 @@ tp_ensure_all_git_hooks_paths() {
   # shellcheck source=scripts/lib/paths.sh
   . "$_eahhp_lib/paths.sh"
 
-  for _eahhp_dir in dev daemon instance ui website; do
+  for _eahhp_dir in dev turbopaneld turbopanel ui website; do
     _eahhp_root=$(tp_platform_repo_path "$_eahhp_dir")
     if [ ! -d "$_eahhp_root" ]; then
       continue

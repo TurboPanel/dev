@@ -398,8 +398,8 @@ Vagrant.configure("2") do |config|
   config.vm.synced_folder ".", "/vagrant", disabled: true
 
   config.vm.synced_folder ".", "/home/vagrant/dev", **SYNCED_FOLDER_OPTIONS
-  config.vm.synced_folder "../daemon", "/home/vagrant/daemon", **SYNCED_FOLDER_OPTIONS
-  config.vm.synced_folder "../instance", "/home/vagrant/instance", **SYNCED_FOLDER_OPTIONS
+  config.vm.synced_folder "../turbopaneld", "/home/vagrant/turbopaneld", **SYNCED_FOLDER_OPTIONS
+  config.vm.synced_folder "../turbopanel", "/home/vagrant/turbopanel", **SYNCED_FOLDER_OPTIONS
   config.vm.synced_folder "../ui", "/home/vagrant/ui", **SYNCED_FOLDER_OPTIONS
   config.vm.synced_folder "../website", "/home/vagrant/website", **SYNCED_FOLDER_OPTIONS
 
@@ -496,10 +496,6 @@ Vagrant.configure("2") do |config|
       -o Dpkg::Options::="--force-confdef" \
       -o Dpkg::Options::="--force-confold" \
       upgrade
-    apt-get -y \
-      -o Dpkg::Options::="--force-confdef" \
-      -o Dpkg::Options::="--force-confold" \
-      dist-upgrade
     apt-get -y autoremove
     apt-get install -y curl
 
@@ -566,7 +562,7 @@ EOF
 
     # pnpm 11's content-addressable store is SQLite-backed (WAL mode) and, with no
     # explicit storeDir, is auto-placed inside whichever filesystem the project sits
-    # on — here that is a VirtFS/9p mount from the Mac host (~/dev, ~/daemon, ~/instance,
+    # on — here that is a VirtFS/9p mount from the Mac host (~/dev, ~/turbopaneld, ~/turbopanel,
     # ~/ui, ~/website are each their own 9p mount). SQLite's WAL requires shared-memory
     # mmap that 9p/virtiofs doesn't support across the VM boundary, so installs fail
     # with "[ERR_SQLITE_ERROR] disk I/O error". Force a guest-local (ext4) store instead.
@@ -607,7 +603,7 @@ NODE_MODULES_BASE=/var/lib/turbopanel-dev/node_modules
 attempt=0
 while [ "$attempt" -lt 120 ]; do
   mounts_ready=1
-  for repo in dev instance ui website; do
+  for repo in dev turbopanel ui website; do
     if [ ! -f "/home/vagrant/${repo}/package.json" ]; then
       mounts_ready=0
       break
@@ -618,7 +614,7 @@ while [ "$attempt" -lt 120 ]; do
   sleep 1
 done
 
-for repo in dev instance ui website; do
+for repo in dev turbopanel ui website; do
   repo_dir="/home/vagrant/${repo}"
   [ -f "${repo_dir}/package.json" ] || continue
   store="${NODE_MODULES_BASE}/${repo}"

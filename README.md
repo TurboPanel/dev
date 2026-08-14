@@ -56,8 +56,8 @@ Clone the five sibling repos side by side (for example under `~/Development/turb
 ```
 turbopanel/
 ├── dev/        # this repo (contains the Vagrantfile)
-├── daemon/
-├── instance/
+├── turbopaneld/
+├── turbopanel/
 ├── ui/
 ├── website/
 └── .github/    # optional — community health files
@@ -83,9 +83,9 @@ From this repo:
 ./scripts/vagrant-up.sh
 ```
 
-That command runs `vagrant up --provider=utm` (first boot downloads the box and provisions passwordless sudo) then `vagrant ssh` into `./console` on the guest. Source is VirtFS-mounted from your Mac into the guest home (`~/dev`, `~/daemon`, `~/instance`, `~/ui`, `~/website` — the same paths `dev.turbopanel.sh` would use); FHS paths (`/etc/turbopanel`, `/opt/turbopanel`, …) stay on the VM disk — that tree only ever holds vendored runtimes, the production binary, and the built static UI, never source. After converge, open `https://localhost:8443` on the **Mac** (ports `8443` / `8880` are forwarded).
+That command runs `vagrant up --provider=utm` (first boot downloads the box and provisions passwordless sudo) then `vagrant ssh` into `./console` on the guest. Source is VirtFS-mounted from your Mac into the guest home (`~/dev`, `~/turbopaneld`, `~/turbopanel`, `~/ui`, `~/website` — the same paths `dev.turbopanel.sh` would use); FHS paths (`/etc/turbopanel`, `/opt/turbopanel`, …) stay on the VM disk — that tree only ever holds vendored runtimes, the production binary, and the built static UI, never source. After converge, open `https://localhost:8443` on the **Mac** (ports `8443` / `8880` are forwarded).
 
-UTM may prompt to allow host folder access for shared directories. First `vagrant up` can take several minutes. After package upgrades, if a newer kernel is pending the guest **reboots once** during provision (SSH drops for about a minute — expected; Vagrant waits and continues). The guest pins pnpm's store to `/var/lib/pnpm/store` with `packageImportMethod: copy` via `~/.config/pnpm/config.yaml` (pnpm 11 only reads pnpm-specific settings from that global YAML file or `pnpm-workspace.yaml` — never `.npmrc`) — without it, pnpm's SQLite-backed store defaults onto the VirtFS/9p-mounted project directory, and SQLite's WAL mode fails there with `[ERR_SQLITE_ERROR] disk I/O error`. The provisioner bind-mounts each mounted repo's `node_modules` (`dev`, `instance`, `ui`, `website`) from a guest-local `ext4` directory under `/var/lib/turbopanel-dev/node_modules/<repo>/node_modules` — ARM64 hosts don't invalidate the instruction cache for pages faulted in from FUSE-backed filesystems (9p/virtiofs), so native Node addons like esbuild/Rolldown/lightningcss crash with `SIGSEGV`/`SIGILL` when `node_modules` lives directly on the VirtFS mount. A symlink is not enough: Next.js Turbopack rejects `node_modules` that points outside the project, and Node ESM realpath walks still need a directory named `node_modules` (`drizzle-kit` otherwise reports "Please install latest version of drizzle-orm"). Source stays VirtFS-mounted for editing from the Mac; only `node_modules` moves. If `df -h /` shows a very small root disk, expand it in UTM (drive → Resize) then grow the guest filesystem — an 8 GiB swapfile is only created when enough free space remains. `pnpm install` into the shared tree can still be slower than bare metal (copy import).
+UTM may prompt to allow host folder access for shared directories. First `vagrant up` can take several minutes. After package upgrades, if a newer kernel is pending the guest **reboots once** during provision (SSH drops for about a minute — expected; Vagrant waits and continues). The guest pins pnpm's store to `/var/lib/pnpm/store` with `packageImportMethod: copy` via `~/.config/pnpm/config.yaml` (pnpm 11 only reads pnpm-specific settings from that global YAML file or `pnpm-workspace.yaml` — never `.npmrc`) — without it, pnpm's SQLite-backed store defaults onto the VirtFS/9p-mounted project directory, and SQLite's WAL mode fails there with `[ERR_SQLITE_ERROR] disk I/O error`. The provisioner bind-mounts each mounted repo's `node_modules` (`dev`, `turbopanel`, `ui`, `website`) from a guest-local `ext4` directory under `/var/lib/turbopanel-dev/node_modules/<repo>/node_modules` — ARM64 hosts don't invalidate the instruction cache for pages faulted in from FUSE-backed filesystems (9p/virtiofs), so native Node addons like esbuild/Rolldown/lightningcss crash with `SIGSEGV`/`SIGILL` when `node_modules` lives directly on the VirtFS mount. A symlink is not enough: Next.js Turbopack rejects `node_modules` that points outside the project, and Node ESM realpath walks still need a directory named `node_modules` (`drizzle-kit` otherwise reports "Please install latest version of drizzle-orm"). Source stays VirtFS-mounted for editing from the Mac; only `node_modules` moves. If `df -h /` shows a very small root disk, expand it in UTM (drive → Resize) then grow the guest filesystem — an 8 GiB swapfile is only created when enough free space remains. `pnpm install` into the shared tree can still be slower than bare metal (copy import).
 
 ### Bare Debian host
 
@@ -117,7 +117,7 @@ After **Converge** in the console, expect:
 
 | Area | Paths / effect |
 | --- | --- |
-| Sibling repos | `~/daemon`, `~/instance`, `~/ui`, `~/website` cloned or updated |
+| Sibling repos | `~/turbopaneld`, `~/turbopanel`, `~/ui`, `~/website` cloned or updated |
 | FHS mutable data | `/etc/turbopanel`, `/var/lib/turbopanel`, `/var/log/turbopanel`, `/run/turbopanel` (dev-user-owned) |
 | Vendored runtimes | `/opt/turbopanel/vendor/{node,deno,caddy,…}` |
 | systemd units | `turbopaneld`, `turbopanel-instance`, `turbopanel-caddy`, `turbopanel-ui`, Docker-backed services |
@@ -130,8 +130,8 @@ No dedicated `tp` / `tpctrl` service accounts are created in dev — everything 
 | Checkout | Repository |
 | --- | --- |
 | `~/dev` | [turbopanel/dev](https://github.com/turbopanel/dev) (this repo — bootstrap only) |
-| `~/daemon` | [turbopanel/turbopaneld](https://github.com/turbopanel/turbopaneld) |
-| `~/instance` | [turbopanel/turbopanel](https://github.com/turbopanel/turbopanel) |
+| `~/turbopaneld` | [turbopanel/turbopaneld](https://github.com/turbopanel/turbopaneld) |
+| `~/turbopanel` | [turbopanel/turbopanel](https://github.com/turbopanel/turbopanel) |
 | `~/ui` | [turbopanel/ui](https://github.com/turbopanel/ui) |
 | `~/website` | [turbopanel/website](https://github.com/turbopanel/website) |
 

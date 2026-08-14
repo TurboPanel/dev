@@ -11,7 +11,7 @@ SCRIPT_DIR=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
 
 failed=0
 
-for dir in dev daemon instance ui website; do
+for dir in dev turbopaneld turbopanel ui website; do
   root=$(tp_platform_repo_path "$dir")
   if [ ! -d "$root" ]; then
     continue

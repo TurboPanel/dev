@@ -5,6 +5,7 @@ import { describe, expect, test } from "vitest";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "../..");
 const VAGRANTFILE = readFileSync(join(REPO_ROOT, "Vagrantfile"), "utf8");
+const VAGRANT_UP = readFileSync(join(REPO_ROOT, "scripts/vagrant-up.sh"), "utf8");
 
 describe("Vagrant node_modules layout", () => {
   test("guest-local tree nests a directory named node_modules for ESM realpath walks", () => {
@@ -79,8 +80,21 @@ describe("Vagrant host providers", () => {
 
   test("refreshes guest packages instead of installing curl early", () => {
     expect(VAGRANTFILE).toContain("apt-get update -qq");
-    expect(VAGRANTFILE).toContain("dist-upgrade");
+    expect(VAGRANTFILE).toContain("upgrade");
+    expect(VAGRANTFILE).not.toContain("dist-upgrade");
     expect(VAGRANTFILE).toContain("apt-get -y autoremove");
     expect(VAGRANTFILE).not.toContain("apt-get install -y -qq curl");
+  });
+});
+
+describe("Vagrant host sibling checkouts", () => {
+  test("vagrant-up.sh requires turbopaneld/turbopanel siblings, not retired names", () => {
+    expect(VAGRANT_UP).toContain(
+      "for _dir in turbopaneld turbopanel ui website; do",
+    );
+    expect(VAGRANT_UP).not.toMatch(
+      /for _dir in (daemon instance|instance daemon) /,
+    );
+    expect(VAGRANT_UP).not.toContain("for _dir in daemon instance ui website");
   });
 });

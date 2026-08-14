@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Push instance/src/lib/db/schema.ts to the live dev database (no migration files).
+# Push turbopanel/src/lib/db/schema.ts to the live dev database (no migration files).
 #
 # Uses drizzle-kit push — applies DDL directly. Does not write drizzle/*.sql.
 #
@@ -11,13 +11,13 @@
 #   --verbose  print each SQL statement
 #
 # Run from the dev checkout (or any cwd): ./scripts/sync.sh
-# See instance/src/lib/db/AGENTS.md (schema-first → sync).
+# See turbopanel/src/lib/db/AGENTS.md (schema-first → sync).
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/lib/paths.sh
 source "$SCRIPT_DIR/lib/paths.sh"
-ROOT="$(tp_platform_repo_path instance)"
+ROOT="$(tp_platform_repo_path turbopanel)"
 SCHEMA_SRC="$ROOT/src/lib/db/schema.ts"
 # shellcheck source=/dev/null
 source "$ROOT/scripts/db-connect.sh"

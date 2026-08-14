@@ -12,7 +12,7 @@
 # (turbopanel/turbopaneli/turbopanelc, uid 9999/9998/9997) onto the single human
 # dev user, and:
 #   * source repos live under the dev user's home (turbopanel_dev_root):
-#       <home>/daemon, <home>/instance, <home>/ui, <home>/website
+#       <home>/turbopaneld, <home>/turbopanel, <home>/ui, <home>/website
 #   * every mutable dir is the shared FHS location (dev-user-owned at runtime):
 #       /etc/turbopanel, /var/lib/turbopanel, /var/log/turbopanel,
 #       /opt/turbopanel/vendor, /run/turbopanel
@@ -39,7 +39,7 @@
     # Dev source-repo root (the dev user's home). ansible_env.HOME is unreliable
     # under become (it resolves to root's HOME), so a pre_task below overrides this
     # with the dev user's real home resolved from getent. Passed on to every
-    # daemon role, which derive <root>/{daemon,instance,ui,website} from it.
+    # daemon role, which derive <root>/{turbopaneld,turbopanel,ui,website} from it.
     turbopanel_dev_root: "{{ ansible_env.HOME }}"
     instance_repo_url: https://github.com/turbopanel/turbopanel
     ui_repo_url: https://github.com/turbopanel/ui

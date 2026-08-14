@@ -39,29 +39,30 @@ describe("resolveDevRoot", () => {
 });
 
 describe("platformRepoPath", () => {
-  test("platformRepoEnvKey uppercases the dir name", () => {
-    expect(platformRepoEnvKey("daemon")).toBe("TURBOPANEL_DAEMON_REPO");
+  test("platformRepoEnvKey maps checkout dirs to historical env keys", () => {
+    expect(platformRepoEnvKey("turbopaneld")).toBe("TURBOPANEL_DAEMON_REPO");
+    expect(platformRepoEnvKey("turbopanel")).toBe("TURBOPANEL_INSTANCE_REPO");
     expect(platformRepoEnvKey("ui")).toBe("TURBOPANEL_UI_REPO");
   });
 
-  test("honours TURBOPANEL_<DIR>_REPO override", () => {
+  test("honours TURBOPANEL_DAEMON_REPO override for turbopaneld", () => {
     vi.stubEnv("TURBOPANEL_DEV_ROOT", "/dev-root");
-    vi.stubEnv("TURBOPANEL_DAEMON_REPO", "/override/daemon");
-    expect(platformRepoPath("daemon")).toBe("/override/daemon");
+    vi.stubEnv("TURBOPANEL_DAEMON_REPO", "/override/turbopaneld");
+    expect(platformRepoPath("turbopaneld")).toBe("/override/turbopaneld");
   });
 
   test("defaults to <devRoot>/<dir> when override is absent", () => {
     vi.stubEnv("TURBOPANEL_DEV_ROOT", "/dev-root");
     vi.stubEnv("TURBOPANEL_DAEMON_REPO", "");
-    expect(platformRepoPath("daemon")).toBe("/dev-root/daemon");
+    expect(platformRepoPath("turbopaneld")).toBe("/dev-root/turbopaneld");
   });
 
   test("daemonRepoPath and instanceRepoPath delegate to platformRepoPath", () => {
     vi.stubEnv("TURBOPANEL_DEV_ROOT", "/dev-root");
-    vi.stubEnv("TURBOPANEL_DAEMON_REPO", "/override/daemon");
-    vi.stubEnv("TURBOPANEL_INSTANCE_REPO", "/override/instance");
-    expect(daemonRepoPath()).toBe("/override/daemon");
-    expect(instanceRepoPath()).toBe("/override/instance");
+    vi.stubEnv("TURBOPANEL_DAEMON_REPO", "/override/turbopaneld");
+    vi.stubEnv("TURBOPANEL_INSTANCE_REPO", "/override/turbopanel");
+    expect(daemonRepoPath()).toBe("/override/turbopaneld");
+    expect(instanceRepoPath()).toBe("/override/turbopanel");
   });
 
   test("buildPlatformRepoEntries returns one entry per PLATFORM_REPO_DIRS", () => {

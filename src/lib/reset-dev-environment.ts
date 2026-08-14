@@ -19,7 +19,7 @@ import {
 } from "./paths.ts";
 import { shellQuote } from "./shell-quote.ts";
 
-const PLATFORM_REPOS = ["daemon", "instance", "ui", "website"] as const;
+const PLATFORM_REPOS = ["turbopaneld", "turbopanel", "ui", "website"] as const;
 
 async function runShellStep(
   label: string,

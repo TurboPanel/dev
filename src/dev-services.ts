@@ -42,19 +42,19 @@ const DOWNSTREAM_SERVICE_DEFS = [
     id: "instance",
     label: "instance",
     unit: "turbopanel-instance",
-    repoDir: platformRepoPath("instance"),
+    repoDir: platformRepoPath("turbopanel"),
   },
   {
     id: "web",
     label: "web",
     unit: "turbopanel-caddy",
-    repoDir: platformRepoPath("instance"),
+    repoDir: platformRepoPath("turbopanel"),
   },
   {
     id: "dbstudio",
     label: "dbstudio",
     unit: "turbopanel-dbstudio",
-    repoDir: platformRepoPath("instance"),
+    repoDir: platformRepoPath("turbopanel"),
   },
   {
     id: "ui",

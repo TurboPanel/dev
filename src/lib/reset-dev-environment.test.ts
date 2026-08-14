@@ -38,7 +38,7 @@ test("resetDevEnvironment always rebuilds with force mode after teardown", async
     "Remove Docker containers",
     "Remove Docker volumes",
   ]);
-  expect(resetRepos).toEqual(["daemon", "instance", "ui", "website"]);
+  expect(resetRepos).toEqual(["turbopaneld", "turbopanel", "ui", "website"]);
   expect(installCalls).toEqual([{ mode: "force" }]);
 });
 
