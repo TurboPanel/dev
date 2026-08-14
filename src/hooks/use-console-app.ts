@@ -105,12 +105,16 @@ export function useConsoleApp() {
   const [developerView, setDeveloperView] = useState<DeveloperView>("menu");
   const { services: visibleServices, refresh: refreshServices } = useVisibleServices();
   const autoInstallStarted = useRef(initialAutoInstall.shouldAutoInstall);
+  // Idle launches must never auto-bootstrap later (e.g. after rebuild). The
+  // post-bootstrap optional-services → converge chain is install-only.
+  const allowAutoBootstrap = useRef(initialAutoInstall.shouldAutoInstall);
   const devEnvConvergeSelectionPinned = useRef(false);
   const selectedServiceIdRef = useRef(
     getVisibleServices()[initialAutoInstall.selectedServiceIndex]?.id ?? "daemon",
   );
 
   const handleDevEnvConvergeFinished = useCallback((success: boolean) => {
+    allowAutoBootstrap.current = false;
     if (success) {
       setProvisioning(false);
       setActiveArea("services");
@@ -148,24 +152,31 @@ export function useConsoleApp() {
     startDevEnvConverge(mode, selection);
   }, [startDevEnvConverge]);
 
+  const beginBootstrapOperation = useCallback((operation: DaemonOperation) => {
+    // Ink may flush each setState immediately. Set the operation *before*
+    // switching to the bootstrap area so ProvisionerPanel never mounts with
+    // the default "daemon" phase (full bootstrap → optional services → converge).
+    setInstallFinished(false);
+    setDaemonOperation(operation);
+    setProvisioning(true);
+    setActiveArea("bootstrap");
+  }, []);
+
   const startDaemonInstall = useCallback(() => {
     selectedServiceIdRef.current = "daemon";
     const index = visibleServices.findIndex((service) => service.id === "daemon");
     if (index >= 0) {
       setSelectedServiceIndex(index);
     }
-    setActiveArea("bootstrap");
-    setProvisioning(true);
-    setInstallFinished(false);
-    setDaemonOperation("install");
-  }, [visibleServices]);
+    beginBootstrapOperation("install");
+  }, [beginBootstrapOperation, visibleServices]);
 
   useEffect(() => {
     refreshDevPermissionsQuietly();
   }, []);
 
   useEffect(() => {
-    if (autoInstallStarted.current || daemonOperation) {
+    if (!allowAutoBootstrap.current || autoInstallStarted.current || daemonOperation) {
       return;
     }
     const plan = resolveDevEnvStartupPlan();
@@ -203,8 +214,6 @@ export function useConsoleApp() {
     switch (action) {
       case "install":
       case "repair":
-        setActiveArea("bootstrap");
-        setProvisioning(true);
         startDaemonInstall();
         return;
       case "purge":
@@ -232,10 +241,7 @@ export function useConsoleApp() {
             "Install the daemon before resetting the development environment.",
           );
         }
-        setInstallFinished(false);
-        setActiveArea("bootstrap");
-        setProvisioning(true);
-        setDaemonOperation("reset-dev-env");
+        beginBootstrapOperation("reset-dev-env");
         return;
       }
       case "reset-dev-db": {
@@ -245,17 +251,14 @@ export function useConsoleApp() {
             "Install the daemon before resetting the dev database.",
           );
         }
-        setInstallFinished(false);
-        setActiveArea("bootstrap");
-        setProvisioning(true);
-        setDaemonOperation("reset-dev-db");
+        beginBootstrapOperation("reset-dev-db");
         return;
       }
       case "sync-dev-build":
-        setInstallFinished(false);
-        setActiveArea("bootstrap");
-        setProvisioning(true);
-        setDaemonOperation("sync-dev-build");
+        beginBootstrapOperation("sync-dev-build");
+        return;
+      case "rebuild-daemon-upgrade":
+        beginBootstrapOperation("rebuild-daemon-upgrade");
         return;
       case "toggle-cell-trace":
         setActiveArea("developer");
@@ -272,6 +275,7 @@ export function useConsoleApp() {
         return;
     }
   }, [
+    beginBootstrapOperation,
     openOptionalServicesPicker,
     restartInstanceWithOverlay,
     startDaemonInstall,
@@ -439,6 +443,7 @@ export function useConsoleApp() {
   }, [refreshServices]);
 
   const handleProvisioningDone = useCallback(() => {
+    allowAutoBootstrap.current = false;
     setProvisioning(false);
     setActiveArea("services");
     setDaemonOperation(null);
@@ -447,6 +452,7 @@ export function useConsoleApp() {
   }, [refreshServices]);
 
   const handleDaemonInstallDone = useCallback(() => {
+    allowAutoBootstrap.current = false;
     setActiveArea("services");
     setProvisioning(false);
     setDaemonOperation(null);

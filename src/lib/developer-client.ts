@@ -306,6 +306,14 @@ export async function syncDevToDaemon(daemonId: string): Promise<SyncDevResponse
   );
 }
 
+/** Trigger channel reconcile on connected remote daemons (skips co-located). */
+export async function updateConnectedDaemons(): Promise<SyncDevResponse> {
+  return await developerFetch(`${DEVELOPER_API}/daemon/update`, {
+    method: "POST",
+    body: { channel: "trunk" },
+  });
+}
+
 /** @internal Exported for unit tests. */
 export function buildLocalConsoleAuthHeader(
   method: string,

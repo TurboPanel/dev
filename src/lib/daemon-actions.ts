@@ -9,8 +9,10 @@ import {
 import { readInstanceRuntime } from "./daemon-env.ts";
 import { spawnSyncTrustedText } from "./spawn-trusted.ts";
 import { type InstallOutputHandler, runCaptured } from "./install-output.ts";
-import { syncDevToAllDaemons } from "./developer-client.ts";
+import { syncDevToAllDaemons, updateConnectedDaemons } from "./developer-client.ts";
 import { shellQuote } from "./shell-quote.ts";
+import { ensureOrchestrationDenoBin } from "./daemon-exec.ts";
+import { testRunnerPathEnv } from "./run-repo-tests.ts";
 
 export type DaemonActionId =
   | "install"
@@ -24,7 +26,8 @@ export type DaemonActionId =
   | "toggle-cell-trace"
   | "view-cell-trace"
   | "run-tests"
-  | "sync-dev-build";
+  | "sync-dev-build"
+  | "rebuild-daemon-upgrade";
 
 const DAEMON_UNIT = DAEMON_SYSTEMD_UNIT;
 const DEFAULT_WAIT_TIMEOUT_MS = 120_000;
@@ -42,7 +45,8 @@ export const DAEMON_ACTION_LABELS: Record<DaemonActionId, string> = {
   "toggle-cell-trace": "Toggle verbose cell trace",
   "view-cell-trace": "View cell trace log",
   "run-tests": "Run tests…",
-  "sync-dev-build": "Sync dev build to attached daemons",
+  "sync-dev-build": "Sync source to attached checkouts",
+  "rebuild-daemon-upgrade": "Rebuild daemon and upgrade connected servers",
 };
 
 export function daemonMenuActions(_status: DevServiceStatus): DaemonActionId[] {
@@ -56,7 +60,12 @@ export function developerMenuActions(status: DevServiceStatus | undefined): Daem
     return [];
   }
 
-  const actions: DaemonActionId[] = [
+  const denoActions: DaemonActionId[] =
+    readInstanceRuntime() === "deno"
+      ? ["sync-dev-build", "rebuild-daemon-upgrade"]
+      : [];
+
+  return [
     "repair",
     "start-dev-env",
     "optional-services",
@@ -65,14 +74,9 @@ export function developerMenuActions(status: DevServiceStatus | undefined): Daem
     "run-tests",
     "toggle-cell-trace",
     "view-cell-trace",
+    ...denoActions,
+    "purge",
   ];
-
-  if (readInstanceRuntime() === "deno") {
-    actions.push("sync-dev-build");
-  }
-
-  actions.push("purge");
-  return actions;
 }
 
 export function canRestartDaemon(): boolean {
@@ -230,6 +234,72 @@ export async function syncDevBuildToDaemons(
   }
 
   append(
-    "No remote source checkouts to sync. Managed installs (compiled turbopaneld) and this co-located daemon skip Sync Dev Build — they update via normal daemon Update / local edits.",
+    "No remote source checkouts to sync. Managed installs (compiled turbopaneld) and this co-located daemon skip Sync Dev Build — they update via Rebuild daemon and upgrade connected servers / local edits.",
+  );
+}
+
+/**
+ * Compile the daemon checkout into `dist/`, write a local overlay catalog
+ * (`channels.json` / `manifest.json`), then trigger channel reconcile on
+ * connected **remote** servers. The co-located daemon keeps running from source.
+ */
+export async function rebuildDaemonAndUpgradeConnectedServers(
+  onOutput?: InstallOutputHandler,
+): Promise<void> {
+  const append = (line: string) => onOutput?.(line);
+
+  append("Compiling daemon release artifacts from the local checkout…");
+  const denoBin = await ensureOrchestrationDenoBin(append);
+  const cwd = daemonRepoPath();
+  const code = await runCaptured(
+    [denoBin, "task", "release:dev"],
+    append,
+    { cwd, env: testRunnerPathEnv() },
+  );
+  if (code !== 0) {
+    throw new Error("Failed to package the local daemon overlay catalog");
+  }
+
+  append("Triggering overlay updates on connected remote servers…");
+
+  let response;
+  try {
+    response = await updateConnectedDaemons();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw new Error(`Could not reach the instance developer API: ${message}`);
+  }
+
+  const results = response.results ?? [];
+  if (results.length === 0) {
+    append("No attached daemons are currently connected.");
+    return;
+  }
+
+  for (const result of results) {
+    if (result.skipped) {
+      append(`– ${result.daemonId}: skipped (${result.error ?? "co-located"})`);
+    } else if (result.ok) {
+      append(`✓ ${result.daemonId}: upgrade queued`);
+    } else {
+      append(`✗ ${result.daemonId}: ${result.error ?? "update failed"}`);
+    }
+  }
+
+  const failed = results.filter((result) => !result.ok);
+  if (failed.length > 0) {
+    throw new Error(
+      `${failed.length} of ${results.length} daemon(s) failed to upgrade`,
+    );
+  }
+
+  const upgraded = results.filter((result) => result.ok && !result.skipped);
+  if (upgraded.length > 0) {
+    append(`Upgraded ${upgraded.length} remote daemon(s).`);
+    return;
+  }
+
+  append(
+    "No remote servers to upgrade. This co-located daemon runs from source — connect a managed server first.",
   );
 }

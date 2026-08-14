@@ -36,7 +36,7 @@ import {
   bootstrapStepForPhase,
   type BootstrapPhase,
 } from "../lib/bootstrap-phase.ts";
-import { syncDevBuildToDaemons } from "../lib/daemon-actions.ts";
+import { rebuildDaemonAndUpgradeConnectedServers, syncDevBuildToDaemons } from "../lib/daemon-actions.ts";
 import {
   DEV_ENV_CONVERGE_STEP,
   installDevEnvironment,
@@ -58,7 +58,8 @@ type ProvisionerPhase =
   | "dev-env"
   | "reset-dev-env"
   | "reset-dev-db"
-  | "sync-dev-build";
+  | "sync-dev-build"
+  | "rebuild-daemon-upgrade";
 
 type EmitStep = (
   label: string,
@@ -69,7 +70,9 @@ type EmitStep = (
 function provisionerTitle(phase: ProvisionerPhase): string {
   switch (phase) {
     case "sync-dev-build":
-      return "Syncing dev build to attached daemons…";
+      return "Syncing source to attached checkouts…";
+    case "rebuild-daemon-upgrade":
+      return "Rebuilding daemon and upgrading connected servers…";
     case "dev-env":
       return "Starting development environment";
     case "reset-dev-env":
@@ -84,7 +87,9 @@ function provisionerTitle(phase: ProvisionerPhase): string {
 function provisionerSuccessMessage(phase: ProvisionerPhase): string {
   switch (phase) {
     case "sync-dev-build":
-      return "Dev build synced to attached daemons";
+      return "Source synced to attached checkouts";
+    case "rebuild-daemon-upgrade":
+      return "Connected servers upgraded to the new daemon build";
     case "dev-env":
       return "Development environment running";
     case "reset-dev-env":
@@ -443,7 +448,7 @@ function useProvisionerPhaseEffects(opts: {
     let cancelled = false;
 
     void (async () => {
-      const stepLabel = "Sync dev build to attached daemons";
+      const stepLabel = "Sync source to attached checkouts";
       try {
         emitStep(stepLabel, "running");
         await syncDevBuildToDaemons(appendSyncOutput);
@@ -453,7 +458,45 @@ function useProvisionerPhaseEffects(opts: {
       } catch (error_) {
         if (cancelled) return;
         await reportProvisionerFailure({
-          title: "Sync dev build",
+          title: "Sync source",
+          stepLabel,
+          error_,
+          emitStep,
+          setError,
+          setErrorLogPath,
+        });
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    appendSyncOutput,
+    emitStep,
+    phase,
+    setDone,
+    setError,
+    setErrorLogPath,
+  ]);
+
+  useEffect(() => {
+    if (phase !== "rebuild-daemon-upgrade") return;
+
+    let cancelled = false;
+
+    void (async () => {
+      const stepLabel = "Rebuild daemon and upgrade connected servers";
+      try {
+        emitStep(stepLabel, "running");
+        await rebuildDaemonAndUpgradeConnectedServers(appendSyncOutput);
+        if (cancelled) return;
+        emitStep(stepLabel, "ok");
+        setDone(true);
+      } catch (error_) {
+        if (cancelled) return;
+        await reportProvisionerFailure({
+          title: "Rebuild daemon",
           stepLabel,
           error_,
           emitStep,
@@ -506,7 +549,7 @@ export function ProvisionerPanel({
     setErrorLogPath,
   } = useAnsibleEvents();
 
-  const isSyncPhase = phase === "sync-dev-build";
+  const isSyncPhase = phase === "sync-dev-build" || phase === "rebuild-daemon-upgrade";
   const finished = done || error !== null;
   const footerRows = footerRowCount(finished, error, errorLogPath);
   const showLiveSyncOutput = isSyncPhase && (!finished || outputLines.length > 0);

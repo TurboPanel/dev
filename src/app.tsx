@@ -16,6 +16,7 @@ import type { ServiceLogByteFloor } from "./lib/service-log.ts";
 import type { ConsoleLogLine } from "./lib/service-restart.ts";
 import type { DaemonOperation } from "./lib/spinners.ts";
 import type { OptionalDevServiceSelection } from "./lib/optional-dev-services.ts";
+import { provisionerPhaseForDaemonOperation } from "./lib/provisioner-phase.ts";
 import { OptionalServicesModal } from "@turbopanel/components/optional-services-modal.tsx";
 
 export const AREAS: AreaTab[] = [
@@ -31,30 +32,6 @@ export const BOOTSTRAP_AREA: AreaTab = {
 
 const MENU_ROWS = 2;
 const STATUS_ROWS = 1;
-
-type ProvisionerPhase =
-  | "daemon"
-  | "dev-env"
-  | "reset-dev-env"
-  | "reset-dev-db"
-  | "sync-dev-build";
-
-function provisionerPhaseForDaemonOperation(
-  operation: DaemonOperation | null | undefined,
-): ProvisionerPhase {
-  switch (operation) {
-    case "dev-env":
-      return "dev-env";
-    case "reset-dev-env":
-      return "reset-dev-env";
-    case "reset-dev-db":
-      return "reset-dev-db";
-    case "sync-dev-build":
-      return "sync-dev-build";
-    default:
-      return "daemon";
-  }
-}
 
 type MainContentProps = Readonly<{
   activeArea: string;
@@ -152,7 +129,9 @@ function MainContent({
             height={height}
             onDone={onProvisioningDone!}
             onInstallFinished={onInstallFinished}
-            onDaemonInstallDone={onDaemonInstallDone}
+            onDaemonInstallDone={
+              daemonOperation === "install" ? onDaemonInstallDone : undefined
+            }
           />
           {optionalModal}
         </Box>

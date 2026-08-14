@@ -77,10 +77,9 @@
 		}
 	}
 
-	@dev_daemon_downloads {
-		path /downloads/daemon/*
-		expression `"{$TURBOPANEL_UI_MODE:static}" == "dev"`
-	}
+	# Always serve overlay artifacts so remote servers (LAN or Cloudflare tunnel)
+	# never hit the public CDN. Catalog lives at /downloads/daemon/channels.json.
+	@dev_daemon_downloads path /downloads/daemon/*
 	handle @dev_daemon_downloads {
 		header Cache-Control "no-store"
 		route {
@@ -166,10 +165,8 @@
 		}
 	}
 
-	@dev_daemon_downloads {
-		path /downloads/daemon/*
-		expression `"{$TURBOPANEL_UI_MODE:static}" == "dev"`
-	}
+	# Overlay artifacts (LAN or tunnel). Catalog: /downloads/daemon/channels.json
+	@dev_daemon_downloads path /downloads/daemon/*
 	handle @dev_daemon_downloads {
 		header Cache-Control "no-store"
 		route {
