@@ -105,9 +105,10 @@ function footerRowCount(
   finished: boolean,
   error: string | null,
   errorLogPath: string | null,
+  holdUntilKeypress: boolean,
 ): number {
   if (!finished) return 0;
-  if (!error) return 1;
+  if (!error) return holdUntilKeypress ? 2 : 1;
   return errorLogPath ? 3 : 2;
 }
 
@@ -190,10 +191,12 @@ function ProvisionerStatusFooter({
   finished,
   error,
   successMessage,
+  holdUntilKeypress,
 }: Readonly<{
   finished: boolean;
   error: string | null;
   successMessage: string;
+  holdUntilKeypress: boolean;
 }>) {
   if (!finished) return null;
   if (error !== null) {
@@ -204,8 +207,9 @@ function ProvisionerStatusFooter({
     );
   }
   return (
-    <Box marginTop={1}>
+    <Box marginTop={1} flexDirection="column">
       <Text color="green">{successMessage}</Text>
+      {holdUntilKeypress && <Text dimColor>Press any key to continue</Text>}
     </Box>
   );
 }
@@ -551,7 +555,7 @@ export function ProvisionerPanel({
 
   const isSyncPhase = phase === "sync-dev-build" || phase === "rebuild-daemon-upgrade";
   const finished = done || error !== null;
-  const footerRows = footerRowCount(finished, error, errorLogPath);
+  const footerRows = footerRowCount(finished, error, errorLogPath, isSyncPhase);
   const showLiveSyncOutput = isSyncPhase && (!finished || outputLines.length > 0);
   const syncLogHeight = showLiveSyncOutput
     ? Math.max(6, Math.min(height - 10, Math.floor(height * 0.55)))
@@ -676,15 +680,15 @@ export function ProvisionerPanel({
   });
 
   useEffect(() => {
-    if (done && error === null) {
+    if (done && error === null && !isSyncPhase) {
       onDone();
     }
-  }, [done, error, onDone]);
+  }, [done, error, onDone, isSyncPhase]);
 
   useInput(() => {
-    if (finished && error !== null) {
-      onDone();
-    }
+    if (!finished) return;
+    if (error === null && !isSyncPhase) return;
+    onDone();
   });
 
   return (
@@ -723,6 +727,7 @@ export function ProvisionerPanel({
         finished={finished}
         error={error}
         successMessage={provisionerSuccessMessage(phase)}
+        holdUntilKeypress={isSyncPhase}
       />
     </Box>
   );

@@ -128,6 +128,13 @@ function DeveloperMenuPanel({
       setSelectedIndex((index) => Math.min(lastIndex, index + 1));
       setMessage(null);
     }
+    if (_input.toLowerCase() === "u" && actions.includes("rebuild-daemon-upgrade")) {
+      void Promise.resolve(onDaemonAction("rebuild-daemon-upgrade")).catch((error: unknown) => {
+        const text = error instanceof Error ? error.message : String(error);
+        setMessage(text);
+      });
+      return;
+    }
     if (key.return) {
       const action = actions[selectedIndex];
       if (action) {

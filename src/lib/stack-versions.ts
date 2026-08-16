@@ -13,7 +13,7 @@ export const WRANGLER_VERSION = "4.122.0";
 export const NEXT_VERSION = "16.2.9";
 
 /** ui/package.json dependencies.expo */
-export const EXPO_SDK_VERSION = "56.0.16";
+export const EXPO_SDK_VERSION = "57.0.13";
 
 /** daemon orchestration/roles/postgres/defaults/main.yml postgres_image */
 export const POSTGRES_VERSION = "18";

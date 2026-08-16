@@ -13,6 +13,9 @@ function serviceActionHints(selectedServiceId?: string | null): string {
   }
 
   const parts = ["R restart", "X disable", "E enable"];
+  if (selectedServiceId === "daemon" && readInstanceRuntime() === "deno") {
+    parts.push("U rebuild remotes");
+  }
   if (serviceSupportsOpen(selectedServiceId)) {
     parts.push("O open");
   }

@@ -450,6 +450,15 @@ export function ServicesPanel({
       return;
     }
 
+    if (
+      settledService?.id === "daemon" &&
+      _input.toLowerCase() === "u" &&
+      onDaemonAction
+    ) {
+      void Promise.resolve(onDaemonAction("rebuild-daemon-upgrade"));
+      return;
+    }
+
     if (logFocused) {
       return;
     }
