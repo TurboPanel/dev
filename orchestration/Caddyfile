@@ -110,6 +110,8 @@
 				# {http.request.host} strips the port so LAN origins fail.
 				header_up Host {http.request.hostport}
 				header_up X-Forwarded-Proto {http.request.scheme}
+				# Unbuffered flush so Expo Fast Refresh (/hot WebSocket) is not held.
+				flush_interval -1
 			}
 		}
 	}
@@ -194,6 +196,7 @@
 			reverse_proxy 127.0.0.1:{$EXPO_PORT:8081} {
 				header_up Host {http.request.hostport}
 				header_up X-Forwarded-Proto {http.request.scheme}
+				flush_interval -1
 			}
 		}
 	}

@@ -224,7 +224,7 @@ The **`dev-shell-path`** role (dev-only) always installs `/etc/profile.d/turbopa
 Co-located hosts load **`orchestration/Caddyfile`** (not `~/turbopanel/Caddyfile`) when `turbopanel_dev_user` is set — wired by the daemon `instance-launch` role via `turbopanel_caddyfile`. That file owns:
 
 - HTTPS `:8443` plus plaintext `:8880` (always on; no serve-time flag)
-- Expo reverse_proxy when `TURBOPANEL_UI_MODE=dev` (with `expo-loading.html` for cold-start 502s)
+- Expo reverse_proxy when `TURBOPANEL_UI_MODE=dev` (with `expo-loading.html` for cold-start 502s; `flush_interval -1` so Fast Refresh `/hot` is unbuffered). Host edits on VirtioFS/9p need Metro poll watch in the UI repo (`scripts/metro-virtfs-poll-watch.cjs`) — inotify does not cross the share.
 - Optional wrangler upstream when `TURBOPANEL_INSTANCE_RUNTIME=workers`
 - `/downloads/daemon/*` (always — overlay catalog + artifacts; not gated on `TURBOPANEL_UI_MODE`) and the install script at **`/run.sh`** from the daemon checkout (`dist/` after Developer → **Rebuild daemon and upgrade connected servers** / `deno task release:dev`)
 
