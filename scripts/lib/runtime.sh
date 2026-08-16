@@ -149,9 +149,16 @@ tp_export_node_path() {
   export PATH
 }
 
+# Pin Corepack to package.json — do not let it silently jump to the newest
+# npm release. COREPACK_DEFAULT_TO_LATEST defaults to 1, so `pnpm --version`
+# from $HOME (no package.json) after `corepack prepare --activate` reports
+# latest (e.g. expected 11.21.0, got 11.22.0) and ./console fails on every
+# pnpm bump. AUTO_PIN=0 stops Corepack rewriting packageManager hashes.
 tp_corepack_env() {
   COREPACK_ENABLE_DOWNLOAD_PROMPT=0
-  export COREPACK_ENABLE_DOWNLOAD_PROMPT
+  COREPACK_DEFAULT_TO_LATEST=0
+  COREPACK_ENABLE_AUTO_PIN=0
+  export COREPACK_ENABLE_DOWNLOAD_PROMPT COREPACK_DEFAULT_TO_LATEST COREPACK_ENABLE_AUTO_PIN
 }
 
 tp_run_corepack() {
@@ -165,19 +172,32 @@ tp_run_corepack() {
     tp_error "Corepack requires write access to ${NODE_PREFIX}/bin, but sudo is not installed."
     exit 1
   fi
-  sudo env COREPACK_ENABLE_DOWNLOAD_PROMPT=0 PATH="${_tp_node_bin}:${PATH:-}" "$@"
+  sudo env \
+    COREPACK_ENABLE_DOWNLOAD_PROMPT="$COREPACK_ENABLE_DOWNLOAD_PROMPT" \
+    COREPACK_DEFAULT_TO_LATEST="$COREPACK_DEFAULT_TO_LATEST" \
+    COREPACK_ENABLE_AUTO_PIN="$COREPACK_ENABLE_AUTO_PIN" \
+    PATH="${_tp_node_bin}:${PATH:-}" \
+    "$@"
 }
 
+# Optional $1 is a repo root; Corepack shims read packageManager from cwd,
+# so the version check must run inside that checkout (not $HOME).
 tp_pnpm_installed_version() {
+  _piv_repo_root=${1:-}
   [ -x "$PNPM_BIN" ] || return 1
   tp_corepack_env
   tp_export_node_path
+  if [ -n "$_piv_repo_root" ]; then
+    (cd "$_piv_repo_root" && "$PNPM_BIN" --version 2>/dev/null)
+    return $?
+  fi
   "$PNPM_BIN" --version 2>/dev/null
 }
 
 tp_ensure_corepack_pnpm() {
   _ecp_repo_root=$1
   tp_export_node_path
+  tp_corepack_env
   _ecp_corepack=$(tp_corepack_bin)
   if [ ! -x "$_ecp_corepack" ]; then
     tp_error "corepack not found at ${_ecp_corepack} (expected from the Node install)."
@@ -191,7 +211,7 @@ tp_ensure_corepack_pnpm() {
   tp_run_corepack "$_ecp_corepack" enable
   tp_run_corepack "$_ecp_corepack" prepare "pnpm@${_ecp_pnpm_version}" --activate
 
-  _ecp_installed=$(tp_pnpm_installed_version) || true
+  _ecp_installed=$(tp_pnpm_installed_version "$_ecp_repo_root") || true
   if [ "$_ecp_installed" != "$_ecp_pnpm_semver" ]; then
     tp_error "pnpm install failed — expected v${_ecp_pnpm_semver}, got ${_ecp_installed:-<missing>}"
     exit 1

@@ -59,6 +59,7 @@ NODE_PREFIX=${NODE_PREFIX:-$NODE_RUNTIME_DIR/current}
 NODE_BIN=${NODE_BIN:-$NODE_PREFIX/bin/node}
 NODE_RELEASE_BASE=https://nodejs.org/dist
 # pnpm is provisioned via Corepack; version comes from package.json "packageManager".
+# Corepack must not default-to-latest (see tp_corepack_env in runtime.sh).
 PNPM_BIN=${PNPM_BIN:-$NODE_PREFIX/bin/pnpm}
 
 # Pinned Deno for platform services — must match daemon deno-runtime and src/lib/paths.ts.
