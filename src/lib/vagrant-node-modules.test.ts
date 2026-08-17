@@ -46,9 +46,10 @@ describe("Vagrant host providers", () => {
     expect(VAGRANTFILE).toContain('libvirt.default_prefix = ""');
   });
 
-  test("forwards Caddy and website to guest loopback on LAN host binds", () => {
+  test("forwards Caddy, Expo, and website to guest loopback on LAN host binds", () => {
     expect(VAGRANTFILE).toContain("[8443, 8443]");
     expect(VAGRANTFILE).toContain("[8880, 8880]");
+    expect(VAGRANTFILE).toContain("[8081, 8081]");
     expect(VAGRANTFILE).toContain("[19820, 19820]");
     expect(VAGRANTFILE).toContain('guest_ip: "127.0.0.1"');
     expect(VAGRANTFILE).toContain('host_ip: "0.0.0.0"');

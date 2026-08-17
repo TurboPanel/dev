@@ -113,6 +113,7 @@ the IDE, browsers, or remote test machines.
 | --- | --- | --- |
 | **8443** | Control plane (Caddy HTTPS) | `0.0.0.0` (LAN) |
 | **8880** | Control plane (Caddy plaintext HTTP, dev overlay) | `0.0.0.0` (LAN) |
+| **8081** | Expo / Metro (native + direct; Caddy also proxies this) | `0.0.0.0` (LAN) |
 | **8088** | Optional extra forward (guest must listen) | `0.0.0.0` (LAN) |
 | **19820** | Website (Next.js) | `0.0.0.0` (LAN) |
 | **4983** | Drizzle Studio (unauthenticated) | `127.0.0.1` only |
@@ -124,8 +125,8 @@ the IDE, browsers, or remote test machines.
   `http://localhost:8880`.
 - **Remote test machines / extra daemons:** prefer a hostname for your
   development host (for example `https://dev.lan:8443` or your LAN IP) so
-  clients are not stuck on `localhost`. Ports `8443` / `8880` / `8088` /
-  `19820` listen on all host interfaces. Trust the platform CA
+  clients are not stuck on `localhost`. Ports `8443` / `8880` / `8081` /
+  `8088` / `19820` listen on all host interfaces. Trust the platform CA
   (`~/turbopanel/certs/ca.crt` in the guest checkout, or
   `GET /api/daemon/v1/instance/ca`) when using HTTPS.
 - **Studio / Mailpit / Redis Insight / Tabix** stay loopback-only on purpose —

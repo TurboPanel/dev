@@ -417,6 +417,7 @@ Vagrant.configure("2") do |config|
   # changes. Guest ports:
   #   8443  control-plane Caddy HTTPS
   #   8880  control-plane Caddy plaintext HTTP (dev overlay)
+  #   8081  Expo / Metro (native + direct; Caddy also proxies this)
   #   8088  optional extra forward (guest must listen)
   #   19820 website (Next.js)
   #   4983  Drizzle Studio (unauthenticated — host loopback only)
@@ -430,6 +431,7 @@ Vagrant.configure("2") do |config|
   [
     [8443, 8443],
     [8880, 8880],
+    [8081, 8081],
     [8088, 8088],
     [19820, 19820],
   ].each do |guest_port, host_port|
