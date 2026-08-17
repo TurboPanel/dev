@@ -11,138 +11,155 @@
 
 GitHub: [turbopanel/dev](https://github.com/turbopanel/dev)
 
-## Supported contributor environment
+## How contributor development works
 
-- **Debian 13** (Trixie) recommended for bare-metal guests
-- **Linux:** KVM/libvirt + Vagrant (Debian 13 / `debian/trixie64` guest)
-- **macOS:** UTM + Vagrant (guest is Debian 12 / `utm/bookworm` until a Trixie UTM box is published)
-- Interactive terminal with `curl` and `sudo`
-- Sudo-capable development user (passwordless sudo optional — see below)
-- **Deno** on PATH, or vendored Deno installed during daemon bootstrap (`2.9.5`)
+TurboPanel is **not a monorepo**. You clone (or fork) six sibling repositories
+under one parent directory, then run the stack inside a **Vagrant** guest. The
+guest mounts those checkouts so you edit on the host (VS Code / Cursor / etc.)
+while Node, Deno, Docker, and systemd live in the VM.
 
-## Bootstrap
+There is no `curl | sh` installer anymore. `https://dev.turbopanel.sh` only
+prints these setup steps.
 
-### Linux (Vagrant + libvirt)
+## Repository layout
 
-Install Vagrant, QEMU/KVM, libvirt, dnsmasq, VirtioFS, and the
-[`vagrant-libvirt`](https://vagrant-libvirt.github.io/vagrant-libvirt/)
-plugin. Ensure the development user belongs to the `libvirt` group and that
-libvirt's default network and storage pool are active.
-
-Clone the sibling repos in the layout shown in the macOS section below, then
-run this from the `dev` checkout:
-
-```sh
-vagrant up
-```
-
-The Vagrantfile automatically selects libvirt on Linux, even when another
-provider is installed, and boots the Debian 13 `debian/trixie64` box. Source
-checkouts are mounted bidirectionally into the guest with VirtioFS; guest RAM
-uses libvirt's in-memory `memfd` backend so VirtioFS does not cause host-disk
-writeback. First provision runs apt upgrades and, when a newer kernel is
-pending, **reboots the guest once** (SSH drops for about a minute — expected;
-Vagrant waits and continues). To open the developer console after the guest is
-ready:
-
-```sh
-vagrant ssh -- -t 'cd "$HOME/dev" && exec ./console'
-```
-
-### macOS (Vagrant + UTM)
-
-Clone the five sibling repos side by side (for example under `~/Development/turbopanel/`). `.github` is optional — mount it if you have it checked out, otherwise Ansible clones it inside the guest automatically:
+Clone all six repos as siblings (any parent path works — example below). Use
+your own forks and feature branches so you can open PRs against `trunk`:
 
 ```
 turbopanel/
-├── dev/        # this repo (contains the Vagrantfile)
-├── turbopaneld/
-├── turbopanel/
-├── ui/
-├── website/
-└── .github/    # optional — community health files
+├── dev/          # this repo — Vagrantfile + Ink console
+├── turbopaneld/  # host daemon + Ansible
+├── turbopanel/   # control plane (Hono / Workers + Deno)
+├── ui/           # Expo product console
+├── website/      # marketing + docs
+└── .github/      # community health files
 ```
 
-Host prerequisites: [Vagrant](https://developer.hashicorp.com/vagrant), [UTM](https://mac.getutm.app/), and the UTM provider plugin:
+| Checkout | Repository |
+| --- | --- |
+| `dev/` | [turbopanel/dev](https://github.com/turbopanel/dev) |
+| `turbopaneld/` | [turbopanel/turbopaneld](https://github.com/turbopanel/turbopaneld) |
+| `turbopanel/` | [turbopanel/turbopanel](https://github.com/turbopanel/turbopanel) |
+| `ui/` | [turbopanel/ui](https://github.com/turbopanel/ui) |
+| `website/` | [turbopanel/website](https://github.com/turbopanel/website) |
+| `.github/` | [turbopanel/.github](https://github.com/turbopanel/.github) |
+
+Inside the guest these mount at `~/dev`, `~/turbopaneld`, `~/turbopanel`,
+`~/ui`, `~/website`, and `~/.github`. FHS trees (`/etc/turbopanel`,
+`/opt/turbopanel`, …) stay on the VM disk.
+
+## Host prerequisites
+
+| Host OS | Provider | Guest box |
+| --- | --- | --- |
+| **Linux** | [Vagrant](https://developer.hashicorp.com/vagrant) + QEMU/KVM + [libvirt](https://libvirt.org/) + [`vagrant-libvirt`](https://vagrant-libvirt.github.io/vagrant-libvirt/) | Debian 13 (`debian/trixie64`) |
+| **macOS** | Vagrant + [UTM](https://mac.getutm.app/) + [`vagrant_utm`](https://github.com/naveenrajm7/vagrant_utm) | Debian 12 (`utm/bookworm`) until a Trixie UTM box exists |
+
+You also need Git + a GitHub SSH key on the **host** (agent-forwarded into the
+guest). You do **not** need Node, Deno, or Docker on the host — the guest
+installs those via `./console` / converge.
+
+### Linux (libvirt)
+
+Install Vagrant, QEMU/KVM, libvirt, dnsmasq, VirtioFS support, and the
+`vagrant-libvirt` plugin. Add your user to the `libvirt` group and ensure
+libvirt’s default network and storage pool are active.
+
+### macOS (UTM)
 
 ```sh
 brew install --cask utm
 brew install hashicorp/tap/hashicorp-vagrant
 vagrant plugin install vagrant_utm
-```
-
-Load a GitHub SSH key into your host agent (forwarded into the guest):
-
-```sh
 ssh-add --apple-use-keychain ~/.ssh/id_ed25519
 ```
 
-From this repo:
+## Boot the environment
+
+From the **`dev`** checkout (where the `Vagrantfile` lives):
+
+```sh
+cd path/to/turbopanel/dev
+vagrant up
+vagrant ssh
+```
+
+Plain `vagrant up` auto-selects **libvirt** on Linux and **UTM** on macOS
+(`VAGRANT_DEFAULT_PROVIDER` still overrides). First boot downloads the box,
+upgrades packages, and may reboot the guest once when a newer kernel is pending
+(SSH drops for about a minute — expected).
+
+Inside the guest:
+
+```sh
+cd ~/dev && ./console
+```
+
+That ensures pinned Node, runs `pnpm install`, and launches the Ink developer
+console. On a fresh guest the console bootstraps the daemon and converges the
+stack (optional-services picker after bootstrap). On later launches it sits idle
+until you use Developer → **Converge / re-converge**.
+
+Optional macOS convenience (UTM up + SSH straight into `./console`):
 
 ```sh
 ./scripts/vagrant-up.sh
 ```
 
-That command runs `vagrant up --provider=utm` (first boot downloads the box and provisions passwordless sudo) then `vagrant ssh` into `./console` on the guest. Source is VirtFS-mounted from your Mac into the guest home (`~/dev`, `~/turbopaneld`, `~/turbopanel`, `~/ui`, `~/website` — the same paths `dev.turbopanel.sh` would use); FHS paths (`/etc/turbopanel`, `/opt/turbopanel`, …) stay on the VM disk — that tree only ever holds vendored runtimes, the production binary, and the built static UI, never source. After converge, open `https://localhost:8443` on the **Mac** (ports `8443` / `8880` are forwarded).
+## Ports forwarded to the host
 
-UTM may prompt to allow host folder access for shared directories. First `vagrant up` can take several minutes. After package upgrades, if a newer kernel is pending the guest **reboots once** during provision (SSH drops for about a minute — expected; Vagrant waits and continues). The guest pins pnpm's store to `/var/lib/pnpm/store` with `packageImportMethod: copy` via `~/.config/pnpm/config.yaml` (pnpm 11 only reads pnpm-specific settings from that global YAML file or `pnpm-workspace.yaml` — never `.npmrc`) — without it, pnpm's SQLite-backed store defaults onto the VirtFS/9p-mounted project directory, and SQLite's WAL mode fails there with `[ERR_SQLITE_ERROR] disk I/O error`. The provisioner bind-mounts each mounted repo's `node_modules` (`dev`, `turbopanel`, `ui`, `website`) from a guest-local `ext4` directory under `/var/lib/turbopanel-dev/node_modules/<repo>/node_modules` — ARM64 hosts don't invalidate the instruction cache for pages faulted in from FUSE-backed filesystems (9p/virtiofs), so native Node addons like esbuild/Rolldown/lightningcss crash with `SIGSEGV`/`SIGILL` when `node_modules` lives directly on the VirtFS mount. A symlink is not enough: Next.js Turbopack rejects `node_modules` that points outside the project, and Node ESM realpath walks still need a directory named `node_modules` (`drizzle-kit` otherwise reports "Please install latest version of drizzle-orm"). Source stays VirtFS-mounted for editing from the Mac; only `node_modules` moves. If `df -h /` shows a very small root disk, expand it in UTM (drive → Resize) then grow the guest filesystem — an 8 GiB swapfile is only created when enough free space remains. `pnpm install` into the shared tree can still be slower than bare metal (copy import).
+After `vagrant up`, these guest ports are available on the host. Use them from
+the IDE, browsers, or remote test machines.
 
-### Bare Debian host
+| Port | Service | Host bind |
+| --- | --- | --- |
+| **8443** | Control plane (Caddy HTTPS) | `0.0.0.0` (LAN) |
+| **8880** | Control plane (Caddy plaintext HTTP, dev overlay) | `0.0.0.0` (LAN) |
+| **8088** | Optional extra forward (guest must listen) | `0.0.0.0` (LAN) |
+| **19820** | Website (Next.js) | `0.0.0.0` (LAN) |
+| **4983** | Drizzle Studio (unauthenticated) | `127.0.0.1` only |
+| **8025** | Mailpit web UI (unauthenticated) | `127.0.0.1` only |
+| **5540** | Redis Insight (unauthenticated) | `127.0.0.1` only |
+| **8125** | Tabix (unauthenticated) | `127.0.0.1` only |
+
+- **Local browsing / VS Code / Cursor:** `https://localhost:8443` or
+  `http://localhost:8880`.
+- **Remote test machines / extra daemons:** prefer a hostname for your
+  development host (for example `https://dev.lan:8443` or your LAN IP) so
+  clients are not stuck on `localhost`. Ports `8443` / `8880` / `8088` /
+  `19820` listen on all host interfaces. Trust the platform CA
+  (`~/turbopanel/certs/ca.crt` in the guest checkout, or
+  `GET /api/daemon/v1/instance/ca`) when using HTTPS.
+- **Studio / Mailpit / Redis Insight / Tabix** stay loopback-only on purpose —
+  those UIs are unauthenticated.
+
+Smoke test from the host:
 
 ```sh
-curl -fsSL dev.turbopanel.sh | sh
+curl -k https://localhost:8443/api/health
+curl http://localhost:8880/api/health
 ```
 
-That one-liner:
-
-1. Downloads `scripts/develop.sh` from this repo
-2. Clones or updates `~/dev`
-3. Installs pinned **Node** `24.17.0` to `/opt/turbopanel/vendor/node/` when missing
-4. Runs `pnpm install` and launches the Ink developer console (`vite-node`)
-
-### First-run prompts
-
-On first bootstrap the script may:
-
-- Prompt for git `user.name` / `user.email`
-- Generate `~/.ssh/id_ed25519` and verify GitHub SSH access
-- Install `git` / `openssh-client` via apt (sudo)
-- Offer a `/etc/sudoers.d/turbopanel-dev-nopasswd` fragment (`NOPASSWD` for the dev user)
-
-Set `TURBOPANEL_DEV_SKIP_NOPASSWD_SUDO=1` to skip the sudoers prompt.
-
-### What converge changes on your machine
-
-After **Converge** in the console, expect:
+## What converge changes (inside the guest)
 
 | Area | Paths / effect |
 | --- | --- |
-| Sibling repos | `~/turbopaneld`, `~/turbopanel`, `~/ui`, `~/website` cloned or updated |
 | FHS mutable data | `/etc/turbopanel`, `/var/lib/turbopanel`, `/var/log/turbopanel`, `/run/turbopanel` (dev-user-owned) |
 | Vendored runtimes | `/opt/turbopanel/vendor/{node,deno,caddy,…}` |
 | systemd units | `turbopaneld`, `turbopanel-instance`, `turbopanel-caddy`, `turbopanel-ui`, Docker-backed services |
-| Local URL | `https://localhost:8443` (TLS) and `http://localhost:8880` (plaintext dev) |
+| Local URL | `https://localhost:8443` (TLS) and `http://localhost:8880` (plaintext) |
 
-No dedicated `tp` / `tpctrl` service accounts are created in dev — everything runs as your user.
-
-## Repositories fetched
-
-| Checkout | Repository |
-| --- | --- |
-| `~/dev` | [turbopanel/dev](https://github.com/turbopanel/dev) (this repo — bootstrap only) |
-| `~/turbopaneld` | [turbopanel/turbopaneld](https://github.com/turbopanel/turbopaneld) |
-| `~/turbopanel` | [turbopanel/turbopanel](https://github.com/turbopanel/turbopanel) |
-| `~/ui` | [turbopanel/ui](https://github.com/turbopanel/ui) |
-| `~/website` | [turbopanel/website](https://github.com/turbopanel/website) |
-
-`develop.sh` clones **only** `~/dev`. The console clones or updates platform repos during converge.
+No dedicated `tp` / `tpctrl` service accounts are created in dev — everything
+runs as the guest user.
 
 ## Further reading
 
 - [Local development guide](https://turbopanel.io/docs/getting-started/development?utm_source=github-dev-readme)
+- [Prerequisites](https://turbopanel.io/docs/development/prerequisites)
 - [Architecture](https://turbopanel.io/docs/architecture)
-- [Troubleshooting](https://turbopanel.io/docs/deployment/troubleshooting)
-- [Cleanup / uninstall](https://turbopanel.io/docs/deployment/uninstall#contributor-dev-environment) — reset flow in `src/lib/reset-dev-environment.ts`
+- [Troubleshooting](https://turbopanel.io/docs/getting-started/tilt-troubleshooting)
+- [Cleanup / uninstall](https://turbopanel.io/docs/deployment/uninstall#contributor-dev-environment)
 
 ## Contributing
 

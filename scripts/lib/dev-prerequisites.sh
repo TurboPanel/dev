@@ -1,4 +1,4 @@
-# Prerequisites for scripts/develop.sh and ./console (curl, sudo, dev sudoer).
+# Prerequisites for ./console (curl, sudo, dev sudoer).
 # Source after privileges.sh and dev-identity.sh.
 
 TP_DEV_NOPASSWD_SUDOERS=/etc/sudoers.d/turbopanel-dev-nopasswd
@@ -23,7 +23,7 @@ tp_install_dev_passwordless_sudo() {
 
   cat > "$_idps_tmp" <<EOF
 # TurboPanel development passwordless sudo for ${_idps_user}
-# Installed by turbopanel/dev scripts/develop.sh — remove this file to revert.
+# Installed by turbopanel/dev ./console — remove this file to revert.
 ${_idps_user} ALL=(ALL) NOPASSWD: ALL
 EOF
 
@@ -87,15 +87,15 @@ tp_ensure_dev_prerequisites() {
   fi
 
   if ! tp_resolve_dev_identity; then
-    tp_error "Run develop.sh as your development user, not root."
-    tp_error "If you use sudo, invoke: sh scripts/develop.sh (not sudo sh scripts/develop.sh)."
+    tp_error "Run ./console as your development user, not root."
+    tp_error "If you use sudo, invoke: ./console (not sudo ./console)."
     exit 1
   fi
 
   if ! tp_dev_user_is_sudoer "$TP_DEV_USER"; then
     tp_error "Development user ${TP_DEV_USER} is not a sudoer."
     echo "  sudo usermod -aG sudo ${TP_DEV_USER}" >&2
-    echo "  Log out and back in, then re-run develop.sh." >&2
+    echo "  Log out and back in, then re-run ./console." >&2
     exit 1
   fi
 

@@ -1,22 +1,22 @@
 # dev-turbopanel-sh
 
-Assets-only Workers Static Assets deployment of the dev bootstrap script on
-**dev.turbopanel.sh** — no Worker script, so public bootstrap requests are
-free/unbilled. The bare root serves the installer with
-`Content-Type: text/x-shellscript; charset=utf-8` and `Cache-Control: no-store`
-so `curl | sh` fetches are always fresh.
+Assets-only Workers Static Assets deployment on **dev.turbopanel.sh** — no
+Worker script, so public requests are free/unbilled. The bare root serves a
+short shellscript (`Content-Type: text/x-shellscript; charset=utf-8`,
+`Cache-Control: no-store`) that prints the Vagrant-based contributor setup
+instructions. It does **not** clone or install anything.
 
 ## Source of truth
 
-`scripts/develop.sh` in the dev repo is the only copy. The deploy flow stages it
-into a gitignored `public/bootstrap` before upload — nothing is duplicated in git.
+`scripts/dev-setup.sh` in the dev repo is the only copy. The deploy flow stages
+it into a gitignored `public/bootstrap` before upload — nothing is duplicated
+in git.
 
 Committed asset config lives under `assets/` (`_headers`, `_redirects`) and is
 staged into `public/` by `pnpm run stage`. Wrangler consumes those files at
 deploy time rather than uploading them as downloadable assets.
 
-Non-GET/HEAD requests no longer get a hand-rolled `405` from Worker code —
-method handling is whatever the asset server returns.
+Canonical docs: [Local development](https://turbopanel.io/docs/getting-started/development).
 
 ## Prerequisites
 
@@ -40,7 +40,7 @@ pnpm; a conflicting npm lockfile or `packageManager` here breaks CI). Local
 installs may use `pnpm install` when the lockfile changes.
 
 `deploy` runs `wrangler deploy`, which executes the `build.command` in
-`wrangler.jsonc` first (staging `../../scripts/develop.sh` → `public/bootstrap`
+`wrangler.jsonc` first (staging `../../scripts/dev-setup.sh` → `public/bootstrap`
 plus `assets/_headers` and `assets/_redirects` into `public/`) then uploads.
 Cloudflare Workers Builds that invoke `npx wrangler deploy` directly get the
 same stage step automatically.
