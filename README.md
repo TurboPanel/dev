@@ -18,9 +18,6 @@ under one parent directory, then run the stack inside a **Vagrant** guest. The
 guest mounts those checkouts so you edit on the host (VS Code / Cursor / etc.)
 while Node, Deno, Docker, and systemd live in the VM.
 
-There is no `curl | sh` installer anymore. `https://dev.turbopanel.sh` only
-prints these setup steps.
-
 ## Repository layout
 
 Clone all six repos as siblings (any parent path works — example below). Use

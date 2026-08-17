@@ -43,7 +43,3 @@ logs/
 .cache/
 .config/
 coverage/
-
-# Isolated Workers deploy tooling
-workers/dev-turbopanel-sh/public/
-workers/dev-turbopanel-sh/node_modules/

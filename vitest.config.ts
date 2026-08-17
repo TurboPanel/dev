@@ -7,7 +7,7 @@ export default mergeConfig(
     test: {
       environment: "node",
       include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
-      exclude: ["node_modules/**", "workers/**"],
+      exclude: ["node_modules/**"],
       coverage: {
         provider: "v8",
         reportsDirectory: "coverage",
