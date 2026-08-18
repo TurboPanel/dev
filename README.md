@@ -46,6 +46,17 @@ Inside the guest these mount at `~/dev`, `~/turbopaneld`, `~/turbopanel`,
 `~/ui`, `~/website`, and `~/.github`. FHS trees (`/etc/turbopanel`,
 `/opt/turbopanel`, …) stay on the VM disk.
 
+## System requirements
+
+| Requirement | Minimum |
+| --- | --- |
+| **RAM** | **16 GB** — the guest is allocated 8 GB; the rest is for the host OS, IDE, and tooling |
+| **Software** | [Vagrant](https://developer.hashicorp.com/vagrant) plus a provider (see below) |
+| **OS** | macOS or Linux (Windows / WSL is not officially supported) |
+
+A host with less than 16 GB of RAM will struggle to run the VM and local
+tooling at the same time.
+
 ## Host prerequisites
 
 | Host OS | Provider | Guest box |
