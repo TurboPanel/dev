@@ -31,10 +31,13 @@ function fsError(code: string): NodeJS.ErrnoException {
   return err;
 }
 
-function mockFsMap(entries: ReadonlyMap<string, string | NodeJS.ErrnoException>): void {
+type MockFsValue = string | NodeJS.ErrnoException;
+
+function mockFsMap(entries: ReadonlyArray<readonly [string, MockFsValue]>): void {
+  const map = new Map<string, MockFsValue>(entries);
   mockedReadFileSync.mockImplementation((path, ..._args) => {
     const key = String(path);
-    const entry = entries.get(key);
+    const entry = map.get(key);
     if (entry === undefined) {
       throw fsError("ENOENT");
     }
@@ -137,27 +140,23 @@ describe("readInstanceSecret / instanceSecretReadError", () => {
   });
 
   it("returns the keyring current secret when the keyring is readable", () => {
-    mockFsMap(
-      new Map([
-        [instanceSecretsPath(), `2:${CURRENT_SECRET},1:${LEGACY_SECRET}`],
-        [instanceSecretPath(), LEGACY_SECRET],
-      ]),
-    );
+    mockFsMap([
+      [instanceSecretsPath(), `2:${CURRENT_SECRET},1:${LEGACY_SECRET}`],
+      [instanceSecretPath(), LEGACY_SECRET],
+    ]);
     expect(readInstanceSecret()).toBe(CURRENT_SECRET);
   });
 
   it("falls back to the singular secret only when the keyring is absent (ENOENT)", () => {
-    mockFsMap(new Map([[instanceSecretPath(), LEGACY_SECRET]]));
+    mockFsMap([[instanceSecretPath(), LEGACY_SECRET]]);
     expect(readInstanceSecret()).toBe(LEGACY_SECRET);
   });
 
   it("does not use the legacy singular secret when the keyring is present but malformed", () => {
-    mockFsMap(
-      new Map([
-        [instanceSecretsPath(), "not-a-valid-keyring"],
-        [instanceSecretPath(), LEGACY_SECRET],
-      ]),
-    );
+    mockFsMap([
+      [instanceSecretsPath(), "not-a-valid-keyring"],
+      [instanceSecretPath(), LEGACY_SECRET],
+    ]);
     expect(readInstanceSecret()).toBeUndefined();
     const err = instanceSecretReadError();
     expect(err.message).toContain("unreadable or unparseable instance secrets keyring");
@@ -167,12 +166,10 @@ describe("readInstanceSecret / instanceSecretReadError", () => {
   });
 
   it("does not use the legacy singular secret when the keyring is unreadable (EACCES)", () => {
-    mockFsMap(
-      new Map([
-        [instanceSecretsPath(), fsError("EACCES")],
-        [instanceSecretPath(), LEGACY_SECRET],
-      ]),
-    );
+    mockFsMap([
+      [instanceSecretsPath(), fsError("EACCES")],
+      [instanceSecretPath(), LEGACY_SECRET],
+    ]);
     expect(readInstanceSecret()).toBeUndefined();
     const err = instanceSecretReadError();
     expect(err.message).toContain("cannot read instance secrets keyring");
@@ -182,12 +179,10 @@ describe("readInstanceSecret / instanceSecretReadError", () => {
   });
 
   it("does not fall back on non-ENOENT keyring errors other than EACCES", () => {
-    mockFsMap(
-      new Map([
-        [instanceSecretsPath(), fsError("EIO")],
-        [instanceSecretPath(), LEGACY_SECRET],
-      ]),
-    );
+    mockFsMap([
+      [instanceSecretsPath(), fsError("EIO")],
+      [instanceSecretPath(), LEGACY_SECRET],
+    ]);
     expect(readInstanceSecret()).toBeUndefined();
     const err = instanceSecretReadError();
     expect(err.message).toContain("unreadable or unparseable instance secrets keyring");
