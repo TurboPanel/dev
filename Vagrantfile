@@ -723,6 +723,8 @@ UNIT
     install -d -m 0755 /etc/ssh/sshd_config.d
     cat >"$SSHD_DROPIN" <<'EOF'
 # TurboPanel Vagrant: idle SSH port-forward tunnels must not be reaped.
+# MOTD is printed by PAM from /etc/motd.d — do not also print /etc/motd.
+PrintMotd no
 TCPKeepAlive yes
 ClientAliveInterval 15
 ClientAliveCountMax 12
@@ -736,6 +738,20 @@ EOF
     fi
     chmod 644 "$SSHD_DROPIN"
     systemctl reload ssh 2>/dev/null || systemctl reload sshd 2>/dev/null || true
+  SHELL
+
+  # Replace Debian's default SSH/login MOTD with the TurboPanel T-mark banner.
+  # `run: "always"` so existing guests pick it up without a reload; safe while
+  # ./console is up (does not touch node_modules or guest-setup). Source is
+  # ~/dev/scripts/guest/motd.sh when the checkout is mounted.
+  config.vm.provision "shell", name: "guest-motd", run: "always", inline: <<~SHELL
+    set -eu
+    INSTALL=/home/vagrant/dev/scripts/guest/install-motd.sh
+    if [ -f "$INSTALL" ]; then
+      /bin/sh "$INSTALL"
+    else
+      echo ">>> TurboPanel MOTD skipped (dev checkout not mounted)"
+    fi
   SHELL
 
   # After guest-setup (and after any mid-provision reboot), restore libvirt SSH
