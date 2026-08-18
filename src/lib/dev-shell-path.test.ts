@@ -20,4 +20,12 @@ describe("dev-shell-path role", () => {
     expect(TASKS).toContain("path: /etc/zsh/zshenv");
     expect(TASKS).toContain("not _dev_zsh.stat.exists");
   });
+
+  test("PATH drop-ins are dest-group readable without world bits", () => {
+    expect(TASKS).toContain('group: "{{ turbopanel_group }}"');
+    expect(TASKS).toContain('mode: "0640"');
+    expect(TASKS).toContain('mode: "0750"');
+    expect(TASKS).not.toContain('mode: "0644"');
+    expect(TASKS).not.toContain('mode: "0755"');
+  });
 });

@@ -1,4 +1,8 @@
 ---
 turbopanel_dev_user: ""  # noqa: var-naming[no-role-prefix]
+# Debian primary group matches the dest username (same contract as sibling
+# overlay roles). Used so PATH drop-ins stay readable by the dest login shell
+# without world-readable modes (ansible:S2612).
+turbopanel_group: "{{ turbopanel_dev_user if (turbopanel_dev_user | default('') | length > 0) else 'tp' }}"  # noqa: var-naming[no-role-prefix]
 turbopanel_install_root: /opt/turbopanel
 turbopanel_vendor_dir: "{{ turbopanel_install_root }}/vendor"

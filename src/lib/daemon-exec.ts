@@ -9,6 +9,7 @@ import {
 } from "./paths.ts";
 import { type InstallOutputHandler, runCaptured } from "./install-output.ts";
 import { shellQuote } from "./shell-quote.ts";
+import { spawnSyncTrusted } from "./spawn-trusted.ts";
 
 /** True when the host runs the production runtime contract (compiled entrypoints). */
 export function isProductionRuntime(): boolean {
@@ -46,7 +47,7 @@ function pathIsExecutable(path: string): boolean {
   if (direct.status === 0) {
     return true;
   }
-  const sudo = spawnSync("sudo", ["-n", "test", "-x", path], {
+  const sudo = spawnSyncTrusted("sudo", ["-n", "test", "-x", path], {
     stdio: "ignore",
   });
   return sudo.status === 0;

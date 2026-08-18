@@ -11,9 +11,9 @@
   ansible.builtin.copy:
     dest: /etc/profile.d/turbopanel-dev-deno.sh
     owner: root
-    group: root
-    # profile.d snippets must stay world-readable so every login shell can source them.
-    mode: "0644"
+    group: "{{ turbopanel_group }}"
+    # Dest-user login shells source this; Debian /etc/profile skips unreadable files.
+    mode: "0640"
     content: |
       # TurboPanel co-located dev — vendored Deno (vendor/deno/current, converge-managed).
       _tpd_deno="{{ turbopanel_vendor_dir }}/deno/current"
@@ -39,9 +39,9 @@
     path: /etc/zsh/zshenv.d
     state: directory
     owner: root
-    group: root
+    group: "{{ turbopanel_group }}"
     # Sourced from /etc/zsh/zshenv (Debian does not auto-load zshenv.d).
-    mode: "0755"
+    mode: "0750"
 
 - name: Install dev vendored Deno PATH snippet for zsh
   when:
@@ -50,9 +50,8 @@
   ansible.builtin.copy:
     dest: /etc/zsh/zshenv.d/turbopanel-dev-deno
     owner: root
-    group: root
-    # Shared zshenv.d snippets must stay world-readable for all zsh users.
-    mode: "0644"
+    group: "{{ turbopanel_group }}"
+    mode: "0640"
     content: |
       # TurboPanel co-located dev — vendored Deno (vendor/deno/current, converge-managed).
       _tpd_deno="{{ turbopanel_vendor_dir }}/deno/current"
@@ -73,7 +72,8 @@
     create: true
     owner: root
     group: root
-    mode: "0644"
+    # Leave Debian's conffile mode (0644). Tightening it would break zsh for
+    # accounts outside turbopanel_group.
     marker: "# {mark} TurboPanel dev vendored Deno PATH"
     block: |
       if [[ -d /etc/zsh/zshenv.d ]]; then
