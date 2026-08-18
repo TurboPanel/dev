@@ -5,10 +5,6 @@
 > **[Self-hosted overview](https://turbopanel.io/docs/deployment/self-hosted)** and
 > **[Control plane deployment](https://turbopanel.io/docs/deployment/control-plane)**.
 
-[![License: AGPL-3.0-only](https://img.shields.io/badge/License-AGPL--3.0--only-blue.svg)](./LICENSE)
-[![Docs](https://img.shields.io/badge/docs-development-3366cc)](https://turbopanel.io/docs/getting-started/development)
-[![Status: Private alpha](https://img.shields.io/badge/status-private%20alpha-3dd68c)](https://turbopanel.io/roadmap)
-
 GitHub: [turbopanel/dev](https://github.com/turbopanel/dev)
 
 ## How contributor development works
