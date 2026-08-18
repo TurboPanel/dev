@@ -2,9 +2,8 @@
 
 # TurboPanel development VM (libvirt on Linux, UTM on macOS).
 #
-# Plain `vagrant up` selects the native provider for the host. The macOS helper
-# also boots the guest, then lands in the Ink console:
-#   ./scripts/vagrant-up.sh
+# Plain `vagrant up` selects the native provider for the host. After `vagrant ssh`,
+# start the Ink console from the guest home: `dev/console`.
 #
 # Mounts sibling checkouts from the host workspace (parent of this repo) into the
 # guest home so default TURBOPANEL_DEV_ROOT=$HOME matches bare-metal layout

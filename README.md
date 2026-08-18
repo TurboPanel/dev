@@ -64,6 +64,10 @@ tooling at the same time.
 | **Linux** | [Vagrant](https://developer.hashicorp.com/vagrant) + QEMU/KVM + [libvirt](https://libvirt.org/) + [`vagrant-libvirt`](https://vagrant-libvirt.github.io/vagrant-libvirt/) | Debian 13 (`debian/trixie64`) |
 | **macOS** | Vagrant + [UTM](https://mac.getutm.app/) + [`vagrant_utm`](https://github.com/naveenrajm7/vagrant_utm) | Debian 12 (`utm/bookworm`) until a Trixie UTM box exists |
 
+That table is the currently documented pair — not a closed list. macOS and
+Linux will likely take several more providers over time. Pull requests that
+add a working provider (`Vagrantfile` + docs) are welcome.
+
 You also need Git + a GitHub SSH key on the **host** (agent-forwarded into the
 guest). You do **not** need Node, Deno, or Docker on the host — the guest
 installs those via `./console` / converge.
@@ -98,22 +102,16 @@ Plain `vagrant up` auto-selects **libvirt** on Linux and **UTM** on macOS
 upgrades packages, and may reboot the guest once when a newer kernel is pending
 (SSH drops for about a minute — expected).
 
-Inside the guest:
+Inside the guest (SSH lands in `$HOME`):
 
 ```sh
-cd ~/dev && ./console
+dev/console
 ```
 
 That ensures pinned Node, runs `pnpm install`, and launches the Ink developer
 console. On a fresh guest the console bootstraps the daemon and converges the
 stack (optional-services picker after bootstrap). On later launches it sits idle
 until you use Developer → **Converge / re-converge**.
-
-Optional macOS convenience (UTM up + SSH straight into `./console`):
-
-```sh
-./scripts/vagrant-up.sh
-```
 
 ## Ports forwarded to the host
 

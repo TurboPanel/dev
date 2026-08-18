@@ -28,8 +28,7 @@ contributors** use **Vagrant + UTM** with guest box **`utm/bookworm`** (Debian
 
 Canonical docs: https://turbopanel.io/docs/getting-started/development
 
-**Vagrant:** root [`Vagrantfile`](./Vagrantfile) +
-[`scripts/vagrant-up.sh`](./scripts/vagrant-up.sh). Plain `vagrant up`
+**Vagrant:** root [`Vagrantfile`](./Vagrantfile). Plain `vagrant up`
 auto-selects **libvirt** on Linux (`vagrant-libvirt`, Debian 13
 `debian/trixie64`) and **UTM** on macOS (`vagrant_utm`, Debian 12
 `utm/bookworm`); `VAGRANT_DEFAULT_PROVIDER` still permits an explicit
@@ -47,9 +46,7 @@ resolves to `<dev_root>/<repo>` when `turbopanel_dev_user` is set, and
 binary, and the built static UI — never source checkouts. `../.github`
 (community health files) mounts to `$HOME/.github` when present on the host;
 otherwise the `github-repo` Ansible role clones it inside the guest via HTTPS.
-FHS trees stay **guest-local**. The optional macOS launcher does
-`vagrant up --provider=utm` then `vagrant ssh -t` into `./console` (not
-provisioned interactively). Ports `8443` / `8880` / `8081` / `8088` / `19820` forward
+FHS trees stay **guest-local**. Ports `8443` / `8880` / `8081` / `8088` / `19820` forward
 to the host on `0.0.0.0` (LAN-reachable, not localhost-only). Drizzle Studio
 `4983`, Mailpit `8025`, Redis Insight `5540`, and Tabix `8125` are loopback-only
 on both sides of the forward (`127.0.0.1` host and guest): those APIs are
@@ -68,7 +65,6 @@ The current entrypoint is a minimal launcher only (full multi-screen console was
 ├── orchestration/        # Ansible dev overlay + development Caddyfile
 │   ├── Caddyfile         # co-located control-plane proxy (Expo, :8880, wrangler)
 │   └── expo-loading.html # Expo cold-start page served by the development Caddyfile
-├── scripts/vagrant-up.sh # optional macOS: vagrant up then ssh into ./console
 ├── package.json          # Node project (pnpm, pinned via packageManager); ink + react + vite
 ├── src/tui.tsx           # Ink entrypoint
 └── …
@@ -100,7 +96,7 @@ Node is a pinned `nodejs.org` tarball vendored under `/opt/turbopanel/vendor/nod
 
 1. Clone (or fork) the six sibling repos under one parent directory on the host (`dev`, `turbopaneld`, `turbopanel`, `ui`, `website`, `.github`).
 2. From the host `dev` checkout: `vagrant up` then `vagrant ssh`.
-3. Inside the guest: `cd ~/dev && ./console` → prereqs, pinned Node, `pnpm install`, TUI launch (exports `TURBOPANEL_MODE=development`, `TURBOPANEL_DEV_ROOT`, `TURBOPANEL_<DIR>_REPO`).
+3. Inside the guest: `dev/console` → prereqs, pinned Node, `pnpm install`, TUI launch (exports `TURBOPANEL_MODE=development`, `TURBOPANEL_DEV_ROOT`, `TURBOPANEL_<DIR>_REPO`).
 4. **Bootstrap / converge** → the console uses `resolveDevEnvStartupPlan` (`src/lib/dev-env-readiness.ts`) on launch: **auto-bootstraps** (daemon install → systemd unit) when prerequisites are missing; after bootstrap finishes it opens the **optional services** picker then converges (`if-needed`). When the host is already installed, launch sits **idle** — no auto-converge (use Developer → **Converge / re-converge**). The converge picker defaults to UI + website + Mailpit on (Drizzle Studio, Redis Insight, and Tabix off); idle for 5s continues with the current selection. Drizzle Studio, Mailpit, and Tabix stay listed on the Services screen in gray when not enabled — select the row and press **E**, or use Developer → **Optional services…**. That menu also starts/stops optional units anytime without a full converge. Daemon bootstrap (`installDaemon` in `src/lib/platform-install.ts`) **uses an existing usable checkout** when `~/turbopaneld` already has `main.ts` or `orchestration/ansible.cfg` (Vagrant VirtFS mounts and pre-cloned siblings — no guest-side clone/pull; Git may also refuse mounted trees via `safe.directory`); it only **clones** when that path is missing. Bootstrap then writes `/etc/turbopanel/daemon.env`, runs the `dev/orchestration` overlay (runtimes into `/opt/turbopanel/vendor`, systemd units + Docker (postgres/redis/rabbitmq/mailpit) as the dev user, mutable data under FHS trees dev-user-owned; no `tp` / `tpctrl` / `tpcache` accounts created).
 5. On the **host**, open `https://localhost:8443` (or `http://localhost:8880`); edit source in the host sibling checkouts (mounted into the guest). Prefer a LAN hostname when attaching remote test machines.
 
@@ -108,9 +104,8 @@ Node is a pinned `nodejs.org` tarball vendored under `/opt/turbopanel/vendor/nod
 
 | Script | Purpose |
 |--------|---------|
-| `vagrant up` / `vagrant ssh` | **Canonical:** boot guest from `dev/`, then SSH in and run `./console`. |
-| `./scripts/vagrant-up.sh` | **Optional macOS:** `vagrant up --provider=utm`, then SSH into guest `./console`. |
-| `./console` | Ensure pinned Node (sudo on first run), `pnpm install`, launch `src/tui.tsx` via `vite-node` (run **inside the guest**). |
+| `vagrant up` / `vagrant ssh` | **Canonical:** boot guest from `dev/`, then SSH in and run `dev/console`. |
+| `./console` | Ensure pinned Node (sudo on first run), `pnpm install`, launch `src/tui.tsx` via `vite-node` (run **inside the guest**; from `$HOME` that is `dev/console`). |
 | `./console --watch` | Same, but use `scripts/hot-reload.tsx` for live reload on `src/` changes. |
 | `pnpm dev` | Run `src/tui.tsx` directly via `vite-node` (requires Node on PATH). |
 | `pnpm dev:watch` | Run `scripts/hot-reload.tsx`, which keeps Ink mounted and rerenders on `src/` changes. |
@@ -125,12 +120,11 @@ cd …/turbopanel/dev
 vagrant up
 vagrant ssh
 # inside guest:
-cd ~/dev && ./console
+dev/console
 ```
 
 ## Responsibilities
 
-- **`scripts/vagrant-up.sh`** — optional host-side Mac entry: requires Vagrant + `vagrant_utm`, checks sibling checkouts, warns if the SSH agent looks empty, runs `vagrant up --provider=utm`, then `exec vagrant ssh -- -t` into `./console` on the guest. Does not provision the interactive TUI inside Vagrant (TTY must come from the host SSH session).
 - **`Vagrantfile`** — host-aware libvirt/UTM provider config, bidirectional VirtioFS/VirtFS mounts of the five workspace repos plus optional `.github`, SSH agent forwarding, port forwards `8443`/`8880`/`8081`/`8088`/`19820` (LAN `0.0.0.0`) plus loopback-only `4983`/`8025`/`5540`/`8125`, all with `guest_ip: 127.0.0.1`, and idempotent shell
 provision split as `system-upgrade` → `turbopanel_reboot_if_needed` → `guest-setup` → `sshd-port-forward-keepalives` (`run: always`) → `turbopanel_ensure_libvirt_port_forwards` (`run: always`). Upgrades run `apt-get update` + `upgrade` + `autoremove` + `curl` and set the `vagrant` login password; when Debian leaves `/var/run/reboot-required` or the running kernel differs from the newest `/boot/vmlinuz-*`, the reboot provisioner prints that SSH will drop for about a minute, reboots via the guest reboot capability (Vagrant waits for SSH), **remounts VirtioFS synced folders** (mid-provision reboot otherwise leaves empty `~/dev` mount-point dirs — Vagrant only mounts shares on `up`/`reload`), then `guest-setup` finishes (passwordless sudo, `/etc/profile.d/turbopanel-vagrant.sh`, pnpm's `~/.config/pnpm/config.yaml` pointing `storeDir` at guest-local `/var/lib/pnpm/store`, per-repo `node_modules` **bind mounts** from `/var/lib/turbopanel-dev/node_modules/<repo>/node_modules` (systemd `turbopanel-virtfs-node-modules.service` at boot), 8 GiB `/swapfile`). **Libvirt port forwards are SSH `-L` tunnels** (not QEMU `hostfwd`); guest reboot / sshd restart / OpenSSH 9.8+ `UnusedConnectionTimeout` drop idle one-shot vagrant-libvirt `ssh -N` sessions. `sshd-port-forward-keepalives` writes `/etc/ssh/sshd_config.d/turbopanel-vagrant.conf` (`UnusedConnectionTimeout 0` when the guest sshd supports it). `turbopanel_ensure_libvirt_port_forwards` then replaces those one-shot tunnels with a restarting `ssh_forward_supervisor.sh` per port (health = host TCP listen plus our supervisor pid, not leftover libvirt ssh). Heal without a full reload: `vagrant provision --provision-with sshd-port-forward-keepalives,turbopanel_ensure_libvirt_port_forwards` (do not run a full `vagrant provision` while `./console` is up — that re-runs guest-setup). Linux defaults to libvirt + `debian/trixie64`; macOS defaults to UTM + `utm/bookworm`. Does not clone platform repos or run `./console`. Why bind-mount `node_modules`: on ARM64, FUSE-backed filesystems (9p/virtiofs, which is how UTM VirtFS is implemented) don't invalidate the instruction cache for pages faulted in from mmap'd executable files, so native Node addons (esbuild, `@rolldown/binding-*`, lightningcss, ...) crash with `SIGSEGV`/`SIGILL` when `node_modules` lives directly on the VirtFS mount — the pnpm store already being local isn't enough, since `packageImportMethod: copy` still writes the actual files into `node_modules` on the mount. A **symlink** is not enough: Next.js Turbopack rejects `node_modules` that points outside the project (`Symlink [project]/node_modules is invalid, it points out of the filesystem root`), and Node ESM/CJS realpath walks miss packages unless the physical path ends in a directory named `node_modules` (flat `<repo>/drizzle-orm` makes `drizzle-kit` fail with "Please install latest version of drizzle-orm"; Tamagui fails with `Cannot find module 'typescript'`). The provisioner runs for every mounted repo with a `package.json` (`dev`, `turbopanel`, `ui`, `website`; `turbopaneld` has none) and is idempotent across `vagrant provision` re-runs. On boot, its helper waits for all four Vagrant shares to expose `package.json` before binding—the shares are mounted over SSH after userspace starts, so an immediate check can otherwise exit successfully without mounting anything—and dbstudio/UI/website/instance units are ordered after it. Ansible `instance-repo` / `ui-repo` / `website-repo` must probe a nested package (`drizzle-kit`, `expo`, `next`) before skipping `pnpm install` — the mount point exists while the guest tree is still empty. A provisioner layout change wipes a flat tree; the next `pnpm install` (console for `dev`, converge for the others) refills it from the guest pnpm store. Do not `vagrant provision` while `./console` is running if that would rebuild the `dev` tree.
 - **`console`** — runs the prerequisite check, ensures pinned **Node** (`/opt/turbopanel/vendor/node/current/bin/node`, runs this repo) is installed, enables Corepack/pnpm, runs `pnpm install`, and launches the Ink TUI via `vite-node`. Add `--watch` to use `scripts/hot-reload.tsx`, which keeps the Ink process alive and rerenders when imported `src/` modules change. When stdin/stdout/stderr are not TTYs, reattaches stdio to `/dev/tty` when `tp_is_interactive()` succeeds. Does **not** install Deno via `./console` itself (Deno bootstrap is via `ensureBootstrapDeno` during daemon install).
