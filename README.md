@@ -132,7 +132,7 @@ the IDE, browsers, or remote test machines.
   development host (for example `https://dev.lan:8443` or your LAN IP) so
   clients are not stuck on `localhost`. Ports `8443` / `8880` / `8081` /
   `8088` / `19820` listen on all host interfaces. Trust the platform CA
-  (`~/turbopanel/certs/ca.crt` in the guest checkout, or
+  (`/var/lib/turbopanel/tls/ca-bundle.pem` after converge, or
   `GET /api/daemon/v1/instance/ca`) when using HTTPS.
 - **Studio / Mailpit / Redis Insight / Tabix** stay loopback-only on purpose —
   those UIs are unauthenticated.

@@ -6,10 +6,12 @@ import {
   instanceRepoPath,
   NODE_VERSION,
   PLATFORM_REPO_DIRS,
+  platformCaCertPath,
   platformRepoEnvKey,
   platformRepoPath,
   resolveDevRoot,
   resolveRuntimesDir,
+  STATE_DIR,
   TURBOPANEL_ROOT,
 } from "./paths.ts";
 
@@ -76,6 +78,14 @@ describe("platformRepoPath", () => {
     for (const dir of PLATFORM_REPO_DIRS) {
       expect(entries[platformRepoEnvKey(dir)]).toBe(`/dev-root/${dir}`);
     }
+  });
+});
+
+describe("platformCaCertPath", () => {
+  test("points at the durable platform CA bundle, not the checkout certs tree", () => {
+    expect(STATE_DIR).toBe("/var/lib/turbopanel");
+    expect(platformCaCertPath()).toBe("/var/lib/turbopanel/tls/ca-bundle.pem");
+    expect(platformCaCertPath()).not.toContain("/certs/ca.crt");
   });
 });
 

@@ -77,6 +77,7 @@ export function devOrchestrationDir(): string {
 /** FHS mutable dirs (dev shares the production paths, dev-owned at runtime). */
 export const CONFIG_DIR = "/etc/turbopanel";
 export const LOG_DIR = "/var/log/turbopanel";
+export const STATE_DIR = "/var/lib/turbopanel";
 
 export function instanceConfigDir(): string {
   return `${CONFIG_DIR}/instance`;
@@ -136,8 +137,14 @@ export function instanceRepoPath(): string {
   return platformRepoPath("turbopanel");
 }
 
+/**
+ * Platform CA bundle the Workers-mode co-located daemon trusts.
+ *
+ * After `instance-certs`, the generator writes this under the durable state
+ * tree (not the replaceable checkout `certs/ca.crt`).
+ */
 export function platformCaCertPath(): string {
-  return `${instanceRepoPath()}/certs/ca.crt`;
+  return `${STATE_DIR}/tls/ca-bundle.pem`;
 }
 
 /** Managed repo-root entries for `daemon.env` (override-aware). */
