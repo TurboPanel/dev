@@ -116,6 +116,9 @@
     # Host prep for shared managed-DB ingress (admin.cnf, unit, network).
     # Compose content stays daemon-owned (managed.ingress.reconcile).
     - role: proxysql
+    # Host prep for per-org managed HA (api.cnf / raft.cnf, unit, network).
+    # Compose content stays daemon-owned (managed.ha.reconcile).
+    - role: orchestrator
     - role: tabix
       when: turbopanel_instance_runtime == 'deno'
     - role: mailpit
