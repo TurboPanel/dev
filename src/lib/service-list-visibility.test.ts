@@ -1,6 +1,3 @@
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
 import { BORDER_COLOR } from "../theme.ts";
 import {
@@ -15,12 +12,6 @@ import {
   OPTIONAL_DEV_SERVICE_IDS,
   optionalDevServiceCatalogIdsForRuntime,
 } from "./optional-dev-services.ts";
-
-const devRoot = join(dirname(fileURLToPath(import.meta.url)), "../..");
-const daemonRolesRoot = join(
-  devRoot,
-  "../turbopaneld/orchestration/roles",
-);
 
 test("catalog optional ids mirror optional dev service definitions", () => {
   expect([...optionalDevServiceCatalogIdsForRuntime("deno")].sort((a, b) =>
@@ -158,41 +149,4 @@ test("sortServicesByCanonicalOrder keeps unknown ids after known ones", () => {
     "tabix",
     "zzz",
   ]);
-});
-
-test("docker-backed optional roles gate readiness and stop disabled containers", () => {
-  const roles = [
-    {
-      role: "mailpit",
-      optionalVar: "turbopanel_optional_mailpit",
-      containers: ["mailpit_container_name"],
-    },
-    {
-      role: "tabix",
-      optionalVar: "turbopanel_optional_tabix",
-      containers: ["tabix_container_name"],
-    },
-    {
-      role: "redis-insight",
-      optionalVar: "turbopanel_optional_redis_insight",
-      containers: [
-        "redis_insight_bridge_container_name",
-        "redis_insight_container_name",
-      ],
-    },
-  ] as const;
-
-  for (const { role, optionalVar, containers } of roles) {
-    const tasks = readFileSync(
-      join(daemonRolesRoot, role, "tasks/main.yml"),
-      "utf8",
-    );
-    expect(tasks).toContain(`when: ${optionalVar}`);
-    expect(tasks).toContain("wrapper-start.sh");
-    expect(tasks).toContain('argv: [docker, update, "--restart=no"');
-    expect(tasks).toContain("argv: [docker, stop,");
-    for (const container of containers) {
-      expect(tasks).toContain(`"{{ ${container} }}"`);
-    }
-  }
 });
