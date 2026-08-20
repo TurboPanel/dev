@@ -9,9 +9,9 @@ import { MENU_BLUE, STATUS_UNINSTALLED } from "../theme.ts";
 
 export function OperationSpinner({
   operation,
-}: {
+}: Readonly<{
   operation: DaemonOperation;
-}) {
+}>) {
   const frames = spinnerFrames(operation);
   const spinnerFrame = useSpinnerFrame(120);
   const index = spinnerFrame % frames.length;

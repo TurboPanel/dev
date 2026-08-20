@@ -1,9 +1,21 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi, beforeEach } from "vitest";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import type { SetStateAction } from "react";
+import type { AnsibleTaskRow } from "@turbopanel/components/ansible-task-list.tsx";
 import { formatAnsibleHostFailure } from "../lib/ansible-failure.ts";
-import { resolveDevConvergeSkippedUi } from "./use-ansible-events.ts";
+import { CONSOLE_LAST_TASK_ERROR_LOG } from "../lib/paths.ts";
+import { writeTaskErrorLog } from "../lib/task-error-log.ts";
+import {
+  dispatchAnsibleUiEvent,
+  resolveDevConvergeSkippedUi,
+  type AnsibleUiSetters,
+} from "./use-ansible-events.ts";
+
+vi.mock("../lib/task-error-log.ts", () => ({
+  writeTaskErrorLog: vi.fn(async () => true),
+}));
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -100,3 +112,223 @@ describe("useAnsibleEvents skip wiring", () => {
     expect(earlyReturn).toBeGreaterThan(setDone);
   });
 });
+
+type AnsibleUiState = {
+  tasks: AnsibleTaskRow[];
+  recap: string | null;
+  error: string | null;
+  errorLogPath: string | null;
+  done: boolean;
+};
+
+function applyUpdate<T>(current: T, update: SetStateAction<T>): T {
+  if (typeof update === "function") {
+    return (update as (prev: T) => T)(current);
+  }
+  return update;
+}
+
+function createUi(): { state: AnsibleUiState; setters: AnsibleUiSetters } {
+  const state: AnsibleUiState = {
+    tasks: [],
+    recap: null,
+    error: null,
+    errorLogPath: null,
+    done: false,
+  };
+  const setters: AnsibleUiSetters = {
+    setTasks: (update) => {
+      state.tasks = applyUpdate(state.tasks, update);
+    },
+    setRecap: (update) => {
+      state.recap = applyUpdate(state.recap, update);
+    },
+    setError: (update) => {
+      state.error = applyUpdate(state.error, update);
+    },
+    setErrorLogPath: (update) => {
+      state.errorLogPath = applyUpdate(state.errorLogPath, update);
+    },
+    setDone: (update) => {
+      state.done = applyUpdate(state.done, update);
+    },
+  };
+  return { state, setters };
+}
+
+describe("dispatchAnsibleUiEvent", () => {
+  beforeEach(() => {
+    vi.mocked(writeTaskErrorLog).mockReset();
+    vi.mocked(writeTaskErrorLog).mockResolvedValue(true);
+  });
+
+  it("starts a play by uuid and closes a previous running play", () => {
+    const { state, setters } = createUi();
+    dispatchAnsibleUiEvent("v2_playbook_on_play_start", {
+      play: { name: "First", uuid: "one" },
+    }, setters);
+    dispatchAnsibleUiEvent("v2_playbook_on_play_start", {
+      play: { name: "Second", uuid: "two" },
+    }, setters);
+    expect(state.tasks).toEqual([
+      { id: "play:one", label: "First", status: "ok", depth: 1 },
+      { id: "play:two", label: "Second", status: "running", depth: 1 },
+    ]);
+  });
+
+  it("falls back to the play name when uuid is missing", () => {
+    const { state, setters } = createUi();
+    dispatchAnsibleUiEvent("v2_playbook_on_play_start", {
+      play: { name: "  postgres  " },
+    }, setters);
+    expect(state.tasks[0]).toEqual({
+      id: "play:postgres",
+      label: "postgres",
+      status: "running",
+      depth: 1,
+    });
+  });
+
+  it("starts tasks from start and handler events", () => {
+    const { state, setters } = createUi();
+    dispatchAnsibleUiEvent("v2_playbook_on_task_start", {
+      task: { id: "t1", name: "postgres : Create user" },
+    }, setters);
+    dispatchAnsibleUiEvent("v2_playbook_on_handler_task_start", {
+      task: { name: "Restart caddy" },
+    }, setters);
+    dispatchAnsibleUiEvent("v2_runner_on_start", {
+      task: { id: "t1", name: "postgres : Create user" },
+    }, setters);
+    expect(state.tasks).toEqual([
+      {
+        id: "task:t1",
+        label: "postgres › Create user",
+        status: "running",
+        depth: 2,
+      },
+      {
+        id: "task:Restart caddy",
+        label: "Restart caddy",
+        status: "running",
+        depth: 2,
+      },
+    ]);
+  });
+
+  it("marks runner ok as changed when the host result changed", () => {
+    const { state, setters } = createUi();
+    dispatchAnsibleUiEvent("v2_runner_on_ok", {
+      task: { id: "t1", name: "Install" },
+      hosts: { localhost: { changed: true } },
+    }, setters);
+    expect(state.tasks[0]?.status).toBe("changed");
+  });
+
+  it("marks runner ok as ok when hosts are missing", () => {
+    const { state, setters } = createUi();
+    dispatchAnsibleUiEvent("v2_runner_on_ok", {
+      task: { id: "t1", name: "Install" },
+    }, setters);
+    expect(state.tasks[0]?.status).toBe("ok");
+  });
+
+  it("marks runner ok as ok when the host result is unchanged", () => {
+    const { state, setters } = createUi();
+    dispatchAnsibleUiEvent("v2_runner_on_ok", {
+      task: { id: "t1", name: "Install" },
+      hosts: { localhost: { changed: false } },
+    }, setters);
+    expect(state.tasks[0]?.status).toBe("ok");
+  });
+
+  it("marks skipped runner results", () => {
+    const { state, setters } = createUi();
+    dispatchAnsibleUiEvent("v2_runner_on_skipped", {
+      task: { id: "t1", name: "Optional" },
+    }, setters);
+    expect(state.tasks[0]?.status).toBe("skipped");
+  });
+
+  it("marks failed runner results and records the error log path", async () => {
+    const { state, setters } = createUi();
+    dispatchAnsibleUiEvent("v2_runner_on_failed", {
+      task: { id: "t1", name: "Boom" },
+      hosts: { localhost: { msg: "non-zero return code", stderr: "nope" } },
+    }, setters);
+    expect(state.tasks[0]?.status).toBe("failed");
+    expect(state.error).toBe("non-zero return code\nnope");
+    await Promise.resolve();
+    expect(state.errorLogPath).toBe(CONSOLE_LAST_TASK_ERROR_LOG);
+  });
+
+  it("uses task failed when a failure has no host results", async () => {
+    const { state, setters } = createUi();
+    dispatchAnsibleUiEvent("v2_runner_on_unreachable", {
+      task: { name: "Ping" },
+    }, setters);
+    expect(state.tasks[0]).toMatchObject({
+      id: "task:Ping",
+      status: "failed",
+    });
+    expect(state.error).toBe("task failed");
+    await Promise.resolve();
+    expect(state.errorLogPath).toBe(CONSOLE_LAST_TASK_ERROR_LOG);
+  });
+
+  it("leaves the error log path unset when the write fails", async () => {
+    vi.mocked(writeTaskErrorLog).mockResolvedValueOnce(false);
+    const { state, setters } = createUi();
+    dispatchAnsibleUiEvent("v2_runner_on_failed", {
+      task: { id: "t1", name: "Boom" },
+    }, setters);
+    await Promise.resolve();
+    expect(state.error).toBe("task failed");
+    expect(state.errorLogPath).toBeNull();
+  });
+
+  it("completes running tasks and sets recap on successful stats", () => {
+    const { state, setters } = createUi();
+    dispatchAnsibleUiEvent("v2_playbook_on_task_start", {
+      task: { id: "t1", name: "Work" },
+    }, setters);
+    dispatchAnsibleUiEvent("v2_playbook_on_stats", {
+      stats: { localhost: { ok: 2, changed: 1, failures: 0 } },
+    }, setters);
+    expect(state.tasks[0]?.status).toBe("ok");
+    expect(state.recap).toBe("ok=2 changed=1 failed=0");
+    expect(state.done).toBe(false);
+  });
+
+  it("marks a failed recap done when stats report failures", () => {
+    const { state, setters } = createUi();
+    dispatchAnsibleUiEvent("v2_playbook_on_task_start", {
+      task: { id: "t1", name: "Work" },
+    }, setters);
+    dispatchAnsibleUiEvent("v2_playbook_on_stats", {
+      stats: { localhost: { ok: 0, changed: 0, failed: 1 } },
+    }, setters);
+    expect(state.tasks[0]?.status).toBe("failed");
+    expect(state.recap).toBe("ok=0 changed=0 failed=1");
+    expect(state.done).toBe(true);
+  });
+
+  it("completes running tasks without a recap when stats are omitted", () => {
+    const { state, setters } = createUi();
+    dispatchAnsibleUiEvent("v2_playbook_on_task_start", {
+      task: { id: "t1", name: "Work" },
+    }, setters);
+    dispatchAnsibleUiEvent("v2_playbook_on_stats", {}, setters);
+    expect(state.tasks[0]?.status).toBe("ok");
+    expect(state.recap).toBeNull();
+    expect(state.done).toBe(false);
+  });
+
+  it("ignores unknown event types", () => {
+    const { state, setters } = createUi();
+    dispatchAnsibleUiEvent("v2_playbook_on_no_hosts_matched", {}, setters);
+    expect(state.tasks).toEqual([]);
+    expect(state.done).toBe(false);
+  });
+});
+

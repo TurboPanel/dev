@@ -84,7 +84,6 @@ function ServiceDetailTitle({
 
   return (
     <ServiceTitle
-      serviceId={service.id}
       label={service.label}
       width={innerWidth}
     />

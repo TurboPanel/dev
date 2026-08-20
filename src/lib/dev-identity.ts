@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { spawnSyncTrustedText } from "./spawn-trusted.ts";
 
 export type DevIdentity = {
   user: string;
@@ -34,8 +34,7 @@ function parsePasswdLine(
 function getentPasswd(
   query: string,
 ): { user: string; uid: number; gid: number } | null {
-  const result = spawnSync("getent", ["passwd", query], {
-    encoding: "utf8",
+  const result = spawnSyncTrustedText("getent", ["passwd", query], {
     stdio: ["ignore", "pipe", "ignore"],
   });
   if (result.status !== 0 || !result.stdout) {

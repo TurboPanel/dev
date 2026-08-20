@@ -10,7 +10,7 @@ export function ScrollableLogList({
   totalItems,
   scrollOffset = 0,
   children,
-}: {
+}: Readonly<{
   height: number;
   width: number;
   selectedIndex: number;
@@ -18,7 +18,7 @@ export function ScrollableLogList({
   totalItems?: number;
   scrollOffset?: number;
   children: React.ReactNode;
-}) {
+}>) {
   const listWidth = focused ? Math.max(1, width - 1) : width;
   const childCount = React.Children.count(children);
   const contentHeight = totalItems ?? childCount;

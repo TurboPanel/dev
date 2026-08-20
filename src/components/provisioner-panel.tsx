@@ -566,7 +566,7 @@ export function ProvisionerPanel({
     height - 1 - footerRows - syncLogSectionRows,
   );
   const outputWidth = Math.max(20, width - 2);
-  const syncLogContentWidth = logContentWidth(outputWidth, false);
+  const syncLogContentWidth = logContentWidth(outputWidth);
   const showErrorOutput = Boolean(error) && outputLines.length > 0 && !isSyncPhase;
 
   const appendOutput = useCallback((line: string) => {
@@ -707,6 +707,7 @@ export function ProvisionerPanel({
           errorLogPath={errorLogPath}
           columns={outputWidth}
           spinnerFrame={spinnerFrame}
+          showLegend={!finished && tasks.length > 0}
         />
       </Box>
       {showLiveSyncOutput && (

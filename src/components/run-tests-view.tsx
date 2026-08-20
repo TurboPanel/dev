@@ -5,6 +5,7 @@ import {
   listAvailableTestRepos,
   runRepoTests,
   type TestRepoDef,
+  type TestRepoId,
   type TestSuiteDef,
 } from "../lib/run-repo-tests.ts";
 import { CONSOLE_LAST_TEST_RUN_LOG } from "../lib/paths.ts";
@@ -40,12 +41,12 @@ function SelectList<T extends string>({
   items,
   selectedIndex,
   labelOf,
-}: {
+}: Readonly<{
   width: number;
   items: readonly T[];
   selectedIndex: number;
   labelOf: (id: T, index: number) => { title: string; detail?: string };
-}) {
+}>) {
   return (
     <Box flexDirection="column" width={width}>
       {items.map((id, index) => {
@@ -73,19 +74,64 @@ function SelectList<T extends string>({
   );
 }
 
+function handleRunTestsBack(
+  phase: Phase,
+  lockedRepo: TestRepoDef | null,
+  onClose: () => void,
+  setPhase: (phase: Phase) => void,
+): void {
+  if (phase.kind === "suites" && !lockedRepo) {
+    setPhase({ kind: "repos" });
+    return;
+  }
+  onClose();
+}
+
+function handleRunTestsPick(
+  phase: Phase,
+  repos: readonly TestRepoDef[],
+  selectedIndex: number,
+  setPhase: (phase: Phase) => void,
+  startSuite: (repo: TestRepoDef, suite: TestSuiteDef) => void,
+): void {
+  if (phase.kind === "repos") {
+    const repo = repos[selectedIndex];
+    if (repo) {
+      setPhase({ kind: "suites", repo });
+    }
+    return;
+  }
+  if (phase.kind !== "suites") {
+    return;
+  }
+  const suite = phase.repo.suites[selectedIndex];
+  if (suite) {
+    startSuite(phase.repo, suite);
+  }
+}
+
 export function RunTestsView({
   width,
   height,
   focused,
   onClose,
-}: {
+  initialRepoId,
+}: Readonly<{
   width: number;
   height: number;
   focused: boolean;
   onClose: () => void;
-}) {
+  /** When set, skip the repo picker and start on that checkout's suites. */
+  initialRepoId?: TestRepoId;
+}>) {
   const repos = useMemo(() => listAvailableTestRepos(), []);
-  const [phase, setPhase] = useState<Phase>({ kind: "repos" });
+  const lockedRepo = useMemo(
+    () => repos.find((repo) => repo.id === initialRepoId) ?? null,
+    [repos, initialRepoId],
+  );
+  const [phase, setPhase] = useState<Phase>(() =>
+    lockedRepo ? { kind: "suites", repo: lockedRepo } : { kind: "repos" },
+  );
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [logLines, setLogLines] = useState<ServiceLogLine[]>([]);
   const abortRef = useRef<AbortController | null>(null);
@@ -198,11 +244,7 @@ export function RunTestsView({
     }
 
     if (key.escape || key.leftArrow) {
-      if (phase.kind === "suites") {
-        setPhase({ kind: "repos" });
-        return;
-      }
-      onClose();
+      handleRunTestsBack(phase, lockedRepo, onClose, setPhase);
       return;
     }
 
@@ -218,17 +260,7 @@ export function RunTestsView({
       setSelectedIndex((index) => Math.min(lastIndex, index + 1));
     }
     if (key.return) {
-      if (phase.kind === "repos") {
-        const repo = repos[selectedIndex];
-        if (repo) {
-          setPhase({ kind: "suites", repo });
-        }
-        return;
-      }
-      const suite = phase.repo.suites[selectedIndex];
-      if (suite) {
-        startSuite(phase.repo, suite);
-      }
+      handleRunTestsPick(phase, repos, selectedIndex, setPhase, startSuite);
     }
   }, { isActive: focused });
 

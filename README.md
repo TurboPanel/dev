@@ -44,14 +44,20 @@ Inside the guest these mount at `~/dev`, `~/turbopaneld`, `~/turbopanel`,
 
 ## System requirements
 
-| Requirement | Minimum |
+We recommend **at least an Intel Core i7-4790K (or equivalent) with 16 GB of
+RAM**. Some workloads need more memory, so **24 GB+ is recommended**, and
+**32 GB is ideal**.
+
+| Requirement | Recommendation |
 | --- | --- |
-| **RAM** | **16 GB** — the guest is allocated 8 GB; the rest is for the host OS, IDE, and tooling |
+| **CPU** | Intel Core i7-4790K or equivalent |
+| **RAM** | **16 GB** minimum · **24 GB+** recommended · **32 GB** ideal |
 | **Software** | [Vagrant](https://developer.hashicorp.com/vagrant) plus a provider (see below) |
 | **OS** | macOS or Linux (Windows / WSL is not officially supported) |
 
-A host with less than 16 GB of RAM will struggle to run the VM and local
-tooling at the same time.
+The guest is allocated 8 GB; remaining RAM is for the host OS, IDE, and
+tooling. A host with less than 16 GB of RAM will struggle to run the VM and
+local tooling at the same time.
 
 ## Host prerequisites
 
@@ -166,7 +172,7 @@ runs as the guest user.
 
 ## Contributing
 
-See [CONTRIBUTING.md](https://github.com/turbopanel/.github/blob/trunk/CONTRIBUTING.md). Default branch: **`trunk`**. Feature branch + PR only.
+See [CONTRIBUTING.md](https://github.com/turbopanel/.github/blob/trunk/CONTRIBUTING.md). Default branch: **`trunk`**. Feature branch + PR only. Pull requests are accepted under the [Contributor License Agreement](https://github.com/turbopanel/.github/blob/trunk/CLA.md).
 
 Agent conventions: [AGENTS.md](./AGENTS.md).
 
@@ -174,4 +180,6 @@ Agent conventions: [AGENTS.md](./AGENTS.md).
 
 TurboPanel Development Environment is licensed under the [GNU Affero General Public License v3.0 only (AGPL-3.0-only)](./LICENSE).
 
-Copyright (C) 2025 TurboPanel contributors
+The TurboPanel name and logos are trademarks. See [TRADEMARKS.md](./TRADEMARKS.md).
+
+Copyright (C) 2025-2026 TurboPanel contributors

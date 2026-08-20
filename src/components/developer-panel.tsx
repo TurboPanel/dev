@@ -28,7 +28,7 @@ function DeveloperRestartOverlay({
   restartLogOverlay,
   logFollowResetKey,
   instanceLogByteFloor,
-}: {
+}: Readonly<{
   width: number;
   height: number;
   restartLabel: string;
@@ -36,7 +36,7 @@ function DeveloperRestartOverlay({
   restartLogOverlay: ConsoleLogLine[];
   logFollowResetKey?: number;
   instanceLogByteFloor?: ServiceLogByteFloor | null;
-}) {
+}>) {
   const { lines: fileLogLines } = useServiceLog(restartOverlayServiceId, instanceLogByteFloor);
   const logLines = useMemo(
     () => [
@@ -89,13 +89,13 @@ function DeveloperMenuPanel({
   daemonStatus,
   onDaemonAction,
   inputBlocked = false,
-}: {
+}: Readonly<{
   width: number;
   height: number;
   daemonStatus?: DevServiceStatus;
   onDaemonAction?: (action: DaemonActionId) => void | Promise<void>;
   inputBlocked?: boolean;
-}) {
+}>) {
   const actions = developerMenuActions(daemonStatus);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [message, setMessage] = useState<string | null>(null);
@@ -204,7 +204,7 @@ export function DeveloperPanel({
   logFollowResetKey,
   instanceLogByteFloor,
   inputBlocked = false,
-}: {
+}: Readonly<{
   width: number;
   height: number;
   daemonStatus?: DevServiceStatus;
@@ -220,7 +220,7 @@ export function DeveloperPanel({
   logFollowResetKey?: number;
   instanceLogByteFloor?: ServiceLogByteFloor | null;
   inputBlocked?: boolean;
-}) {
+}>) {
   useEffect(() => {
     if (restartInProgress) {
       onRefreshServices?.();

@@ -16,6 +16,7 @@ import { useSpinnerFrame } from "../hooks/use-spinner-frame.ts";
 import {
   canRunServiceAction,
   serviceActionForKey,
+  serviceListSpecialAction,
   type ServiceActionId,
 } from "../lib/service-actions.ts";
 import {
@@ -128,12 +129,12 @@ function ConvergeServiceLabel({
   phase,
   dimColor,
   spinnerFrame,
-}: {
+}: Readonly<{
   label: string;
   phase: ConvergeServicePhase;
   dimColor: boolean;
   spinnerFrame: number;
-}) {
+}>) {
   const { primary, secondary } = phaseColors(phase);
   const chars = [...label];
   const frame = spinnerFrame % Math.max(chars.length, 1);
@@ -274,6 +275,7 @@ export function ServicesPanel({
   daemonOperation,
   serviceOperation,
   onServiceAction,
+  onRunServiceTests,
   pendingRestart,
   restartInProgress,
   restartOverlayServiceId,
@@ -286,7 +288,7 @@ export function ServicesPanel({
   pendingOptionalServices,
   devEnvConverge,
   onDismissDevEnvConvergeError,
-}: {
+}: Readonly<{
   width: number;
   height: number;
   services: DevService[];
@@ -294,6 +296,7 @@ export function ServicesPanel({
   daemonOperation?: DaemonOperation | null;
   serviceOperation?: ServiceOperation | null;
   onServiceAction?: (serviceId: string, action: ServiceActionId) => void | Promise<void>;
+  onRunServiceTests?: (serviceId: string) => void;
   onDaemonAction?: (action: DaemonActionId) => void | Promise<void>;
   onSelectedIndexChange?: (index: number) => void;
   onRefreshServices?: () => void;
@@ -309,7 +312,7 @@ export function ServicesPanel({
   pendingOptionalServices?: PendingOptionalServices | null;
   devEnvConverge?: DevEnvConvergeState | null;
   onDismissDevEnvConvergeError?: () => void;
-}) {
+}>) {
   const { suspendTerminal } = useApp();
   const { leftWidth, detailWidth } = resolvePaneWidths(width, services);
   const servicePhases = devEnvConverge?.servicePhases ?? {};
@@ -368,7 +371,7 @@ export function ServicesPanel({
   const settledService = services[listIndex] ?? null;
   const displaySelectedIndex = useMemo(() => {
     const index = visibleFullIndices.indexOf(listIndex);
-    return index >= 0 ? index : 0;
+    return Math.max(index, 0);
   }, [listIndex, visibleFullIndices]);
 
   // Push the selection to the parent (status-bar hints only) on a longer idle
@@ -441,22 +444,23 @@ export function ServicesPanel({
       return;
     }
 
-    // Break out of the Ink alternate screen into `less` / docker / journalctl.
-    // Works whether or not the in-TUI log pane is focused.
-    if (settledService && _input.toLowerCase() === "t") {
-      void suspendTerminal(() => {
-        openServiceLogPager(settledService.id);
-      });
-      return;
-    }
-
-    if (
-      settledService?.id === "daemon" &&
-      _input.toLowerCase() === "u" &&
-      onDaemonAction
-    ) {
-      void Promise.resolve(onDaemonAction("rebuild-daemon-upgrade"));
-      return;
+    // L / T / U work whether or not the in-TUI log pane is focused.
+    if (settledService) {
+      const special = serviceListSpecialAction(settledService.id, _input);
+      if (special === "logs") {
+        void suspendTerminal(() => {
+          openServiceLogPager(settledService.id);
+        });
+        return;
+      }
+      if (special === "tests") {
+        onRunServiceTests?.(settledService.id);
+        return;
+      }
+      if (special === "rebuild-remotes" && onDaemonAction) {
+        void Promise.resolve(onDaemonAction("rebuild-daemon-upgrade"));
+        return;
+      }
     }
 
     if (logFocused) {

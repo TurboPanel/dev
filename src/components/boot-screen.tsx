@@ -1,7 +1,7 @@
 import React from "react";
 import { Box, Text, useWindowSize } from "ink";
 
-export function BootScreen({ message }: { message: string }) {
+export function BootScreen({ message }: Readonly<{ message: string }>) {
   const { columns, rows } = useWindowSize();
 
   return (

@@ -5,8 +5,12 @@ import { BORDER_COLOR, LIST_FOCUS_FG } from "../theme.ts";
 const TRACK_CHAR = "▕";
 const THUMB_CHAR = "█";
 
-export function logContentWidth(width: number, focused = false): number {
-  return focused ? Math.max(1, width - 1) : width;
+export function logContentWidth(width: number): number {
+  return width;
+}
+
+export function logContentWidthWithScrollbar(width: number): number {
+  return Math.max(1, width - 1);
 }
 
 export function computeLogScrollbarThumb({
@@ -14,12 +18,12 @@ export function computeLogScrollbarThumb({
   contentHeight,
   viewportHeight,
   scrollOffset,
-}: {
+}: Readonly<{
   trackHeight: number;
   contentHeight: number;
   viewportHeight: number;
   scrollOffset: number;
-}): { thumbTop: number; thumbSize: number; scrollable: number } {
+}>): { thumbTop: number; thumbSize: number; scrollable: number } {
   const scrollable = Math.max(0, contentHeight - viewportHeight);
   if (scrollable <= 0 || trackHeight <= 0) {
     return { thumbTop: 0, thumbSize: 0, scrollable: 0 };
@@ -41,13 +45,13 @@ export function LogScrollbar({
   viewportHeight,
   scrollOffset,
   focused = false,
-}: {
+}: Readonly<{
   height: number;
   contentHeight: number;
   viewportHeight: number;
   scrollOffset: number;
   focused?: boolean;
-}) {
+}>) {
   const { thumbTop, thumbSize, scrollable } = computeLogScrollbarThumb({
     trackHeight: height,
     contentHeight,

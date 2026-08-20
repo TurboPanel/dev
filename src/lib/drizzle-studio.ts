@@ -1,11 +1,10 @@
-import { spawnSync } from "node:child_process";
-import { openUrlInBrowser } from "./open-url.ts";
+import { spawnSyncTrustedText } from "./spawn-trusted.ts";
 
 export const DRIZZLE_STUDIO_PORT = 4983;
 export const DRIZZLE_STUDIO_BROWSER_URL =
   `https://local.drizzle.studio?host=localhost&port=${DRIZZLE_STUDIO_PORT}`;
 
-export { openUrlInBrowser };
+export { openUrlInBrowser } from "./open-url.ts";
 
 export function drizzleStudioBrowserUrl(
   port = DRIZZLE_STUDIO_PORT,
@@ -16,7 +15,7 @@ export function drizzleStudioBrowserUrl(
 }
 
 export function isDrizzleStudioListening(): boolean {
-  const result = spawnSync(
+  const result = spawnSyncTrustedText(
     "curl",
     [
       "-s",
@@ -28,7 +27,7 @@ export function isDrizzleStudioListening(): boolean {
       "%{http_code}",
       `http://127.0.0.1:${DRIZZLE_STUDIO_PORT}/`,
     ],
-    { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
+    { stdio: ["ignore", "pipe", "ignore"] },
   );
   const code = Number((result.stdout ?? "").trim());
   return Number.isFinite(code) && code > 0 && code < 500;

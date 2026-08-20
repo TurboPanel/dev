@@ -12,15 +12,18 @@ export function DevEnvConvergePanel({
   converge,
   onDismissError,
   spinnerFrame,
-}: {
+}: Readonly<{
   width: number;
   height: number;
   converge: DevEnvConvergeState;
   onDismissError?: () => void;
   spinnerFrame: number;
-}) {
+}>) {
   const finished = !converge.active && converge.error === null;
-  const footerRows = converge.error ? (converge.errorLogPath ? 3 : 2) : 0;
+  let footerRows = 0;
+  if (converge.error) {
+    footerRows = converge.errorLogPath ? 3 : 2;
+  }
   const taskRowBudget = Math.max(3, height - 2 - footerRows);
   const view = useMemo(
     () => buildAnsibleTaskView(converge.tasks, taskRowBudget),
@@ -49,6 +52,7 @@ export function DevEnvConvergePanel({
           errorLogPath={converge.errorLogPath}
           columns={Math.max(20, width - 2)}
           spinnerFrame={spinnerFrame}
+          showLegend={converge.active}
         />
       </Box>
       {finished && !converge.error && converge.recap && (

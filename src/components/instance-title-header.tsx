@@ -51,7 +51,6 @@ export function RuntimeTitleHeader({
   return (
     <Box flexDirection="row" width={width} alignItems="flex-end">
       <ServiceTitle
-        serviceId={serviceId}
         label={label}
         width={titleWidth}
         shrinkWrap

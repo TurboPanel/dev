@@ -1,4 +1,5 @@
 import { spawn, type SpawnOptions } from "node:child_process";
+import { TRUSTED_SYSTEM_PATH } from "./spawn-trusted.ts";
 
 export type InstallOutputHandler = (line: string) => void;
 
@@ -12,10 +13,13 @@ export function appendOutputLines(
 }
 
 export function sanitizeInstallOutput(text: string): string {
+  const bel = String.fromCodePoint(7);
+  const oscPrefix = String.raw`\x1b\]`;
+  const oscBelPattern = new RegExp(`${oscPrefix}[^${bel}]*${bel}`, "g");
   return text
-    .replace(/\x1b\][^\x07]*\x07/g, "")
+    .replace(oscBelPattern, "")
     .replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, "")
-    .replace(/\r/g, "")
+    .replaceAll("\r", "")
     .trimEnd();
 }
 
@@ -30,6 +34,10 @@ export function captureChildEnv(
     DEBIAN_FRONTEND: "noninteractive",
     GIT_TERMINAL_PROMPT: "0",
     ...extra,
+    // Callers may prepend trusted vendor bins (Node/Deno). Empty/omitted PATH
+    // stays FHS-only so subprocesses do not inherit a user-writable PATH
+    // (typescript:S4036).
+    PATH: extra?.PATH || TRUSTED_SYSTEM_PATH,
   };
 }
 

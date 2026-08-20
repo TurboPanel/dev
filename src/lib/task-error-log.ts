@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
-import { spawn } from "node:child_process";
 import { CONSOLE_LAST_TASK_ERROR_LOG } from "./paths.ts";
+import { spawnSyncTrusted } from "./spawn-trusted.ts";
 
 export type TaskErrorRecord = {
   title: string;
@@ -10,36 +10,21 @@ export type TaskErrorRecord = {
   timestamp: string;
 };
 
-function writeWithSudo(body: string): Promise<boolean> {
-  return new Promise((resolve) => {
-    const proc = spawn(
-      "sudo",
-      [
-        "bash",
-        "-c",
-        `mkdir -p "$(dirname '${CONSOLE_LAST_TASK_ERROR_LOG}')" && cat > '${CONSOLE_LAST_TASK_ERROR_LOG}'`,
-      ],
-      { stdio: ["pipe", "ignore", "ignore"] },
-    );
-
-    proc.on("error", () => resolve(false));
-    proc.on("close", (code) => resolve(code === 0));
-
-    const stdin = proc.stdin;
-    if (!stdin) {
-      resolve(false);
-      return;
-    }
-
-    stdin.write(body, "utf8", (err) => {
-      if (err) {
-        proc.kill();
-        resolve(false);
-        return;
-      }
-      stdin.end();
-    });
-  });
+function writeWithSudo(body: string): boolean {
+  const result = spawnSyncTrusted(
+    "/usr/bin/sudo",
+    [
+      "-n",
+      "/usr/bin/bash",
+      "-c",
+      `mkdir -p "$(dirname '${CONSOLE_LAST_TASK_ERROR_LOG}')" && cat > '${CONSOLE_LAST_TASK_ERROR_LOG}'`,
+    ],
+    {
+      input: body,
+      stdio: ["pipe", "ignore", "ignore"],
+    },
+  );
+  return result.status === 0;
 }
 
 export async function writeTaskErrorLog(

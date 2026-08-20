@@ -12,7 +12,10 @@ import {
   LOG_TIME,
   LOG_WARN,
 } from "../theme.ts";
-import { logContentWidth } from "./log-scrollbar.tsx";
+import {
+  logContentWidth,
+  logContentWidthWithScrollbar,
+} from "./log-scrollbar.tsx";
 import { ScrollableLogList } from "./scrollable-log-list.tsx";
 
 function truncateText(text: string, maxWidth: number): string {
@@ -59,10 +62,10 @@ function structuredPrefixWidth(line: DaemonLogLine): number {
 function LogRow({
   line,
   width,
-}: {
+}: Readonly<{
   line: DaemonLogLine;
   width: number;
-}) {
+}>) {
   const time = formatLogDisplayTime(line.time).padEnd(LOG_TIME_WIDTH);
   const level = line.level.toUpperCase().padEnd(5);
   const component = line.component.padEnd(16);
@@ -89,17 +92,19 @@ export const DaemonLogView = memo(function DaemonLogView({
   height,
   selectedIndex,
   focused = false,
-}: {
+}: Readonly<{
   lines: DaemonLogLine[];
   width: number;
   height: number;
   selectedIndex: number;
   focused?: boolean;
-}) {
+}>) {
   const scrollIndex = lines.length === 0
     ? 0
     : Math.min(selectedIndex, lines.length - 1);
-  const contentWidth = logContentWidth(width, focused);
+  const contentWidth = focused
+    ? logContentWidthWithScrollbar(width)
+    : logContentWidth(width);
   const windowStart = visibleWindowStart(lines.length, scrollIndex, height);
   const visibleLines = lines.slice(windowStart, windowStart + height);
   const visibleSelectedIndex = Math.max(0, scrollIndex - windowStart);

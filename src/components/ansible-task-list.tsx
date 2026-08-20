@@ -11,6 +11,27 @@ export type AnsibleTaskRow = {
   depth: number;
 };
 
+/** One-line key for Ansible task status glyphs shown during converge / bootstrap. */
+export function AnsibleTaskLegend() {
+  return (
+    <Text wrap="truncate">
+      <Text dimColor>Legend: </Text>
+      <Text color="green">✓</Text>
+      <Text dimColor> ok · </Text>
+      <Text color="yellow">~</Text>
+      <Text dimColor> changed · </Text>
+      <Text color="gray">–</Text>
+      <Text dimColor> skipped · </Text>
+      <Text color="red">✗</Text>
+      <Text dimColor> failed · </Text>
+      <Text color="cyan">⠋</Text>
+      <Text dimColor> step/play · </Text>
+      <Text color="yellow">o</Text>
+      <Text dimColor> task</Text>
+    </Text>
+  );
+}
+
 function statusGlyph(status: AnsibleTaskRow["status"]): {
   glyph: string;
   color: string;
@@ -43,17 +64,22 @@ function RunningGlyph({
   depth,
   dimmed,
   spinnerFrame,
-}: {
+}: Readonly<{
   depth: number;
   dimmed: boolean;
   spinnerFrame: number;
-}) {
+}>) {
   const frames = ansibleSpinnerFrames(depth);
   const index = spinnerFrame % frames.length;
-  const color = depth >= 2 ? "yellow" : "cyan";
+  let textColor = "cyan";
+  if (dimmed) {
+    textColor = "gray";
+  } else if (depth >= 2) {
+    textColor = "yellow";
+  }
 
   return (
-    <Text color={dimmed ? "gray" : color}>{frames[index]}</Text>
+    <Text color={textColor}>{frames[index]}</Text>
   );
 }
 
@@ -63,19 +89,16 @@ function TaskRow({
   dimmed = false,
   focused = false,
   spinnerFrame,
-}: {
+}: Readonly<{
   task: AnsibleTaskRow;
   columns: number;
   dimmed?: boolean;
   focused?: boolean;
   spinnerFrame: number;
-}) {
+}>) {
   const { glyph, color } = statusGlyph(task.status);
   const indent = indentForDepth(task.depth);
-  const labelWidth = Math.max(
-    8,
-    columns - indent.length - (task.status === "running" ? 2 : 2),
-  );
+  const labelWidth = Math.max(8, columns - indent.length - 2);
   const label = truncateLabel(task.label, labelWidth);
 
   const runningColor = task.depth >= 2 ? "yellow" : "cyan";
@@ -112,7 +135,8 @@ export function AnsibleTaskList({
   errorLogPath,
   columns,
   spinnerFrame,
-}: {
+  showLegend = false,
+}: Readonly<{
   visibleTasks: AnsibleTaskRow[];
   hiddenCount: number;
   followIndex: number;
@@ -122,14 +146,22 @@ export function AnsibleTaskList({
   errorLogPath?: string | null;
   columns: number;
   spinnerFrame: number;
-}) {
-  const scrollHeight = Math.max(1, height);
+  /** Show status glyph key while Ansible work is in progress. */
+  showLegend?: boolean;
+}>) {
+  const legendRows = showLegend ? 1 : 0;
+  const scrollHeight = Math.max(1, height - legendRows);
   const scrollIndex = visibleTasks.length === 0
     ? 0
     : Math.min(followIndex, visibleTasks.length - 1);
 
   return (
     <Box flexDirection="column" flexGrow={1} flexShrink={1} minHeight={0}>
+      {showLegend && (
+        <Box flexShrink={0} marginBottom={1}>
+          <AnsibleTaskLegend />
+        </Box>
+      )}
       <Box flexDirection="column" flexShrink={1} minHeight={0} height={scrollHeight}>
         {hiddenCount > 0 && (
           <Text dimColor>… {hiddenCount} earlier tasks</Text>

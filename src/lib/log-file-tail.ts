@@ -1,5 +1,5 @@
 import { closeSync, openSync, readSync, statSync } from "node:fs";
-import { spawnSync } from "node:child_process";
+import { spawnSyncTrustedText } from "./spawn-trusted.ts";
 
 function fileSize(path: string): number | undefined {
   try {
@@ -8,10 +8,10 @@ function fileSize(path: string): number | undefined {
     // fall through to sudo stat
   }
 
-  const result = spawnSync(
+  const result = spawnSyncTrustedText(
     "sudo",
     ["-n", "stat", "-c", "%s", path],
-    { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
+    { stdio: ["ignore", "pipe", "ignore"] },
   );
   if (result.status !== 0 || !result.stdout) {
     return undefined;
@@ -47,11 +47,10 @@ function readChunkFrom(
     }
   }
 
-  const result = spawnSync(
+  const result = spawnSyncTrustedText(
     "sudo",
     ["-n", "tail", "-c", `+${start + 1}`, path],
     {
-      encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
       maxBuffer: length + 1024,
     },
@@ -60,6 +59,20 @@ function readChunkFrom(
     return undefined;
   }
   return result.stdout;
+}
+
+function emitCompleteLines(
+  chunk: string,
+  onLine: (line: string) => void,
+): void {
+  const parts = chunk.split("\n");
+  const completeLines = chunk.endsWith("\n") ? parts : parts.slice(0, -1);
+  for (const line of completeLines) {
+    const trimmed = line.trim();
+    if (trimmed.length > 0) {
+      onLine(trimmed);
+    }
+  }
 }
 
 /** Incremental tail of one or more append-only service log files. */
@@ -72,41 +85,35 @@ export class LogFileTailer {
     }
   }
 
+  private drainPath(path: string, onLine: (line: string) => void): void {
+    const size = fileSize(path);
+    if (size === undefined) {
+      return;
+    }
+
+    let offset = this.offsets.get(path) ?? 0;
+    if (size < offset) {
+      offset = 0;
+    }
+    if (size === offset) {
+      return;
+    }
+
+    const chunk = readChunkFrom(path, offset, size - offset);
+    if (chunk === undefined) {
+      return;
+    }
+    this.offsets.set(path, size);
+
+    if (chunk.length === 0) {
+      return;
+    }
+    emitCompleteLines(chunk, onLine);
+  }
+
   drain(onLine: (line: string) => void): void {
     for (const path of this.offsets.keys()) {
-      const size = fileSize(path);
-      if (size === undefined) {
-        continue;
-      }
-
-      let offset = this.offsets.get(path) ?? 0;
-      if (size < offset) {
-        offset = 0;
-      }
-      if (size === offset) {
-        continue;
-      }
-
-      const chunk = readChunkFrom(path, offset, size - offset);
-      if (chunk === undefined) {
-        continue;
-      }
-      this.offsets.set(path, size);
-
-      if (chunk.length === 0) {
-        continue;
-      }
-
-      const parts = chunk.split("\n");
-      const endsWithNewline = chunk.endsWith("\n");
-      const completeLines = endsWithNewline ? parts : parts.slice(0, -1);
-
-      for (const line of completeLines) {
-        const trimmed = line.trim();
-        if (trimmed.length > 0) {
-          onLine(trimmed);
-        }
-      }
+      this.drainPath(path, onLine);
     }
   }
 }

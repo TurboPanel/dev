@@ -6,6 +6,7 @@ import {
   listAvailableTestRepos,
   runRepoTests,
   TEST_REPO_CATALOG,
+  testRepoForServiceId,
   testRunnerPathEnv,
 } from "./run-repo-tests.ts";
 import { RUN_CAPTURED_ABORTED_EXIT } from "./install-output.ts";
@@ -18,6 +19,16 @@ test("TEST_REPO_CATALOG covers every checkout dir with at least one suite", () =
   for (const repo of TEST_REPO_CATALOG) {
     expect(repo.suites.length).toBeGreaterThan(0);
   }
+});
+
+test("testRepoForServiceId maps source services onto checkouts", () => {
+  expect(testRepoForServiceId("daemon")).toBe("turbopaneld");
+  expect(testRepoForServiceId("instance")).toBe("turbopanel");
+  expect(testRepoForServiceId("web")).toBe("turbopanel");
+  expect(testRepoForServiceId("ui")).toBe("ui");
+  expect(testRepoForServiceId("website")).toBe("website");
+  expect(testRepoForServiceId("db")).toBeNull();
+  expect(testRepoForServiceId("smtp")).toBeNull();
 });
 
 test("findTestRepo / findTestSuite locate catalog entries", () => {
@@ -61,9 +72,10 @@ test("buildTestCommand uses Deno tasks for turbopaneld and pnpm elsewhere", () =
   expect(daemon.cwd).toMatch(/\/turbopaneld$/);
 
   const instance = buildTestCommand("turbopanel", "test:do", {
+    nodeBin: "/opt/fake/node",
     pnpmBin: "/opt/fake/pnpm",
   });
-  expect(instance.cmd).toEqual(["/opt/fake/pnpm", "test:do"]);
+  expect(instance.cmd).toEqual(["/opt/fake/node", "/opt/fake/pnpm", "test:do"]);
   expect(instance.cwd).toMatch(/\/turbopanel$/);
 });
 
@@ -77,6 +89,15 @@ test("testRunnerPathEnv prepends vendored Node and Deno bins", () => {
   expect(parts[0]).toMatch(/\/node\/current\/bin$/);
   expect(parts[1]).toMatch(/\/deno\/current$/);
   expect(parts.slice(-2)).toEqual(["/usr/bin", "/bin"]);
+});
+
+test("testRunnerPathEnv defaults to trusted FHS dirs, not the user PATH", () => {
+  const env = testRunnerPathEnv();
+  const parts = env.PATH.split(":");
+  expect(parts[0]).toMatch(/\/node\/current\/bin$/);
+  expect(parts[1]).toMatch(/\/deno\/current$/);
+  expect(parts).toContain("/usr/bin");
+  expect(parts).not.toContain("/home/vagrant/.local/bin");
 });
 
 test("runRepoTests streams banner lines and reports exit code", async () => {

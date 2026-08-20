@@ -47,10 +47,10 @@ function activeTabMetrics(
 function TabSlot({
   area,
   active,
-}: {
+}: Readonly<{
   area: AreaTab;
   active: boolean;
-}) {
+}>) {
   return (
     <Box
       width={tabWidth(area)}
@@ -74,10 +74,10 @@ function TabSlot({
 function TabStrip({
   areas,
   activeIndex,
-}: {
+}: Readonly<{
   areas: AreaTab[];
   activeIndex: number;
-}) {
+}>) {
   return (
     <Box flexDirection="row" alignItems="center">
       {areas.map((area, index) => (
@@ -97,13 +97,13 @@ export function MenuBar({
   columns,
   provisioning,
   bootstrapArea,
-}: {
+}: Readonly<{
   areas: AreaTab[];
   activeIndex: number;
   columns: number;
   provisioning?: boolean;
   bootstrapArea?: AreaTab;
-}) {
+}>) {
   const displayAreas = provisioning && bootstrapArea ? [bootstrapArea] : areas;
   const displayActiveIndex = provisioning ? 0 : activeIndex;
   const { activeArea, activeWidth, activeTabStart, rightWidth } =

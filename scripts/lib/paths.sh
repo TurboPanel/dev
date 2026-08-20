@@ -11,10 +11,11 @@ TURBOPANEL_MODE=${TURBOPANEL_MODE:-development}
 # Env key for a platform checkout override. Dir names match GitHub
 # (turbopaneld/turbopanel); keys stay TURBOPANEL_DAEMON_REPO / INSTANCE_REPO.
 tp_platform_repo_env_key() {
-  case "$1" in
+  _tp_env_dir=$1
+  case "$_tp_env_dir" in
     turbopaneld) printf 'TURBOPANEL_DAEMON_REPO' ;;
     turbopanel) printf 'TURBOPANEL_INSTANCE_REPO' ;;
-    *) printf 'TURBOPANEL_%s_REPO' "$(printf '%s' "$1" | tr '[:lower:]' '[:upper:]')" ;;
+    *) printf 'TURBOPANEL_%s_REPO' "$(printf '%s' "$_tp_env_dir" | tr '[:lower:]' '[:upper:]')" ;;
   esac
 }
 

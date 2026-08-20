@@ -1,6 +1,7 @@
 import type { DevServiceStatus } from "../dev-services.ts";
 import { spawnDocker } from "./docker-access.ts";
 import { type InstallOutputHandler, runCaptured } from "./install-output.ts";
+import { testRepoForServiceId } from "./run-repo-tests.ts";
 import { openServiceInBrowser } from "./service-open.ts";
 import { serviceSupportsOpen } from "./service-urls.ts";
 import { DAEMON_SYSTEMD_UNIT } from "./paths.ts";
@@ -141,6 +142,29 @@ async function runDocker(
 
 export function isManagedService(serviceId: string): boolean {
   return MANAGED_SERVICE_IDS.has(serviceId);
+}
+
+export type ServiceListSpecialAction = "logs" | "tests" | "rebuild-remotes";
+
+/**
+ * Single-letter Services hotkeys that are not restart/enable/open/runtime.
+ * **L** logs (external pager), **T** tests on source services, **U** rebuild remotes.
+ */
+export function serviceListSpecialAction(
+  serviceId: string,
+  key: string,
+): ServiceListSpecialAction | null {
+  const normalized = key.toLowerCase();
+  if (normalized === "l") {
+    return "logs";
+  }
+  if (normalized === "t" && testRepoForServiceId(serviceId) !== null) {
+    return "tests";
+  }
+  if (normalized === "u" && serviceId === "daemon") {
+    return "rebuild-remotes";
+  }
+  return null;
 }
 
 export function serviceActionForKey(

@@ -1,10 +1,9 @@
 import {
-  POSTGRES_VERSION,
   stackBadgeLabel,
   stackBadgeReserveForRuntime,
 } from "./stack-versions.ts";
 
-export { POSTGRES_VERSION };
+export { POSTGRES_VERSION } from "./stack-versions.ts";
 
 export const POSTGRES_BADGE_RESERVE = stackBadgeReserveForRuntime("postgres", {
   instanceRuntime: "workers",

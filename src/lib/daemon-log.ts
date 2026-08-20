@@ -1,13 +1,47 @@
 import { closeSync, openSync, readSync, statSync } from "node:fs";
-import { spawnSync } from "node:child_process";
 import { isDaemonServiceActive } from "./daemon-actions.ts";
 import { DAEMON_ERR_LOG_PATH, DAEMON_LOG_PATH, DAEMON_SYSTEMD_UNIT } from "./paths.ts";
 import { sanitizeInstallOutput } from "./install-output.ts";
+import { spawnSyncTrustedText } from "./spawn-trusted.ts";
 
 const HIDE_ANSIBLE_DEBUG = true;
 
-export const STRUCTURED_TEXT_WITH_TIME_RE =
-  /^(\d{4}-\d{2}-\d{2}T[\d:.]+Z)\s+(DEBUG|INFO|WARN|ERROR)\s+(\S+)\s{2,}(.*)$/;
+export type StructuredTextWithTime = {
+  time: string;
+  level: string;
+  component: string;
+  rest: string;
+};
+
+/** Parse daemon/instance structured log lines without backtracking-prone regexes. */
+export function parseStructuredTextWithTime(
+  trimmed: string,
+): StructuredTextWithTime | null {
+  const timeMatch = /^(\d{4}-\d{2}-\d{2}T[\d:.]+Z)\s+/.exec(trimmed);
+  if (!timeMatch) {
+    return null;
+  }
+
+  let rest = trimmed.slice(timeMatch[0].length);
+  const levelMatch = /^(DEBUG|INFO|WARN|ERROR)\s+/.exec(rest);
+  if (!levelMatch) {
+    return null;
+  }
+
+  rest = rest.slice(levelMatch[0].length);
+  const componentMatch = /^(\S+)\s{2,}/.exec(rest);
+  if (!componentMatch) {
+    return null;
+  }
+
+  return {
+    time: timeMatch[1]!,
+    level: levelMatch[1]!,
+    component: componentMatch[1]!,
+    rest: rest.slice(componentMatch[0].length),
+  };
+}
+
 const WAITING_MESSAGE_RE = /^waiting(?:\s+for\s+instance)?$/i;
 
 export type DaemonLogLevel = "debug" | "info" | "warn" | "error";
@@ -34,11 +68,20 @@ function normalizeLevel(level: string): DaemonLogLevel {
 }
 
 function splitMessageAndErr(text: string): { message: string; err?: string } {
-  const match = /^(.*)\s+\((.+)\)$/.exec(text);
-  if (!match) {
+  const close = text.lastIndexOf(")");
+  if (close <= 0) {
     return { message: text };
   }
-  return { message: match[1].trimEnd(), err: match[2] };
+
+  const open = text.lastIndexOf("(", close - 1);
+  if (open <= 0 || text[open - 1] !== " ") {
+    return { message: text };
+  }
+
+  return {
+    message: text.slice(0, open - 1).trimEnd(),
+    err: text.slice(open + 1, close),
+  };
 }
 
 function waitingMessage(message: string): string {
@@ -107,13 +150,13 @@ export function parseDaemonLogLine(raw: string): DaemonLogLine | null {
     }
   }
 
-  const withTime = STRUCTURED_TEXT_WITH_TIME_RE.exec(trimmed);
+  const withTime = parseStructuredTextWithTime(trimmed);
   if (withTime) {
-    const { message, err } = splitMessageAndErr(withTime[4]);
+    const { message, err } = splitMessageAndErr(withTime.rest);
     return structuredLine(
-      withTime[1],
-      normalizeLevel(withTime[2]),
-      withTime[3],
+      withTime.time,
+      normalizeLevel(withTime.level),
+      withTime.component,
       message,
       err,
     );
@@ -178,10 +221,10 @@ function fileStatMs(path: string): { birthMs: number; mtimeMs: number; size: num
 }
 
 function sudoFileStatMs(path: string): { birthMs: number; mtimeMs: number; size: number } | undefined {
-  const result = spawnSync(
+  const result = spawnSyncTrustedText(
     "sudo",
     ["-n", "stat", "-c", "%W %Y %s", path],
-    { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
+    { stdio: ["ignore", "pipe", "ignore"] },
   );
   if (result.status !== 0 || !result.stdout) {
     return undefined;
@@ -246,11 +289,10 @@ function readLogFileChunk(
     }
   }
 
-  const result = spawnSync(
+  const result = spawnSyncTrustedText(
     "sudo",
     ["-n", "tail", "-c", String(length), path],
     {
-      encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
       maxBuffer: length + 1024,
     },

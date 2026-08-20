@@ -16,13 +16,13 @@ export function RestartServiceModal({
   serviceLabel,
   onConfirm,
   onCancel,
-}: {
+}: Readonly<{
   width: number;
   height: number;
   serviceLabel: string;
   onConfirm: () => void;
   onCancel: () => void;
-}) {
+}>) {
   const [confirmIndex, setConfirmIndex] = useState(0);
   const modalWidth = Math.min(Math.max(28, width - 4), 52);
 

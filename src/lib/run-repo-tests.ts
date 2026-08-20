@@ -7,10 +7,12 @@ import {
 } from "./install-output.ts";
 import {
   ALL_DEV_CHECKOUT_DIRS,
+  NODE_BIN,
   PNPM_BIN,
   platformRepoPath,
   RUNTIMES_DIR,
 } from "./paths.ts";
+import { TRUSTED_SYSTEM_PATH } from "./spawn-trusted.ts";
 import { openTestRunLog, type TestRunLogHandle } from "./test-run-log.ts";
 
 /** Checkout dirs the Developer → Run tests menu can target. */
@@ -90,6 +92,24 @@ const DENO_SUITES = {
   },
 } as const satisfies Record<string, TestSuiteDef>;
 
+/**
+ * Services screen **T** → checkout whose suites to offer.
+ *
+ * `web` (Caddy) shares the instance checkout — there is no Caddy unit suite.
+ */
+export const SERVICE_TEST_REPOS: Readonly<Record<string, TestRepoId>> = {
+  daemon: "turbopaneld",
+  instance: "turbopanel",
+  web: "turbopanel",
+  ui: "ui",
+  website: "website",
+};
+
+/** Checkout to test when **T** is pressed on a Services row, or `null`. */
+export function testRepoForServiceId(serviceId: string): TestRepoId | null {
+  return SERVICE_TEST_REPOS[serviceId] ?? null;
+}
+
 /** Static catalog of repos and suites (presence gated at runtime). */
 export const TEST_REPO_CATALOG: readonly TestRepoDef[] = [
   {
@@ -161,9 +181,9 @@ export function findTestSuite(
   return repo.suites.find((suite) => suite.id === suiteId);
 }
 
-/** Prepend vendored Node + Deno bins so pnpm/deno scripts resolve inside the VM. */
+/** Prepend vendored Node + Deno bins onto a trusted FHS PATH (not the user PATH). */
 export function testRunnerPathEnv(
-  basePath: string | undefined = process.env.PATH,
+  basePath: string | undefined = TRUSTED_SYSTEM_PATH,
 ): Record<string, string> {
   const prefixes = [
     `${RUNTIMES_DIR}/node/current/bin`,
@@ -194,6 +214,7 @@ export function buildTestCommand(
   options: {
     resolveDenoBin?: () => string;
     pnpmBin?: string;
+    nodeBin?: string;
   } = {},
 ): BuildTestCommandResult {
   const repo = findTestRepo(repoId);
@@ -215,10 +236,13 @@ export function buildTestCommand(
     };
   }
 
+  // Corepack's pnpm.js shebang is `#!/usr/bin/env node`. Invoke through the
+  // vendored node binary so PATH-less / FHS-only spawns still start.
+  const nodeBin = options.nodeBin ?? NODE_BIN;
   const pnpmBin = options.pnpmBin ?? PNPM_BIN;
   return {
     cwd,
-    cmd: [pnpmBin, suiteId],
+    cmd: [nodeBin, pnpmBin, suiteId],
     label: suite.detail,
   };
 }

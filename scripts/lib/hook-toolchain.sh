@@ -2,6 +2,9 @@
 # Source after ROOT (or the target repo root) is set. Fails fast unless
 # TURBOPANEL_SKIP_HOOK_TESTS is set (checked by the hook before sourcing).
 
+# Relative path from vendor/deno/bin/ to the current Deno binary symlink target.
+DENO_BIN_CURRENT_REL='../current/deno'
+
 # Resolve the turbopanel/dev checkout (hosts paths.sh, runtime.sh, …).
 # Prefer ROOT from the calling pre-commit (never trust $0 when this file is
 # sourced — $0 stays the hook path, so dirname walks out of the repo).
@@ -126,11 +129,11 @@ PY
   if [ "$(id -u)" -eq 0 ] || [ -w "$_hbvd_runtimes" ] 2>/dev/null; then
     ln -sfn "$_hbvd_version" "$_hbvd_runtimes/deno/current"
     mkdir -p "$_hbvd_runtimes/deno/bin"
-    ln -sfn "../current/deno" "$_hbvd_runtimes/deno/bin/deno"
+    ln -sfn "$DENO_BIN_CURRENT_REL" "$_hbvd_runtimes/deno/bin/deno"
   elif command -v sudo >/dev/null 2>&1; then
     sudo ln -sfn "$_hbvd_version" "$_hbvd_runtimes/deno/current"
     sudo mkdir -p "$_hbvd_runtimes/deno/bin"
-    sudo ln -sfn "../current/deno" "$_hbvd_runtimes/deno/bin/deno"
+    sudo ln -sfn "$DENO_BIN_CURRENT_REL" "$_hbvd_runtimes/deno/bin/deno"
   fi
 }
 
@@ -152,11 +155,11 @@ tp_hook_ensure_deno_toolchain() {
     if [ "$(id -u)" -eq 0 ] || [ -w "$_hdt_runtimes" ] 2>/dev/null; then
       ln -sfn "$_hdt_version" "$_hdt_runtimes/deno/current"
       mkdir -p "$_hdt_runtimes/deno/bin"
-      ln -sfn "../current/deno" "$_hdt_runtimes/deno/bin/deno"
+      ln -sfn "$DENO_BIN_CURRENT_REL" "$_hdt_runtimes/deno/bin/deno"
     elif command -v sudo >/dev/null 2>&1; then
       sudo ln -sfn "$_hdt_version" "$_hdt_runtimes/deno/current"
       sudo mkdir -p "$_hdt_runtimes/deno/bin"
-      sudo ln -sfn "../current/deno" "$_hdt_runtimes/deno/bin/deno"
+      sudo ln -sfn "$DENO_BIN_CURRENT_REL" "$_hdt_runtimes/deno/bin/deno"
     fi
   elif command -v curl >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1; then
     tp_hook_bootstrap_vendored_deno "$_hdt_version"

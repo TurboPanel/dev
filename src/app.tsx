@@ -5,6 +5,7 @@ import { MenuBar, type AreaTab } from "@turbopanel/components/menu-bar.tsx";
 import { DeveloperPanel } from "@turbopanel/components/developer-panel.tsx";
 import { ProvisionerPanel } from "@turbopanel/components/provisioner-panel.tsx";
 import { ServicesPanel } from "@turbopanel/components/services-panel.tsx";
+import { RunTestsView } from "@turbopanel/components/run-tests-view.tsx";
 import { statusHints } from "@turbopanel/components/status-bar.tsx";
 import type { DevService } from "./dev-services.ts";
 import type { DaemonActionId } from "./lib/daemon-actions.ts";
@@ -16,6 +17,7 @@ import type { ServiceLogByteFloor } from "./lib/service-log.ts";
 import type { ConsoleLogLine } from "./lib/service-restart.ts";
 import type { DaemonOperation } from "./lib/spinners.ts";
 import type { OptionalDevServiceSelection } from "./lib/optional-dev-services.ts";
+import type { TestRepoId } from "./lib/run-repo-tests.ts";
 import { provisionerPhaseForDaemonOperation } from "./lib/provisioner-phase.ts";
 import { OptionalServicesModal } from "@turbopanel/components/optional-services-modal.tsx";
 
@@ -66,6 +68,9 @@ type MainContentProps = Readonly<{
   onDismissDevEnvConvergeError?: () => void;
   developerView?: DeveloperView;
   onCloseDeveloperView?: () => void;
+  serviceTestsRepoId?: TestRepoId | null;
+  onRunServiceTests?: (serviceId: string) => void;
+  onCloseServiceTests?: () => void;
 }>;
 
 function MainContent({
@@ -101,6 +106,9 @@ function MainContent({
   onDismissDevEnvConvergeError,
   developerView,
   onCloseDeveloperView,
+  serviceTestsRepoId,
+  onRunServiceTests,
+  onCloseServiceTests,
 }: MainContentProps) {
   const daemon = visibleServices.find((service) => service.id === "daemon");
 
@@ -160,6 +168,21 @@ function MainContent({
         </Box>
       );
     case "services":
+      if (serviceTestsRepoId && onCloseServiceTests) {
+        return (
+          <Box width={width} height={height}>
+            <RunTestsView
+              key={serviceTestsRepoId}
+              width={width}
+              height={height}
+              focused
+              initialRepoId={serviceTestsRepoId}
+              onClose={onCloseServiceTests}
+            />
+            {optionalModal}
+          </Box>
+        );
+      }
       return (
         <Box width={width} height={height}>
           <ServicesPanel
@@ -173,6 +196,7 @@ function MainContent({
             onRefreshServices={onRefreshServices}
             serviceOperation={serviceOperation}
             onServiceAction={onServiceAction}
+            onRunServiceTests={onRunServiceTests}
             pendingRestart={pendingRestart}
             restartInProgress={restartInProgress}
             restartOverlayServiceId={restartOverlayServiceId}
@@ -230,6 +254,9 @@ type AppViewProps = Readonly<{
   onDismissDevEnvConvergeError?: () => void;
   developerView?: DeveloperView;
   onCloseDeveloperView?: () => void;
+  serviceTestsRepoId?: TestRepoId | null;
+  onRunServiceTests?: (serviceId: string) => void;
+  onCloseServiceTests?: () => void;
 }>;
 
 export function AppView({
@@ -268,21 +295,25 @@ export function AppView({
   onDismissDevEnvConvergeError,
   developerView,
   onCloseDeveloperView,
+  serviceTestsRepoId,
+  onRunServiceTests,
+  onCloseServiceTests,
 }: AppViewProps) {
   const activeIndex = AREAS.findIndex((area) => area.id === activeArea);
   const menuActiveIndex = Math.max(activeIndex, 0);
   const innerWidth = columns - 2;
   const contentHeight = rows - MENU_ROWS - STATUS_ROWS;
-  const status = statusHints(
-    activeArea,
+  const status = statusHints({
+    activeAreaId: activeArea,
     selectedServiceId,
     installFinished,
     pendingRestart,
     restartInProgress,
-    daemonOperation === "dev-env" || Boolean(devEnvConverge?.active),
+    devEnvConverging: daemonOperation === "dev-env" || Boolean(devEnvConverge?.active),
     developerView,
     pendingOptionalServices,
-  );
+    serviceTestsRepoId,
+  });
 
   return (
     <Box
@@ -332,6 +363,9 @@ export function AppView({
           onDismissDevEnvConvergeError={onDismissDevEnvConvergeError}
           developerView={developerView}
           onCloseDeveloperView={onCloseDeveloperView}
+          serviceTestsRepoId={serviceTestsRepoId}
+          onRunServiceTests={onRunServiceTests}
+          onCloseServiceTests={onCloseServiceTests}
         />
       </MainPanel>
     </Box>

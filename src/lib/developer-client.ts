@@ -2,7 +2,7 @@ import { createHash, createHmac } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { request as httpRequest, type IncomingMessage } from "node:http";
 import { readInstanceRuntime } from "./daemon-env.ts";
-import { instanceSecretPath, instanceSecretsPath } from "./paths.ts";
+import { instanceSecretsPath } from "./paths.ts";
 
 /**
  * Live developer-surface client for the co-located instance.
@@ -82,31 +82,17 @@ function errnoCode(err: unknown): string {
 }
 
 /**
- * Resolve the Local-Console HMAC signing secret.
+ * Resolve the Local-Console HMAC signing secret from `.instance_secrets`.
  *
- * Prefer the multi-version keyring (`.instance_secrets`). Fall back to the
- * permanent singular file (`.instance_secret`) **only** when the keyring is
- * absent (`ENOENT`). A present but unreadable or unparseable keyring must not
- * silently sign with the legacy v1 secret (rotated installs would 401 and hide
- * the real diagnostic).
+ * The first keyring entry is current/signing. A present but unreadable or
+ * unparseable keyring must not silently fall back to a legacy secret.
  *
  * @internal Exported for unit tests.
  */
 export function readInstanceSecret(): string | undefined {
   try {
     const keyring = readFileSync(instanceSecretsPath(), "utf8");
-    // Keyring file exists: use it exclusively (parse may yield undefined).
     return parseInstanceKeyringCurrentSecret(keyring);
-  } catch (err) {
-    if (errnoCode(err) !== "ENOENT") {
-      // EACCES / other: no silent singular fallback — developerFetch() will call
-      // instanceSecretReadError() for the keyring-specific diagnostic.
-      return undefined;
-    }
-  }
-  try {
-    const secret = readFileSync(instanceSecretPath(), "utf8").trim();
-    return secret || undefined;
   } catch {
     return undefined;
   }
@@ -114,9 +100,6 @@ export function readInstanceSecret(): string | undefined {
 
 /**
  * Diagnostic Error when {@link readInstanceSecret} returns undefined.
- *
- * Keyring parse failures and non-`ENOENT` keyring read errors are reported
- * before checking the singular `.instance_secret` path.
  *
  * @internal Exported for unit tests.
  */
@@ -136,32 +119,17 @@ export function instanceSecretReadError(): Error {
         `cannot read instance secrets keyring at ${secretsPath} (permission denied) — expected root:${process.env.USER ?? "dev-user"} mode 0640 so the console can authenticate local developer API calls`,
       );
     }
-    if (code !== "ENOENT") {
-      return new Error(
-        `unreadable or unparseable instance secrets keyring at ${secretsPath} — cannot authenticate local developer API calls`,
-      );
-    }
-    // ENOENT only: fall through to singular-file diagnostics.
-  }
-
-  const secretPath = instanceSecretPath();
-  try {
-    readFileSync(secretPath, "utf8");
-  } catch (err) {
-    const code = errnoCode(err);
-    if (code === "EACCES") {
-      return new Error(
-        `cannot read instance secret at ${secretPath} (permission denied) — expected root:${process.env.USER ?? "dev-user"} mode 0640 so the console can authenticate local developer API calls`,
-      );
-    }
     if (code === "ENOENT") {
       return new Error(
-        `missing instance secret at ${secretPath} — cannot authenticate local developer API calls`,
+        `missing instance secrets keyring at ${secretsPath} — cannot authenticate local developer API calls`,
       );
     }
+    return new Error(
+      `unreadable or unparseable instance secrets keyring at ${secretsPath} — cannot authenticate local developer API calls`,
+    );
   }
   return new Error(
-    `missing instance secret at ${secretPath} — cannot authenticate local developer API calls`,
+    `missing instance secrets keyring at ${secretsPath} — cannot authenticate local developer API calls`,
   );
 }
 

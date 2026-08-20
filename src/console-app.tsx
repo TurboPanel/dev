@@ -44,6 +44,9 @@ export function ConsoleApp() {
       onDismissDevEnvConvergeError={consoleApp.dismissDevEnvConvergeError}
       developerView={consoleApp.developerView}
       onCloseDeveloperView={consoleApp.closeDeveloperView}
+      serviceTestsRepoId={consoleApp.serviceTestsRepoId}
+      onRunServiceTests={consoleApp.openServiceTests}
+      onCloseServiceTests={consoleApp.closeServiceTests}
     />
   );
 }

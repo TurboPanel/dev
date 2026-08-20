@@ -5,7 +5,7 @@ import {
   openSync,
   readSync,
 } from "node:fs";
-import { STRUCTURED_TEXT_WITH_TIME_RE } from "./daemon-log.ts";
+import { parseStructuredTextWithTime } from "./daemon-log.ts";
 import {
   type ServiceLogByteFloor,
   type ServiceLogLine,
@@ -20,10 +20,9 @@ const TAIL_BYTES_PER_LINE = 4 * 1024;
 const TAIL_MIN_BYTES = 64 * 1024;
 
 function parseServiceLine(text: string): ServiceLogLine {
-  const match = STRUCTURED_TEXT_WITH_TIME_RE.exec(text);
-  if (match) {
-    const time = match[1];
-    return { text: text.slice(time.length).trimStart(), time };
+  const parsed = parseStructuredTextWithTime(text);
+  if (parsed) {
+    return { text: text.slice(parsed.time.length).trimStart(), time: parsed.time };
   }
   return { text };
 }
@@ -33,12 +32,12 @@ function isCellTraceLine(rawLine: string): boolean {
     return true;
   }
 
-  const match = STRUCTURED_TEXT_WITH_TIME_RE.exec(rawLine);
-  if (!match) {
+  const parsed = parseStructuredTextWithTime(rawLine);
+  if (!parsed) {
     return false;
   }
 
-  return CELL_TRACE_COMPONENTS.has(match[3]!);
+  return CELL_TRACE_COMPONENTS.has(parsed.component);
 }
 
 function readFileTailText(

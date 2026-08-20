@@ -5,6 +5,7 @@ import { CONSOLE_LOG_DIR } from "./paths.ts";
 import { spawnDocker } from "./docker-access.ts";
 import {
   MAILPIT_CONTAINER_NAME,
+  REDIS_INSIGHT_BRIDGE_CONTAINER_NAME,
   REDIS_INSIGHT_CONTAINER_NAME,
   TABIX_CONTAINER_NAME,
 } from "./platform-docker-resources.ts";
@@ -34,9 +35,15 @@ export type OptionalDevServiceDef = {
   ansibleStem: string;
   /** systemd unit when present. */
   unit: string;
-  /** Docker container name when the service is container-backed. */
-  container?: string;
+  /** Docker container names when the service is container-backed. */
+  containers?: readonly string[];
 };
+
+/** Optional services that only apply to the Deno self-hosted dev stack. */
+export const OPTIONAL_DENO_ONLY_SERVICE_IDS = [
+  "redisinsight",
+  "tabix",
+] as const satisfies readonly OptionalDevServiceId[];
 
 export const OPTIONAL_DEV_SERVICE_DEFS: readonly OptionalDevServiceDef[] = [
   {
@@ -52,7 +59,7 @@ export const OPTIONAL_DEV_SERVICE_DEFS: readonly OptionalDevServiceDef[] = [
     hint: "SMTP catcher on :8025 (loopback)",
     ansibleStem: "mailpit",
     unit: "turbopanel-mailpit",
-    container: MAILPIT_CONTAINER_NAME,
+    containers: [MAILPIT_CONTAINER_NAME],
   },
   {
     id: "ui",
@@ -74,7 +81,10 @@ export const OPTIONAL_DEV_SERVICE_DEFS: readonly OptionalDevServiceDef[] = [
     hint: "Cache GUI on :5540",
     ansibleStem: "redis_insight",
     unit: "turbopanel-redis-insight",
-    container: REDIS_INSIGHT_CONTAINER_NAME,
+    containers: [
+      REDIS_INSIGHT_CONTAINER_NAME,
+      REDIS_INSIGHT_BRIDGE_CONTAINER_NAME,
+    ],
   },
   {
     id: "tabix",
@@ -82,7 +92,7 @@ export const OPTIONAL_DEV_SERVICE_DEFS: readonly OptionalDevServiceDef[] = [
     hint: "ClickHouse GUI on :8125",
     ansibleStem: "tabix",
     unit: "turbopanel-tabix",
-    container: TABIX_CONTAINER_NAME,
+    containers: [TABIX_CONTAINER_NAME],
   },
 ] as const;
 
@@ -179,6 +189,28 @@ export function persistOptionalServiceToggle(
  * Env pairs for the orchestration child (`TURBOPANEL_OPTIONAL_*`).
  * Ansible reads these via daemon `devInstanceExtraArgs`.
  */
+/**
+ * Gray catalog rows on the Services list — all optional services, minus
+ * Deno-only tools when the instance runs on Workers.
+ */
+export function optionalDevServiceCatalogIdsForRuntime(
+  runtime: "deno" | "workers",
+): readonly OptionalDevServiceId[] {
+  if (runtime === "workers") {
+    return OPTIONAL_DEV_SERVICE_IDS.filter(
+      (id) =>
+        !(OPTIONAL_DENO_ONLY_SERVICE_IDS as readonly string[]).includes(id),
+    );
+  }
+  return OPTIONAL_DEV_SERVICE_IDS;
+}
+
+export function optionalDevServiceBackingContainers(
+  def: OptionalDevServiceDef,
+): readonly string[] {
+  return def.containers ?? [];
+}
+
 export function optionalServicesOrchestrationEnv(
   selection: OptionalDevServiceSelection,
 ): string[] {
@@ -240,6 +272,82 @@ async function runDocker(
   throw new Error(`docker ${args.join(" ")} failed`);
 }
 
+async function startOptionalContainers(
+  def: OptionalDevServiceDef,
+  onOutput?: InstallOutputHandler,
+): Promise<void> {
+  for (const container of optionalDevServiceBackingContainers(def)) {
+    if (!dockerContainerExists(container)) {
+      continue;
+    }
+    onOutput?.(`Starting optional container ${container}`);
+    await runDocker(["update", "--restart=unless-stopped", container], onOutput);
+    await runDocker(["start", container], onOutput);
+  }
+}
+
+async function stopOptionalContainers(
+  def: OptionalDevServiceDef,
+  onOutput?: InstallOutputHandler,
+): Promise<void> {
+  for (const container of optionalDevServiceBackingContainers(def)) {
+    if (!dockerContainerExists(container)) {
+      continue;
+    }
+    onOutput?.(`Stopping optional container ${container}`);
+    await runDocker(["update", "--restart=no", container], onOutput);
+    await runDocker(["stop", container], onOutput);
+  }
+}
+
+function hasInstalledOptionalContainers(def: OptionalDevServiceDef): boolean {
+  return optionalDevServiceBackingContainers(def).some((container) =>
+    dockerContainerExists(container)
+  );
+}
+
+async function applyInstalledOptionalUnit(
+  def: OptionalDevServiceDef,
+  want: boolean,
+  onOutput?: InstallOutputHandler,
+): Promise<void> {
+  if (want) {
+    onOutput?.(`Enabling optional service ${def.label} (${def.unit})`);
+    await runSystemctl(["enable", "--now", def.unit], onOutput);
+    return;
+  }
+
+  onOutput?.(`Disabling optional service ${def.label} (${def.unit})`);
+  await runSystemctl(["disable", "--now", def.unit], onOutput);
+  if (optionalDevServiceBackingContainers(def).length > 0) {
+    await stopOptionalContainers(def, onOutput);
+  }
+}
+
+async function applyContainerOnlyOptional(
+  def: OptionalDevServiceDef,
+  want: boolean,
+  onOutput?: InstallOutputHandler,
+): Promise<void> {
+  if (!hasInstalledOptionalContainers(def)) {
+    if (want) {
+      onOutput?.(
+        `${def.label} is not installed yet — run Converge to provision it`,
+      );
+    }
+    return;
+  }
+
+  if (want) {
+    onOutput?.(`Starting optional container ${def.label}`);
+    await startOptionalContainers(def, onOutput);
+    return;
+  }
+
+  onOutput?.(`Stopping optional container ${def.label}`);
+  await stopOptionalContainers(def, onOutput);
+}
+
 /**
  * Start or stop each optional service to match `selection`.
  * Missing units/containers are skipped (converge installs them first).
@@ -253,19 +361,12 @@ export async function applyOptionalDevServices(
 
   for (const def of OPTIONAL_DEV_SERVICE_DEFS) {
     const want = normalized[def.id];
-    const unitInstalled = isSystemdUnitInstalled(def.unit);
-    if (unitInstalled) {
-      if (want) {
-        onOutput?.(`Enabling optional service ${def.label} (${def.unit})`);
-        await runSystemctl(["enable", "--now", def.unit], onOutput);
-      } else {
-        onOutput?.(`Disabling optional service ${def.label} (${def.unit})`);
-        await runSystemctl(["disable", "--now", def.unit], onOutput);
-      }
+    if (isSystemdUnitInstalled(def.unit)) {
+      await applyInstalledOptionalUnit(def, want, onOutput);
       continue;
     }
 
-    if (!def.container || !dockerContainerExists(def.container)) {
+    if (optionalDevServiceBackingContainers(def).length === 0) {
       if (want) {
         onOutput?.(
           `${def.label} is not installed yet — run Converge to provision it`,
@@ -274,18 +375,7 @@ export async function applyOptionalDevServices(
       continue;
     }
 
-    if (want) {
-      onOutput?.(`Starting optional container ${def.label}`);
-      await runDocker(
-        ["update", "--restart=unless-stopped", def.container],
-        onOutput,
-      );
-      await runDocker(["start", def.container], onOutput);
-    } else {
-      onOutput?.(`Stopping optional container ${def.label}`);
-      await runDocker(["update", "--restart=no", def.container], onOutput);
-      await runDocker(["stop", def.container], onOutput);
-    }
+    await applyContainerOnlyOptional(def, want, onOutput);
   }
 }
 

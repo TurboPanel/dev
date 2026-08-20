@@ -1,5 +1,9 @@
 import { useCallback, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import type { AnsibleTaskRow } from "@turbopanel/components/ansible-task-list.tsx";
+import {
+  parseAnsibleJsonlRecord,
+  type AnsibleJsonlRecord,
+} from "../lib/ansible-jsonl.ts";
 import { resolveServiceIdFromAnsibleName } from "../lib/ansible-service-map.ts";
 import { appendConvergeServiceLogLine } from "../lib/converge-service-log.ts";
 import { CONSOLE_LAST_TASK_ERROR_LOG } from "../lib/paths.ts";
@@ -74,6 +78,125 @@ function markServicePhase(
   );
 }
 
+const CONVERGE_TASK_START_EVENTS = new Set([
+  "v2_playbook_on_task_start",
+  "v2_runner_on_start",
+]);
+
+const CONVERGE_RUNNER_RESULT_EVENTS = new Set([
+  "v2_runner_on_ok",
+  "v2_runner_on_failed",
+  "v2_runner_on_skipped",
+  "v2_runner_on_unreachable",
+]);
+
+function serviceIdFromName(name: string): string | null {
+  if (!name) {
+    return null;
+  }
+  return resolveServiceIdFromAnsibleName(name);
+}
+
+function playName(record: AnsibleJsonlRecord): string {
+  const play = record.play as { name?: string } | undefined;
+  return play?.name?.trim() ?? "";
+}
+
+function taskName(record: AnsibleJsonlRecord): string {
+  const task = record.task as { name?: string } | undefined;
+  return task?.name?.trim() ?? "";
+}
+
+function applyPlayStartTracking(
+  record: AnsibleJsonlRecord,
+  currentServiceId: { current: string | null },
+  setServicePhases: Dispatch<SetStateAction<Record<string, ConvergeServicePhase>>>,
+) {
+  const name = playName(record);
+  const resolved = serviceIdFromName(name);
+  const previousServiceId = currentServiceId.current;
+  if (previousServiceId && previousServiceId !== resolved) {
+    markServiceReady(previousServiceId, setServicePhases);
+  }
+  currentServiceId.current = resolved;
+  if (!resolved) {
+    return;
+  }
+  markServicePhase(resolved, resolvePhaseFromAnsibleName(name), setServicePhases);
+}
+
+function applyTaskStartTracking(
+  record: AnsibleJsonlRecord,
+  currentServiceId: { current: string | null },
+  setServicePhases: Dispatch<SetStateAction<Record<string, ConvergeServicePhase>>>,
+) {
+  const name = taskName(record);
+  const resolved = serviceIdFromName(name);
+  if (!resolved) {
+    return;
+  }
+  currentServiceId.current = resolved;
+  markServicePhase(resolved, resolvePhaseFromAnsibleName(name), setServicePhases);
+}
+
+function applyRunnerLogTracking(
+  record: AnsibleJsonlRecord,
+  eventType: string,
+  currentServiceId: { current: string | null },
+) {
+  const serviceId = currentServiceId.current;
+  if (!serviceId) {
+    return;
+  }
+  const rawName = taskName(record) || "task";
+  const hosts = record.hosts as Record<string, Record<string, unknown>> | undefined;
+  const status = taskResultStatus(eventType, hosts);
+  appendConvergeServiceLogLine(
+    serviceId,
+    `${rawName} [${status}]`,
+    new Date().toISOString(),
+  );
+}
+
+function applyStatsTracking(
+  currentServiceId: { current: string | null },
+  setServicePhases: Dispatch<SetStateAction<Record<string, ConvergeServicePhase>>>,
+) {
+  const finishingServiceId = currentServiceId.current;
+  if (finishingServiceId) {
+    markServiceReady(finishingServiceId, setServicePhases);
+  }
+  currentServiceId.current = null;
+}
+
+/** Advance per-service converge phases / logs from a JSONL Ansible event. */
+export function trackConvergeServiceEvent(
+  event: unknown,
+  currentServiceId: { current: string | null },
+  setServicePhases: Dispatch<SetStateAction<Record<string, ConvergeServicePhase>>>,
+): void {
+  const parsed = parseAnsibleJsonlRecord(event);
+  if (parsed === null) {
+    return;
+  }
+  const { record, eventType } = parsed;
+  if (eventType === "v2_playbook_on_play_start") {
+    applyPlayStartTracking(record, currentServiceId, setServicePhases);
+    return;
+  }
+  if (CONVERGE_TASK_START_EVENTS.has(eventType)) {
+    applyTaskStartTracking(record, currentServiceId, setServicePhases);
+    return;
+  }
+  if (CONVERGE_RUNNER_RESULT_EVENTS.has(eventType)) {
+    applyRunnerLogTracking(record, eventType, currentServiceId);
+    return;
+  }
+  if (eventType === "v2_playbook_on_stats") {
+    applyStatsTracking(currentServiceId, setServicePhases);
+  }
+}
+
 export function useDevEnvConverge(onFinished: (success: boolean) => void) {
   const {
     tasks,
@@ -104,68 +227,7 @@ export function useDevEnvConverge(onFinished: (success: boolean) => void) {
   // runPlaybookStreaming (JSONL) → onConvergeEvent (here) → useAnsibleEvents.onEvent →
   // React state → AnsibleTaskList.
   const onConvergeEvent = useCallback((event: unknown) => {
-    if (typeof event === "object" && event !== null) {
-      const record = event as Record<string, unknown>;
-      const eventType = record._event;
-      if (typeof eventType === "string") {
-        if (eventType === "v2_playbook_on_play_start") {
-          const play = record.play as { name?: string } | undefined;
-          const name = play?.name?.trim() ?? "";
-          const resolved = name ? resolveServiceIdFromAnsibleName(name) : null;
-          const previousServiceId = currentServiceId.current;
-          if (previousServiceId && previousServiceId !== resolved) {
-            markServiceReady(previousServiceId, setServicePhases);
-          }
-          currentServiceId.current = resolved;
-          if (resolved) {
-            markServicePhase(
-              resolved,
-              resolvePhaseFromAnsibleName(name),
-              setServicePhases,
-            );
-          }
-        } else if (
-          eventType === "v2_playbook_on_task_start" ||
-          eventType === "v2_runner_on_start"
-        ) {
-          const task = record.task as { name?: string } | undefined;
-          const name = task?.name?.trim() ?? "";
-          const resolved = name ? resolveServiceIdFromAnsibleName(name) : null;
-          if (resolved) {
-            currentServiceId.current = resolved;
-            markServicePhase(
-              resolved,
-              resolvePhaseFromAnsibleName(name),
-              setServicePhases,
-            );
-          }
-        } else if (
-          eventType === "v2_runner_on_ok" ||
-          eventType === "v2_runner_on_failed" ||
-          eventType === "v2_runner_on_skipped" ||
-          eventType === "v2_runner_on_unreachable"
-        ) {
-          const serviceId = currentServiceId.current;
-          if (serviceId) {
-            const task = record.task as { name?: string } | undefined;
-            const rawName = task?.name?.trim() || "task";
-            const hosts = record.hosts as
-              | Record<string, Record<string, unknown>>
-              | undefined;
-            const status = taskResultStatus(eventType, hosts);
-            const time = new Date().toISOString();
-            const text = `${rawName} [${status}]`;
-            appendConvergeServiceLogLine(serviceId, text, time);
-          }
-        } else if (eventType === "v2_playbook_on_stats") {
-          const finishingServiceId = currentServiceId.current;
-          if (finishingServiceId) {
-            markServiceReady(finishingServiceId, setServicePhases);
-          }
-          currentServiceId.current = null;
-        }
-      }
-    }
+    trackConvergeServiceEvent(event, currentServiceId, setServicePhases);
     onEvent(event);
   }, [onEvent]);
 
@@ -200,10 +262,10 @@ export function useDevEnvConverge(onFinished: (success: boolean) => void) {
         // Belt-and-suspenders: Ansible should honor optional flags, but apply
         // again so a stale enabled unit from a prior converge stays off.
         await applyOptionalDevServices(selection);
-      } catch (caught) {
+      } catch (error_) {
         success = false;
         emitStep(currentStep, "failed");
-        const message = caught instanceof Error ? caught.message : String(caught);
+        const message = error_ instanceof Error ? error_.message : String(error_);
         const saved = await writeTaskErrorLog({
           title: "Converge / re-converge development environment",
           message: `step=${currentStep}\n${message}`,
@@ -223,7 +285,7 @@ export function useDevEnvConverge(onFinished: (success: boolean) => void) {
           }
           return next;
         });
-        setActive(success ? false : true);
+        setActive(!success);
         onFinished(success);
       }
     })();

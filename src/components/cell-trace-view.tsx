@@ -11,12 +11,12 @@ export function CellTraceView({
   height,
   focused,
   onClose,
-}: {
+}: Readonly<{
   width: number;
   height: number;
   focused: boolean;
   onClose: () => void;
-}) {
+}>) {
   const logLines = useCellTraceLog();
   const logHeight = Math.max(1, height - HEADER_ROWS);
   const { scrollIndex: logScrollIndex, handleLogKey } = useLogScroll({

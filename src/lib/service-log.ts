@@ -6,7 +6,7 @@ import {
   openSync,
   readSync,
 } from "node:fs";
-import { STRUCTURED_TEXT_WITH_TIME_RE } from "./daemon-log.ts";
+import { parseStructuredTextWithTime } from "./daemon-log.ts";
 import { dockerOutputLines, spawnDocker } from "./docker-access.ts";
 import {
   convergeServiceLogPath,
@@ -87,10 +87,9 @@ export function serviceDockerLogContainer(serviceId: string): string | null {
 }
 
 function parseServiceLine(text: string): ServiceLogLine {
-  const match = STRUCTURED_TEXT_WITH_TIME_RE.exec(text);
-  if (match) {
-    const time = match[1];
-    return { text: text.slice(time.length).trimStart(), time };
+  const parsed = parseStructuredTextWithTime(text);
+  if (parsed) {
+    return { text: text.slice(parsed.time.length).trimStart(), time: parsed.time };
   }
   return { text };
 }

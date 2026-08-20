@@ -24,14 +24,14 @@ export function OptionalServicesModal({
   initialSelection,
   onConfirm,
   onCancel,
-}: {
+}: Readonly<{
   width: number;
   height: number;
   mode: OptionalServicesModalMode;
   initialSelection: OptionalDevServiceSelection;
   onConfirm: (selection: OptionalDevServiceSelection) => void;
   onCancel: () => void;
-}) {
+}>) {
   const [selection, setSelection] = useState(() =>
     cloneOptionalSelection(initialSelection)
   );

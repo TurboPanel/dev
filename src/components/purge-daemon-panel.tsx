@@ -17,11 +17,11 @@ export function PurgeDaemonPanel({
   width,
   height,
   onDone,
-}: {
+}: Readonly<{
   width: number;
   height: number;
   onDone: () => void;
-}) {
+}>) {
   const [spinnerIndex, setSpinnerIndex] = useState(0);
   const [outputLines, setOutputLines] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -49,9 +49,9 @@ export function PurgeDaemonPanel({
         await purgeDaemon(appendOutput);
         if (cancelled) return;
         onDone();
-      } catch (caught) {
+      } catch (error_) {
         if (cancelled) return;
-        const message = caught instanceof Error ? caught.message : String(caught);
+        const message = error_ instanceof Error ? error_.message : String(error_);
         setError(message);
       }
     })();

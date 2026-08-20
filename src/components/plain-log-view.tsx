@@ -7,7 +7,10 @@ import {
 import { serviceLogLineKey } from "../lib/log-lines-equal.ts";
 import type { ServiceLogLine } from "../lib/service-log.ts";
 import { LOG_TIME } from "../theme.ts";
-import { logContentWidth } from "./log-scrollbar.tsx";
+import {
+  logContentWidth,
+  logContentWidthWithScrollbar,
+} from "./log-scrollbar.tsx";
 import { ScrollableLogList } from "./scrollable-log-list.tsx";
 
 function truncateText(text: string, maxWidth: number): string {
@@ -48,7 +51,9 @@ export const PlainLogView = memo(function PlainLogView({
   const scrollIndex = lines.length === 0
     ? 0
     : Math.min(selectedIndex, lines.length - 1);
-  const contentWidth = logContentWidth(width, focused);
+  const contentWidth = focused
+    ? logContentWidthWithScrollbar(width)
+    : logContentWidth(width);
   const windowStart = visibleWindowStart(lines.length, scrollIndex, height);
   const visibleLines = lines.slice(windowStart, windowStart + height);
   const visibleSelectedIndex = Math.max(0, scrollIndex - windowStart);

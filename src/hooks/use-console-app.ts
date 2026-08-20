@@ -23,6 +23,7 @@ import { readDaemonLogFileStat } from "../lib/daemon-log.ts";
 import { watchInstanceRuntimeSwitch } from "../lib/instance-runtime.ts";
 import type { ServiceLogByteFloor } from "../lib/service-log.ts";
 import { readServiceLogFileStat } from "../lib/service-log.ts";
+import { testRepoForServiceId, type TestRepoId } from "../lib/run-repo-tests.ts";
 import type { DaemonOperation } from "../lib/spinners.ts";
 import { refreshDevPermissionsQuietly } from "../lib/turbopanel-permissions.ts";
 import {
@@ -103,6 +104,9 @@ export function useConsoleApp() {
     null,
   );
   const [developerView, setDeveloperView] = useState<DeveloperView>("menu");
+  const [serviceTestsRepoId, setServiceTestsRepoId] = useState<TestRepoId | null>(
+    null,
+  );
   const { services: visibleServices, refresh: refreshServices } = useVisibleServices();
   const autoInstallStarted = useRef(initialAutoInstall.shouldAutoInstall);
   // Idle launches must never auto-bootstrap later (e.g. after rebuild). The
@@ -269,6 +273,7 @@ export function useConsoleApp() {
         setDeveloperView("cell-trace");
         return;
       case "run-tests":
+        setServiceTestsRepoId(null);
         setDeveloperView("run-tests");
         return;
       case "restart":
@@ -509,6 +514,18 @@ export function useConsoleApp() {
     setDeveloperView("menu");
   }, []);
 
+  const openServiceTests = useCallback((serviceId: string) => {
+    const repoId = testRepoForServiceId(serviceId);
+    if (!repoId) {
+      return;
+    }
+    setServiceTestsRepoId(repoId);
+  }, []);
+
+  const closeServiceTests = useCallback(() => {
+    setServiceTestsRepoId(null);
+  }, []);
+
   useInput((_input, key) => {
     if (
       provisioning ||
@@ -521,7 +538,11 @@ export function useConsoleApp() {
       return;
     }
 
-    if (developerView === "cell-trace" || developerView === "run-tests") {
+    if (
+      developerView === "cell-trace" ||
+      developerView === "run-tests" ||
+      serviceTestsRepoId
+    ) {
       return;
     }
 
@@ -566,6 +587,9 @@ export function useConsoleApp() {
     cancelOptionalServices,
     developerView,
     closeDeveloperView,
+    serviceTestsRepoId,
+    openServiceTests,
+    closeServiceTests,
     setSelectedServiceIndex: setSelectedServiceIndexById,
     refreshServices,
   };

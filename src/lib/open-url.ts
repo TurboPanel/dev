@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { spawnSyncTrustedText } from "./spawn-trusted.ts";
 
 export function openUrlInBrowser(url: string): boolean {
   const attempts = [
@@ -8,8 +8,7 @@ export function openUrlInBrowser(url: string): boolean {
   ] as const;
 
   for (const cmd of attempts) {
-    const result = spawnSync(cmd[0], [cmd[1]], {
-      encoding: "utf8",
+    const result = spawnSyncTrustedText(cmd[0], [cmd[1]], {
       stdio: "ignore",
     });
     if (result.status === 0) {
@@ -35,8 +34,7 @@ export function isHttpListening(url: string, timeoutSec = 1): boolean {
   }
   args.push(url);
 
-  const result = spawnSync("curl", args, {
-    encoding: "utf8",
+  const result = spawnSyncTrustedText("curl", args, {
     stdio: ["ignore", "pipe", "ignore"],
   });
   const code = Number((result.stdout ?? "").trim());

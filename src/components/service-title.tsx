@@ -141,8 +141,8 @@ function GradientArt({ art }: Readonly<{ art: string }>) {
 
   return (
     <Gradient name={TITLE_GRADIENT}>
-      {lines.map((line, index) => (
-        <Text key={index} wrap="truncate">{line}</Text>
+      {lines.map((line) => (
+        <Text key={line} wrap="truncate">{line}</Text>
       ))}
     </Gradient>
   );
@@ -154,14 +154,13 @@ export function ServiceTitle({
   shrinkWrap = false,
   /** When false, never run figlet — cache hit or plain label only (nav hot path). */
   allowFiglet = true,
-}: {
-  serviceId: string;
+}: Readonly<{
   label: string;
   width: number;
   /** Size to figlet art width instead of filling `width` (for inline badges). */
   shrinkWrap?: boolean;
   allowFiglet?: boolean;
-}) {
+}>) {
   const maxWidth = Math.max(1, width - 2);
   const cached = maxWidth < MIN_TITLE_WIDTH
     ? null

@@ -1,19 +1,69 @@
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, expect, test } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import {
   DEFAULT_OPTIONAL_DEV_SERVICES,
+  applyOptionalDevServices,
   assertOptionalDevServiceId,
   defaultOptionalSelection,
   normalizeOptionalSelection,
+  optionalDevServiceCatalogIdsForRuntime,
   optionalServicesOrchestrationEnv,
   persistOptionalServiceToggle,
   readOptionalDevServices,
   writeOptionalDevServices,
 } from "./optional-dev-services.ts";
+import {
+  MAILPIT_CONTAINER_NAME,
+  REDIS_INSIGHT_BRIDGE_CONTAINER_NAME,
+  REDIS_INSIGHT_CONTAINER_NAME,
+} from "./platform-docker-resources.ts";
 
 const tempDirs: string[] = [];
+
+vi.mock("./install-output.ts", () => ({
+  runCaptured: vi.fn(async () => 0),
+}));
+
+vi.mock("./spawn-trusted.ts", () => ({
+  spawnSyncTrustedText: vi.fn(() => ({ status: 0, stdout: "loaded" })),
+}));
+
+vi.mock("./docker-access.ts", () => ({
+  spawnDocker: vi.fn(() => ({ status: 0, stdout: "true" })),
+}));
+
+import { runCaptured } from "./install-output.ts";
+import { spawnDocker } from "./docker-access.ts";
+import { spawnSyncTrustedText } from "./spawn-trusted.ts";
+
+const mockedRunCaptured = vi.mocked(runCaptured);
+const mockedSpawnDocker = vi.mocked(spawnDocker);
+const mockedSpawnSyncTrustedText = vi.mocked(spawnSyncTrustedText);
+
+beforeEach(() => {
+  mockedRunCaptured.mockClear();
+  mockedSpawnDocker.mockClear();
+  mockedSpawnSyncTrustedText.mockClear();
+  mockedRunCaptured.mockResolvedValue(0);
+  mockedSpawnDocker.mockReturnValue({
+    status: 0,
+    stdout: "true",
+    stderr: "",
+    pid: 0,
+    output: ["", "true", ""],
+    signal: null,
+  });
+  mockedSpawnSyncTrustedText.mockReturnValue({
+    status: 0,
+    stdout: "loaded",
+    stderr: "",
+    pid: 0,
+    output: ["", "loaded", ""],
+    signal: null,
+  });
+});
 
 afterEach(() => {
   for (const dir of tempDirs.splice(0)) {
@@ -111,4 +161,67 @@ test("persistOptionalServiceToggle writes E/X into prefs", () => {
   expect(readOptionalDevServices(path).dbstudio).toBe(true);
   expect(persistOptionalServiceToggle("smtp", false, path)?.smtp).toBe(false);
   expect(persistOptionalServiceToggle("daemon", true, path)).toBeNull();
+});
+
+test("optionalDevServiceCatalogIdsForRuntime omits Deno-only tools on Workers", () => {
+  expect(optionalDevServiceCatalogIdsForRuntime("deno")).toContain("tabix");
+  expect(optionalDevServiceCatalogIdsForRuntime("deno")).toContain(
+    "redisinsight",
+  );
+  expect(optionalDevServiceCatalogIdsForRuntime("workers")).not.toContain(
+    "tabix",
+  );
+  expect(optionalDevServiceCatalogIdsForRuntime("workers")).not.toContain(
+    "redisinsight",
+  );
+});
+
+test("applyOptionalDevServices stops docker-backed containers when unit is disabled", async () => {
+  await applyOptionalDevServices({ ...defaultOptionalSelection(), smtp: false });
+
+  const dockerCalls = mockedRunCaptured.mock.calls
+    .map(([cmd]) => cmd)
+    .filter((cmd): cmd is string[] => Array.isArray(cmd) && cmd.includes("docker"));
+
+  expect(
+    dockerCalls.some(
+      (cmd) =>
+        cmd.includes("update") &&
+        cmd.includes("--restart=no") &&
+        cmd.includes(MAILPIT_CONTAINER_NAME),
+    ),
+  ).toBe(true);
+  expect(
+    dockerCalls.some(
+      (cmd) => cmd.includes("stop") && cmd.includes(MAILPIT_CONTAINER_NAME),
+    ),
+  ).toBe(true);
+});
+
+test("applyOptionalDevServices stops Redis Insight bridge when unit is disabled", async () => {
+  await applyOptionalDevServices({
+    ...defaultOptionalSelection(),
+    redisinsight: false,
+  });
+
+  const dockerCalls = mockedRunCaptured.mock.calls
+    .map(([cmd]) => cmd)
+    .filter((cmd): cmd is string[] => Array.isArray(cmd) && cmd.includes("docker"));
+
+  for (const container of [
+    REDIS_INSIGHT_CONTAINER_NAME,
+    REDIS_INSIGHT_BRIDGE_CONTAINER_NAME,
+  ]) {
+    expect(
+      dockerCalls.some(
+        (cmd) =>
+          cmd.includes("update") &&
+          cmd.includes("--restart=no") &&
+          cmd.includes(container),
+      ),
+    ).toBe(true);
+    expect(
+      dockerCalls.some((cmd) => cmd.includes("stop") && cmd.includes(container)),
+    ).toBe(true);
+  }
 });

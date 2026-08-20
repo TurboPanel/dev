@@ -1,18 +1,12 @@
 import type { DevService, DevServiceStatus } from "../dev-services.ts";
+import {
+  optionalDevServiceCatalogIdsForRuntime,
+  type OptionalDevServiceId,
+} from "./optional-dev-services.ts";
 import { BORDER_COLOR } from "../theme.ts";
 
-/**
- * Optional GUIs that stay on the Services list after converge even when
- * they are not enabled. Gray until started.
- */
-export const CATALOG_OPTIONAL_SERVICE_IDS = [
-  "dbstudio",
-  "smtp",
-  "tabix",
-] as const;
-
-export type CatalogOptionalServiceId =
-  (typeof CATALOG_OPTIONAL_SERVICE_IDS)[number];
+/** Gray catalog rows stay aligned with optional dev service definitions. */
+export type CatalogOptionalServiceId = OptionalDevServiceId;
 
 const SERVICE_LIST_ORDER = [
   "instance",
@@ -33,16 +27,14 @@ const SERVICE_LIST_ORDER = [
 export function isCatalogOptionalServiceId(
   id: string,
 ): id is CatalogOptionalServiceId {
-  return (CATALOG_OPTIONAL_SERVICE_IDS as readonly string[]).includes(id);
+  return (optionalDevServiceCatalogIdsForRuntime("deno") as readonly string[])
+    .includes(id);
 }
 
 export function catalogOptionalServiceIdsForRuntime(
   runtime: "deno" | "workers",
 ): readonly CatalogOptionalServiceId[] {
-  if (runtime === "workers") {
-    return ["dbstudio", "smtp"];
-  }
-  return CATALOG_OPTIONAL_SERVICE_IDS;
+  return optionalDevServiceCatalogIdsForRuntime(runtime);
 }
 
 export function isServiceListRowVisible(

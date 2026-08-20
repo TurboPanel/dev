@@ -7,11 +7,11 @@ export function MainPanel({
   width,
   status,
   children,
-}: {
+}: Readonly<{
   width: number;
   status: string;
   children: ReactNode;
-}) {
+}>) {
   return (
     <Box
       flexDirection="column"
