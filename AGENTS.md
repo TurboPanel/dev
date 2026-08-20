@@ -208,7 +208,29 @@ often lack a usable Node/pnpm tree). CI `verify.yml` still gates PRs.
 | push `trunk` | `verify.yml` | `verify.yml`; `publish` job `needs: verify` | nothing compiles from failing code |
 | promote → canary/rc/release | n/a | **artifact integrity only** (S3 sha256/size + CDN fetch) | no new code enters after publish |
 
-**Coverage:** SonarCloud’s Sonar-way quality gate (CI scan in `.github/workflows/verify.yml` with `sonar.qualitygate.wait=true`) requires **≥ 80% coverage on new code**. Missing `SONAR_TOKEN` soft-fails / skips the Sonar steps (`continue-on-error`) so typecheck/tests still gate; wire the secret on the repo/org when ready. Sibling repos (`turbopanel`, `ui`, `website`) have no Actions verify — they use SonarCloud Automatic Analysis only.
+### SonarQube (CI-based analysis)
+
+- Analysis runs in GitHub Actions (`.github/workflows/verify.yml`) with
+  `SONAR_TOKEN` and `sonar-project.properties`
+  (`sonar.projectKey=turbopanel_dev`, `sonar.organization=turbopanel`). The job
+  runs typecheck + **`pnpm test:coverage`** (Vitest v8 LCOV at
+  `coverage/lcov.info`), then scans with
+  `sonar.javascript.lcov.reportPaths=coverage/lcov.info`. The scan waits on the
+  quality gate (`sonar.qualitygate.wait=true`); if the gate fails, the workflow
+  stops.
+- Vitest coverage `include` is `src/lib/**/*.ts` and `src/hooks/**/*.ts`
+  (`vitest.config.ts`). `sonar.coverage.exclusions` keeps Ink chrome
+  (`src/components/**`, `**/*.tsx`), entrypoints, and spawn/integration helpers
+  out of the coverage denominator so untested TUI surfaces do not fail Sonar-way
+  **Coverage on New Code ≥ 80%**.
+- **`sonar.sources` / `sonar.tests` / `sonar.test.inclusions`** must stay set in
+  `sonar-project.properties` (and mirrored in vestigial
+  `.sonarcloud.properties`). Tests are co-located (`**/*.test.ts` under `src`).
+- **Automatic Analysis must stay off** for `turbopanel_dev` (SonarCloud →
+  project **Administration → Analysis Method**). CI and Automatic Analysis
+  cannot run together — Automatic Analysis enabled makes the CI scanner fail.
+
+**Coverage:** SonarCloud’s Sonar-way quality gate (CI scan in `.github/workflows/verify.yml` with `sonar.qualitygate.wait=true`) requires **≥ 80% coverage on new code**. CI uploads Vitest LCOV from `pnpm test:coverage` (`coverage/lcov.info`); `SONAR_TOKEN` is required on same-repo PRs and trunk pushes. After switching from Automatic Analysis, reset **New Code** (Administration → New Code) so the baseline is not months of uncovered history. Sibling repos (`turbopanel`, `ui`, `website`) use the same CI-based Sonar + LCOV pattern in their own `verify.yml` workflows.
 
 ## Ansible dev overlay
 
