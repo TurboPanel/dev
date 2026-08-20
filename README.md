@@ -5,6 +5,10 @@
 > **[Self-hosted overview](https://turbopanel.io/docs/deployment/self-hosted)** and
 > **[Control plane deployment](https://turbopanel.io/docs/deployment/control-plane)**.
 
+[![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=turbopanel_dev&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=turbopanel_dev)
+[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=turbopanel_dev&metric=coverage)](https://sonarcloud.io/component_measures?id=turbopanel_dev&metric=coverage)
+[![Code Smells](https://sonarcloud.io/api/project_badges/measure?project=turbopanel_dev&metric=code_smells)](https://sonarcloud.io/project/issues?id=turbopanel_dev&resolved=false&types=CODE_SMELL)
+
 GitHub: [turbopanel/dev](https://github.com/turbopanel/dev)
 
 ## How contributor development works
