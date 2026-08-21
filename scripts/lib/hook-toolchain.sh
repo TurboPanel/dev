@@ -31,7 +31,7 @@ tp_hook_source_dev_lib() {
   _hsdl_dev=$(tp_hook_dev_checkout)
   if [ ! -f "$_hsdl_dev/scripts/lib/$_hsdl_name" ]; then
     tp_hook_toolchain_fail \
-      "dev checkout not found at ${_hsdl_dev} — clone turbopanel/dev and run ./console"
+      "dev checkout not found at ${_hsdl_dev} — clone TurboPanel/dev and run ./console"
   fi
   # shellcheck source=/dev/null
   . "$_hsdl_dev/scripts/lib/$_hsdl_name"

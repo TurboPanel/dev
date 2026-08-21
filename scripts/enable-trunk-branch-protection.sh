@@ -7,7 +7,7 @@ if ! command -v gh >/dev/null 2>&1; then
   exit 1
 fi
 
-for repo in turbopanel/turbopanel turbopanel/turbopaneld turbopanel/ui turbopanel/dev turbopanel/website; do
+for repo in TurboPanel/turbopanel TurboPanel/turbopaneld TurboPanel/ui TurboPanel/dev TurboPanel/website; do
   echo "→ ${repo} trunk protection"
   gh api \
     --method PUT \

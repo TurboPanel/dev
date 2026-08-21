@@ -9,7 +9,7 @@
 [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=turbopanel_dev&metric=coverage)](https://sonarcloud.io/component_measures?id=turbopanel_dev&metric=coverage)
 [![Code Smells](https://sonarcloud.io/api/project_badges/measure?project=turbopanel_dev&metric=code_smells)](https://sonarcloud.io/project/issues?id=turbopanel_dev&resolved=false&types=CODE_SMELL)
 
-GitHub: [turbopanel/dev](https://github.com/turbopanel/dev)
+GitHub: [TurboPanel/dev](https://github.com/TurboPanel/dev)
 
 ## How contributor development works
 
@@ -35,12 +35,12 @@ turbopanel/
 
 | Checkout | Repository |
 | --- | --- |
-| `dev/` | [turbopanel/dev](https://github.com/turbopanel/dev) |
-| `turbopaneld/` | [turbopanel/turbopaneld](https://github.com/turbopanel/turbopaneld) |
-| `turbopanel/` | [turbopanel/turbopanel](https://github.com/turbopanel/turbopanel) |
-| `ui/` | [turbopanel/ui](https://github.com/turbopanel/ui) |
-| `website/` | [turbopanel/website](https://github.com/turbopanel/website) |
-| `.github/` | [turbopanel/.github](https://github.com/turbopanel/.github) |
+| `dev/` | [TurboPanel/dev](https://github.com/TurboPanel/dev) |
+| `turbopaneld/` | [TurboPanel/turbopaneld](https://github.com/TurboPanel/turbopaneld) |
+| `turbopanel/` | [TurboPanel/turbopanel](https://github.com/TurboPanel/turbopanel) |
+| `ui/` | [TurboPanel/ui](https://github.com/TurboPanel/ui) |
+| `website/` | [TurboPanel/website](https://github.com/TurboPanel/website) |
+| `.github/` | [TurboPanel/.github](https://github.com/TurboPanel/.github) |
 
 Inside the guest these mount at `~/dev`, `~/turbopaneld`, `~/turbopanel`,
 `~/ui`, `~/website`, and `~/.github`. FHS trees (`/etc/turbopanel`,
@@ -176,7 +176,7 @@ runs as the guest user.
 
 ## Contributing
 
-See [CONTRIBUTING.md](https://github.com/turbopanel/.github/blob/trunk/CONTRIBUTING.md). Default branch: **`trunk`**. Feature branch + PR only. Pull requests are accepted under the [Contributor License Agreement](https://github.com/turbopanel/.github/blob/trunk/CLA.md).
+See [CONTRIBUTING.md](https://github.com/TurboPanel/.github/blob/trunk/CONTRIBUTING.md). Default branch: **`trunk`**. Feature branch + PR only. Pull requests are accepted under the [Contributor License Agreement](https://github.com/TurboPanel/.github/blob/trunk/CLA.md).
 
 Agent conventions: [AGENTS.md](./AGENTS.md).
 

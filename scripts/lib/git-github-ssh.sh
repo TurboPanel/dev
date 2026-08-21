@@ -297,7 +297,7 @@ case $(basename "$0") in
   git-github-ssh.sh)
     # shellcheck source=scripts/lib/privileges.sh
     . "$(CDPATH= cd -- "$(dirname "$0")" && pwd)/privileges.sh"
-    tp_ensure_github_ssh "${1:-turbopanel/dev}"
+    tp_ensure_github_ssh "${1:-TurboPanel/dev}"
     ;;
   *) ;;
 esac

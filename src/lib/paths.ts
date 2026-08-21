@@ -178,7 +178,7 @@ export const DAEMON_ENV_TRUNK_BRANCH_KEY = "TURBOPANEL_TRUNK_BRANCH" as const;
 
 export const DAEMON_REPO = {
   dir: "turbopaneld",
-  repo: "turbopanel/turbopaneld",
+  repo: "TurboPanel/turbopaneld",
 } as const;
 
 /**

@@ -41,10 +41,10 @@
     # with the dev user's real home resolved from getent. Passed on to every
     # daemon role, which derive <root>/{turbopaneld,turbopanel,ui,website} from it.
     turbopanel_dev_root: "{{ ansible_env.HOME }}"
-    instance_repo_url: https://github.com/turbopanel/turbopanel
-    ui_repo_url: https://github.com/turbopanel/ui
-    website_repo_url: https://github.com/turbopanel/website
-    github_repo_url: https://github.com/turbopanel/.github
+    instance_repo_url: https://github.com/TurboPanel/turbopanel
+    ui_repo_url: https://github.com/TurboPanel/ui
+    website_repo_url: https://github.com/TurboPanel/website
+    github_repo_url: https://github.com/TurboPanel/.github
     instance_branch: trunk
     ui_branch: trunk
     website_branch: trunk
