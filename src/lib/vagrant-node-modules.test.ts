@@ -47,6 +47,8 @@ describe("Vagrant host providers", () => {
   });
 
   test("forwards Caddy, Expo, and website to guest loopback on LAN host binds", () => {
+    expect(VAGRANTFILE).toContain("[80, 80]");
+    expect(VAGRANTFILE).toContain("[443, 443]");
     expect(VAGRANTFILE).toContain("[8443, 8443]");
     expect(VAGRANTFILE).toContain("[8880, 8880]");
     expect(VAGRANTFILE).toContain("[8081, 8081]");
@@ -73,6 +75,13 @@ describe("Vagrant host providers", () => {
     expect(VAGRANTFILE).toContain("ServerAliveInterval=15");
     expect(VAGRANTFILE).toContain('name: "sshd-port-forward-keepalives", run: "always"');
     expect(VAGRANTFILE).toContain("stop_stale_ssh_forwards");
+  });
+
+  test("binds privileged host 80/443 with passwordless sudo when needed", () => {
+    expect(VAGRANTFILE).toContain("privileged_host_bind?");
+    expect(VAGRANTFILE).toContain("bindable_port_specs");
+    expect(VAGRANTFILE).toContain("ip_unprivileged_port_start");
+    expect(VAGRANTFILE).toContain("%w(sudo -n --)");
   });
 
   test("sets the guest vagrant user password to vagrant", () => {

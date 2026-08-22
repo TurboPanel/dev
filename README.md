@@ -126,6 +126,8 @@ the IDE, browsers, or remote test machines.
 
 | Port | Service | Host bind |
 | --- | --- | --- |
+| **80** | Hosting Caddy HTTP (tenant sites) | `0.0.0.0` (LAN) |
+| **443** | Hosting Caddy HTTPS (tenant sites) | `0.0.0.0` (LAN) |
 | **8443** | Control plane (Caddy HTTPS) | `0.0.0.0` (LAN) |
 | **8880** | Control plane (Caddy plaintext HTTP, dev overlay) | `0.0.0.0` (LAN) |
 | **8081** | Expo / Metro (native + direct; Caddy also proxies this) | `0.0.0.0` (LAN) |
@@ -140,12 +142,16 @@ the IDE, browsers, or remote test machines.
   `http://localhost:8880`.
 - **Remote test machines / extra daemons:** prefer a hostname for your
   development host (for example `https://dev.lan:8443` or your LAN IP) so
-  clients are not stuck on `localhost`. Ports `8443` / `8880` / `8081` /
-  `8088` / `19820` listen on all host interfaces. Trust the platform CA
+  clients are not stuck on `localhost`. Ports `80` / `443` / `8443` / `8880` /
+  `8081` / `8088` / `19820` listen on all host interfaces. Trust the platform CA
   (`/var/lib/turbopanel/tls/ca-bundle.pem` after converge, or
   `GET /api/daemon/v1/instance/ca`) when using HTTPS.
 - **Studio / Mailpit / Redis Insight / Tabix** stay loopback-only on purpose —
   those UIs are unauthenticated.
+- **Tenant sites:** `http://localhost` and `https://localhost` (ports **80** /
+  **443**) reach hosting Caddy after a deploy. On Linux those host binds are
+  privileged — the libvirt tunnel supervisor uses passwordless `sudo -n`, or
+  you can lower `net.ipv4.ip_unprivileged_port_start`.
 
 Smoke test from the host:
 

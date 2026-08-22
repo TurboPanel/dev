@@ -48,7 +48,7 @@ GITHUB_HOST_DIR = File.join(__dir__, "..", ".github")
 # Guest sshd (OpenSSH 9.8+) closes idle `-N` sessions via UnusedConnectionTimeout,
 # and apt/sshd reloads during converge drop them too. `EnsureLibvirtPortForwards`
 # replaces one-shot vagrant-libvirt tunnels with a restarting supervisor so
-# localhost/LAN binds (8443, 8880, 8025, 4983, …) survive guest lifecycle.
+# localhost/LAN binds (80, 443, 8443, 8880, 8025, 4983, …) survive guest lifecycle.
 module TurbopanelVagrant
   class RebootIfNeeded < Vagrant.plugin("2", :provisioner)
     def provision
@@ -157,10 +157,11 @@ module TurbopanelVagrant
         return
       end
 
-      if supervisors_healthy?(specs) && our_supervisors_running?(specs)
+      required = bindable_port_specs(specs)
+      if supervisors_healthy?(required) && our_supervisors_running?(required)
         @machine.ui.info(
           "Libvirt SSH port forwards already listening " \
-          "(#{specs.map { |spec| spec[:host_port] }.join(', ')})."
+          "(#{required.map { |spec| spec[:host_port] }.join(', ')})."
         )
         return
       end
@@ -173,8 +174,8 @@ module TurbopanelVagrant
       stop_stale_ssh_forwards(specs)
       wait_for_ports_free(specs)
       write_supervisor_script
-      specs.each { |spec| start_supervisor(spec, ssh_info) }
-      warn_unbound_ports(specs)
+      pending = specs.reject { |spec| start_supervisor(spec, ssh_info) == :skipped }
+      warn_unbound_ports(pending)
     end
 
     def forwarded_port_specs
@@ -257,8 +258,15 @@ module TurbopanelVagrant
       pid_i = Integer(pid)
       begin
         Process.kill("TERM", -pid_i)
-      rescue Errno::ESRCH, Errno::EPERM, Errno::EINVAL
+      rescue Errno::ESRCH, Errno::EINVAL
         Process.kill("TERM", pid_i)
+      rescue Errno::EPERM
+        begin
+          Process.kill("TERM", pid_i)
+        rescue Errno::EPERM
+          system("sudo", "-n", "kill", "-TERM", "-#{pid_i}") ||
+            system("sudo", "-n", "kill", "-TERM", pid.to_s)
+        end
       end
     rescue Errno::ESRCH, Errno::EPERM, ArgumentError
       nil
@@ -271,6 +279,9 @@ module TurbopanelVagrant
         pattern = "#{spec[:host_ip]}:#{spec[:host_port]}:" \
                   "#{spec[:guest_ip]}:#{spec[:guest_port]}"
         system("pkill", "-TERM", "-f", pattern)
+        next unless privileged_host_bind?(spec) && sudo_n?
+
+        system("sudo", "-n", "pkill", "-TERM", "-f", pattern, [:out, :err] => File::NULL)
       end
     end
 
@@ -319,15 +330,51 @@ module TurbopanelVagrant
           spec[:host_ip], spec[:host_port], spec[:guest_ip], spec[:guest_port]
         )
       )
-      ssh_cmd = ssh_forward_command(spec, ssh_info)
+      argv = [supervisor_path.to_s, *ssh_forward_command(spec, ssh_info)]
+      if privileged_host_bind?(spec)
+        unless sudo_n?
+          @machine.ui.warn(
+            "Skipping host port #{spec[:host_port]} (privileged bind). " \
+            "Grant passwordless sudo, or run: " \
+            "sudo sysctl -w net.ipv4.ip_unprivileged_port_start=80"
+          )
+          return :skipped
+        end
+        argv = %w(sudo -n --) + argv
+      end
       pid = spawn(
-        supervisor_path.to_s,
-        *ssh_cmd,
+        *argv,
         [:out, :err] => [log_file, "a"],
         pgroup: true
       )
       Process.detach(pid)
       pid_dir.join("ssh_#{spec[:host_port]}.pid").write(pid.to_s)
+      :started
+    end
+
+    # SSH `-L` on :80/:443 needs CAP_NET_BIND_SERVICE (or root) unless the
+    # host has lowered net.ipv4.ip_unprivileged_port_start.
+    def bindable_port_specs(specs)
+      specs.reject { |spec| privileged_host_bind?(spec) && !sudo_n? }
+    end
+
+    def privileged_host_bind?(spec)
+      Process.euid != 0 && spec[:host_port] < unprivileged_port_start
+    end
+
+    def unprivileged_port_start
+      path = "/proc/sys/net/ipv4/ip_unprivileged_port_start"
+      return 1024 unless File.file?(path)
+
+      Integer(File.read(path).strip)
+    rescue ArgumentError, Errno::ENOENT
+      1024
+    end
+
+    def sudo_n?
+      return @sudo_n unless @sudo_n.nil?
+
+      @sudo_n = system("sudo", "-n", "true", [:out, :err] => File::NULL)
     end
 
     def ssh_forward_command(spec, ssh_info)
@@ -414,6 +461,8 @@ Vagrant.configure("2") do |config|
   # vagrant-libvirt otherwise targets the DHCP NIC (192.168.121.x), which
   # misses Mailpit/Studio/Tabix (127.0.0.1-only) and breaks when the lease
   # changes. Guest ports:
+  #   80    hosting Caddy HTTP (tenant sites; distinct from :8880)
+  #   443   hosting Caddy HTTPS (tenant sites; distinct from :8443)
   #   8443  control-plane Caddy HTTPS
   #   8880  control-plane Caddy plaintext HTTP (dev overlay)
   #   8081  Expo / Metro (native + direct; Caddy also proxies this)
@@ -427,7 +476,11 @@ Vagrant.configure("2") do |config|
   # Libvirt implements these as SSH `-L` tunnels (not QEMU hostfwd).
   # `gateway_ports: true` is a vagrant-libvirt option that passes ssh `-g` so
   # non-localhost clients can use the 0.0.0.0 bind; UTM ignores the key.
+  # Host :80/:443 are privileged; the libvirt supervisor uses `sudo -n` when
+  # net.ipv4.ip_unprivileged_port_start still blocks the bind.
   [
+    [80, 80],
+    [443, 443],
     [8443, 8443],
     [8880, 8880],
     [8081, 8081],
