@@ -94,8 +94,17 @@ describe("version pins", () => {
     expect(DENO_VERSION).toBe("2.9.5");
   });
 
-  test("NODE_VERSION matches scripts/lib/paths.sh pin", () => {
-    expect(NODE_VERSION).toBe("24.17.0");
+  test("NODE_VERSION matches scripts/lib/paths.sh pin", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { fileURLToPath } = await import("node:url");
+    const { dirname, join } = await import("node:path");
+    const here = dirname(fileURLToPath(import.meta.url));
+    const pathsSh = readFileSync(join(here, "../../scripts/lib/paths.sh"), "utf8");
+    const match = /^NODE_VERSION=([\d.]+)$/m.exec(pathsSh);
+    if (!match) {
+      throw new TypeError("could not read NODE_VERSION from scripts/lib/paths.sh");
+    }
+    expect(NODE_VERSION).toBe(match[1]);
   });
 
   test("ensureBootstrapDeno vendors Deno from dl.deno.land", async () => {

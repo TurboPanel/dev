@@ -1,10 +1,10 @@
-import { DENO_VERSION } from "./paths.ts";
+import { DENO_VERSION, NODE_VERSION } from "./paths.ts";
+
+/** Same pin as daemon `node-runtime` `node_version`. Canonical value is `paths.ts`. */
+export { NODE_VERSION };
 
 /** daemon orchestration/roles/caddy/defaults/main.yml */
 export const CADDY_VERSION = "2.10.2";
-
-/** daemon orchestration/roles/node-runtime/defaults/main.yml */
-export const NODE_VERSION = "24.17.0";
 
 /** instance/package.json devDependencies.wrangler */
 export const WRANGLER_VERSION = "4.124.0";

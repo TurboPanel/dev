@@ -65,7 +65,7 @@ export function resolveRuntimesDir(): string {
 
 export const RUNTIMES_DIR = resolveRuntimesDir();
 /** Pinned Node.js for the dev console (matches node-runtime Ansible role). */
-export const NODE_VERSION = "24.17.0";
+export const NODE_VERSION = "26.7.0";
 export const NODE_BIN = `${RUNTIMES_DIR}/node/current/bin/node`;
 export const PNPM_BIN = `${RUNTIMES_DIR}/node/current/bin/pnpm`;
 

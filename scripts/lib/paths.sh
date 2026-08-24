@@ -53,7 +53,7 @@ DAEMON_ENV_PATH=${DAEMON_ENV_PATH:-$TURBOPANEL_CONFIG_DIR/daemon.env}
 
 # Node is dev-only (Ink HMR via Vite + future website repo). Platform services
 # (daemon, instance) use the platform-managed runtimes under vendor.
-NODE_VERSION=24.17.0
+NODE_VERSION=26.7.0
 NODE_RUNTIME_DIR=${NODE_RUNTIME_DIR:-$TURBOPANEL_RUNTIMES_DIR/node}
 NODE_VERSION_DIR=$NODE_RUNTIME_DIR/$NODE_VERSION
 NODE_PREFIX=${NODE_PREFIX:-$NODE_RUNTIME_DIR/current}
