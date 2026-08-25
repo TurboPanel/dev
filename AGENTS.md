@@ -203,7 +203,7 @@ often lack a usable Node/pnpm tree). CI `verify.yml` still gates PRs.
 
 | Stage | dev | daemon | Rationale |
 | ----- | --- | ------ | --------- |
-| pre-commit | scan-secrets only (tests deferred) | scan-secrets only (tests deferred) | secret scan on commit; suites in CI / guest |
+| pre-commit | scan-secrets only (tests deferred) | scan-secrets + `deno fmt` (lint/tests deferred) | secret scan always; daemon fmt via host Deno or `vagrant ssh`; suites in CI / guest |
 | PR → `trunk` | `verify.yml` | `verify.yml` | blocks merge |
 | push `trunk` | `verify.yml` | `verify.yml`; `publish` job `needs: verify` | nothing compiles from failing code |
 | promote → canary/rc/release | n/a | **artifact integrity only** (S3 sha256/size + CDN fetch) | no new code enters after publish |
