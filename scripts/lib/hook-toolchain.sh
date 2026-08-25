@@ -43,7 +43,8 @@ tp_hook_toolchain_fail() {
   exit 1
 }
 
-# Bootstrap pinned Node + Corepack pnpm and ensure node_modules for REPO_ROOT.
+# Bootstrap pinned Node + Corepack pnpm (Corepack is installed via vendored npm
+# on Node 25+) and ensure node_modules for REPO_ROOT.
 tp_hook_ensure_pnpm_toolchain() {
   _hpt_root=$1
   [ -n "$_hpt_root" ] || tp_hook_toolchain_fail "internal error: repo root required"

@@ -139,11 +139,15 @@ tp_corepack_bin() {
   printf '%s' "$NODE_PREFIX/bin/corepack"
 }
 
+tp_npm_bin() {
+  printf '%s' "$NODE_PREFIX/bin/npm"
+}
+
 tp_node_bin_dir() {
   dirname "$NODE_BIN"
 }
 
-# Vendored Node is not on the host PATH; corepack/pnpm shims use #!/usr/bin/env node.
+# Vendored Node is not on the host PATH; npm/corepack/pnpm shims use #!/usr/bin/env node.
 tp_export_node_path() {
   PATH="$(tp_node_bin_dir):${PATH:-}"
   export PATH
@@ -161,7 +165,10 @@ tp_corepack_env() {
   export COREPACK_ENABLE_DOWNLOAD_PROMPT COREPACK_DEFAULT_TO_LATEST COREPACK_ENABLE_AUTO_PIN
 }
 
-tp_run_corepack() {
+# Run a command with vendored Node on PATH. Sudo when the prefix is not writable
+# (first install into /opt/turbopanel/vendor). Corepack env is always exported so
+# enable/prepare stay pinned; it is harmless for `npm install -g corepack`.
+tp_run_with_node_path() {
   tp_corepack_env
   _tp_node_bin=$(tp_node_bin_dir)
   if [ "$(id -u)" -eq 0 ] || tp_can_write_path "$NODE_PREFIX/bin"; then
@@ -169,7 +176,7 @@ tp_run_corepack() {
     return $?
   fi
   if ! command -v sudo >/dev/null 2>&1; then
-    tp_error "Corepack requires write access to ${NODE_PREFIX}/bin, but sudo is not installed."
+    tp_error "Write access to ${NODE_PREFIX}/bin requires root privileges, but sudo is not installed."
     exit 1
   fi
   sudo env \
@@ -178,6 +185,31 @@ tp_run_corepack() {
     COREPACK_ENABLE_AUTO_PIN="$COREPACK_ENABLE_AUTO_PIN" \
     PATH="${_tp_node_bin}:${PATH:-}" \
     "$@"
+}
+
+# Node 25+ no longer ships a corepack executable. Install the standalone npm
+# package into the vendored prefix so package.json packageManager still works.
+tp_ensure_corepack() {
+  _ec_corepack=$(tp_corepack_bin)
+  if [ -x "$_ec_corepack" ]; then
+    return 0
+  fi
+
+  _ec_npm=$(tp_npm_bin)
+  if [ ! -x "$_ec_npm" ]; then
+    tp_error "npm not found at ${_ec_npm} (expected from the Node install)."
+    exit 1
+  fi
+
+  tp_info "Installing Corepack (Node 25+ no longer ships it)…"
+  tp_export_node_path
+  tp_run_with_node_path "$_ec_npm" install --global --prefix "$NODE_VERSION_DIR" \
+    --no-fund --no-audit corepack
+
+  if [ ! -x "$_ec_corepack" ]; then
+    tp_error "corepack install failed — expected ${_ec_corepack}"
+    exit 1
+  fi
 }
 
 # Optional $1 is a repo root; Corepack shims read packageManager from cwd,
@@ -198,18 +230,15 @@ tp_ensure_corepack_pnpm() {
   _ecp_repo_root=$1
   tp_export_node_path
   tp_corepack_env
+  tp_ensure_corepack
   _ecp_corepack=$(tp_corepack_bin)
-  if [ ! -x "$_ecp_corepack" ]; then
-    tp_error "corepack not found at ${_ecp_corepack} (expected from the Node install)."
-    exit 1
-  fi
 
   _ecp_pnpm_version=$(tp_read_pnpm_version "$_ecp_repo_root/package.json")
   _ecp_pnpm_semver=${_ecp_pnpm_version%%+*}
 
   tp_info "Ensuring pnpm v${_ecp_pnpm_semver} (Corepack)…"
-  tp_run_corepack "$_ecp_corepack" enable
-  tp_run_corepack "$_ecp_corepack" prepare "pnpm@${_ecp_pnpm_version}" --activate
+  tp_run_with_node_path "$_ecp_corepack" enable
+  tp_run_with_node_path "$_ecp_corepack" prepare "pnpm@${_ecp_pnpm_version}" --activate
 
   _ecp_installed=$(tp_pnpm_installed_version "$_ecp_repo_root") || true
   if [ "$_ecp_installed" != "$_ecp_pnpm_semver" ]; then
