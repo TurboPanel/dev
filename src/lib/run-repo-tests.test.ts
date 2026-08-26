@@ -83,6 +83,12 @@ test("buildTestCommand rejects suites not offered for the repo", () => {
   expect(() => buildTestCommand("website", "test")).toThrow(TypeError);
 });
 
+test("buildTestCommand rejects unknown repo ids", () => {
+  expect(() =>
+    buildTestCommand("missing" as never, "test"),
+  ).toThrow(TypeError);
+});
+
 test("testRunnerPathEnv prepends vendored Node and Deno bins", () => {
   const env = testRunnerPathEnv("/usr/bin:/bin");
   const parts = env.PATH.split(":");

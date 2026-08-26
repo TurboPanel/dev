@@ -13,7 +13,12 @@ const MAX_LINES = 100;
 
 const serviceLogCache = new Map<string, ServiceLogLine[]>();
 
-function serviceLogCacheKey(
+/** Drop the module-level tail cache so hook tests can exercise a cold start. */
+export function resetServiceLogCache(): void {
+  serviceLogCache.clear();
+}
+
+export function serviceLogCacheKey(
   serviceId: string,
   byteFloor?: ServiceLogByteFloor | null,
 ): string {
@@ -35,7 +40,7 @@ type LogHookState = {
   loading: boolean;
 };
 
-function initialLogState(
+export function initialLogState(
   serviceId: string | null,
   byteFloor?: ServiceLogByteFloor | null,
 ): LogHookState {

@@ -55,14 +55,14 @@ export type PendingOptionalServices = {
   selection: OptionalDevServiceSelection;
 };
 
-function initialDaemonOperation(shouldAutoInstall: boolean): DaemonOperation | null {
+export function initialDaemonOperation(shouldAutoInstall: boolean): DaemonOperation | null {
   if (shouldAutoInstall) {
     return "install";
   }
   return null;
 }
 
-function initialAutoInstallState(): {
+export function initialAutoInstallState(): {
   shouldAutoInstall: boolean;
   selectedServiceIndex: number;
 } {

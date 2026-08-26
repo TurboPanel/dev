@@ -1,5 +1,7 @@
 import { createHmac } from "node:crypto";
+import { EventEmitter } from "node:events";
 import { readFileSync } from "node:fs";
+import { request as httpRequest, type IncomingMessage } from "node:http";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   buildLocalConsoleAuthHeader,
@@ -19,10 +21,65 @@ vi.mock("node:fs", async (importOriginal) => {
   };
 });
 
+vi.mock("node:http", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:http")>();
+  return {
+    ...actual,
+    request: vi.fn(),
+  };
+});
+
 const SECRET = "Aa1Bb2Cc3Dd4Ee5Ff6Gg7Hh8Ii9Jj0Kk1Ll2_Mm3Nn4Oo5Pp6";
 const CURRENT_SECRET = "currentKeyringSecretValue_should_be_used";
 
 const mockedReadFileSync = vi.mocked(readFileSync);
+const mockedHttpRequest = vi.mocked(httpRequest);
+
+function mockSocketHttpResponse(status: number, body: string): void {
+  mockedHttpRequest.mockImplementation((_options, callback) => {
+    const req = new EventEmitter() as EventEmitter & {
+      write: ReturnType<typeof vi.fn>;
+      end: ReturnType<typeof vi.fn>;
+      destroy: ReturnType<typeof vi.fn>;
+    };
+    req.write = vi.fn();
+    req.destroy = vi.fn((err?: Error) => {
+      if (err) {
+        req.emit("error", err);
+      }
+    });
+    req.end = vi.fn(() => {
+      const res = new EventEmitter() as EventEmitter & { statusCode?: number };
+      res.statusCode = status;
+      queueMicrotask(() => {
+        if (typeof callback === "function") {
+          callback(res as IncomingMessage);
+        }
+        if (body.length > 0) {
+          res.emit("data", Buffer.from(body));
+        }
+        res.emit("end");
+      });
+    });
+    return req as unknown as ReturnType<typeof httpRequest>;
+  });
+}
+
+function mockSocketHttpError(error: Error): void {
+  mockedHttpRequest.mockImplementation(() => {
+    const req = new EventEmitter() as EventEmitter & {
+      write: ReturnType<typeof vi.fn>;
+      end: ReturnType<typeof vi.fn>;
+      destroy: ReturnType<typeof vi.fn>;
+    };
+    req.write = vi.fn();
+    req.destroy = vi.fn();
+    req.end = vi.fn(() => {
+      req.emit("error", error);
+    });
+    return req as unknown as ReturnType<typeof httpRequest>;
+  });
+}
 
 function fsError(code: string): NodeJS.ErrnoException {
   const err = new Error(code) as NodeJS.ErrnoException;
@@ -176,5 +233,157 @@ describe("readInstanceSecret / instanceSecretReadError", () => {
     const err = instanceSecretReadError();
     expect(err.message).toContain("unreadable or unparseable instance secrets keyring");
     expect(err.message).toContain(instanceSecretsPath());
+  });
+
+  it("instanceSecretReadError covers readable-but-parseable contradiction path", () => {
+    mockFsMap([[instanceSecretsPath(), `2:${CURRENT_SECRET}`]]);
+    // readInstanceSecret succeeds, so the final fallback branch is exercised
+    // when callers invoke the diagnostic after a race emptied the keyring.
+    const err = instanceSecretReadError();
+    expect(err.message).toContain("missing instance secrets keyring");
+  });
+});
+
+describe("developerFetch sync helpers", () => {
+  beforeEach(() => {
+    mockedReadFileSync.mockReset();
+    mockedHttpRequest.mockReset();
+    vi.resetModules();
+  });
+
+  it("rejects Workers runtime before opening the socket", async () => {
+    vi.doMock("./daemon-env.ts", () => ({
+      readInstanceRuntime: () => "workers",
+    }));
+    mockFsMap([[instanceSecretsPath(), `1:${CURRENT_SECRET}`]]);
+    const { syncDevToAllDaemons } = await import("./developer-client.ts");
+    await expect(syncDevToAllDaemons()).rejects.toThrow(/Workers/);
+    expect(mockedHttpRequest).not.toHaveBeenCalled();
+  });
+
+  it("rejects when the instance secrets keyring is missing", async () => {
+    vi.doMock("./daemon-env.ts", () => ({
+      readInstanceRuntime: () => "deno",
+    }));
+    mockFsMap([]);
+    const { syncDevToDaemon } = await import("./developer-client.ts");
+    await expect(syncDevToDaemon("abc")).rejects.toThrow(
+      /missing instance secrets keyring/,
+    );
+    expect(mockedHttpRequest).not.toHaveBeenCalled();
+  });
+
+  it("POSTs sync-dev over the mocked Unix socket", async () => {
+    vi.doMock("./daemon-env.ts", () => ({
+      readInstanceRuntime: () => "deno",
+    }));
+    mockFsMap([[instanceSecretsPath(), `1:${CURRENT_SECRET}`]]);
+    mockSocketHttpResponse(
+      200,
+      JSON.stringify({ ok: true, results: [{ daemonId: "d1", ok: true }] }),
+    );
+    const { syncDevToAllDaemons } = await import("./developer-client.ts");
+    await expect(syncDevToAllDaemons()).resolves.toEqual({
+      ok: true,
+      results: [{ daemonId: "d1", ok: true }],
+    });
+    expect(mockedHttpRequest).toHaveBeenCalledOnce();
+    const options = mockedHttpRequest.mock.calls[0]?.[0];
+    if (options === undefined || typeof options !== "object") {
+      throw new TypeError("expected http.request options object");
+    }
+    expect(options).toMatchObject({
+      socketPath: "/run/turbopanel/instance.sock",
+      path: "/api/developer/v1/daemon/sync-dev",
+      method: "POST",
+    });
+    const headers = "headers" in options ? options.headers : undefined;
+    if (headers === undefined || typeof headers !== "object") {
+      throw new TypeError("expected Local-Console request headers");
+    }
+    expect(headers).toMatchObject({
+      authorization: expect.stringMatching(/^Local-Console /),
+    });
+  });
+
+  it("POSTs per-daemon sync-dev and channel update with a JSON body", async () => {
+    vi.doMock("./daemon-env.ts", () => ({
+      readInstanceRuntime: () => "deno",
+    }));
+    mockFsMap([[instanceSecretsPath(), `1:${CURRENT_SECRET}`]]);
+    mockSocketHttpResponse(200, JSON.stringify({ ok: true, daemonId: "abc" }));
+    const { syncDevToDaemon, updateConnectedDaemons } = await import(
+      "./developer-client.ts"
+    );
+    await expect(syncDevToDaemon("abc/def")).resolves.toEqual({
+      ok: true,
+      daemonId: "abc",
+    });
+    const syncOpts = mockedHttpRequest.mock.calls[0]?.[0];
+    if (syncOpts === undefined || typeof syncOpts !== "object") {
+      throw new TypeError("expected per-daemon http.request options");
+    }
+    expect(syncOpts).toMatchObject({
+      path: "/api/developer/v1/daemon/abc%2Fdef/sync-dev",
+      method: "POST",
+    });
+
+    mockSocketHttpResponse(200, JSON.stringify({ ok: true, results: [] }));
+    await expect(updateConnectedDaemons()).resolves.toEqual({
+      ok: true,
+      results: [],
+    });
+    const updateCall = mockedHttpRequest.mock.calls[1];
+    if (updateCall === undefined) {
+      throw new TypeError("expected daemon update http.request call");
+    }
+    const updateOpts = updateCall[0];
+    if (updateOpts === undefined || typeof updateOpts !== "object") {
+      throw new TypeError("expected daemon update http.request options");
+    }
+    expect(updateOpts).toMatchObject({
+      path: "/api/developer/v1/daemon/update",
+      method: "POST",
+    });
+    const req = mockedHttpRequest.mock.results[1]?.value as {
+      write?: ReturnType<typeof vi.fn>;
+    };
+    expect(req.write).toHaveBeenCalledWith(JSON.stringify({ channel: "trunk" }));
+  });
+
+  it("surfaces JSON error bodies from non-2xx socket responses", async () => {
+    vi.doMock("./daemon-env.ts", () => ({
+      readInstanceRuntime: () => "deno",
+    }));
+    mockFsMap([[instanceSecretsPath(), `1:${CURRENT_SECRET}`]]);
+    mockSocketHttpResponse(401, JSON.stringify({ error: "unauthorized" }));
+    const { syncDevToAllDaemons } = await import("./developer-client.ts");
+    await expect(syncDevToAllDaemons()).rejects.toThrow(
+      "/api/developer/v1/daemon/sync-dev failed: unauthorized",
+    );
+  });
+
+  it("keeps the HTTP status when the error body is not JSON", async () => {
+    vi.doMock("./daemon-env.ts", () => ({
+      readInstanceRuntime: () => "deno",
+    }));
+    mockFsMap([[instanceSecretsPath(), `1:${CURRENT_SECRET}`]]);
+    mockSocketHttpResponse(502, "bad gateway");
+    const { updateConnectedDaemons } = await import("./developer-client.ts");
+    await expect(updateConnectedDaemons()).rejects.toThrow(
+      "/api/developer/v1/daemon/update failed: HTTP 502",
+    );
+  });
+
+  it("wraps Unix-socket connect failures", async () => {
+    vi.doMock("./daemon-env.ts", () => ({
+      readInstanceRuntime: () => "deno",
+    }));
+    mockFsMap([[instanceSecretsPath(), `1:${CURRENT_SECRET}`]]);
+    mockSocketHttpError(new Error("connect ENOENT"));
+    const { syncDevToAllDaemons } = await import("./developer-client.ts");
+    await expect(syncDevToAllDaemons()).rejects.toThrow(
+      "instance Unix socket unavailable (/run/turbopanel/instance.sock): connect ENOENT",
+    );
   });
 });

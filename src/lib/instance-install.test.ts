@@ -1,11 +1,46 @@
+import { EventEmitter } from "node:events";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { expect, test } from "vitest";
+import { afterEach, describe, expect, it, test, vi } from "vitest";
+import type { OptionalDevServiceSelection } from "./optional-dev-services.ts";
+
+vi.mock("node:child_process", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:child_process")>();
+  return {
+    ...actual,
+    spawn: vi.fn(),
+  };
+});
+
+vi.mock("./daemon-exec.ts", () => ({
+  ensureOrchestrationDenoBin: vi.fn(async () => "/mock/deno"),
+  orchestrationActionCommand: vi.fn(
+    (args: readonly string[], options?: { denoBin?: string }) =>
+      `${options?.denoBin ?? "deno"} orch ${[...args].join(" ")}`,
+  ),
+}));
+
+vi.mock("./dev-identity.ts", () => ({
+  resolveDevIdentity: vi.fn(() => ({ user: "dev", uid: 1000, gid: 1000 })),
+}));
+
+vi.mock("./optional-dev-services.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./optional-dev-services.ts")>();
+  return {
+    ...actual,
+    readOptionalDevServices: vi.fn(() => actual.defaultOptionalSelection()),
+  };
+});
+
+import { spawn } from "node:child_process";
+import { ensureOrchestrationDenoBin, orchestrationActionCommand } from "./daemon-exec.ts";
+import { defaultOptionalSelection, readOptionalDevServices } from "./optional-dev-services.ts";
 import {
   DEV_ENV_CONVERGE_STEP,
   installDevEnvironment,
   type InstallDevEnvironmentDeps,
+  runOrchestrationAction,
 } from "./instance-install.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -63,9 +98,15 @@ test("failed Ansible converge must not write TURBOPANEL_DEV_INSTANCE opt-in", as
       throw new Error("Install Docker via geerlingguy.docker Galaxy role");
     },
   }));
+  const steps: Array<{ label: string; status: string }> = [];
 
   await expect(
-    installDevEnvironment(() => {}, undefined, undefined, deps),
+    installDevEnvironment(
+      () => {},
+      undefined,
+      (label, status) => steps.push({ label, status }),
+      deps,
+    ),
   ).rejects.toThrow(/geerlingguy\.docker/);
 
   expect(calls.map((call) => call.name)).toEqual([
@@ -75,6 +116,12 @@ test("failed Ansible converge must not write TURBOPANEL_DEV_INSTANCE opt-in", as
   ]);
   expect(calls.some((call) => call.name === "writeDaemonInstanceEnv")).toBe(false);
   expect(calls.some((call) => call.name === "requestDaemonRestart")).toBe(false);
+  expect(steps).toEqual([
+    { label: "Ensure Deno runtime", status: "running" },
+    { label: "Ensure Deno runtime", status: "ok" },
+    { label: DEV_ENV_CONVERGE_STEP, status: "running" },
+    { label: DEV_ENV_CONVERGE_STEP, status: "failed" },
+  ]);
 });
 
 test("successful converge writes opt-in only after Ansible, then restarts daemon", async () => {
@@ -117,6 +164,34 @@ test("successful converge writes opt-in only after Ansible, then restarts daemon
   expect(calls[orchIndex]?.options).toEqual({
     denoBin: "/opt/turbopanel/vendor/deno/current/deno",
     mode: "force",
+  });
+});
+
+test("optionalServices are forwarded to runOrchestrationAction", async () => {
+  const { deps, calls } = makeDeps();
+  const optionalServices: OptionalDevServiceSelection = {
+    dbstudio: true,
+    smtp: false,
+    ui: true,
+    website: false,
+    redisinsight: true,
+    tabix: false,
+  };
+
+  await installDevEnvironment(
+    () => {},
+    undefined,
+    undefined,
+    deps,
+    "if-needed",
+    optionalServices,
+  );
+
+  const orch = calls.find((call) => call.name === "runOrchestrationAction");
+  expect(orch?.options).toEqual({
+    denoBin: "/opt/turbopanel/vendor/deno/current/deno",
+    mode: "if-needed",
+    optionalServices,
   });
 });
 
@@ -181,9 +256,15 @@ test("failed Ensure Deno runtime must not mutate Docker access, run Ansible, or 
       throw denoError;
     },
   }));
+  const steps: Array<{ label: string; status: string }> = [];
 
   await expect(
-    installDevEnvironment(() => {}, undefined, undefined, deps),
+    installDevEnvironment(
+      () => {},
+      undefined,
+      (label, status) => steps.push({ label, status }),
+      deps,
+    ),
   ).rejects.toThrow(denoError);
 
   expect(calls.map((call) => call.name)).toEqual([
@@ -192,6 +273,10 @@ test("failed Ensure Deno runtime must not mutate Docker access, run Ansible, or 
   expect(calls.some((call) => call.name === "ensureDevUserDockerAccess")).toBe(false);
   expect(calls.some((call) => call.name === "runOrchestrationAction")).toBe(false);
   expect(calls.some((call) => call.name === "writeDaemonInstanceEnv")).toBe(false);
+  expect(steps).toEqual([
+    { label: "Ensure Deno runtime", status: "running" },
+    { label: "Ensure Deno runtime", status: "failed" },
+  ]);
 });
 
 test("instance-install.ts source keeps opt-in after the Ansible try/catch", () => {
@@ -207,3 +292,244 @@ test("instance-install.ts source keeps opt-in after the Ansible try/catch", () =
   expect(firstOptIn).toBeGreaterThanOrEqual(0);
   expect(firstOptIn).toBeGreaterThan(orch);
 });
+
+const mockedSpawn = vi.mocked(spawn);
+const mockedEnsureDeno = vi.mocked(ensureOrchestrationDenoBin);
+const mockedOrchCommand = vi.mocked(orchestrationActionCommand);
+const mockedReadOptional = vi.mocked(readOptionalDevServices);
+
+type FakeChild = EventEmitter & { stdout: EventEmitter; stderr: EventEmitter };
+
+function emitSoon(child: FakeChild, work: () => void): void {
+  queueMicrotask(work);
+}
+
+function fakeChild(opts: {
+  stdoutChunks?: Array<string | Buffer>;
+  stderrChunks?: Array<string | Buffer>;
+  code?: number | null;
+  error?: Error;
+}): FakeChild {
+  const child = new EventEmitter() as FakeChild;
+  child.stdout = new EventEmitter();
+  child.stderr = new EventEmitter();
+  emitSoon(child, () => {
+    for (const chunk of opts.stdoutChunks ?? []) {
+      child.stdout.emit("data", chunk);
+    }
+    for (const chunk of opts.stderrChunks ?? []) {
+      child.stderr.emit("data", chunk);
+    }
+    if (opts.error) {
+      child.emit("error", opts.error);
+      return;
+    }
+    child.emit("close", opts.code ?? 0);
+  });
+  return child;
+}
+
+function stubSpawn(opts: Parameters<typeof fakeChild>[0]): void {
+  mockedSpawn.mockImplementation(
+    () => fakeChild(opts) as unknown as ReturnType<typeof spawn>,
+  );
+}
+
+afterEach(() => {
+  mockedSpawn.mockReset();
+  mockedEnsureDeno.mockReset();
+  mockedOrchCommand.mockReset();
+  mockedReadOptional.mockReset();
+  mockedEnsureDeno.mockResolvedValue("/mock/deno");
+  mockedOrchCommand.mockImplementation(
+    (args, options) => `${options?.denoBin ?? "deno"} orch ${[...args].join(" ")}`,
+  );
+  mockedReadOptional.mockImplementation(() => defaultOptionalSelection());
+});
+
+describe("runOrchestrationAction", () => {
+  it("skips ensure when denoBin is provided and parses JSONL events", async () => {
+    const events: unknown[] = [];
+    const output: string[] = [];
+    stubSpawn({
+      stdoutChunks: [
+        '{"ok":true,"_event":"ok"}\n',
+        "not-json\n",
+        "   \n",
+        '{"partial":',
+        'true}\n',
+      ],
+    });
+
+    await runOrchestrationAction(
+      ["instance-dev-install"],
+      (event) => events.push(event),
+      (line) => output.push(line),
+      { denoBin: "/provided/deno", mode: "if-needed" },
+    );
+
+    expect(mockedEnsureDeno).not.toHaveBeenCalled();
+    expect(mockedOrchCommand).toHaveBeenCalledWith(["instance-dev-install"], {
+      denoBin: "/provided/deno",
+    });
+    expect(events).toEqual([{ ok: true, _event: "ok" }, { partial: true }]);
+    expect(output).toEqual(["not-json"]);
+
+    const envArgs = mockedSpawn.mock.calls[0]?.[1];
+    if (!Array.isArray(envArgs)) {
+      throw new TypeError("expected /usr/bin/env argv");
+    }
+    expect(envArgs).not.toContain("TURBOPANEL_FORCE_CONVERGE=1");
+    expect(envArgs).toContain("TURBOPANEL_DEV_USER=dev");
+    expect(envArgs).toContain("TURBOPANEL_OPTIONAL_DBSTUDIO=false");
+  });
+
+  it("ensures Deno when denoBin is omitted and sets FORCE_CONVERGE in force mode", async () => {
+    stubSpawn({ stdoutChunks: ['{"ok":true}\n'] });
+    const onOutput = vi.fn();
+    await runOrchestrationAction(["instance-dev-install"], () => {}, onOutput, {
+      mode: "force",
+    });
+    expect(mockedEnsureDeno).toHaveBeenCalledWith(onOutput);
+    const envArgs = mockedSpawn.mock.calls[0]?.[1];
+    if (!Array.isArray(envArgs)) {
+      throw new TypeError("expected /usr/bin/env argv");
+    }
+    expect(envArgs).toContain("TURBOPANEL_FORCE_CONVERGE=1");
+  });
+
+  it("passes an explicit optional-services selection instead of reading prefs", async () => {
+    stubSpawn({});
+    const optionalServices: OptionalDevServiceSelection = {
+      dbstudio: true,
+      smtp: false,
+      ui: false,
+      website: false,
+      redisinsight: false,
+      tabix: true,
+    };
+    await runOrchestrationAction(["ping"], () => {}, undefined, {
+      denoBin: "/d",
+      optionalServices,
+    });
+    expect(mockedReadOptional).not.toHaveBeenCalled();
+    const envArgs = mockedSpawn.mock.calls[0]?.[1];
+    if (!Array.isArray(envArgs)) {
+      throw new TypeError("expected /usr/bin/env argv");
+    }
+    expect(envArgs).toContain("TURBOPANEL_OPTIONAL_DBSTUDIO=true");
+    expect(envArgs).toContain("TURBOPANEL_OPTIONAL_TABIX=true");
+    expect(envArgs).toContain("TURBOPANEL_OPTIONAL_UI=false");
+  });
+
+  it("flushes a trailing stdout line without a newline on close", async () => {
+    const events: unknown[] = [];
+    stubSpawn({ stdoutChunks: ['{"flushed":true}'] });
+    await runOrchestrationAction(["x"], (event) => events.push(event), undefined, {
+      denoBin: "/d",
+    });
+    expect(events).toEqual([{ flushed: true }]);
+  });
+
+  it("prefers an Ansible failed-event message on non-zero exit", async () => {
+    stubSpawn({
+      code: 1,
+      stdoutChunks: [
+        JSON.stringify({
+          _event: "v2_runner_on_failed",
+          task: { name: "Install Docker" },
+          hosts: { localhost: { msg: "non-zero return code", stderr: "boom" } },
+        }) + "\n",
+      ],
+    });
+    await expect(
+      runOrchestrationAction(["x"], () => {}, undefined, { denoBin: "/d" }),
+    ).rejects.toThrow(/Install Docker:/);
+  });
+
+  it("formats unreachable events and task-only failures", async () => {
+    stubSpawn({
+      code: 2,
+      stdoutChunks: [
+        JSON.stringify({
+          _event: "v2_runner_on_unreachable",
+          task: { name: "Ping host" },
+          hosts: null,
+        }) + "\n",
+      ],
+    });
+    await expect(
+      runOrchestrationAction(["x"], () => {}, undefined, { denoBin: "/d" }),
+    ).rejects.toThrow("Ping host");
+  });
+
+  it("falls back to Ansible task failed when the event has no task or hosts", async () => {
+    stubSpawn({
+      code: 1,
+      stdoutChunks: [JSON.stringify({ _event: "v2_runner_on_failed" }) + "\n"],
+    });
+    await expect(
+      runOrchestrationAction(["x"], () => {}, undefined, { denoBin: "/d" }),
+    ).rejects.toThrow("Ansible task failed");
+  });
+
+  it("ignores non-object JSON and non-failure events when building the error", async () => {
+    stubSpawn({
+      code: 1,
+      stdoutChunks: ["null\n", JSON.stringify({ _event: "ok" }) + "\n"],
+      stderrChunks: ["stderr exploded\n"],
+    });
+    await expect(
+      runOrchestrationAction(["x"], () => {}, undefined, { denoBin: "/d" }),
+    ).rejects.toThrow("stderr exploded");
+  });
+
+  it("uses the last non-empty stderr line when per-chunk lines are empty", async () => {
+    stubSpawn({
+      code: 1,
+      stderrChunks: ["\norphan-error\n"],
+    });
+    await expect(
+      runOrchestrationAction(["x"], () => {}, undefined, { denoBin: "/d" }),
+    ).rejects.toThrow("orphan-error");
+  });
+
+  it("falls back to stdout tail then a generic message", async () => {
+    stubSpawn({
+      code: 1,
+      stdoutChunks: ["plain failure text\n"],
+    });
+    await expect(
+      runOrchestrationAction(["x"], () => {}, undefined, { denoBin: "/d" }),
+    ).rejects.toThrow("plain failure text");
+
+    stubSpawn({ code: 1 });
+    await expect(
+      runOrchestrationAction(["x"], () => {}, undefined, { denoBin: "/d" }),
+    ).rejects.toThrow("Orchestration action failed");
+  });
+
+  it("rejects when spawn emits error", async () => {
+    stubSpawn({ error: new Error("ENOENT") });
+    await expect(
+      runOrchestrationAction(["x"], () => {}, undefined, { denoBin: "/d" }),
+    ).rejects.toThrow("ENOENT");
+  });
+
+  it("extracts a host-failure detail without a task name", async () => {
+    stubSpawn({
+      code: 1,
+      stdoutChunks: [
+        JSON.stringify({
+          _event: "v2_runner_on_failed",
+          task: "not-an-object",
+          hosts: { localhost: { msg: "disk full" } },
+        }) + "\n",
+      ],
+    });
+    await expect(
+      runOrchestrationAction(["x"], () => {}, undefined, { denoBin: "/d" }),
+    ).rejects.toThrow("disk full");
+  });
+});
+

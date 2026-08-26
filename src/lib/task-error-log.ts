@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import { dirname } from "node:path";
 import { CONSOLE_LAST_TASK_ERROR_LOG } from "./paths.ts";
 import { spawnSyncTrusted } from "./spawn-trusted.ts";
 
@@ -9,6 +10,33 @@ export type TaskErrorRecord = {
   tasks?: Array<{ label: string; status: string }>;
   timestamp: string;
 };
+
+/**
+ * Render a task-error record as the on-disk log body.
+ *
+ * @internal Exported for unit tests.
+ */
+export function formatTaskErrorLog(record: TaskErrorRecord): string {
+  const lines = [
+    `time=${record.timestamp}`,
+    `title=${record.title}`,
+    "",
+    record.message,
+    "",
+  ];
+  if (record.recap) {
+    lines.push(record.recap, "");
+  }
+  if (record.tasks && record.tasks.length > 0) {
+    lines.push("tasks:");
+    for (const task of record.tasks) {
+      lines.push(`  [${task.status}] ${task.label}`);
+    }
+    lines.push("");
+  }
+  lines.push(`log=${CONSOLE_LAST_TASK_ERROR_LOG}`);
+  return lines.join("\n");
+}
 
 function writeWithSudo(body: string): boolean {
   const result = spawnSyncTrusted(
@@ -30,28 +58,9 @@ function writeWithSudo(body: string): boolean {
 export async function writeTaskErrorLog(
   record: TaskErrorRecord,
 ): Promise<boolean> {
-  const lines = [
-    `time=${record.timestamp}`,
-    `title=${record.title}`,
-    "",
-    record.message,
-    "",
-  ];
-  if (record.recap) {
-    lines.push(record.recap, "");
-  }
-  if (record.tasks && record.tasks.length > 0) {
-    lines.push("tasks:");
-    for (const task of record.tasks) {
-      lines.push(`  [${task.status}] ${task.label}`);
-    }
-    lines.push("");
-  }
-  lines.push(`log=${CONSOLE_LAST_TASK_ERROR_LOG}`);
-
-  const body = lines.join("\n");
+  const body = formatTaskErrorLog(record);
   try {
-    await fs.mkdir(CONSOLE_LAST_TASK_ERROR_LOG.replace(/\/[^/]+$/, ""), {
+    await fs.mkdir(dirname(CONSOLE_LAST_TASK_ERROR_LOG), {
       recursive: true,
     });
     await fs.writeFile(CONSOLE_LAST_TASK_ERROR_LOG, body, "utf8");

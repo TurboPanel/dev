@@ -25,7 +25,7 @@ function readSnapshot(byteFloor?: DaemonLogByteFloor | null): DaemonLogSnapshot 
   };
 }
 
-function snapshotEqual(current: DaemonLogSnapshot, next: DaemonLogSnapshot): boolean {
+export function snapshotEqual(current: DaemonLogSnapshot, next: DaemonLogSnapshot): boolean {
   return (
     daemonLogLinesEqual(current.lines, next.lines) &&
     current.stat.stdoutSize === next.stat.stdoutSize &&
@@ -35,7 +35,7 @@ function snapshotEqual(current: DaemonLogSnapshot, next: DaemonLogSnapshot): boo
   );
 }
 
-const emptyDaemonSnapshot = (): DaemonLogSnapshot => ({
+export const emptyDaemonSnapshot = (): DaemonLogSnapshot => ({
   stat: {
     stdoutSize: 0,
     stdoutMtimeMs: 0,
@@ -46,6 +46,11 @@ const emptyDaemonSnapshot = (): DaemonLogSnapshot => ({
 });
 
 let daemonLogCache: DaemonLogSnapshot | null = null;
+
+/** Drop the module-level snapshot cache so hook tests can exercise a cold start. */
+export function resetDaemonLogCache(): void {
+  daemonLogCache = null;
+}
 
 export type DaemonLogState = {
   lines: DaemonLogLine[];
@@ -59,11 +64,11 @@ type DaemonHookState = {
   loading: boolean;
 };
 
-function floorKey(byteFloor?: DaemonLogByteFloor | null): string {
+export function floorKey(byteFloor?: DaemonLogByteFloor | null): string {
   return `${byteFloor?.stdout ?? ""}:${byteFloor?.stderr ?? ""}`;
 }
 
-function initialDaemonState(
+export function initialDaemonState(
   refreshKey: number,
   byteFloor?: DaemonLogByteFloor | null,
 ): DaemonHookState {

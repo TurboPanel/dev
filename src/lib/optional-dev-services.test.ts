@@ -4,10 +4,12 @@ import { join } from "node:path";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import {
   DEFAULT_OPTIONAL_DEV_SERVICES,
+  OPTIONAL_DEV_SERVICE_DEFS,
   applyOptionalDevServices,
   assertOptionalDevServiceId,
   defaultOptionalSelection,
   normalizeOptionalSelection,
+  optionalDevServiceBackingContainers,
   optionalDevServiceCatalogIdsForRuntime,
   optionalServicesOrchestrationEnv,
   persistOptionalServiceToggle,
@@ -224,4 +226,172 @@ test("applyOptionalDevServices stops Redis Insight bridge when unit is disabled"
       dockerCalls.some((cmd) => cmd.includes("stop") && cmd.includes(container)),
     ).toBe(true);
   }
+});
+
+test("optionalDevServiceBackingContainers returns empty when unset", () => {
+  const ui = OPTIONAL_DEV_SERVICE_DEFS.find((def) => def.id === "ui");
+  if (!ui) {
+    throw new TypeError("expected ui optional service def");
+  }
+  expect(optionalDevServiceBackingContainers(ui)).toEqual([]);
+  const smtp = OPTIONAL_DEV_SERVICE_DEFS.find((def) => def.id === "smtp");
+  if (!smtp) {
+    throw new TypeError("expected smtp optional service def");
+  }
+  expect(optionalDevServiceBackingContainers(smtp)).toEqual([
+    MAILPIT_CONTAINER_NAME,
+  ]);
+});
+
+test("applyOptionalDevServices enables installed units with --now", async () => {
+  const lines: string[] = [];
+  await applyOptionalDevServices(
+    { ...defaultOptionalSelection(), ui: true },
+    (line) => lines.push(line),
+  );
+  expect(
+    mockedRunCaptured.mock.calls.some(
+      ([cmd]) =>
+        Array.isArray(cmd) &&
+        cmd.includes("systemctl") &&
+        cmd.includes("enable") &&
+        cmd.includes("turbopanel-ui"),
+    ),
+  ).toBe(true);
+  expect(lines.some((line) => line.includes("Enabling optional service"))).toBe(
+    true,
+  );
+});
+
+test("applyOptionalDevServices reports missing unit-only services when wanted", async () => {
+  mockedSpawnSyncTrustedText.mockReturnValue({
+    status: 0,
+    stdout: "not-found",
+    stderr: "",
+    pid: 0,
+    output: ["", "not-found", ""],
+    signal: null,
+  });
+  mockedSpawnDocker.mockReturnValue({
+    status: 1,
+    stdout: "",
+    stderr: "",
+    pid: 0,
+    output: ["", "", ""],
+    signal: null,
+  });
+  const lines: string[] = [];
+  await applyOptionalDevServices(
+    { ...defaultOptionalSelection(), ui: true, smtp: true },
+    (line) => lines.push(line),
+  );
+  expect(
+    lines.some((line) => line.includes("UI (Expo) is not installed yet")),
+  ).toBe(true);
+  expect(
+    lines.some((line) => line.includes("Mailpit is not installed yet")),
+  ).toBe(true);
+});
+
+test("applyOptionalDevServices throws when systemctl enable fails", async () => {
+  mockedRunCaptured.mockResolvedValue(1);
+  await expect(
+    applyOptionalDevServices({
+      dbstudio: true,
+      smtp: true,
+      ui: true,
+      website: true,
+      redisinsight: true,
+      tabix: true,
+    }),
+  ).rejects.toThrow("systemctl enable --now turbopanel-dbstudio failed");
+});
+
+test("applyOptionalDevServices throws when docker start/stop both fail", async () => {
+  mockedRunCaptured.mockImplementation(async (cmd) => {
+    if (Array.isArray(cmd) && cmd.includes("docker")) {
+      return 1;
+    }
+    return 0;
+  });
+  await expect(
+    applyOptionalDevServices({ ...defaultOptionalSelection(), smtp: false }),
+  ).rejects.toThrow(`docker update --restart=no ${MAILPIT_CONTAINER_NAME} failed`);
+});
+
+test("applyOptionalDevServices falls back to sudo docker when the first docker call fails", async () => {
+  mockedRunCaptured.mockImplementation(async (cmd) => {
+    if (!Array.isArray(cmd) || !cmd.includes("docker")) {
+      return 0;
+    }
+    if (cmd[0] === "docker") {
+      return 1;
+    }
+    return 0;
+  });
+  await applyOptionalDevServices({
+    ...defaultOptionalSelection(),
+    smtp: false,
+  });
+  const dockerCalls = mockedRunCaptured.mock.calls
+    .map(([cmd]) => cmd)
+    .filter((cmd): cmd is string[] => Array.isArray(cmd) && cmd.includes("docker"));
+  expect(
+    dockerCalls.some(
+      (cmd) =>
+        cmd[0] === "docker" &&
+        cmd.includes("update") &&
+        cmd.includes(MAILPIT_CONTAINER_NAME),
+    ),
+  ).toBe(true);
+  expect(
+    dockerCalls.some(
+      (cmd) =>
+        cmd[0] === "sudo" &&
+        cmd.includes("docker") &&
+        cmd.includes("update") &&
+        cmd.includes(MAILPIT_CONTAINER_NAME),
+    ),
+  ).toBe(true);
+});
+
+test("applyOptionalDevServices starts container-only services when unit is missing", async () => {
+  mockedSpawnSyncTrustedText.mockReturnValue({
+    status: 0,
+    stdout: "not-found",
+    stderr: "",
+    pid: 0,
+    output: ["", "not-found", ""],
+    signal: null,
+  });
+  mockedSpawnDocker.mockReturnValue({
+    status: 0,
+    stdout: "true",
+    stderr: "",
+    pid: 0,
+    output: ["", "true", ""],
+    signal: null,
+  });
+  await applyOptionalDevServices({
+    ...defaultOptionalSelection(),
+    smtp: true,
+    ui: false,
+    website: false,
+  });
+  const dockerCalls = mockedRunCaptured.mock.calls
+    .map(([cmd]) => cmd)
+    .filter((cmd): cmd is string[] => Array.isArray(cmd) && cmd.includes("docker"));
+  expect(
+    dockerCalls.some(
+      (cmd) =>
+        cmd.includes("update") &&
+        cmd.includes("--restart=unless-stopped") &&
+        cmd.includes(MAILPIT_CONTAINER_NAME),
+    ),
+  ).toBe(true);
+  expect(
+    dockerCalls.some(
+      (cmd) => cmd.includes("start") && cmd.includes(MAILPIT_CONTAINER_NAME),
+    ),
+  ).toBe(true);
 });

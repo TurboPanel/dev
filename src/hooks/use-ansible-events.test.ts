@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { afterEach, describe, expect, it, vi, beforeEach } from "vitest";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -7,9 +7,12 @@ import type { AnsibleTaskRow } from "@turbopanel/components/ansible-task-list.ts
 import { formatAnsibleHostFailure } from "../lib/ansible-failure.ts";
 import { CONSOLE_LAST_TASK_ERROR_LOG } from "../lib/paths.ts";
 import { writeTaskErrorLog } from "../lib/task-error-log.ts";
+import { mountHook, type MountedHook } from "./ink-hook-render.ts";
 import {
+  buildAnsibleTaskView,
   dispatchAnsibleUiEvent,
   resolveDevConvergeSkippedUi,
+  useAnsibleEvents,
   type AnsibleUiSetters,
 } from "./use-ansible-events.ts";
 
@@ -329,6 +332,137 @@ describe("dispatchAnsibleUiEvent", () => {
     dispatchAnsibleUiEvent("v2_playbook_on_no_hosts_matched", {}, setters);
     expect(state.tasks).toEqual([]);
     expect(state.done).toBe(false);
+  });
+
+  it("keeps the raw task name when the role/task split is empty", () => {
+    const { state, setters } = createUi();
+    dispatchAnsibleUiEvent("v2_playbook_on_task_start", {
+      task: { name: "postgres :" },
+    }, setters);
+    dispatchAnsibleUiEvent("v2_playbook_on_task_start", {
+      task: { name: ": Create user" },
+    }, setters);
+    expect(state.tasks.map((task) => task.label)).toEqual([
+      "postgres :",
+      ": Create user",
+    ]);
+  });
+});
+
+describe("buildAnsibleTaskView", () => {
+  function row(
+    id: string,
+    status: AnsibleTaskRow["status"],
+  ): AnsibleTaskRow {
+    return { id, label: id, status, depth: 1 };
+  }
+
+  it("returns an empty view for no tasks", () => {
+    expect(buildAnsibleTaskView([], 8)).toEqual({
+      visibleTasks: [],
+      hiddenCount: 0,
+      followIndex: 0,
+    });
+  });
+
+  it("shows every task when the list fits the budget", () => {
+    const tasks = [row("a", "ok"), row("b", "running")];
+    const view = buildAnsibleTaskView(tasks, 5);
+    expect(view.visibleTasks).toEqual(tasks);
+    expect(view.hiddenCount).toBe(0);
+    expect(view.followIndex).toBe(1);
+  });
+
+  it("slides a window over a long list and keeps the last pinned task in view", () => {
+    const tasks = [
+      row("1", "ok"),
+      row("2", "ok"),
+      row("3", "ok"),
+      row("4", "running"),
+    ];
+    const view = buildAnsibleTaskView(tasks, 3);
+    expect(view.hiddenCount).toBeGreaterThan(0);
+    expect(view.visibleTasks.at(-1)?.id).toBe("4");
+  });
+
+  it("clamps the window when pinned tasks span more than the budget", () => {
+    const tasks = [
+      row("1", "failed"),
+      row("2", "ok"),
+      row("3", "ok"),
+      row("4", "ok"),
+      row("5", "running"),
+    ];
+    const view = buildAnsibleTaskView(tasks, 2);
+    expect(view.visibleTasks.length).toBeLessThanOrEqual(2);
+    expect(view.visibleTasks.some((task) => task.status === "running")).toBe(
+      true,
+    );
+  });
+
+  it("treats a zero row budget as one visible row", () => {
+    const tasks = [row("1", "ok"), row("2", "ok")];
+    const view = buildAnsibleTaskView(tasks, 0);
+    expect(view.visibleTasks).toHaveLength(1);
+  });
+});
+
+describe("useAnsibleEvents", () => {
+  type Hook = ReturnType<typeof useAnsibleEvents>;
+  let mounted: MountedHook<Hook> | undefined;
+
+  afterEach(() => {
+    mounted?.unmount();
+    mounted = undefined;
+  });
+
+  it("skips converge-already-done events and ignores malformed payloads", async () => {
+    mounted = mountHook(() => useAnsibleEvents());
+    await mounted.flush();
+    mounted.get().onEvent({
+      _event: "dev_converge_skipped",
+      reason: "stamp matches",
+    });
+    mounted.rerender();
+    await mounted.flush();
+    expect(mounted.get().recap).toContain("already converged");
+    expect(mounted.get().done).toBe(true);
+
+    mounted.get().onEvent(null);
+    mounted.get().onEvent({ play: { name: "no event type" } });
+    mounted.rerender();
+    await mounted.flush();
+    expect(mounted.get().tasks).toEqual([]);
+  });
+
+  it("dispatches play events, emitStep, and reset", async () => {
+    mounted = mountHook(() => useAnsibleEvents());
+    await mounted.flush();
+    mounted.get().onEvent({
+      _event: "v2_playbook_on_play_start",
+      play: { name: "postgres", uuid: "p1" },
+    });
+    mounted.get().emitStep("Bootstrap Deno", "running");
+    mounted.get().emitStep("Converge", "running");
+    mounted.get().emitStep("Converge", "ok");
+    mounted.rerender();
+    await mounted.flush();
+    expect(mounted.get().tasks.map((task) => task.label)).toEqual([
+      "postgres",
+      "Bootstrap Deno",
+      "Converge",
+    ]);
+    expect(mounted.get().tasks.find((task) => task.label === "Bootstrap Deno")?.status)
+      .toBe("ok");
+    expect(mounted.get().tasks.find((task) => task.label === "Converge")?.status)
+      .toBe("ok");
+
+    mounted.get().reset();
+    mounted.rerender();
+    await mounted.flush();
+    expect(mounted.get().tasks).toEqual([]);
+    expect(mounted.get().recap).toBeNull();
+    expect(mounted.get().done).toBe(false);
   });
 });
 

@@ -6,6 +6,61 @@ export function lastLogScrollIndex(lineCount: number): number {
   return Math.max(0, lineCount - 1);
 }
 
+export type LogScrollState = {
+  scrollIndex: number;
+  followTail: boolean;
+};
+
+/** Pure scroll-key reducer shared by {@link useLogScroll} for unit tests. */
+export function applyLogScrollKey(
+  state: LogScrollState,
+  key: Key,
+  lineCount: number,
+  pageStep: number,
+): LogScrollState | null {
+  const lastIndex = lastLogScrollIndex(lineCount);
+
+  if (key.upArrow) {
+    return {
+      followTail: false,
+      scrollIndex: Math.max(0, state.scrollIndex - 1),
+    };
+  }
+
+  if (key.pageUp) {
+    return {
+      followTail: false,
+      scrollIndex: Math.max(0, state.scrollIndex - pageStep),
+    };
+  }
+
+  if (key.downArrow) {
+    const next = Math.min(lastIndex, state.scrollIndex + 1);
+    return {
+      scrollIndex: next,
+      followTail: next >= lastIndex ? true : state.followTail,
+    };
+  }
+
+  if (key.pageDown) {
+    const next = Math.min(lastIndex, state.scrollIndex + pageStep);
+    return {
+      scrollIndex: next,
+      followTail: next >= lastIndex ? true : state.followTail,
+    };
+  }
+
+  if (key.end) {
+    return { followTail: true, scrollIndex: lastIndex };
+  }
+
+  if (key.home) {
+    return { followTail: false, scrollIndex: 0 };
+  }
+
+  return null;
+}
+
 export function useLogScroll({
   lineCount,
   viewportHeight,
@@ -54,54 +109,19 @@ export function useLogScroll({
 
   const handleLogKey = useCallback(
     (key: Key) => {
-      const lastIndex = lastLogScrollIndex(lineCount);
-
-      if (key.upArrow) {
-        setFollowTail(false);
-        setScrollIndex((index) => Math.max(0, index - 1));
+      const next = applyLogScrollKey(
+        { scrollIndex, followTail },
+        key,
+        lineCount,
+        pageStep,
+      );
+      if (next === null) {
         return;
       }
-
-      if (key.pageUp) {
-        setFollowTail(false);
-        setScrollIndex((index) => Math.max(0, index - pageStep));
-        return;
-      }
-
-      if (key.downArrow) {
-        setScrollIndex((index) => {
-          const next = Math.min(lastIndex, index + 1);
-          if (next >= lastIndex) {
-            setFollowTail(true);
-          }
-          return next;
-        });
-        return;
-      }
-
-      if (key.pageDown) {
-        setScrollIndex((index) => {
-          const next = Math.min(lastIndex, index + pageStep);
-          if (next >= lastIndex) {
-            setFollowTail(true);
-          }
-          return next;
-        });
-        return;
-      }
-
-      if (key.end) {
-        setFollowTail(true);
-        setScrollIndex(lastIndex);
-        return;
-      }
-
-      if (key.home) {
-        setFollowTail(false);
-        setScrollIndex(0);
-      }
+      setFollowTail(next.followTail);
+      setScrollIndex(next.scrollIndex);
     },
-    [lineCount, pageStep],
+    [followTail, lineCount, pageStep, scrollIndex],
   );
 
   return { scrollIndex, handleLogKey };

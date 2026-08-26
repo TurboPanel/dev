@@ -31,7 +31,7 @@ export type DevEnvConvergeState = {
   servicePhases: Record<string, ConvergeServicePhase>;
 };
 
-function resolvePhaseFromAnsibleName(name: string): ConvergeServicePhase {
+export function resolvePhaseFromAnsibleName(name: string): ConvergeServicePhase {
   const lower = name.toLowerCase();
   if (lower.includes("-build") || lower.includes("compile")) {
     return "compiling";
@@ -39,7 +39,7 @@ function resolvePhaseFromAnsibleName(name: string): ConvergeServicePhase {
   return "installing";
 }
 
-function taskResultStatus(
+export function taskResultStatus(
   eventType: string,
   hosts: Record<string, Record<string, unknown>> | undefined,
 ): string {

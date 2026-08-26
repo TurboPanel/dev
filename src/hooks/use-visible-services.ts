@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getVisibleServices, type DevService } from "../dev-services.ts";
 
-function servicesEqual(current: DevService[], next: DevService[]): boolean {
+export function servicesEqual(current: DevService[], next: DevService[]): boolean {
   if (current.length !== next.length) {
     return false;
   }

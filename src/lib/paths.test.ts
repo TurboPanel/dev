@@ -1,18 +1,45 @@
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { afterEach, describe, expect, it, test, vi } from "vitest";
 import {
+  ALL_DEV_CHECKOUT_DIRS,
+  ANSIBLE_PLAYBOOK_BIN,
   buildPlatformRepoEntries,
+  CONFIG_DIR,
+  CONSOLE_TEST_RUN_LOG_DIR,
+  convergeServiceLogPath,
+  consoleLogDir,
+  CONVERGE_SERVICE_LOG_DIR,
+  daemonBootstrapScript,
+  daemonDenoConfig,
+  DAEMON_ENV_PATH,
+  DAEMON_ENV_TRUNK_BRANCH_KEY,
+  DAEMON_ERR_LOG_PATH,
+  DAEMON_LOG_PATH,
+  daemonOrchestrationScript,
   daemonRepoPath,
+  DAEMON_REPO,
+  DAEMON_SYSTEMD_UNIT,
+  DEFAULT_RUNTIMES_DIR,
   DENO_VERSION,
+  DEV_CONVERGE_STAMP_PATH,
+  instanceConfigDir,
   instanceRepoPath,
+  instanceRuntimeDevVarsPath,
+  instanceRuntimeEnvPath,
+  instanceSecretsPath,
+  LOG_DIR,
   NODE_VERSION,
   PLATFORM_REPO_DIRS,
   platformCaCertPath,
   platformRepoEnvKey,
   platformRepoPath,
+  PYTHON_VERSION,
   resolveDevRoot,
   resolveRuntimesDir,
+  sshRepoUrl,
   STATE_DIR,
+  testRunLogPath,
   TURBOPANEL_ROOT,
+  TURBOPANEL_TRUNK_BRANCH,
 } from "./paths.ts";
 
 afterEach(() => {
@@ -45,12 +72,20 @@ describe("platformRepoPath", () => {
     expect(platformRepoEnvKey("turbopaneld")).toBe("TURBOPANEL_DAEMON_REPO");
     expect(platformRepoEnvKey("turbopanel")).toBe("TURBOPANEL_INSTANCE_REPO");
     expect(platformRepoEnvKey("ui")).toBe("TURBOPANEL_UI_REPO");
+    expect(platformRepoEnvKey("website")).toBe("TURBOPANEL_WEBSITE_REPO");
+    expect(platformRepoEnvKey("dev")).toBe("TURBOPANEL_DEV_REPO");
   });
 
   test("honours TURBOPANEL_DAEMON_REPO override for turbopaneld", () => {
     vi.stubEnv("TURBOPANEL_DEV_ROOT", "/dev-root");
     vi.stubEnv("TURBOPANEL_DAEMON_REPO", "/override/turbopaneld");
     expect(platformRepoPath("turbopaneld")).toBe("/override/turbopaneld");
+  });
+
+  test("treats whitespace-only repo overrides as unset", () => {
+    vi.stubEnv("TURBOPANEL_DEV_ROOT", "/dev-root");
+    vi.stubEnv("TURBOPANEL_UI_REPO", "   ");
+    expect(platformRepoPath("ui")).toBe("/dev-root/ui");
   });
 
   test("defaults to <devRoot>/<dir> when override is absent", () => {
@@ -136,6 +171,11 @@ describe("resolveRuntimesDir", () => {
     expect(resolveRuntimesDir()).toBe("/custom/runtimes");
   });
 
+  test("a runtimes dir of only slashes collapses to root", () => {
+    vi.stubEnv("TURBOPANEL_RUNTIMES_DIR", "///");
+    expect(resolveRuntimesDir()).toBe("/");
+  });
+
   test("module-load RUNTIMES_DIR / NODE_BIN / PNPM_BIN honour env via resetModules", async () => {
     vi.stubEnv("TURBOPANEL_RUNTIMES_DIR", "/stubbed/runtimes");
     vi.resetModules();
@@ -143,5 +183,85 @@ describe("resolveRuntimesDir", () => {
     expect(mod.RUNTIMES_DIR).toBe("/stubbed/runtimes");
     expect(mod.NODE_BIN).toBe("/stubbed/runtimes/node/current/bin/node");
     expect(mod.PNPM_BIN).toBe("/stubbed/runtimes/node/current/bin/pnpm");
+    expect(mod.VENDORED_DENO_BIN).toBe("/stubbed/runtimes/deno/current/deno");
+    expect(mod.ANSIBLE_PLAYBOOK_BIN).toBe(
+      "/stubbed/runtimes/ansible/current/bin/ansible-playbook",
+    );
+    expect(mod.PYTHON_RUNTIME_DIR).toBe(`/stubbed/runtimes/python/${PYTHON_VERSION}`);
+    expect(mod.UV_CACHE_DIR).toBe("/stubbed/runtimes/uv/cache");
+  });
+});
+
+describe("FHS and checkout helpers", () => {
+  it("keeps instance config under /etc/turbopanel/instance", () => {
+    expect(CONFIG_DIR).toBe("/etc/turbopanel");
+    expect(LOG_DIR).toBe("/var/log/turbopanel");
+    expect(instanceConfigDir()).toBe("/etc/turbopanel/instance");
+    expect(instanceRuntimeEnvPath()).toBe("/etc/turbopanel/instance/runtime.env");
+    expect(instanceRuntimeDevVarsPath()).toBe(
+      "/etc/turbopanel/instance/runtime.dev-vars",
+    );
+    expect(instanceSecretsPath()).toBe("/etc/turbopanel/instance/.instance_secrets");
+    expect(DAEMON_ENV_PATH).toBe("/etc/turbopanel/daemon.env");
+    expect(DAEMON_LOG_PATH).toBe("/var/log/turbopanel/daemon.log");
+    expect(DAEMON_ERR_LOG_PATH).toBe("/var/log/turbopanel/daemon.err.log");
+    expect(DEFAULT_RUNTIMES_DIR).toBe("/opt/turbopanel/vendor");
+    expect(ANSIBLE_PLAYBOOK_BIN).toContain("/ansible/current/bin/ansible-playbook");
+    expect(DEV_CONVERGE_STAMP_PATH).toContain("/ansible/dev-converge.stamp");
+  });
+
+  it("resolves daemon scripts from the override-aware checkout", () => {
+    vi.stubEnv("TURBOPANEL_DAEMON_REPO", "/override/turbopaneld");
+    expect(daemonBootstrapScript()).toBe(
+      "/override/turbopaneld/scripts/bootstrap-orchestration.ts",
+    );
+    expect(daemonOrchestrationScript()).toBe(
+      "/override/turbopaneld/scripts/run-orchestration-action.ts",
+    );
+    expect(daemonDenoConfig()).toBe("/override/turbopaneld/deno.json");
+  });
+
+  it("pins trunk / systemd / repo identity constants", () => {
+    expect(TURBOPANEL_TRUNK_BRANCH).toBe("trunk");
+    expect(DAEMON_ENV_TRUNK_BRANCH_KEY).toBe("TURBOPANEL_TRUNK_BRANCH");
+    expect(DAEMON_SYSTEMD_UNIT).toBe("turbopaneld");
+    expect(DAEMON_REPO).toEqual({ dir: "turbopaneld", repo: "TurboPanel/turbopaneld" });
+    expect(sshRepoUrl(DAEMON_REPO.repo)).toBe("git@github.com:TurboPanel/turbopaneld.git");
+    expect([...ALL_DEV_CHECKOUT_DIRS]).toEqual(["dev", ...PLATFORM_REPO_DIRS]);
+  });
+
+  it("places console logs under <devRoot>/.local/console", () => {
+    vi.stubEnv("TURBOPANEL_DEV_ROOT", "/home/dev");
+    expect(consoleLogDir()).toBe("/home/dev/.local/console");
+  });
+
+  it("convergeServiceLogPath joins the module-load converge log dir", () => {
+    expect(convergeServiceLogPath("postgres")).toBe(
+      `${CONVERGE_SERVICE_LOG_DIR}/postgres.log`,
+    );
+  });
+
+  it("module-load console log dirs honour TURBOPANEL_DEV_ROOT via resetModules", async () => {
+    vi.stubEnv("TURBOPANEL_DEV_ROOT", "/stubbed/home");
+    vi.resetModules();
+    const mod = await import("./paths.ts");
+    expect(mod.CONSOLE_LOG_DIR).toBe("/stubbed/home/.local/console");
+    expect(mod.CONVERGE_SERVICE_LOG_DIR).toBe("/stubbed/home/.local/console/converge");
+    expect(mod.CONSOLE_LAST_TASK_ERROR_LOG).toBe(
+      "/stubbed/home/.local/console/last-task-error.log",
+    );
+    expect(mod.CONSOLE_TEST_RUN_LOG_DIR).toBe(
+      "/stubbed/home/.local/console/test-runs",
+    );
+    expect(mod.CONSOLE_LAST_TEST_RUN_LOG).toBe(
+      "/stubbed/home/.local/console/last-test-run.log",
+    );
+  });
+
+  it("testRunLogPath replaces colons in the stamp and suite id", () => {
+    const at = new Date("2026-08-25T12:34:56.789Z");
+    expect(testRunLogPath("turbopanel", "test:do", at)).toBe(
+      `${CONSOLE_TEST_RUN_LOG_DIR}/turbopanel-test-do-2026-08-25T12-34-56.789Z.log`,
+    );
   });
 });

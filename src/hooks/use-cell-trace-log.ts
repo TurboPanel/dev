@@ -9,6 +9,13 @@ import {
 const POLL_MS = 1000;
 const MAX_LINES = 100;
 
+export function pickCellTraceLines(
+  current: ServiceLogLine[],
+  next: ServiceLogLine[],
+): ServiceLogLine[] {
+  return serviceLogLinesEqual(current, next) ? current : next;
+}
+
 export function useCellTraceLog(
   byteFloor?: ServiceLogByteFloor | null,
 ): ServiceLogLine[] {
@@ -21,7 +28,7 @@ export function useCellTraceLog(
 
     const refresh = () => {
       const next = readCellTraceLogTail(MAX_LINES, byteFloor);
-      setLines((current) => (serviceLogLinesEqual(current, next) ? current : next));
+      setLines((current) => pickCellTraceLines(current, next));
     };
     const id = setInterval(refresh, POLL_MS);
     return () => clearInterval(id);
