@@ -5,9 +5,14 @@
 # the instance checkout's Caddyfile instead — never ship this file to managed
 # hosts.
 #
-#   /api/*  and  /ws/*  -> Deno socket or wrangler dev
-#   UI                   -> Expo (:8081) when UI_MODE=dev, else static export
-#   :8880                -> plaintext mirror of :8443 (always on in this file)
+#   /api/*, /ws/*, /webhook/*  -> Deno socket or wrangler dev
+#   UI                          -> Expo (:8081) when UI_MODE=dev, else static export
+#   :8880                       -> plaintext mirror of :8443 (always on in this file)
+#
+# Each listener ends in a catch-all that serves the UI, so ANY prefix the
+# instance owns must be matched before it. A missed prefix does not 404 — it
+# serves the SPA shell with HTTP 200, and a Git provider reads that as a
+# delivered webhook and never retries.
 #
 # Env:
 #   TURBOPANEL_UI_MODE           "dev" | "static" (default: static)
@@ -52,6 +57,24 @@
 
 	@ws path /ws/*
 	handle @ws {
+		@workers_runtime expression `"{$TURBOPANEL_INSTANCE_RUNTIME:deno}" == "workers"`
+		handle @workers_runtime {
+			reverse_proxy 127.0.0.1:{$WRANGLER_DEV_PORT:18787} {
+				header_up X-Real-IP {remote_host}
+			}
+		}
+		handle {
+			reverse_proxy unix//{$TURBOPANEL_SOCKET_DIAL:run/turbopanel/instance.sock} {
+				header_up X-Real-IP {remote_host}
+			}
+		}
+	}
+
+	# Inbound Git provider webhooks. Its own top-level prefix because the caller
+	# is GitHub or GitLab — no session, no daemon JWT, no Origin. X-Real-IP is
+	# load-bearing: the webhook rate limiter keys per peer address.
+	@webhook path /webhook/*
+	handle @webhook {
 		@workers_runtime expression `"{$TURBOPANEL_INSTANCE_RUNTIME:deno}" == "workers"`
 		handle @workers_runtime {
 			reverse_proxy 127.0.0.1:{$WRANGLER_DEV_PORT:18787} {
@@ -154,6 +177,24 @@
 
 	@ws path /ws/*
 	handle @ws {
+		@workers_runtime expression `"{$TURBOPANEL_INSTANCE_RUNTIME:deno}" == "workers"`
+		handle @workers_runtime {
+			reverse_proxy 127.0.0.1:{$WRANGLER_DEV_PORT:18787} {
+				header_up X-Real-IP {remote_host}
+			}
+		}
+		handle {
+			reverse_proxy unix//{$TURBOPANEL_SOCKET_DIAL:run/turbopanel/instance.sock} {
+				header_up X-Real-IP {remote_host}
+			}
+		}
+	}
+
+	# Inbound Git provider webhooks. Its own top-level prefix because the caller
+	# is GitHub or GitLab — no session, no daemon JWT, no Origin. X-Real-IP is
+	# load-bearing: the webhook rate limiter keys per peer address.
+	@webhook path /webhook/*
+	handle @webhook {
 		@workers_runtime expression `"{$TURBOPANEL_INSTANCE_RUNTIME:deno}" == "workers"`
 		handle @workers_runtime {
 			reverse_proxy 127.0.0.1:{$WRANGLER_DEV_PORT:18787} {
