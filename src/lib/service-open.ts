@@ -25,7 +25,7 @@ async function ensureHttpServiceReady(
   timeoutMs = 30_000,
 ): Promise<void> {
   const url = serviceBrowserUrl(serviceId);
-  if (!url || isHttpListening(url, serviceId === "instance" || serviceId === "web" ? 2 : 1)) {
+  if (!url || isHttpListening(url, serviceId === "instance" || serviceId === "caddy" ? 2 : 1)) {
     return;
   }
   await startUnit();

@@ -92,7 +92,7 @@ afterEach(() => {
 
 test("serviceSystemdUnit maps known services and rejects unknowns", () => {
   expect(serviceSystemdUnit("instance")).toBe("turbopanel-instance");
-  expect(serviceSystemdUnit("web")).toBe("turbopanel-caddy");
+  expect(serviceSystemdUnit("caddy")).toBe("turbopanel-caddy");
   expect(serviceSystemdUnit("ui")).toBe("turbopanel-ui");
   expect(serviceSystemdUnit("daemon")).toBeNull();
   expect(serviceSystemdUnit("nope")).toBeNull();
@@ -114,23 +114,18 @@ test("SERVICE_FILE_LOG_PATHS covers instance, daemon, ui, and website", () => {
   ).toBe(true);
 });
 
-test("readServiceLogTail returns a docker hint when nothing is available", () => {
-  const lines = readServiceLogTail("db", 20);
-  expect(lines).toHaveLength(1);
-  expect(lines[0]?.text).toContain("docker logs turbopanel-database");
-});
-
-test("readServiceLogTail returns a journal hint for unit-backed services", () => {
-  const lines = readServiceLogTail("web", 20);
-  expect(lines).toHaveLength(1);
-  expect(lines[0]?.text).toContain("journalctl -u turbopanel-caddy");
-});
-
-test("readServiceLogTail returns a generic hint for unknown services", () => {
-  const lines = readServiceLogTail("not-a-service", 20);
-  expect(lines).toHaveLength(1);
-  expect(lines[0]?.text).toContain("No logs available");
-});
+test.each([
+  ["docker-backed", "db", "docker logs turbopanel-database"],
+  ["unit-backed", "caddy", "journalctl -u turbopanel-caddy"],
+  ["unknown", "not-a-service", "No logs available"],
+])(
+  "readServiceLogTail returns a %s hint when nothing is available",
+  (_kind, serviceId, hint) => {
+    const lines = readServiceLogTail(serviceId, 20);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]?.text).toContain(hint);
+  },
+);
 
 test("readServiceLogTail tails service log files and parses structured time", () => {
   const dir = mkdtempSync(join(tmpdir(), "tp-service-log-"));
@@ -191,7 +186,7 @@ test("readServiceLogTail uses journalctl when file logs are empty", () => {
   mockedSpawnSyncTrustedText.mockReturnValue(
     okSpawn("journal line one\njournal line two\n"),
   );
-  const lines = readServiceLogTail("web", 20);
+  const lines = readServiceLogTail("caddy", 20);
   expect(lines.map((line) => line.text)).toEqual([
     "journal line one",
     "journal line two",

@@ -186,7 +186,7 @@ describe("useConsoleApp", () => {
     vi.mocked(runServiceAction).mockReset();
     vi.mocked(runServiceAction).mockResolvedValue(undefined);
     vi.mocked(watchServiceRestart).mockReset();
-    vi.mocked(watchServiceRestart).mockResolvedValue(undefined);
+    vi.mocked(watchServiceRestart).mockResolvedValue(true);
     vi.mocked(readInstanceRuntime).mockReset();
     vi.mocked(readInstanceRuntime).mockReturnValue("deno");
     vi.mocked(readCellTraceEnabled).mockReset();
@@ -485,12 +485,12 @@ describe("useConsoleApp", () => {
     app.setSelectedServiceIndex(1);
     mounted?.rerender();
     await mounted?.flush();
-    harness.services = [svc("web")];
+    harness.services = [svc("caddy")];
     app.handleProvisioningDone();
     mounted?.rerender();
     await mounted?.flush();
     expect(mounted?.get().selectedServiceIndex).toBe(0);
-    expect(mounted?.get().selectedService?.id).toBe("web");
+    expect(mounted?.get().selectedService?.id).toBe("caddy");
   });
 
   it("no-ops optional confirm when nothing is pending", async () => {

@@ -1,4 +1,7 @@
-import type { SpawnSyncReturns } from "node:child_process";
+import type {
+  SpawnSyncOptions,
+  SpawnSyncReturns,
+} from "node:child_process";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { shellQuote } from "./shell-quote.ts";
 import {
@@ -41,7 +44,19 @@ import {
 } from "./daemon-exec.ts";
 
 const mockedSpawnSync = vi.mocked(spawnSync);
-const mockedSpawnSyncTrusted = vi.mocked(spawnSyncTrusted);
+/**
+ * `spawnSyncTrusted` is overloaded; `vi.mocked` resolves to the buffered form,
+ * so pin the text shape these stubs return.
+ */
+type SpawnSyncTrustedTextFn = (
+  command: string,
+  args: readonly string[],
+  options?: SpawnSyncOptions,
+) => SpawnSyncReturns<string>;
+
+const mockedSpawnSyncTrusted = vi.mocked(
+  spawnSyncTrusted as SpawnSyncTrustedTextFn,
+);
 const mockedRunCaptured = vi.mocked(runCaptured);
 
 const PINNED_DENO = `${RUNTIMES_DIR}/deno/${DENO_VERSION}/deno`;

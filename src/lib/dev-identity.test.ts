@@ -54,8 +54,8 @@ describe("resolveDevIdentity", () => {
 
   it("uses SUDO_USER when running as root", async () => {
     vi.resetModules();
-    const spawn = vi.fn((...args: unknown[]) => {
-      const query = String(args[1]?.[1] ?? "");
+    const spawn = vi.fn((_command: string, args: readonly string[]) => {
+      const query = String(args[1] ?? "");
       if (query === "dev") {
         return passwdLine("dev", 1001, 1001);
       }

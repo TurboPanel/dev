@@ -1,7 +1,12 @@
 import { createHmac } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { readFileSync } from "node:fs";
-import { request as httpRequest, type IncomingMessage } from "node:http";
+import {
+  type ClientRequest,
+  request as httpRequest,
+  type IncomingMessage,
+  type RequestOptions,
+} from "node:http";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   buildLocalConsoleAuthHeader,
@@ -33,7 +38,16 @@ const SECRET = "Aa1Bb2Cc3Dd4Ee5Ff6Gg7Hh8Ii9Jj0Kk1Ll2_Mm3Nn4Oo5Pp6";
 const CURRENT_SECRET = "currentKeyringSecretValue_should_be_used";
 
 const mockedReadFileSync = vi.mocked(readFileSync);
-const mockedHttpRequest = vi.mocked(httpRequest);
+/**
+ * `http.request` is overloaded; `vi.mocked` resolves to the `(url, options, cb)`
+ * form, so pin the `(options, cb)` shape the client under test actually calls.
+ */
+const mockedHttpRequest = vi.mocked(
+  httpRequest as (
+    options: RequestOptions,
+    callback?: (res: IncomingMessage) => void,
+  ) => ClientRequest,
+);
 
 function mockSocketHttpResponse(status: number, body: string): void {
   mockedHttpRequest.mockImplementation((_options, callback) => {

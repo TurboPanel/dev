@@ -26,7 +26,7 @@ export type ServiceActionId =
 const SYSTEMD_UNITS: Record<string, string> = {
   daemon: DAEMON_SYSTEMD_UNIT,
   instance: "turbopanel-instance",
-  web: "turbopanel-caddy",
+  caddy: "turbopanel-caddy",
   dbstudio: "turbopanel-dbstudio",
   ui: "turbopanel-ui",
   website: "turbopanel-website",
@@ -47,7 +47,7 @@ const DOCKER_CONTAINERS: Record<string, string> = {
 
 const OPEN_START_UNITS: Record<string, string> = {
   instance: "turbopanel-caddy",
-  web: "turbopanel-caddy",
+  caddy: "turbopanel-caddy",
   ui: "turbopanel-caddy",
   website: "turbopanel-website",
   dbstudio: "turbopanel-dbstudio",
@@ -63,7 +63,7 @@ const OPEN_START_CONTAINERS: Record<string, string> = {
 const MANAGED_SERVICE_IDS = new Set([
   "daemon",
   "instance",
-  "web",
+  "caddy",
   "dbstudio",
   "ui",
   "website",

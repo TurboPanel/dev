@@ -7,7 +7,7 @@ test("servicesNavHints always includes L logs and adds T tests on source service
   expect(servicesNavHints("instance")).toContain("L logs");
   expect(servicesNavHints("instance")).toContain("T tests");
   expect(servicesNavHints("daemon")).toContain("T tests");
-  expect(servicesNavHints("web")).toContain("T tests");
+  expect(servicesNavHints("caddy")).toContain("T tests");
   expect(servicesNavHints("ui")).toContain("T tests");
   expect(servicesNavHints("website")).toContain("T tests");
 });

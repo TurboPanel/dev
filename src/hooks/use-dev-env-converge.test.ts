@@ -130,8 +130,8 @@ describe("trackConvergeServiceEvent", () => {
       _event: "v2_runner_on_start",
       task: { name: "caddy : compile assets" },
     });
-    expect(tracker.currentServiceId.current).toBe("web");
-    expect(tracker.phases.web).toBe("compiling");
+    expect(tracker.currentServiceId.current).toBe("caddy");
+    expect(tracker.phases.caddy).toBe("compiling");
   });
 
   it("leaves phases unchanged for an unmapped task name", () => {
@@ -166,19 +166,19 @@ describe("trackConvergeServiceEvent", () => {
     expect(appendConvergeServiceLogLine).toHaveBeenCalledTimes(3);
     expect(appendConvergeServiceLogLine).toHaveBeenNthCalledWith(
       1,
-      "web",
+      "caddy",
       "Reload [changed]",
       expect.any(String),
     );
     expect(appendConvergeServiceLogLine).toHaveBeenNthCalledWith(
       2,
-      "web",
+      "caddy",
       "Noop [ok]",
       expect.any(String),
     );
     expect(appendConvergeServiceLogLine).toHaveBeenNthCalledWith(
       3,
-      "web",
+      "caddy",
       "task [skipped]",
       expect.any(String),
     );
@@ -294,7 +294,7 @@ describe("useDevEnvConverge", () => {
   });
 
   it("runs a successful converge and ignores a second start while running", async () => {
-    let release!: (value?: unknown) => void;
+    let release!: () => void;
     vi.mocked(installDevEnvironment).mockImplementation(
       () =>
         new Promise((resolve) => {

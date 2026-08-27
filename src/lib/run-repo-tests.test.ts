@@ -24,7 +24,7 @@ test("TEST_REPO_CATALOG covers every checkout dir with at least one suite", () =
 test("testRepoForServiceId maps source services onto checkouts", () => {
   expect(testRepoForServiceId("daemon")).toBe("turbopaneld");
   expect(testRepoForServiceId("instance")).toBe("turbopanel");
-  expect(testRepoForServiceId("web")).toBe("turbopanel");
+  expect(testRepoForServiceId("caddy")).toBe("turbopanel");
   expect(testRepoForServiceId("ui")).toBe("ui");
   expect(testRepoForServiceId("website")).toBe("website");
   expect(testRepoForServiceId("db")).toBeNull();

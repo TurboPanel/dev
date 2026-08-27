@@ -17,6 +17,7 @@ import {
 import { ensureFhsTreeOwnership } from "./turbopanel-permissions.ts";
 import { writeDaemonBaseEnv } from "./daemon-env.ts";
 import { resolveDevIdentity } from "./dev-identity.ts";
+import { TRUSTED_SYSTEM_PATH } from "./spawn-trusted.ts";
 import { shellQuote } from "./shell-quote.ts";
 
 /**
@@ -69,9 +70,14 @@ export async function bootstrapOrchestration(
     `cd ${shellQuote(DAEMON_DIR)} && exec ${bootstrapInvocation}`;
 
   await new Promise<void>((resolve, reject) => {
-    const child = spawn("env", [...bootstrapEnv(), "bash", "-c", command], {
+    const child = spawn("/usr/bin/env", [
+      ...bootstrapEnv(),
+      "/bin/bash",
+      "-c",
+      command,
+    ], {
       stdio: ["ignore", "pipe", "pipe"],
-      env: captureChildEnv(),
+      env: captureChildEnv({ PATH: TRUSTED_SYSTEM_PATH }),
       detached: false,
     });
 

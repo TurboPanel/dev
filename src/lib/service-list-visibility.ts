@@ -11,7 +11,7 @@ export type CatalogOptionalServiceId = OptionalDevServiceId;
 const SERVICE_LIST_ORDER = [
   "instance",
   "daemon",
-  "web",
+  "caddy",
   "dbstudio",
   "ui",
   "website",

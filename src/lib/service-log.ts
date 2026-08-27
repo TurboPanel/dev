@@ -59,7 +59,7 @@ const TAIL_MIN_BYTES = 64 * 1024;
 
 const SERVICE_UNITS: Record<string, string> = {
   instance: "turbopanel-instance",
-  web: "turbopanel-caddy",
+  caddy: "turbopanel-caddy",
   dbstudio: "turbopanel-dbstudio",
   ui: "turbopanel-ui",
   website: "turbopanel-website",

@@ -95,12 +95,12 @@ const DENO_SUITES = {
 /**
  * Services screen **T** → checkout whose suites to offer.
  *
- * `web` (Caddy) shares the instance checkout — there is no Caddy unit suite.
+ * `caddy` (the control-plane reverse proxy) shares the instance checkout — there is no Caddy unit suite.
  */
 export const SERVICE_TEST_REPOS: Readonly<Record<string, TestRepoId>> = {
   daemon: "turbopaneld",
   instance: "turbopanel",
-  web: "turbopanel",
+  caddy: "turbopanel",
   ui: "ui",
   website: "website",
 };

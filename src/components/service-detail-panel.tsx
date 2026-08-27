@@ -18,7 +18,7 @@ import { measureTitleArtRows, ServiceTitle } from "./service-title.tsx";
 const PINNED_SERVICE_BADGES: Partial<
   Record<string, { runtime: StackBadgeRuntime; badgeReserve?: number }>
 > = {
-  web: {
+  caddy: {
     runtime: "caddy",
     badgeReserve: stackBadgeReserveForRuntime("caddy"),
   },

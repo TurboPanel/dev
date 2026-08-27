@@ -94,7 +94,7 @@ test("serviceBrowserUrl maps every known service and returns null for unknown", 
   const urls = await loadServiceUrls("");
   const caddy = urls.caddyBrowserUrl();
   expect(urls.serviceBrowserUrl("instance")).toBe(caddy);
-  expect(urls.serviceBrowserUrl("web")).toBe(caddy);
+  expect(urls.serviceBrowserUrl("caddy")).toBe(caddy);
   expect(urls.serviceBrowserUrl("ui")).toBe(caddy);
   expect(urls.serviceBrowserUrl("website")).toBe(urls.websiteBrowserUrl());
   expect(urls.serviceBrowserUrl("dbstudio")).toBe(
@@ -113,7 +113,7 @@ test("serviceSupportsOpen agrees with serviceBrowserUrl", async () => {
   const urls = await loadServiceUrls("");
   for (const id of [
     "instance",
-    "web",
+    "caddy",
     "ui",
     "website",
     "dbstudio",

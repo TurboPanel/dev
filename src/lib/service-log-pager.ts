@@ -258,7 +258,7 @@ function runCommand(command: string, args: string[]): number {
   } finally {
     process.off("SIGINT", ignoreSigint);
     for (const listener of previousSIGINT) {
-      process.on("SIGINT", listener as NodeJS.SignalsListener);
+      process.on("SIGINT", listener as (signal: NodeJS.Signals) => void);
     }
   }
 }

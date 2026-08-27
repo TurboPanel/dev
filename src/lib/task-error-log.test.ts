@@ -1,3 +1,7 @@
+import type {
+  SpawnSyncOptions,
+  SpawnSyncReturns,
+} from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -33,7 +37,19 @@ import {
   type TaskErrorRecord,
 } from "./task-error-log.ts";
 
-const mockedSpawnSyncTrusted = vi.mocked(spawnSyncTrusted);
+/**
+ * `spawnSyncTrusted` is overloaded; `vi.mocked` resolves to the buffered form,
+ * so pin the text shape these stubs return.
+ */
+type SpawnSyncTrustedTextFn = (
+  command: string,
+  args: readonly string[],
+  options?: SpawnSyncOptions,
+) => SpawnSyncReturns<string>;
+
+const mockedSpawnSyncTrusted = vi.mocked(
+  spawnSyncTrusted as SpawnSyncTrustedTextFn,
+);
 const tempDirs: string[] = [];
 
 afterEach(() => {

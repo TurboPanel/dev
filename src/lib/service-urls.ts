@@ -87,7 +87,7 @@ export function tabixBrowserUrl(): string {
 export function serviceBrowserUrl(serviceId: string): string | null {
   switch (serviceId) {
     case "instance":
-    case "web":
+    case "caddy":
     case "ui":
       return caddyBrowserUrl();
     case "website":

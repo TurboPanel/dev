@@ -45,8 +45,8 @@ const DOWNSTREAM_SERVICE_DEFS = [
     repoDir: platformRepoPath("turbopanel"),
   },
   {
-    id: "web",
-    label: "web",
+    id: "caddy",
+    label: "caddy",
     unit: "turbopanel-caddy",
     repoDir: platformRepoPath("turbopanel"),
   },

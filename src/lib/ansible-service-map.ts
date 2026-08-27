@@ -27,7 +27,7 @@ const ANSIBLE_SERVICE_MAP: readonly [fragment: string, serviceId: string][] = [
   ["dbstudio", "dbstudio"],
   ["drizzle studio", "dbstudio"],
   ["redis-insight", "redisinsight"],
-  ["caddy", "web"],
+  ["caddy", "caddy"],
   ["docker", "daemon"],
   ["redis", "cache"],
 ];

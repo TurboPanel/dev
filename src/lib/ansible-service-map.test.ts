@@ -15,7 +15,7 @@ test("resolveServiceIdFromAnsibleName matches most-specific fragments first", ()
     "redisinsight",
   );
   expect(resolveServiceIdFromAnsibleName("drizzle studio")).toBe("dbstudio");
-  expect(resolveServiceIdFromAnsibleName("caddy reverse proxy")).toBe("web");
+  expect(resolveServiceIdFromAnsibleName("caddy reverse proxy")).toBe("caddy");
   expect(resolveServiceIdFromAnsibleName("clickhouse analytics")).toBe(
     "analytics",
   );

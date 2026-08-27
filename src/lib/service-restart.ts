@@ -17,7 +17,7 @@ import { spawnSyncTrustedText } from "./spawn-trusted.ts";
 const SYSTEMD_UNITS: Record<string, string> = {
   daemon: DAEMON_SYSTEMD_UNIT,
   instance: "turbopanel-instance",
-  web: "turbopanel-caddy",
+  caddy: "turbopanel-caddy",
   dbstudio: "turbopanel-dbstudio",
   ui: "turbopanel-ui",
   website: "turbopanel-website",

@@ -9,7 +9,7 @@ test("serviceListSpecialAction maps L to logs on every service", () => {
 test("serviceListSpecialAction maps T to tests only on source services", () => {
   expect(serviceListSpecialAction("daemon", "t")).toBe("tests");
   expect(serviceListSpecialAction("instance", "T")).toBe("tests");
-  expect(serviceListSpecialAction("web", "t")).toBe("tests");
+  expect(serviceListSpecialAction("caddy", "t")).toBe("tests");
   expect(serviceListSpecialAction("ui", "t")).toBe("tests");
   expect(serviceListSpecialAction("website", "t")).toBe("tests");
   expect(serviceListSpecialAction("db", "t")).toBeNull();

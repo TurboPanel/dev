@@ -1,8 +1,8 @@
-import { spawnSync } from "node:child_process";
 import { CONFIG_DIR, LOG_DIR, RUNTIMES_DIR, TURBOPANEL_ROOT } from "./paths.ts";
 import { tryResolveDevIdentity } from "./dev-identity.ts";
 import { type InstallOutputHandler, runCaptured } from "./install-output.ts";
 import { shellQuote } from "./shell-quote.ts";
+import { spawnSyncTrusted, spawnSyncTrustedText } from "./spawn-trusted.ts";
 
 /** Persistent state dir (FHS); dev-owned at runtime like the other trees. */
 const STATE_DIR = "/var/lib/turbopanel";
@@ -23,17 +23,20 @@ export function isDevEnvironment(): boolean {
 }
 
 function dockerIsPresent(): boolean {
-  if (spawnSync("getent", ["group", "docker"], { stdio: "ignore" }).status === 0) {
+  if (
+    spawnSyncTrusted("getent", ["group", "docker"], { stdio: "ignore" }).status ===
+    0
+  ) {
     return true;
   }
   if (
-    spawnSync("test", ["-S", "/var/run/docker.sock"], { stdio: "ignore" })
+    spawnSyncTrusted("test", ["-S", "/var/run/docker.sock"], { stdio: "ignore" })
       .status === 0
   ) {
     return true;
   }
   return (
-    spawnSync("sh", ["-c", "command -v docker >/dev/null 2>&1"], {
+    spawnSyncTrusted("sh", ["-c", "command -v docker >/dev/null 2>&1"], {
       stdio: "ignore",
     }).status === 0
   );
@@ -113,8 +116,7 @@ export async function ensureDevUserDockerAccess(
     "echo changed",
   ].join("\n");
 
-  const result = spawnSync("sudo", ["-n", "bash", "-c", script], {
-    encoding: "utf8",
+  const result = spawnSyncTrustedText("sudo", ["-n", "bash", "-c", script], {
     stdio: ["ignore", "pipe", "pipe"],
   });
   const output = (result.stdout ?? "").trim();
