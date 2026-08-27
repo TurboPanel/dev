@@ -53,7 +53,7 @@ test("formatAnsibleHostFailure clips oversized detail to the trailing window", (
   const text = formatAnsibleHostFailure({
     a: { stderr: detail },
   });
-  expect(text.length).toBe(4000);
+  expect(text).toHaveLength(4000);
   expect(text.endsWith("TAIL")).toBe(true);
   expect(text.startsWith("x")).toBe(true);
 });

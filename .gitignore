@@ -43,3 +43,6 @@ logs/
 .cache/
 .config/
 coverage/
+
+# macOS Finder metadata
+.DS_Store

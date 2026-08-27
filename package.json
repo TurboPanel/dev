@@ -13,7 +13,9 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit",
-    "check:git-hooks": "sh scripts/check-git-hooks-path.sh"
+    "check:git-hooks": "sh scripts/check-git-hooks-path.sh",
+    "notices:generate": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/generate-notices.mjs",
+    "notices:check": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/generate-notices.mjs --check"
   },
   "dependencies": {
     "figlet": "^1.11.0",
