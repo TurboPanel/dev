@@ -249,7 +249,11 @@ Co-located hosts load **`orchestration/Caddyfile`** (not `~/turbopanel/Caddyfile
 - Optional wrangler upstream when `TURBOPANEL_INSTANCE_RUNTIME=workers`
 - `/downloads/daemon/*` (always — overlay catalog + artifacts; not gated on `TURBOPANEL_UI_MODE`) and the install script at **`/run.sh`** from the daemon checkout (`dist/` after Developer → **Rebuild daemon and upgrade connected servers** / `deno task release:dev`)
 
+- Stripping `CF-Connecting-IP` / `True-Client-IP` / `X-Forwarded-For` from non-loopback peers, so only a connector on this host can present them
+
 The instance repo's `Caddyfile` stays production-only (HTTPS + Deno socket + static UI). See **`../turbopanel/AGENTS.md`** (Caddy) and **`../turbopaneld/AGENTS.md`** (plaintext HTTP client gate).
+
+**Server addresses in development.** Vagrant forwards `8443` / `8880` **over SSH**, so a daemon anywhere on the LAN reaches Caddy from `127.0.0.1` — the header-stripping matcher above never fires for it, and the peer address on the wire is `127.0.0.1` for every server. That is why the instance falls back to the interface addresses the daemon reports rather than trusting the wire (`src/lib/peer-address.ts` → `resolveServerAddress`, documented in **`../turbopanel/AGENTS.md`** → Caddy → Server addresses). A Cloudflare Tunnel pointed at this guest still resolves correctly: `cloudflared` is a loopback peer, so its `CF-Connecting-IP` is believed. Mixing LAN servers, tunnelled servers, and the co-located guest daemon in one fleet is the case this is built for.
 
 ## Shell libraries
 

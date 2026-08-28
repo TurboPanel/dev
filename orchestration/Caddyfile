@@ -40,6 +40,22 @@
 :{$CADDY_PORT:8443} {
 	tls {$CADDY_TLS_CERT:./certs/self-signed.crt} {$CADDY_TLS_KEY:./certs/self-signed.key}
 
+	# Forwarding headers are believable only from a connector on this host — a
+	# `cloudflared` tunnel beside Caddy, or another local proxy. Strip any
+	# client-supplied copy so a daemon dialling this proxy over the network
+	# cannot declare its own address; the instance reads CF-Connecting-IP /
+	# X-Forwarded-For only when its immediate peer is loopback
+	# (TURBOPANEL_TRUSTED_PROXY_CIDRS widens that set).
+	#
+	# Development caveat: Vagrant forwards these ports over SSH, so a daemon on
+	# the LAN arrives as 127.0.0.1 and this matcher does not fire for it. That
+	# is also why the instance falls back to the daemon's own reported
+	# interface addresses instead of showing every server as 127.0.0.1.
+	@remote_peer not remote_ip 127.0.0.0/8 ::1
+	request_header @remote_peer -CF-Connecting-IP
+	request_header @remote_peer -True-Client-IP
+	request_header @remote_peer -X-Forwarded-For
+
 	@api path /api/*
 	handle @api {
 		@workers_runtime expression `"{$TURBOPANEL_INSTANCE_RUNTIME:deno}" == "workers"`
@@ -149,6 +165,22 @@
 # Plaintext HTTP mirror of :8443 (no TLS). Always on in development — this
 # Caddyfile is only loaded on co-located hosts.
 :{$CADDY_HTTP_PORT:8880} {
+	# Forwarding headers are believable only from a connector on this host — a
+	# `cloudflared` tunnel beside Caddy, or another local proxy. Strip any
+	# client-supplied copy so a daemon dialling this proxy over the network
+	# cannot declare its own address; the instance reads CF-Connecting-IP /
+	# X-Forwarded-For only when its immediate peer is loopback
+	# (TURBOPANEL_TRUSTED_PROXY_CIDRS widens that set).
+	#
+	# Development caveat: Vagrant forwards these ports over SSH, so a daemon on
+	# the LAN arrives as 127.0.0.1 and this matcher does not fire for it. That
+	# is also why the instance falls back to the daemon's own reported
+	# interface addresses instead of showing every server as 127.0.0.1.
+	@remote_peer not remote_ip 127.0.0.0/8 ::1
+	request_header @remote_peer -CF-Connecting-IP
+	request_header @remote_peer -True-Client-IP
+	request_header @remote_peer -X-Forwarded-For
+
 	handle_errors 502 503 {
 		@expoUpstream vars expoUpstream true
 		handle @expoUpstream {
