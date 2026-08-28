@@ -40,6 +40,9 @@ export function ConsoleApp() {
       pendingOptionalServices={consoleApp.pendingOptionalServices}
       onConfirmOptionalServices={consoleApp.confirmOptionalServices}
       onCancelOptionalServices={consoleApp.cancelOptionalServices}
+      pendingDestructiveAction={consoleApp.pendingDestructiveAction}
+      onConfirmDestructiveAction={consoleApp.confirmDestructiveAction}
+      onCancelDestructiveAction={consoleApp.cancelDestructiveAction}
       devEnvConverge={consoleApp.devEnvConverge}
       onDismissDevEnvConvergeError={consoleApp.dismissDevEnvConvergeError}
       developerView={consoleApp.developerView}

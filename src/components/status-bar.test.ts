@@ -26,3 +26,12 @@ test("statusHints uses L logs on the services list and the tests overlay copy", 
   expect(overlay).toContain("Esc back/cancel");
   expect(overlay).not.toContain("L logs");
 });
+
+test("statusHints shows confirm keys while a destructive action is pending", () => {
+  const hints = statusHints({
+    activeAreaId: "developer",
+    pendingDestructiveAction: "reset-dev-db",
+  });
+  expect(hints).toContain("Yes/Cancel");
+  expect(hints).toContain("Esc cancel");
+});

@@ -277,6 +277,13 @@ describe("useConsoleApp", () => {
     await mounted?.get().handleDaemonAction("purge");
     mounted?.rerender();
     await mounted?.flush();
+    expect(mounted?.get().pendingDestructiveAction).toBe("purge");
+    expect(mounted?.get().daemonOperation).toBe("install");
+
+    mounted?.get().confirmDestructiveAction();
+    mounted?.rerender();
+    await mounted?.flush();
+    expect(mounted?.get().pendingDestructiveAction).toBeNull();
     expect(mounted?.get().daemonOperation).toBe("purge");
     expect(mounted?.get().activeArea).toBe("developer");
 
@@ -343,8 +350,12 @@ describe("useConsoleApp", () => {
   it("starts bootstrap operations when the daemon is installed", async () => {
     const app = await mountApp();
     await app.handleDaemonAction("reset-dev-env");
+    expect((await settle()).pendingDestructiveAction).toBe("reset-dev-env");
+    (await settle()).confirmDestructiveAction();
     expect((await settle()).daemonOperation).toBe("reset-dev-env");
     await (await settle()).handleDaemonAction("reset-dev-db");
+    expect((await settle()).pendingDestructiveAction).toBe("reset-dev-db");
+    (await settle()).confirmDestructiveAction();
     expect((await settle()).daemonOperation).toBe("reset-dev-db");
     await (await settle()).handleDaemonAction("sync-dev-build");
     expect((await settle()).daemonOperation).toBe("sync-dev-build");
@@ -353,6 +364,16 @@ describe("useConsoleApp", () => {
     await (await settle()).handleDaemonAction("repair");
     expect((await settle()).daemonOperation).toBe("install");
     await (await settle()).handleDaemonAction("restart");
+  });
+
+  it("cancels a pending destructive action without running it", async () => {
+    const app = await mountApp();
+    await app.handleDaemonAction("reset-dev-db");
+    expect((await settle()).pendingDestructiveAction).toBe("reset-dev-db");
+    (await settle()).cancelDestructiveAction();
+    const next = await settle();
+    expect(next.pendingDestructiveAction).toBeNull();
+    expect(next.daemonOperation).toBeNull();
   });
 
   it("toggles cell trace and restarts instance with an overlay", async () => {

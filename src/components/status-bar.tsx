@@ -7,6 +7,7 @@ import { serviceSupportsOpen } from "../lib/service-urls.ts";
 import { BORDER_COLOR } from "../theme.ts";
 
 import type { PendingRestart, PendingOptionalServices, DeveloperView } from "../hooks/use-console-app.ts";
+import type { DaemonActionId } from "../lib/daemon-actions.ts";
 
 function serviceActionHints(selectedServiceId?: string | null): string {
   if (!selectedServiceId || !isManagedService(selectedServiceId)) {
@@ -54,6 +55,8 @@ export type StatusHintsContext = {
   devEnvConverging?: boolean;
   developerView?: DeveloperView;
   pendingOptionalServices?: PendingOptionalServices | null;
+  /** When set, a destructive developer action is awaiting confirmation. */
+  pendingDestructiveAction?: DaemonActionId | null;
   /** When set, Services is showing the per-service Run tests overlay. */
   serviceTestsRepoId?: string | null;
 };
@@ -83,6 +86,9 @@ function servicesAreaHints(ctx: StatusHintsContext): string {
 }
 
 function developerAreaHints(ctx: StatusHintsContext): string {
+  if (ctx.pendingDestructiveAction) {
+    return "↑ ↓ Yes/Cancel · Enter select · Esc cancel · Ctrl-C exit";
+  }
   if (ctx.restartInProgress) {
     return `Restarting ${ctx.restartInProgress} · watch logs · Ctrl-C exit`;
   }

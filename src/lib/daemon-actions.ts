@@ -49,6 +49,23 @@ export const DAEMON_ACTION_LABELS: Record<DaemonActionId, string> = {
   "rebuild-daemon-upgrade": "Rebuild daemon and upgrade connected servers",
 };
 
+/**
+ * Warning copy for actions that destroy state. Any action listed here must be
+ * confirmed in the console before it runs.
+ */
+export const DESTRUCTIVE_ACTION_WARNINGS: Partial<Record<DaemonActionId, string>> = {
+  "reset-dev-env":
+    "Stops all platform services, removes their Docker containers and volumes, and hard-resets every attached checkout to origin/trunk — uncommitted changes in those repos are lost. The stack is then rebuilt from scratch.",
+  "reset-dev-db":
+    "Drops the entire dev Postgres schema — all data is lost. Migrations are re-applied and the instance restarts into the install wizard.",
+  purge:
+    "Stops and removes the daemon service and deletes its checkout, runtimes, and caches. The console exits when the purge finishes.",
+};
+
+export function isDestructiveDaemonAction(action: DaemonActionId): boolean {
+  return action in DESTRUCTIVE_ACTION_WARNINGS;
+}
+
 export function daemonMenuActions(_status: DevServiceStatus): DaemonActionId[] {
   return [];
 }

@@ -1,7 +1,10 @@
 import { useApp, useInput } from "ink";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getVisibleServices } from "../dev-services.ts";
-import type { DaemonActionId } from "../lib/daemon-actions.ts";
+import {
+  isDestructiveDaemonAction,
+  type DaemonActionId,
+} from "../lib/daemon-actions.ts";
 import {
   canRunServiceAction,
   runServiceAction,
@@ -93,6 +96,8 @@ export function useConsoleApp() {
   const [pendingRestart, setPendingRestart] = useState<PendingRestart | null>(null);
   const [pendingOptionalServices, setPendingOptionalServices] =
     useState<PendingOptionalServices | null>(null);
+  const [pendingDestructiveAction, setPendingDestructiveAction] =
+    useState<DaemonActionId | null>(null);
   const [restartInProgress, setRestartInProgress] = useState<string | null>(null);
   const [restartOverlayServiceId, setRestartOverlayServiceId] = useState<string | null>(null);
   const [restartLogOverlay, setRestartLogOverlay] = useState<ConsoleLogLine[]>([]);
@@ -214,7 +219,14 @@ export function useConsoleApp() {
     }
   }, [refreshServices, visibleServices]);
 
-  const handleDaemonAction = useCallback(async (action: DaemonActionId) => {
+  const requireDaemonInstalled = useCallback((message: string) => {
+    const daemon = visibleServices.find((service) => service.id === "daemon");
+    if (!daemon || daemon.status === "uninstalled") {
+      throw new Error(message);
+    }
+  }, [visibleServices]);
+
+  const performDaemonAction = useCallback(async (action: DaemonActionId) => {
     switch (action) {
       case "install":
       case "repair":
@@ -225,12 +237,9 @@ export function useConsoleApp() {
         setDaemonOperation("purge");
         return;
       case "start-dev-env": {
-        const daemon = visibleServices.find((service) => service.id === "daemon");
-        if (!daemon || daemon.status === "uninstalled") {
-          throw new Error(
-            "Install the daemon before starting the development environment.",
-          );
-        }
+        requireDaemonInstalled(
+          "Install the daemon before starting the development environment.",
+        );
         openOptionalServicesPicker("converge", "force");
         return;
       }
@@ -238,26 +247,12 @@ export function useConsoleApp() {
         openOptionalServicesPicker("manage");
         return;
       }
-      case "reset-dev-env": {
-        const daemon = visibleServices.find((service) => service.id === "daemon");
-        if (!daemon || daemon.status === "uninstalled") {
-          throw new Error(
-            "Install the daemon before resetting the development environment.",
-          );
-        }
+      case "reset-dev-env":
         beginBootstrapOperation("reset-dev-env");
         return;
-      }
-      case "reset-dev-db": {
-        const daemon = visibleServices.find((service) => service.id === "daemon");
-        if (!daemon || daemon.status === "uninstalled") {
-          throw new Error(
-            "Install the daemon before resetting the dev database.",
-          );
-        }
+      case "reset-dev-db":
         beginBootstrapOperation("reset-dev-db");
         return;
-      }
       case "sync-dev-build":
         beginBootstrapOperation("sync-dev-build");
         return;
@@ -282,10 +277,42 @@ export function useConsoleApp() {
   }, [
     beginBootstrapOperation,
     openOptionalServicesPicker,
+    requireDaemonInstalled,
     restartInstanceWithOverlay,
     startDaemonInstall,
-    visibleServices,
   ]);
+
+  const handleDaemonAction = useCallback(async (action: DaemonActionId) => {
+    if (isDestructiveDaemonAction(action)) {
+      // Surface precondition errors before asking for confirmation.
+      if (action === "reset-dev-env") {
+        requireDaemonInstalled(
+          "Install the daemon before resetting the development environment.",
+        );
+      }
+      if (action === "reset-dev-db") {
+        requireDaemonInstalled(
+          "Install the daemon before resetting the dev database.",
+        );
+      }
+      setPendingDestructiveAction(action);
+      return;
+    }
+    await performDaemonAction(action);
+  }, [performDaemonAction, requireDaemonInstalled]);
+
+  const confirmDestructiveAction = useCallback(() => {
+    const action = pendingDestructiveAction;
+    setPendingDestructiveAction(null);
+    if (!action) {
+      return;
+    }
+    performDaemonAction(action).catch(() => undefined);
+  }, [pendingDestructiveAction, performDaemonAction]);
+
+  const cancelDestructiveAction = useCallback(() => {
+    setPendingDestructiveAction(null);
+  }, []);
 
   const requestServiceRestart = useCallback((serviceId: string) => {
     const service = visibleServices.find((entry) => entry.id === serviceId);
@@ -533,6 +560,7 @@ export function useConsoleApp() {
       serviceOperation ||
       pendingRestart ||
       pendingOptionalServices ||
+      pendingDestructiveAction ||
       restartInProgress
     ) {
       return;
@@ -566,6 +594,7 @@ export function useConsoleApp() {
     serviceOperation,
     pendingRestart,
     pendingOptionalServices,
+    pendingDestructiveAction,
     restartInProgress,
     restartOverlayServiceId,
     restartLogOverlay,
@@ -585,6 +614,8 @@ export function useConsoleApp() {
     cancelServiceRestart,
     confirmOptionalServices,
     cancelOptionalServices,
+    confirmDestructiveAction,
+    cancelDestructiveAction,
     developerView,
     closeDeveloperView,
     serviceTestsRepoId,

@@ -8,7 +8,12 @@ import { ServicesPanel } from "@turbopanel/components/services-panel.tsx";
 import { RunTestsView } from "@turbopanel/components/run-tests-view.tsx";
 import { statusHints } from "@turbopanel/components/status-bar.tsx";
 import type { DevService } from "./dev-services.ts";
-import type { DaemonActionId } from "./lib/daemon-actions.ts";
+import {
+  DAEMON_ACTION_LABELS,
+  DESTRUCTIVE_ACTION_WARNINGS,
+  type DaemonActionId,
+} from "./lib/daemon-actions.ts";
+import { ConfirmDangerModal } from "@turbopanel/components/confirm-danger-modal.tsx";
 import type { ServiceActionId } from "./lib/service-actions.ts";
 import type { PendingRestart, PendingOptionalServices, ServiceOperation, DeveloperView } from "./hooks/use-console-app.ts";
 import type { DevEnvConvergeState } from "./hooks/use-dev-env-converge.ts";
@@ -64,6 +69,9 @@ type MainContentProps = Readonly<{
   pendingOptionalServices?: PendingOptionalServices | null;
   onConfirmOptionalServices?: (selection: OptionalDevServiceSelection) => void;
   onCancelOptionalServices?: () => void;
+  pendingDestructiveAction?: DaemonActionId | null;
+  onConfirmDestructiveAction?: () => void;
+  onCancelDestructiveAction?: () => void;
   devEnvConverge?: DevEnvConvergeState | null;
   onDismissDevEnvConvergeError?: () => void;
   developerView?: DeveloperView;
@@ -102,6 +110,9 @@ function MainContent({
   pendingOptionalServices,
   onConfirmOptionalServices,
   onCancelOptionalServices,
+  pendingDestructiveAction,
+  onConfirmDestructiveAction,
+  onCancelDestructiveAction,
   devEnvConverge,
   onDismissDevEnvConvergeError,
   developerView,
@@ -111,6 +122,25 @@ function MainContent({
   onCloseServiceTests,
 }: MainContentProps) {
   const daemon = visibleServices.find((service) => service.id === "daemon");
+
+  const destructiveWarning = pendingDestructiveAction
+    ? DESTRUCTIVE_ACTION_WARNINGS[pendingDestructiveAction]
+    : undefined;
+  const dangerModal = pendingDestructiveAction &&
+    destructiveWarning &&
+    onConfirmDestructiveAction &&
+    onCancelDestructiveAction
+    ? (
+      <ConfirmDangerModal
+        width={width}
+        height={height}
+        title={DAEMON_ACTION_LABELS[pendingDestructiveAction]}
+        warning={destructiveWarning}
+        onConfirm={onConfirmDestructiveAction}
+        onCancel={onCancelDestructiveAction}
+      />
+    )
+    : null;
 
   const optionalModal = pendingOptionalServices &&
     onConfirmOptionalServices &&
@@ -162,9 +192,10 @@ function MainContent({
             restartLogOverlay={restartLogOverlay}
             logFollowResetKey={logFollowResetKey}
             instanceLogByteFloor={instanceLogByteFloor}
-            inputBlocked={Boolean(pendingOptionalServices)}
+            inputBlocked={Boolean(pendingOptionalServices) || Boolean(pendingDestructiveAction)}
           />
           {optionalModal}
+          {dangerModal}
         </Box>
       );
     case "services":
@@ -250,6 +281,9 @@ type AppViewProps = Readonly<{
   pendingOptionalServices?: PendingOptionalServices | null;
   onConfirmOptionalServices?: (selection: OptionalDevServiceSelection) => void;
   onCancelOptionalServices?: () => void;
+  pendingDestructiveAction?: DaemonActionId | null;
+  onConfirmDestructiveAction?: () => void;
+  onCancelDestructiveAction?: () => void;
   devEnvConverge?: DevEnvConvergeState | null;
   onDismissDevEnvConvergeError?: () => void;
   developerView?: DeveloperView;
@@ -291,6 +325,9 @@ export function AppView({
   pendingOptionalServices,
   onConfirmOptionalServices,
   onCancelOptionalServices,
+  pendingDestructiveAction,
+  onConfirmDestructiveAction,
+  onCancelDestructiveAction,
   devEnvConverge,
   onDismissDevEnvConvergeError,
   developerView,
@@ -312,6 +349,7 @@ export function AppView({
     devEnvConverging: daemonOperation === "dev-env" || Boolean(devEnvConverge?.active),
     developerView,
     pendingOptionalServices,
+    pendingDestructiveAction,
     serviceTestsRepoId,
   });
 
@@ -359,6 +397,9 @@ export function AppView({
           pendingOptionalServices={pendingOptionalServices}
           onConfirmOptionalServices={onConfirmOptionalServices}
           onCancelOptionalServices={onCancelOptionalServices}
+          pendingDestructiveAction={pendingDestructiveAction}
+          onConfirmDestructiveAction={onConfirmDestructiveAction}
+          onCancelDestructiveAction={onCancelDestructiveAction}
           devEnvConverge={devEnvConverge}
           onDismissDevEnvConvergeError={onDismissDevEnvConvergeError}
           developerView={developerView}
