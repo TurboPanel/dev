@@ -2,9 +2,15 @@ import { afterEach, describe, expect, it, test, vi } from "vitest";
 import {
   ANSIBLE_PLAYBOOK_BIN,
   daemonRepoPath,
+  DENO_VERSION,
   DEV_CONVERGE_STAMP_PATH,
+  RUNTIMES_DIR,
   VENDORED_DENO_BIN,
 } from "./paths.ts";
+
+const PINNED_DENO = `${RUNTIMES_DIR}/deno/${DENO_VERSION}/deno`;
+/** Any version that is deliberately not the pin. */
+const STALE_DENO_VERSION = "1.46.3";
 
 vi.mock("node:fs", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs")>();
@@ -14,9 +20,16 @@ vi.mock("node:fs", async (importOriginal) => {
   };
 });
 
-vi.mock("./daemon-exec.ts", () => ({
-  lookupHostDenoBin: vi.fn(() => "/usr/bin/deno"),
-}));
+vi.mock("./daemon-exec.ts", async () => {
+  const paths = await import("./paths.ts");
+  return {
+    lookupHostDenoBin: vi.fn(() => "/usr/bin/deno"),
+    hostDenoMatchesPin: vi.fn(() => true),
+    resolveDenoBinVersion: vi.fn(() => paths.DENO_VERSION),
+    PINNED_VENDORED_DENO_BIN:
+      `${paths.RUNTIMES_DIR}/deno/${paths.DENO_VERSION}/deno`,
+  };
+});
 
 vi.mock("./daemon-env.ts", () => ({
   isDevInstanceEnabled: vi.fn(() => true),
@@ -27,7 +40,11 @@ vi.mock("../dev-services.ts", () => ({
 }));
 
 import { existsSync } from "node:fs";
-import { lookupHostDenoBin } from "./daemon-exec.ts";
+import {
+  hostDenoMatchesPin,
+  lookupHostDenoBin,
+  resolveDenoBinVersion,
+} from "./daemon-exec.ts";
 import { isDevInstanceEnabled } from "./daemon-env.ts";
 import { isDaemonSystemdInstalled } from "../dev-services.ts";
 import {
@@ -39,6 +56,8 @@ import {
 
 const mockedExistsSync = vi.mocked(existsSync);
 const mockedLookupHostDeno = vi.mocked(lookupHostDenoBin);
+const mockedHostDenoMatchesPin = vi.mocked(hostDenoMatchesPin);
+const mockedResolveDenoBinVersion = vi.mocked(resolveDenoBinVersion);
 const mockedIsDevInstanceEnabled = vi.mocked(isDevInstanceEnabled);
 const mockedIsDaemonSystemdInstalled = vi.mocked(isDaemonSystemdInstalled);
 
@@ -216,15 +235,20 @@ describe("default readiness probes", () => {
     vi.unstubAllEnvs();
     mockedExistsSync.mockReset();
     mockedLookupHostDeno.mockReset();
+    mockedHostDenoMatchesPin.mockReset();
+    mockedResolveDenoBinVersion.mockReset();
     mockedIsDevInstanceEnabled.mockReset();
     mockedIsDaemonSystemdInstalled.mockReset();
     mockedLookupHostDeno.mockReturnValue("/usr/bin/deno");
+    mockedHostDenoMatchesPin.mockReturnValue(true);
+    mockedResolveDenoBinVersion.mockReturnValue(DENO_VERSION);
     mockedIsDevInstanceEnabled.mockReturnValue(true);
     mockedIsDaemonSystemdInstalled.mockReturnValue(true);
   });
 
   it("bootstraps when default filesystem probes miss checkout/ansible/deno/unit", () => {
     mockedLookupHostDeno.mockReturnValue(null);
+    mockedHostDenoMatchesPin.mockReturnValue(false);
     mockedIsDaemonSystemdInstalled.mockReturnValue(false);
     mockedExistsSync.mockReturnValue(false);
 
@@ -234,13 +258,14 @@ describe("default readiness probes", () => {
     assertReasons(plan.reasons);
   });
 
-  it("treats host Deno as enough even when the vendored binary is absent", () => {
+  it("treats a pinned host Deno as enough even when nothing is vendored", () => {
     mockedLookupHostDeno.mockReturnValue("/usr/bin/deno");
+    mockedHostDenoMatchesPin.mockReturnValue(true);
     mockedIsDaemonSystemdInstalled.mockReturnValue(true);
     mockedIsDevInstanceEnabled.mockReturnValue(false);
     mockedExistsSync.mockImplementation((path) => {
       const p = String(path);
-      if (p === VENDORED_DENO_BIN) return false;
+      if (p === VENDORED_DENO_BIN || p === PINNED_DENO) return false;
       return (
         p === daemonRepoPath() ||
         p === ANSIBLE_PLAYBOOK_BIN ||
@@ -255,6 +280,8 @@ describe("default readiness probes", () => {
 
   it("resolves Deno from the vendored current binary when PATH is empty", () => {
     mockedLookupHostDeno.mockReturnValue(null);
+    mockedHostDenoMatchesPin.mockReturnValue(false);
+    mockedResolveDenoBinVersion.mockReturnValue(DENO_VERSION);
     mockedIsDaemonSystemdInstalled.mockReturnValue(true);
     mockedExistsSync.mockImplementation((path) => {
       const p = String(path);
@@ -270,8 +297,69 @@ describe("default readiness probes", () => {
     expect(plan.action).toBe("idle");
   });
 
+  it("bootstraps when the only host Deno is not the pinned version", () => {
+    mockedLookupHostDeno.mockReturnValue("/usr/bin/deno");
+    mockedHostDenoMatchesPin.mockReturnValue(false);
+    mockedIsDaemonSystemdInstalled.mockReturnValue(true);
+    mockedExistsSync.mockImplementation((path) => {
+      const p = String(path);
+      if (p === VENDORED_DENO_BIN || p === PINNED_DENO) return false;
+      return (
+        p === daemonRepoPath() ||
+        p === ANSIBLE_PLAYBOOK_BIN ||
+        p === DEV_CONVERGE_STAMP_PATH
+      );
+    });
+
+    const plan = resolveDevEnvStartupPlan();
+    expect(plan.action).toBe("bootstrap");
+    expect(plan.reasons).toEqual(["Deno runtime not resolvable"]);
+  });
+
+  it("bootstraps when vendor/deno/current reports a superseded version", () => {
+    mockedLookupHostDeno.mockReturnValue(null);
+    mockedHostDenoMatchesPin.mockReturnValue(false);
+    mockedResolveDenoBinVersion.mockReturnValue(STALE_DENO_VERSION);
+    mockedIsDaemonSystemdInstalled.mockReturnValue(true);
+    mockedExistsSync.mockImplementation((path) => {
+      const p = String(path);
+      if (p === PINNED_DENO) return false;
+      return (
+        p === daemonRepoPath() ||
+        p === VENDORED_DENO_BIN ||
+        p === ANSIBLE_PLAYBOOK_BIN ||
+        p === DEV_CONVERGE_STAMP_PATH
+      );
+    });
+
+    const plan = resolveDevEnvStartupPlan();
+    expect(plan.action).toBe("bootstrap");
+    expect(plan.reasons).toEqual(["Deno runtime not resolvable"]);
+  });
+
+  it("is ready on the pinned versioned binary even when current is stale", () => {
+    mockedLookupHostDeno.mockReturnValue(null);
+    mockedHostDenoMatchesPin.mockReturnValue(false);
+    mockedResolveDenoBinVersion.mockReturnValue(STALE_DENO_VERSION);
+    mockedIsDaemonSystemdInstalled.mockReturnValue(true);
+    mockedExistsSync.mockImplementation((path) => {
+      const p = String(path);
+      return (
+        p === daemonRepoPath() ||
+        p === PINNED_DENO ||
+        p === VENDORED_DENO_BIN ||
+        p === ANSIBLE_PLAYBOOK_BIN ||
+        p === DEV_CONVERGE_STAMP_PATH
+      );
+    });
+
+    const plan = resolveDevEnvStartupPlan();
+    expect(plan.action).toBe("idle");
+  });
+
   it("maps existsSync throws to missing probes", () => {
     mockedLookupHostDeno.mockReturnValue(null);
+    mockedHostDenoMatchesPin.mockReturnValue(false);
     mockedIsDaemonSystemdInstalled.mockReturnValue(false);
     mockedExistsSync.mockImplementation(() => {
       throw new Error("EACCES");

@@ -79,9 +79,9 @@ function tempPrefsPath(): string {
   return join(dir, "optional-services.json");
 }
 
-test("defaults enable ui, website, and mailpit", () => {
+test("defaults enable ui, website, mailpit, and drizzle studio", () => {
   expect(DEFAULT_OPTIONAL_DEV_SERVICES).toEqual({
-    dbstudio: false,
+    dbstudio: true,
     smtp: true,
     ui: true,
     website: true,
@@ -92,7 +92,7 @@ test("defaults enable ui, website, and mailpit", () => {
 
 test("normalizeOptionalSelection fills missing keys from defaults", () => {
   expect(normalizeOptionalSelection({ ui: false, tabix: true })).toEqual({
-    dbstudio: false,
+    dbstudio: true,
     smtp: true,
     ui: false,
     website: true,
@@ -156,11 +156,11 @@ test("assertOptionalDevServiceId rejects unknown ids", () => {
 
 test("persistOptionalServiceToggle writes E/X into prefs", () => {
   const path = tempPrefsPath();
-  expect(persistOptionalServiceToggle("dbstudio", true, path)).toEqual({
+  expect(persistOptionalServiceToggle("dbstudio", false, path)).toEqual({
     ...defaultOptionalSelection(),
-    dbstudio: true,
+    dbstudio: false,
   });
-  expect(readOptionalDevServices(path).dbstudio).toBe(true);
+  expect(readOptionalDevServices(path).dbstudio).toBe(false);
   expect(persistOptionalServiceToggle("smtp", false, path)?.smtp).toBe(false);
   expect(persistOptionalServiceToggle("daemon", true, path)).toBeNull();
 });

@@ -65,6 +65,6 @@ NODE_RELEASE_BASE=https://nodejs.org/dist
 PNPM_BIN=${PNPM_BIN:-$NODE_PREFIX/bin/pnpm}
 
 # Pinned Deno for platform services — must match daemon deno-runtime and src/lib/paths.ts.
-DENO_VERSION=2.9.5
+DENO_VERSION=2.9.6
 DENO_RUNTIME_DIR=${DENO_RUNTIME_DIR:-$TURBOPANEL_RUNTIMES_DIR/deno}
 VENDORED_DENO_BIN=${VENDORED_DENO_BIN:-$DENO_RUNTIME_DIR/current/deno}

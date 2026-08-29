@@ -40,6 +40,24 @@ export function resolveHostDenoBin(): string {
   return bin;
 }
 
+/** Report the version a Deno binary announces, or null when it will not run. */
+export function resolveDenoBinVersion(bin: string): string | null {
+  const result = spawnSync(bin, ["--version"], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "ignore"],
+  });
+  if (result.status !== 0) {
+    return null;
+  }
+  const first = (result.stdout ?? "").split("\n", 1)[0] ?? "";
+  return /^deno\s+([\d.]+)/.exec(first.trim())?.[1] ?? null;
+}
+
+/** True when a host Deno is the exact version orchestration pins. */
+export function hostDenoMatchesPin(bin: string): boolean {
+  return resolveDenoBinVersion(bin) === DENO_VERSION;
+}
+
 function pathIsExecutable(path: string): boolean {
   const direct = spawnSync("/bin/sh", ["-c", `test -x ${shellQuote(path)}`], {
     stdio: "ignore",
@@ -53,9 +71,56 @@ function pathIsExecutable(path: string): boolean {
   return sudo.status === 0;
 }
 
+/** True when RUNTIMES_DIR can be written without escalating to sudo. */
+function runtimesDirWritable(): boolean {
+  const result = spawnSync(
+    "/bin/sh",
+    ["-c", `test -w ${shellQuote(RUNTIMES_DIR)}`],
+    { stdio: "ignore" },
+  );
+  return result.status === 0;
+}
+
+/**
+ * Run a vendor-tree script unprivileged when RUNTIMES_DIR is already writable,
+ * escalating to `sudo -n` only when that is impossible or fails.
+ *
+ * Dev hosts that own the vendor tree need no escalation at all, so a missing or
+ * password-prompting sudoers entry stops being the thing that decides whether
+ * the console can repair its own runtime.
+ */
+async function runRuntimesScript(
+  script: string,
+  onOutput?: InstallOutputHandler,
+): Promise<number> {
+  if (runtimesDirWritable()) {
+    const direct = await runCaptured(["bash", "-c", script], onOutput);
+    if (direct === 0) {
+      return 0;
+    }
+  }
+  return await runCaptured(["sudo", "-n", "bash", "-c", script], onOutput);
+}
+
+/** Point `current` / `bin/deno` at the pinned version directory. */
+function denoSymlinkScript(): string {
+  return [
+    "set -euo pipefail",
+    `RUNTIMES_DIR=${shellQuote(RUNTIMES_DIR)}`,
+    `VERSION=${shellQuote(DENO_VERSION)}`,
+    'mkdir -p "$RUNTIMES_DIR/deno/bin"',
+    'ln -sfn "$RUNTIMES_DIR/deno/$VERSION" "$RUNTIMES_DIR/deno/current"',
+    'ln -sfn ../current/deno "$RUNTIMES_DIR/deno/bin/deno"',
+  ].join("\n");
+}
+
+/** The pinned Deno binary, addressed by version rather than via `current`. */
+export const PINNED_VENDORED_DENO_BIN =
+  `${RUNTIMES_DIR}/deno/${DENO_VERSION}/deno`;
+
 /** True when the pinned Deno binary exists under vendor/deno/<DENO_VERSION>/. */
 function pinnedVendoredDenoUsable(): boolean {
-  return pathIsExecutable(`${RUNTIMES_DIR}/deno/${DENO_VERSION}/deno`);
+  return pathIsExecutable(PINNED_VENDORED_DENO_BIN);
 }
 
 /** True when vendor/deno/current/deno resolves to an executable (any version). */
@@ -63,13 +128,43 @@ function vendoredDenoUsable(): boolean {
   return pathIsExecutable(VENDORED_DENO_BIN);
 }
 
-/** Prefer host Deno, then the vendored runtime at vendor/deno/current/deno. */
+/**
+ * True when vendor/deno/current/deno both runs and reports the pinned version.
+ *
+ * Executability alone says nothing about which release `current` points at, and
+ * a `current` left behind by a superseded pin is exactly the case a pin bump has
+ * to stop the console from exec'ing.
+ */
+function vendoredDenoMatchesPin(): boolean {
+  return vendoredDenoUsable() &&
+    resolveDenoBinVersion(VENDORED_DENO_BIN) === DENO_VERSION;
+}
+
+/**
+ * Resolve the Deno the console should exec, pin first.
+ *
+ * A host Deno on PATH stays the developer-friendly default, but only while it
+ * is the pinned version — otherwise the vendored pin wins, so the console and
+ * orchestration agree on one runtime. The vendored answer is never
+ * version-blind: `current` is returned only once it is known to report the pin,
+ * and when it is stale the pinned versioned binary is exec'd directly instead.
+ * A mismatched host is still better than nothing, so it remains the last resort
+ * before throwing.
+ */
 export function resolveBootstrapDenoBin(): string {
   const host = lookupHostDenoBin();
+  if (host && hostDenoMatchesPin(host)) {
+    return host;
+  }
+  if (pinnedVendoredDenoUsable()) {
+    return vendoredDenoMatchesPin()
+      ? VENDORED_DENO_BIN
+      : PINNED_VENDORED_DENO_BIN;
+  }
   if (host) {
     return host;
   }
-  if (vendoredDenoUsable()) {
+  if (vendoredDenoMatchesPin()) {
     return VENDORED_DENO_BIN;
   }
   throw new Error(
@@ -136,33 +231,48 @@ function hostPython3Available(): boolean {
  * extract — same CDN as `run.sh` / the `deno-runtime` Ansible role; avoid
  * `github.com/.../releases/download` which intermittently 503s from VMs).
  *
- * Host Deno on PATH short-circuits (dev preference). An older vendored
- * `current` alone is not enough — the pinned version must exist and the
- * symlinks must point at it (mirrors `tp_install_deno_runtime` in run.sh).
+ * Writes go direct when RUNTIMES_DIR is already writable and fall back to
+ * `sudo -n` only when they have to, so an unprivileged dev host can still repair
+ * its own vendor tree.
+ *
+ * A host Deno on PATH short-circuits only when it *is* the pin; a mismatched
+ * host warns and falls through so the pinned version gets vendored. An older
+ * vendored `current` alone is not enough either — the pinned version must exist
+ * (mirrors `tp_install_deno_runtime` in run.sh). Once it does, a `current` /
+ * `bin/deno` relink that cannot be performed is reported and tolerated:
+ * {@link resolveBootstrapDenoBin} execs {@link PINNED_VENDORED_DENO_BIN}
+ * directly, so a stale symlink is drift to note, not a bootstrap failure.
  */
 export async function ensureBootstrapDeno(
   onOutput?: InstallOutputHandler,
 ): Promise<void> {
-  if (lookupHostDenoBin()) {
-    return;
+  const hostBin = lookupHostDenoBin();
+  if (hostBin) {
+    const hostVersion = resolveDenoBinVersion(hostBin);
+    if (hostVersion === DENO_VERSION) {
+      return;
+    }
+    onOutput?.(
+      `Host Deno ${hostVersion ?? "(unknown version)"} does not match pinned ` +
+        `${DENO_VERSION} — vendoring pinned Deno for orchestration parity`,
+    );
   }
   if (pinnedVendoredDenoUsable()) {
     // Repair drifted symlinks even when the pinned binary is already present.
-    const linkScript = [
-      "set -euo pipefail",
-      `RUNTIMES_DIR=${shellQuote(RUNTIMES_DIR)}`,
-      `VERSION=${shellQuote(DENO_VERSION)}`,
-      'mkdir -p "$RUNTIMES_DIR/deno/bin"',
-      'ln -sfn "$RUNTIMES_DIR/deno/$VERSION" "$RUNTIMES_DIR/deno/current"',
-      'ln -sfn ../current/deno "$RUNTIMES_DIR/deno/bin/deno"',
-    ].join("\n");
-    const linkCode = await runCaptured(
-      ["sudo", "-n", "bash", "-c", linkScript],
-      onOutput,
-    );
+    const linkCode = await runRuntimesScript(denoSymlinkScript(), onOutput);
     if (linkCode === 0 && vendoredDenoUsable()) {
       return;
     }
+    // The relink is a convenience, not the contract: with the pinned binary on
+    // disk `resolveBootstrapDenoBin` execs vendor/deno/<version>/deno directly.
+    // A stale `current` we could not rewrite (no sudo, read-only vendor tree)
+    // must therefore not send the console down the download path or fail the
+    // bootstrap outright — the runtime it needs is already installed.
+    onOutput?.(
+      `Could not relink ${RUNTIMES_DIR}/deno/current to ${DENO_VERSION} — ` +
+        `running the pinned ${PINNED_VENDORED_DENO_BIN} directly`,
+    );
+    return;
   }
 
   if (!hostPython3Available()) {
@@ -206,7 +316,7 @@ PY`,
     'ln -sfn ../current/deno "$RUNTIMES_DIR/deno/bin/deno"',
   ].join("\n");
 
-  const code = await runCaptured(["sudo", "-n", "bash", "-c", installScript], onOutput);
+  const code = await runRuntimesScript(installScript, onOutput);
   if (code !== 0 || !pinnedVendoredDenoUsable() || !vendoredDenoUsable()) {
     const hint = code !== 0
       ? " — download or extract failed (often a transient dl.deno.land CDN error; retry)"

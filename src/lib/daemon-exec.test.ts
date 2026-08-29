@@ -60,6 +60,8 @@ const mockedSpawnSyncTrusted = vi.mocked(
 const mockedRunCaptured = vi.mocked(runCaptured);
 
 const PINNED_DENO = `${RUNTIMES_DIR}/deno/${DENO_VERSION}/deno`;
+/** Any version that is deliberately not the pin. */
+const STALE_DENO_VERSION = "1.46.3";
 
 function syncResult(
   status: number,
@@ -80,6 +82,10 @@ type DenoLookup = {
   python3?: boolean;
   executable?: ReadonlySet<string>;
   sudoExecutable?: ReadonlySet<string>;
+  /** True when `test -w <RUNTIMES_DIR>` succeeds (no sudo needed to write). */
+  writableRuntimes?: boolean;
+  /** bin path -> version `<bin> --version` reports; unlisted bins read stale. */
+  denoVersions?: Record<string, string>;
 };
 
 function installSpawnMocks(lookup: DenoLookup): void {
@@ -87,9 +93,15 @@ function installSpawnMocks(lookup: DenoLookup): void {
   const python3 = lookup.python3 ?? false;
   const executable = lookup.executable ?? new Set<string>();
   const sudoExecutable = lookup.sudoExecutable ?? new Set<string>();
+  const writableRuntimes = lookup.writableRuntimes ?? false;
+  const denoVersions = lookup.denoVersions ?? {};
 
   mockedSpawnSync.mockImplementation((command, args) => {
     const script = Array.isArray(args) ? String(args[1] ?? "") : "";
+    if (Array.isArray(args) && args[0] === "--version") {
+      const version = denoVersions[String(command)] ?? STALE_DENO_VERSION;
+      return syncResult(0, `deno ${version} (release, x86_64-unknown-linux-gnu)\n`);
+    }
     if (command === "/bin/sh" && script === "command -v deno") {
       if (!hostDeno) {
         return syncResult(1, "");
@@ -98,6 +110,9 @@ function installSpawnMocks(lookup: DenoLookup): void {
     }
     if (command === "/bin/sh" && script === "command -v python3") {
       return syncResult(python3 ? 0 : 1);
+    }
+    if (command === "/bin/sh" && script.startsWith("test -w ")) {
+      return syncResult(writableRuntimes ? 0 : 1);
     }
     if (command === "/bin/sh" && script.startsWith("test -x ")) {
       for (const path of executable) {
@@ -167,22 +182,79 @@ describe("lookupHostDenoBin / resolveHostDenoBin", () => {
 });
 
 describe("resolveBootstrapDenoBin", () => {
-  it("prefers host Deno on PATH", () => {
-    installSpawnMocks({ hostDeno: "/home/dev/.deno/bin/deno" });
+  it("prefers host Deno on PATH when it is the pinned version", () => {
+    installSpawnMocks({
+      hostDeno: "/home/dev/.deno/bin/deno",
+      denoVersions: { "/home/dev/.deno/bin/deno": DENO_VERSION },
+    });
     expect(resolveBootstrapDenoBin()).toBe("/home/dev/.deno/bin/deno");
   });
 
-  it("falls back to vendored current when host Deno is absent", () => {
+  it("prefers the vendored pin over a host Deno on a different version", () => {
+    installSpawnMocks({
+      hostDeno: "/usr/bin/deno",
+      denoVersions: {
+        "/usr/bin/deno": STALE_DENO_VERSION,
+        [VENDORED_DENO_BIN]: DENO_VERSION,
+      },
+      executable: new Set([PINNED_DENO, VENDORED_DENO_BIN]),
+    });
+    expect(resolveBootstrapDenoBin()).toBe(VENDORED_DENO_BIN);
+  });
+
+  it("returns the pinned binary when vendor/deno/current is stale", () => {
     installSpawnMocks({
       hostDeno: null,
+      denoVersions: { [VENDORED_DENO_BIN]: STALE_DENO_VERSION },
+      executable: new Set([PINNED_DENO, VENDORED_DENO_BIN]),
+    });
+    expect(resolveBootstrapDenoBin()).toBe(PINNED_DENO);
+  });
+
+  it("prefers the pinned binary over a stale current even with a host Deno", () => {
+    installSpawnMocks({
+      hostDeno: "/usr/bin/deno",
+      denoVersions: {
+        "/usr/bin/deno": STALE_DENO_VERSION,
+        [VENDORED_DENO_BIN]: STALE_DENO_VERSION,
+      },
+      executable: new Set([PINNED_DENO, VENDORED_DENO_BIN]),
+    });
+    expect(resolveBootstrapDenoBin()).toBe(PINNED_DENO);
+  });
+
+  it("falls back to a mismatched host Deno when the pin is not vendored", () => {
+    installSpawnMocks({
+      hostDeno: "/usr/bin/deno",
+      denoVersions: { "/usr/bin/deno": STALE_DENO_VERSION },
+    });
+    expect(resolveBootstrapDenoBin()).toBe("/usr/bin/deno");
+  });
+
+  it("falls back to vendored current when it reports the pin and no host Deno", () => {
+    installSpawnMocks({
+      hostDeno: null,
+      denoVersions: { [VENDORED_DENO_BIN]: DENO_VERSION },
       executable: new Set([VENDORED_DENO_BIN]),
     });
     expect(resolveBootstrapDenoBin()).toBe(VENDORED_DENO_BIN);
   });
 
+  it("throws rather than exec a stale current when the pin is not vendored", () => {
+    installSpawnMocks({
+      hostDeno: null,
+      denoVersions: { [VENDORED_DENO_BIN]: STALE_DENO_VERSION },
+      executable: new Set([VENDORED_DENO_BIN]),
+    });
+    expect(() => resolveBootstrapDenoBin()).toThrow(
+      new RegExp(`pinned ${DENO_VERSION.replaceAll(".", "\\.")}`),
+    );
+  });
+
   it("uses sudo -n test -x when a direct test -x fails", () => {
     installSpawnMocks({
       hostDeno: null,
+      denoVersions: { [VENDORED_DENO_BIN]: DENO_VERSION },
       sudoExecutable: new Set([VENDORED_DENO_BIN]),
     });
     expect(resolveBootstrapDenoBin()).toBe(VENDORED_DENO_BIN);
@@ -206,10 +278,30 @@ describe("ensureBootstrapDeno", () => {
     mockedRunCaptured.mockResolvedValue(0);
   });
 
-  it("short-circuits when host Deno is already on PATH", async () => {
-    installSpawnMocks({ hostDeno: "/usr/bin/deno" });
+  it("short-circuits when host Deno on PATH is the pinned version", async () => {
+    installSpawnMocks({
+      hostDeno: "/usr/bin/deno",
+      denoVersions: { "/usr/bin/deno": DENO_VERSION },
+    });
     await ensureBootstrapDeno();
     expect(mockedRunCaptured).not.toHaveBeenCalled();
+  });
+
+  it("warns and vendors the pin when host Deno is a different version", async () => {
+    installSpawnMocks({
+      hostDeno: "/usr/bin/deno",
+      denoVersions: { "/usr/bin/deno": STALE_DENO_VERSION },
+      executable: new Set([PINNED_DENO, VENDORED_DENO_BIN]),
+    });
+    const onOutput = vi.fn();
+    await ensureBootstrapDeno(onOutput);
+    expect(onOutput).toHaveBeenCalledWith(
+      expect.stringContaining(
+        `Host Deno ${STALE_DENO_VERSION} does not match pinned ${DENO_VERSION}`,
+      ),
+    );
+    expect(mockedRunCaptured).toHaveBeenCalledTimes(1);
+    expect(String(mockedRunCaptured.mock.calls[0]?.[0]?.[4])).toContain("ln -sfn");
   });
 
   it("repairs current/bin symlinks when the pinned binary is already present", async () => {
@@ -266,39 +358,54 @@ describe("ensureBootstrapDeno", () => {
     expect(mockedRunCaptured).not.toHaveBeenCalled();
   });
 
-  it("throws when symlink repair fails and python3 is missing", async () => {
+  it("does not download when symlink repair fails but the pin is present", async () => {
     installSpawnMocks({
       hostDeno: null,
       python3: false,
       executable: new Set([PINNED_DENO]),
     });
     mockedRunCaptured.mockResolvedValue(1);
-    await expect(ensureBootstrapDeno()).rejects.toThrow(/python3-minimal/);
+    const onOutput = vi.fn();
+    await expect(ensureBootstrapDeno(onOutput)).resolves.toBeUndefined();
+    expect(mockedRunCaptured).toHaveBeenCalledTimes(1);
+    expect(onOutput).toHaveBeenCalledWith(
+      expect.stringContaining(PINNED_DENO),
+    );
   });
 
-  it("continues to download when symlink repair fails and python3 is present", async () => {
-    let afterRepair = false;
-    installSpawnMocks({ hostDeno: null, python3: true });
-    mockedSpawnSync.mockImplementation((command, args) => {
-      const script = Array.isArray(args) ? String(args[1] ?? "") : "";
-      if (script === "command -v deno") return syncResult(1, "");
-      if (script === "command -v python3") return syncResult(0);
-      if (script.includes(shellQuote(PINNED_DENO)) && !afterRepair) {
-        return syncResult(0);
-      }
-      return syncResult(afterRepair ? 0 : 1);
+  it("writes symlinks without sudo when RUNTIMES_DIR is writable", async () => {
+    installSpawnMocks({
+      hostDeno: null,
+      writableRuntimes: true,
+      executable: new Set([PINNED_DENO, VENDORED_DENO_BIN]),
     });
-    mockedRunCaptured.mockImplementation(async (cmd) => {
-      const script = Array.isArray(cmd) ? String(cmd[4] ?? "") : "";
-      if (script.includes("if [ ! -x")) {
-        afterRepair = true;
-        return 0;
-      }
-      return 1;
-    });
+    await ensureBootstrapDeno();
+    expect(mockedRunCaptured).toHaveBeenCalledTimes(1);
+    const cmd = mockedRunCaptured.mock.calls[0]?.[0];
+    if (!Array.isArray(cmd)) {
+      throw new TypeError("expected runCaptured command argv");
+    }
+    expect(cmd.slice(0, 2)).toEqual(["bash", "-c"]);
+    expect(String(cmd[2])).toContain("ln -sfn");
+  });
 
+  it("escalates to sudo when the direct write into RUNTIMES_DIR fails", async () => {
+    installSpawnMocks({
+      hostDeno: null,
+      writableRuntimes: true,
+      executable: new Set([PINNED_DENO, VENDORED_DENO_BIN]),
+    });
+    mockedRunCaptured.mockImplementation(async (cmd) =>
+      Array.isArray(cmd) && cmd[0] === "sudo" ? 0 : 1
+    );
     await ensureBootstrapDeno();
     expect(mockedRunCaptured).toHaveBeenCalledTimes(2);
+    expect(mockedRunCaptured.mock.calls[1]?.[0]?.slice(0, 4)).toEqual([
+      "sudo",
+      "-n",
+      "bash",
+      "-c",
+    ]);
   });
 
   it("mentions a CDN retry when the download script exits non-zero", async () => {
@@ -347,8 +454,35 @@ describe("ensureBootstrapDeno", () => {
 
 describe("ensureOrchestrationDenoBin", () => {
   it("ensures then resolves the host Deno binary", async () => {
-    installSpawnMocks({ hostDeno: "/usr/bin/deno" });
+    installSpawnMocks({
+      hostDeno: "/usr/bin/deno",
+      denoVersions: { "/usr/bin/deno": DENO_VERSION },
+    });
     await expect(ensureOrchestrationDenoBin()).resolves.toBe("/usr/bin/deno");
+  });
+
+  it("resolves the pinned binary when a stale current cannot be relinked", async () => {
+    installSpawnMocks({
+      hostDeno: null,
+      python3: true,
+      executable: new Set([PINNED_DENO, VENDORED_DENO_BIN]),
+      denoVersions: {
+        [PINNED_DENO]: DENO_VERSION,
+        [VENDORED_DENO_BIN]: STALE_DENO_VERSION,
+      },
+    });
+    mockedRunCaptured.mockResolvedValue(1);
+
+    const onOutput = vi.fn();
+    await expect(ensureOrchestrationDenoBin(onOutput)).resolves.toBe(PINNED_DENO);
+    expect(mockedRunCaptured).toHaveBeenCalledTimes(1);
+    expect(mockedRunCaptured.mock.calls[0]?.[0]?.slice(0, 4)).toEqual([
+      "sudo",
+      "-n",
+      "bash",
+      "-c",
+    ]);
+    expect(onOutput).toHaveBeenCalledWith(expect.stringContaining(PINNED_DENO));
   });
 });
 
@@ -376,7 +510,10 @@ describe("orchestrationActionCommand / bootstrapOrchestrationCommand", () => {
   });
 
   it("resolves Deno itself in development and production", () => {
-    installSpawnMocks({ hostDeno: "/usr/bin/deno" });
+    installSpawnMocks({
+      hostDeno: "/usr/bin/deno",
+      denoVersions: { "/usr/bin/deno": DENO_VERSION },
+    });
     vi.stubEnv("TURBOPANEL_RUNTIME", "development");
     expect(orchestrationActionCommand(["ping"])).toContain(shellQuote("/usr/bin/deno"));
 

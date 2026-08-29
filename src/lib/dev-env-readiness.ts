@@ -1,10 +1,16 @@
 import { existsSync } from "node:fs";
 import { isDaemonSystemdInstalled } from "../dev-services.ts";
-import { lookupHostDenoBin } from "./daemon-exec.ts";
+import {
+  hostDenoMatchesPin,
+  lookupHostDenoBin,
+  PINNED_VENDORED_DENO_BIN,
+  resolveDenoBinVersion,
+} from "./daemon-exec.ts";
 import { isDevInstanceEnabled } from "./daemon-env.ts";
 import {
   ANSIBLE_PLAYBOOK_BIN,
   daemonRepoPath,
+  DENO_VERSION,
   DEV_CONVERGE_STAMP_PATH,
   VENDORED_DENO_BIN,
 } from "./paths.ts";
@@ -19,6 +25,14 @@ export type DevEnvReadinessProbe = {
   isDevInstanceEnabled: () => boolean;
 };
 
+function pathExists(path: string): boolean {
+  try {
+    return existsSync(path);
+  } catch {
+    return false;
+  }
+}
+
 /**
  * True when the daemon source checkout path exists.
  *
@@ -27,40 +41,43 @@ export type DevEnvReadinessProbe = {
  * are separate bootstrap triggers.
  */
 function hasDaemonCheckoutPath(): boolean {
-  try {
-    return existsSync(daemonRepoPath());
-  } catch {
-    return false;
-  }
+  return pathExists(daemonRepoPath());
 }
 
-function hasVendoredDeno(): boolean {
-  try {
-    return existsSync(VENDORED_DENO_BIN);
-  } catch {
-    return false;
+/**
+ * True when a Deno the console can actually exec on the pin is already present.
+ *
+ * Same rules as `resolveBootstrapDenoBin` in `daemon-exec.ts`, and deliberately
+ * not a bare existence check: a host Deno counts only while it reports
+ * {@link DENO_VERSION}, `vendor/deno/current` counts only once it reports the
+ * pin, and otherwise readiness rests on the pinned versioned binary itself. A
+ * stale host Deno or a `current` left behind by a superseded pin is not a ready
+ * host — it is exactly the drift bootstrap exists to repair, so reporting it as
+ * ready would idle the console on a runtime orchestration refuses to use.
+ */
+function hasPinnedDeno(): boolean {
+  const host = lookupHostDenoBin();
+  if (host && hostDenoMatchesPin(host)) {
+    return true;
   }
+  if (pathExists(PINNED_VENDORED_DENO_BIN)) {
+    return true;
+  }
+  return pathExists(VENDORED_DENO_BIN) &&
+    resolveDenoBinVersion(VENDORED_DENO_BIN) === DENO_VERSION;
 }
 
 function hasOrchestrationPlaybook(): boolean {
-  try {
-    return existsSync(ANSIBLE_PLAYBOOK_BIN);
-  } catch {
-    return false;
-  }
+  return pathExists(ANSIBLE_PLAYBOOK_BIN);
 }
 
 function hasDevConvergeStamp(): boolean {
-  try {
-    return existsSync(DEV_CONVERGE_STAMP_PATH);
-  } catch {
-    return false;
-  }
+  return pathExists(DEV_CONVERGE_STAMP_PATH);
 }
 
 const defaultDevEnvReadinessProbe: DevEnvReadinessProbe = {
   hasDaemonCheckout: hasDaemonCheckoutPath,
-  hasResolvableDeno: () => lookupHostDenoBin() !== null || hasVendoredDeno(),
+  hasResolvableDeno: hasPinnedDeno,
   hasOrchestrationRuntime: hasOrchestrationPlaybook,
   hasDaemonSystemdUnit: isDaemonSystemdInstalled,
   hasDevConvergeStamp,

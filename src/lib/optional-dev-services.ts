@@ -96,9 +96,9 @@ export const OPTIONAL_DEV_SERVICE_DEFS: readonly OptionalDevServiceDef[] = [
   },
 ] as const;
 
-/** Defaults: UI, website, and Mailpit on; Drizzle Studio / Redis Insight / Tabix off. */
+/** Defaults: UI, website, Mailpit, and Drizzle Studio on; Redis Insight / Tabix off. */
 export const DEFAULT_OPTIONAL_DEV_SERVICES: OptionalDevServiceSelection = {
-  dbstudio: false,
+  dbstudio: true,
   smtp: true,
   ui: true,
   website: true,

@@ -381,7 +381,7 @@ describe("runOrchestrationAction", () => {
     }
     expect(envArgs).not.toContain("TURBOPANEL_FORCE_CONVERGE=1");
     expect(envArgs).toContain("TURBOPANEL_DEV_USER=dev");
-    expect(envArgs).toContain("TURBOPANEL_OPTIONAL_DBSTUDIO=false");
+    expect(envArgs).toContain("TURBOPANEL_OPTIONAL_DBSTUDIO=true");
   });
 
   it("ensures Deno when denoBin is omitted and sets FORCE_CONVERGE in force mode", async () => {

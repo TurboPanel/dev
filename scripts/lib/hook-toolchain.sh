@@ -138,19 +138,52 @@ PY
   fi
 }
 
-# Install pinned Deno under vendor when absent; prefer vendored current on PATH.
+# True when vendor/deno/current resolves to the pinned version directory.
+#
+# Uses `cd -P` + `pwd` (POSIX) instead of `readlink -f`, which is not a POSIX
+# interface: on hosts without it the command prints nothing, and an equality
+# check between two empty strings would succeed spuriously — waving through the
+# exact stale `current` this guard exists to catch.
+tp_hook_deno_current_is_pinned() {
+  _hdcp_runtimes=$1
+  _hdcp_version=$2
+  [ -x "$VENDORED_DENO_BIN" ] || return 1
+  _hdcp_phys=$(CDPATH= cd -P -- "$_hdcp_runtimes/deno/current" 2>/dev/null && pwd) || return 1
+  [ -n "$_hdcp_phys" ] || return 1
+  [ "${_hdcp_phys##*/}" = "$_hdcp_version" ]
+}
+
+# Export a specific Deno binary (plus its directory on PATH).
+#
+# Deliberately not `tp_export_deno_path`: that helper re-prefers
+# vendor/deno/current whenever it is executable, which would put back the very
+# stale runtime the caller resolved away from.
+tp_hook_export_deno_bin() {
+  DENO_BIN=$1
+  export DENO_BIN
+  PATH="$(dirname "$DENO_BIN"):${PATH:-}"
+  export PATH
+}
+
+# Install pinned Deno under vendor when absent; run the pinned version, never a
+# superseded vendor/deno/current.
 tp_hook_ensure_deno_toolchain() {
   tp_hook_source_dev_lib paths.sh
   tp_hook_source_dev_lib runtime.sh
 
-  if [ -x "$VENDORED_DENO_BIN" ]; then
-    tp_export_deno_path
-    return 0
-  fi
-
   _hdt_version=$DENO_VERSION
   _hdt_runtimes=$TURBOPANEL_RUNTIMES_DIR
   _hdt_versioned="$_hdt_runtimes/deno/$_hdt_version/deno"
+
+  # Short-circuit on the pinned path, not merely on `current` being executable:
+  # a `current` left pointing at a superseded version is exactly what a pin bump
+  # has to repair, so only take the fast path when `current` already resolves to
+  # the pin. Otherwise fall through and relink below.
+  if [ -x "$_hdt_versioned" ] &&
+    tp_hook_deno_current_is_pinned "$_hdt_runtimes" "$_hdt_version"; then
+    tp_export_deno_path
+    return 0
+  fi
 
   if [ -x "$_hdt_versioned" ]; then
     if [ "$(id -u)" -eq 0 ] || [ -w "$_hdt_runtimes" ] 2>/dev/null; then
@@ -165,30 +198,27 @@ tp_hook_ensure_deno_toolchain() {
   elif command -v curl >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1; then
     tp_hook_bootstrap_vendored_deno "$_hdt_version"
   elif command -v deno >/dev/null 2>&1; then
-    DENO_BIN=$(command -v deno)
-    export DENO_BIN
-    tp_export_deno_path || true
+    tp_hook_export_deno_bin "$(command -v deno)"
     return 0
   else
     tp_hook_toolchain_fail \
       "Deno is not installed — run ./console stack converge, or install curl + python3 to bootstrap vendored Deno"
   fi
 
-  if [ -x "$VENDORED_DENO_BIN" ]; then
-    tp_export_deno_path
-    return 0
-  fi
+  # Pin first. `current` is only usable once it is known to resolve to the pin;
+  # when the relink could not run (no root, no sudo) run the pinned binary
+  # directly rather than silently exporting the stale `current`.
   if [ -x "$_hdt_versioned" ]; then
-    DENO_BIN="$_hdt_versioned"
-    export DENO_BIN
-    tp_export_deno_path || true
+    if tp_hook_deno_current_is_pinned "$_hdt_runtimes" "$_hdt_version"; then
+      tp_export_deno_path
+      return 0
+    fi
+    tp_hook_export_deno_bin "$_hdt_versioned"
     return 0
   fi
 
   if command -v deno >/dev/null 2>&1; then
-    DENO_BIN=$(command -v deno)
-    export DENO_BIN
-    tp_export_deno_path || true
+    tp_hook_export_deno_bin "$(command -v deno)"
     return 0
   fi
 
