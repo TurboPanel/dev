@@ -4,6 +4,7 @@
     "sonarsource.sonarlint-vscode",
     "matthewpi.caddyfile-support",
     "qwtel.sqlite-viewer",
-    "pflannery.vscode-versionlens"
+    "pflannery.vscode-versionlens",
+    "redhat.ansible"
   ]
 }
