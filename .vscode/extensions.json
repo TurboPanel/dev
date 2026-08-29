@@ -3,6 +3,7 @@
     "esbenp.prettier-vscode",
     "sonarsource.sonarlint-vscode",
     "matthewpi.caddyfile-support",
-    "qwtel.sqlite-viewer"
+    "qwtel.sqlite-viewer",
+    "pflannery.vscode-versionlens"
   ]
 }
