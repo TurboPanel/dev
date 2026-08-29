@@ -13,6 +13,17 @@ export default mergeConfig(
         reportsDirectory: "coverage",
         reporter: ["text", "lcov"],
         include: ["src/lib/**/*.ts", "src/hooks/**/*.ts"],
+        // Ratchet. SonarCloud only gates coverage on *new* code (80%), so
+        // repo-wide coverage could erode indefinitely without any gate
+        // noticing. These are the measured levels minus ~1pt of headroom, so
+        // ordinary churn passes and a real regression fails. Raise them when
+        // coverage rises; do not lower them to make a red run go green.
+        thresholds: {
+          statements: 86,
+          branches: 76,
+          functions: 88,
+          lines: 87,
+        },
         exclude: [
           "**/*.test.*",
           // Ink theme tokens — no meaningful unit surface
