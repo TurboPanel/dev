@@ -20,8 +20,6 @@ const SERVICE_LIST_ORDER = [
   "cache",
   "redisinsight",
   "queue",
-  "analytics",
-  "tabix",
 ] as const;
 
 export function isCatalogOptionalServiceId(

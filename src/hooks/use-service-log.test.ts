@@ -114,6 +114,7 @@ describe("useServiceLog", () => {
   });
 
   it("resets when the service id changes and ignores a stale in-flight read", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "setTimeout"] });
     const serviceId = { current: "svc-a" as string | null };
     vi.mocked(readServiceLogTail).mockImplementation((id: string) => {
       if (id === "svc-a") {
@@ -124,7 +125,9 @@ describe("useServiceLog", () => {
     });
     mounted = mountHook(() => useServiceLog(serviceId.current));
     await mounted.flush();
-    await new Promise((resolve) => setTimeout(resolve, 160));
+    await vi.advanceTimersByTimeAsync(50);
+    await mounted.flush();
+    await vi.advanceTimersByTimeAsync(50);
     await mounted.flush();
     expect(mounted.get().lines).toEqual([{ text: "svc-b", time: "t" }]);
   });

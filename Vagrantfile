@@ -459,7 +459,7 @@ Vagrant.configure("2") do |config|
   # Bind 0.0.0.0 so the libvirt/UTM host's LAN IP can reach Caddy / website —
   # not only Cursor/localhost SSH tunnels. Always forward to guest loopback:
   # vagrant-libvirt otherwise targets the DHCP NIC (192.168.121.x), which
-  # misses Mailpit/Studio/Tabix (127.0.0.1-only) and breaks when the lease
+  # misses Mailpit/Studio (127.0.0.1-only) and breaks when the lease
   # changes. Guest ports:
   #   80    hosting Caddy HTTP (tenant sites; distinct from :8880)
   #   443   hosting Caddy HTTPS (tenant sites; distinct from :8443)
@@ -471,7 +471,7 @@ Vagrant.configure("2") do |config|
   #   4983  Drizzle Studio (unauthenticated — host loopback only)
   #   8025  Mailpit web UI (unauthenticated — host loopback only)
   #   5540  Redis Insight (unauthenticated — host loopback only)
-  #   8125  Tabix (unauthenticated — host loopback only)
+  #   4213  DuckDB UI (embedded metrics DB browser — host loopback only)
   #
   # Libvirt implements these as SSH `-L` tunnels (not QEMU hostfwd).
   # `gateway_ports: true` is a vagrant-libvirt option that passes ssh `-g` so
@@ -499,7 +499,7 @@ Vagrant.configure("2") do |config|
     [4983, 4983],
     [8025, 8025],
     [5540, 5540],
-    [8125, 8125],
+    [4213, 4213],
   ].each do |guest_port, host_port|
     config.vm.network "forwarded_port",
                       guest: guest_port,

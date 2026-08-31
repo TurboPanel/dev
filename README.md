@@ -136,7 +136,7 @@ the IDE, browsers, or remote test machines.
 | **4983** | Drizzle Studio (unauthenticated) | `127.0.0.1` only |
 | **8025** | Mailpit web UI (unauthenticated) | `127.0.0.1` only |
 | **5540** | Redis Insight (unauthenticated) | `127.0.0.1` only |
-| **8125** | Tabix (unauthenticated) | `127.0.0.1` only |
+| **4213** | DuckDB UI (embedded metrics DB browser, unauthenticated) | `127.0.0.1` only |
 
 - **Local browsing / VS Code / Cursor:** `https://localhost:8443` or
   `http://localhost:8880`.
@@ -146,7 +146,7 @@ the IDE, browsers, or remote test machines.
   `8081` / `8088` / `19820` listen on all host interfaces. Trust the platform CA
   (`/var/lib/turbopanel/tls/ca-bundle.pem` after converge, or
   `GET /api/daemon/v1/instance/ca`) when using HTTPS.
-- **Studio / Mailpit / Redis Insight / Tabix** stay loopback-only on purpose —
+- **Studio / Mailpit / Redis Insight / DuckDB UI** stay loopback-only on purpose —
   those UIs are unauthenticated.
 - **Tenant sites:** `http://localhost` and `https://localhost` (ports **80** /
   **443**) reach hosting Caddy after a deploy. On Linux those host binds are

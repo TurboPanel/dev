@@ -16,9 +16,6 @@ test("resolveServiceIdFromAnsibleName matches most-specific fragments first", ()
   );
   expect(resolveServiceIdFromAnsibleName("drizzle studio")).toBe("dbstudio");
   expect(resolveServiceIdFromAnsibleName("caddy reverse proxy")).toBe("caddy");
-  expect(resolveServiceIdFromAnsibleName("clickhouse analytics")).toBe(
-    "analytics",
-  );
   expect(resolveServiceIdFromAnsibleName("rabbitmq queue")).toBe("queue");
   expect(resolveServiceIdFromAnsibleName("redis cache")).toBe("cache");
   expect(resolveServiceIdFromAnsibleName("deno-runtime pin")).toBe("daemon");
@@ -26,7 +23,7 @@ test("resolveServiceIdFromAnsibleName matches most-specific fragments first", ()
 
 test("resolveServiceIdFromAnsibleName is case-insensitive", () => {
   expect(resolveServiceIdFromAnsibleName("POSTGRES role")).toBe("db");
-  expect(resolveServiceIdFromAnsibleName("Tabix GUI")).toBe("tabix");
+  expect(resolveServiceIdFromAnsibleName("MAILPIT container")).toBe("smtp");
 });
 
 test("resolveServiceIdFromAnsibleName returns null when nothing matches", () => {

@@ -26,7 +26,6 @@ test("workers runtime omits Deno-only optional catalog rows", () => {
     "ui",
     "website",
     "redisinsight",
-    "tabix",
   ]);
   expect(catalogOptionalServiceIdsForRuntime("workers")).toEqual([
     "dbstudio",
@@ -37,7 +36,6 @@ test("workers runtime omits Deno-only optional catalog rows", () => {
   expect(catalogOptionalServiceIdsForRuntime("workers")).not.toContain(
     "redisinsight",
   );
-  expect(catalogOptionalServiceIdsForRuntime("workers")).not.toContain("tabix");
 });
 
 test("isCatalogOptionalServiceId accepts optional service ids", () => {
@@ -51,9 +49,6 @@ test("catalog optionals stay visible when uninstalled or pending", () => {
   expect(isServiceListRowVisible({ id: "dbstudio", status: "uninstalled" }))
     .toBe(true);
   expect(isServiceListRowVisible({ id: "smtp", status: "pending" })).toBe(
-    true,
-  );
-  expect(isServiceListRowVisible({ id: "tabix", status: "stopped" })).toBe(
     true,
   );
   expect(
@@ -85,14 +80,11 @@ test("idle catalog rows use gray; active rows do not override", () => {
   expect(catalogOptionalIdleColor({ id: "smtp", status: "stopped" })).toBe(
     BORDER_COLOR,
   );
-  expect(catalogOptionalIdleColor({ id: "tabix", status: "pending" })).toBe(
-    BORDER_COLOR,
-  );
   expect(
     catalogOptionalIdleColor({ id: "redisinsight", status: "uninstalled" }),
   ).toBe(BORDER_COLOR);
-  expect(catalogOptionalIdleColor({ id: "tabix", status: "running" })).toBeNull();
-  expect(catalogOptionalIdleColor({ id: "tabix", status: "failed" })).toBeNull();
+  expect(catalogOptionalIdleColor({ id: "redisinsight", status: "running" })).toBeNull();
+  expect(catalogOptionalIdleColor({ id: "redisinsight", status: "failed" })).toBeNull();
   expect(catalogOptionalIdleColor({ id: "cache", status: "stopped" })).toBeNull();
 });
 
@@ -112,7 +104,6 @@ test("mergeCatalogOptionalServices injects missing catalog rows in order", () =>
     "website",
     "smtp",
     "redisinsight",
-    "tabix",
   ]);
   expect(merged.find((service) => service.id === "smtp")?.status).toBe(
     "uninstalled",
@@ -131,7 +122,6 @@ test("mergeCatalogOptionalServices does not duplicate existing rows", () => {
     "workers",
   );
   expect(merged.filter((service) => service.id === "smtp")).toHaveLength(1);
-  expect(merged.some((service) => service.id === "tabix")).toBe(false);
   expect(merged.some((service) => service.id === "redisinsight")).toBe(false);
   expect(merged.find((service) => service.id === "smtp")?.status).toBe(
     "stopped",
@@ -140,13 +130,13 @@ test("mergeCatalogOptionalServices does not duplicate existing rows", () => {
 
 test("sortServicesByCanonicalOrder keeps unknown ids after known ones", () => {
   const sorted = sortServicesByCanonicalOrder([
-    { id: "tabix", label: "tabix", status: "stopped" },
+    { id: "queue", label: "queue", status: "stopped" },
     { id: "zzz", label: "zzz", status: "running" },
     { id: "daemon", label: "daemon", status: "running" },
   ]);
   expect(sorted.map((service) => service.id)).toEqual([
     "daemon",
-    "tabix",
+    "queue",
     "zzz",
   ]);
 });

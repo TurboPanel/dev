@@ -15,7 +15,6 @@ const harness = vi.hoisted(() => {
     ui: true,
     website: true,
     redisinsight: false,
-    tabix: false,
   };
   return {
     services: [] as DevService[],
@@ -77,6 +76,7 @@ vi.mock("../lib/service-restart.ts", () => ({
 
 vi.mock("../lib/daemon-env.ts", () => ({
   readInstanceRuntime: vi.fn(),
+  isDeveloperSurfaceInstance: vi.fn(() => true),
 }));
 
 vi.mock("../lib/instance-trace-env.ts", () => ({

@@ -197,11 +197,11 @@ describe("trackConvergeServiceEvent", () => {
     const tracker = createTracker();
     tracker.track({
       _event: "v2_playbook_on_play_start",
-      play: { name: "tabix" },
+      play: { name: "mailpit" },
     });
     tracker.track({ _event: "v2_playbook_on_stats", stats: {} });
     expect(tracker.currentServiceId.current).toBeNull();
-    expect(tracker.phases).toEqual({ tabix: "ready" });
+    expect(tracker.phases).toEqual({ smtp: "ready" });
     tracker.track({ _event: "v2_playbook_on_stats", stats: {} });
     expect(tracker.currentServiceId.current).toBeNull();
   });
@@ -267,7 +267,6 @@ const OPTIONAL_SELECTION = {
   ui: true,
   website: true,
   redisinsight: false,
-  tabix: false,
 };
 
 describe("useDevEnvConverge", () => {

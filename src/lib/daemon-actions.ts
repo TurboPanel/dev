@@ -6,7 +6,7 @@ import {
   RUNTIMES_DIR,
   TURBOPANEL_ROOT,
 } from "./paths.ts";
-import { readInstanceRuntime } from "./daemon-env.ts";
+import { isDeveloperSurfaceInstance, readInstanceRuntime } from "./daemon-env.ts";
 import { spawnSyncTrustedText } from "./spawn-trusted.ts";
 import { type InstallOutputHandler, runCaptured } from "./install-output.ts";
 import { syncDevToAllDaemons, updateConnectedDaemons } from "./developer-client.ts";
@@ -27,7 +27,8 @@ export type DaemonActionId =
   | "view-cell-trace"
   | "run-tests"
   | "sync-dev-build"
-  | "rebuild-daemon-upgrade";
+  | "rebuild-daemon-upgrade"
+  | "open-duckdb-ui";
 
 const DAEMON_UNIT = DAEMON_SYSTEMD_UNIT;
 const DEFAULT_WAIT_TIMEOUT_MS = 120_000;
@@ -47,6 +48,7 @@ export const DAEMON_ACTION_LABELS: Record<DaemonActionId, string> = {
   "run-tests": "Run tests…",
   "sync-dev-build": "Sync source to attached checkouts",
   "rebuild-daemon-upgrade": "Rebuild daemon and upgrade connected servers",
+  "open-duckdb-ui": "Open DuckDB UI (metrics)",
 };
 
 /**
@@ -77,6 +79,13 @@ export function developerMenuActions(status: DevServiceStatus | undefined): Daem
     return [];
   }
 
+  // Open DuckDB UI needs /api/developer/v1/metrics/duckdb-ui, which only the
+  // developer-surface build (src/deno-dev.ts) mounts — compiled and static
+  // Deno builds run src/deno.ts and must not offer the action.
+  const developerSurfaceActions: DaemonActionId[] = isDeveloperSurfaceInstance()
+    ? ["open-duckdb-ui"]
+    : [];
+
   const denoActions: DaemonActionId[] =
     readInstanceRuntime() === "deno"
       ? ["sync-dev-build", "rebuild-daemon-upgrade"]
@@ -91,6 +100,7 @@ export function developerMenuActions(status: DevServiceStatus | undefined): Daem
     "run-tests",
     "toggle-cell-trace",
     "view-cell-trace",
+    ...developerSurfaceActions,
     ...denoActions,
     "purge",
   ];

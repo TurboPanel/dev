@@ -63,10 +63,10 @@ describe("Vagrant host providers", () => {
     expect(VAGRANTFILE).toContain('host_ip: "127.0.0.1"');
   });
 
-  test("forwards Mailpit, Redis Insight, and Tabix on host loopback", () => {
+  test("forwards Mailpit, Redis Insight, and the DuckDB UI on host loopback", () => {
     expect(VAGRANTFILE).toContain("[8025, 8025]");
     expect(VAGRANTFILE).toContain("[5540, 5540]");
-    expect(VAGRANTFILE).toContain("[8125, 8125]");
+    expect(VAGRANTFILE).toContain("[4213, 4213]");
   });
 
   test("supervises libvirt SSH port forwards and keeps idle sshd tunnels alive", () => {

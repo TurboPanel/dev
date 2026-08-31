@@ -16,6 +16,7 @@ import {
   watchServiceRestart,
 } from "../lib/service-restart.ts";
 import { readInstanceRuntime } from "../lib/daemon-env.ts";
+import { openDuckDbUi } from "../lib/duckdb-ui.ts";
 import { resolveDevEnvStartupPlan } from "../lib/dev-env-readiness.ts";
 import {
   readCellTraceEnabled,
@@ -266,6 +267,10 @@ export function useConsoleApp() {
         return;
       case "view-cell-trace":
         setDeveloperView("cell-trace");
+        return;
+      case "open-duckdb-ui":
+        setActiveArea("developer");
+        await openDuckDbUi();
         return;
       case "run-tests":
         setServiceTestsRepoId(null);

@@ -105,6 +105,33 @@ export function readInstanceRuntime(): "deno" | "workers" {
   return runtime === "workers" ? "workers" : "deno";
 }
 
+/** UI serving mode the converge applies (defaults to dev, like the converge). */
+export function readInstanceUiMode(): "dev" | "static" {
+  const mode = readDaemonEnvEntries().get("TURBOPANEL_UI_MODE");
+  return mode === "static" ? "static" : "dev";
+}
+
+/** Instance run mode the converge applies (defaults to source, like the converge). */
+export function readInstanceRunMode(): "source" | "compiled" {
+  const mode = readDaemonEnvEntries().get("TURBOPANEL_INSTANCE_RUN_MODE");
+  return mode === "compiled" ? "compiled" : "source";
+}
+
+/**
+ * True when the co-located instance runs the developer-surface build
+ * (`src/deno-dev.ts` with `TURBOPANEL_DEV_SURFACE=1`) — the only build that
+ * mounts `registerDeveloperRoutes()` and serves `/api/developer/v1/*`.
+ * Mirrors the instance unit template (turbopanel-instance.service.j2): Deno
+ * runtime, `source` run mode, and `dev` UI mode. Workers, compiled binaries
+ * (`deno task compile` targets `src/deno.ts`), and static-UI builds execute
+ * the non-developer entry, so developer-surface actions must stay hidden.
+ */
+export function isDeveloperSurfaceInstance(): boolean {
+  return readInstanceRuntime() === "deno" &&
+    readInstanceRunMode() === "source" &&
+    readInstanceUiMode() === "dev";
+}
+
 export function isDevInstanceEnabled(): boolean {
   return readDaemonEnvEntries().get(INSTANCE_OPT_IN_KEY) === "1";
 }

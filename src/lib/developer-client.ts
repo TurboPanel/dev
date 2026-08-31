@@ -282,6 +282,23 @@ export async function updateConnectedDaemons(): Promise<SyncDevResponse> {
   });
 }
 
+export type DuckdbUiResponse = {
+  ok: boolean;
+  port?: number;
+  error?: string;
+};
+
+/**
+ * Start the embedded DuckDB UI inside the instance's own metrics DuckDB
+ * (Deno runtime only). The instance runs `LOAD ui` + `start_ui_server()` on
+ * its live store connection so the browser attaches to the single writer.
+ */
+export async function startDuckdbUi(): Promise<DuckdbUiResponse> {
+  return await developerFetch(`${DEVELOPER_API}/metrics/duckdb-ui`, {
+    method: "POST",
+  });
+}
+
 /** @internal Exported for unit tests. */
 export function buildLocalConsoleAuthHeader(
   method: string,

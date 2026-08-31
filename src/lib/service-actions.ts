@@ -6,12 +6,10 @@ import { openServiceInBrowser } from "./service-open.ts";
 import { serviceSupportsOpen } from "./service-urls.ts";
 import { DAEMON_SYSTEMD_UNIT } from "./paths.ts";
 import {
-  CLICKHOUSE_CONTAINER_NAME,
   MAILPIT_CONTAINER_NAME,
   POSTGRES_CONTAINER_NAME,
   RABBITMQ_CONTAINER_NAME,
   REDIS_INSIGHT_CONTAINER_NAME,
-  TABIX_CONTAINER_NAME,
 } from "./platform-docker-resources.ts";
 import { spawnSyncTrustedText } from "./spawn-trusted.ts";
 
@@ -33,7 +31,6 @@ const SYSTEMD_UNITS: Record<string, string> = {
   cache: "turbopanel-redis",
   redisinsight: "turbopanel-redis-insight",
   smtp: "turbopanel-mailpit",
-  tabix: "turbopanel-tabix",
 };
 
 const DOCKER_CONTAINERS: Record<string, string> = {
@@ -41,8 +38,6 @@ const DOCKER_CONTAINERS: Record<string, string> = {
   smtp: MAILPIT_CONTAINER_NAME,
   redisinsight: REDIS_INSIGHT_CONTAINER_NAME,
   queue: RABBITMQ_CONTAINER_NAME,
-  analytics: CLICKHOUSE_CONTAINER_NAME,
-  tabix: TABIX_CONTAINER_NAME,
 };
 
 const OPEN_START_UNITS: Record<string, string> = {
@@ -53,7 +48,6 @@ const OPEN_START_UNITS: Record<string, string> = {
   dbstudio: "turbopanel-dbstudio",
   smtp: "turbopanel-mailpit",
   redisinsight: "turbopanel-redis-insight",
-  tabix: "turbopanel-tabix",
 };
 
 const OPEN_START_CONTAINERS: Record<string, string> = {
@@ -72,8 +66,6 @@ const MANAGED_SERVICE_IDS = new Set([
   "redisinsight",
   "queue",
   "smtp",
-  "analytics",
-  "tabix",
 ]);
 
 function systemctlProperty(unit: string, property: string): string | null {

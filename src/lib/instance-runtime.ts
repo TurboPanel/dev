@@ -96,26 +96,6 @@ async function ensureMailerRunning(onOutput?: InstallOutputHandler): Promise<voi
   await runSystemctl(["enable", "--now", "turbopanel-mailer"], onOutput);
 }
 
-async function ensureClickHouseRunning(onOutput?: InstallOutputHandler): Promise<void> {
-  if (isSystemdUnitInstalled("turbopanel-system-stack")) {
-    await runSystemctl(["enable", "--now", "turbopanel-system-stack"], onOutput);
-    return;
-  }
-  if (isSystemdUnitInstalled("turbopanel-clickhouse")) {
-    await runSystemctl(["enable", "--now", "turbopanel-clickhouse"], onOutput);
-  }
-}
-
-async function ensureTabixRunning(onOutput?: InstallOutputHandler): Promise<void> {
-  if (!isSystemdUnitInstalled("turbopanel-tabix")) {
-    return;
-  }
-  if (!optionalServiceWanted("tabix")) {
-    return;
-  }
-  await runSystemctl(["enable", "--now", "turbopanel-tabix"], onOutput);
-}
-
 async function stopMailer(onOutput?: InstallOutputHandler): Promise<void> {
   if (!isSystemdUnitInstalled("turbopanel-mailer")) {
     return;
@@ -153,23 +133,6 @@ export async function switchInstanceRuntime(
     () => {},
     onOutput,
   );
-
-  if (target === "deno") {
-    onOutput?.("Provisioning metrics backend (ClickHouse)…");
-    await runOrchestrationAction(
-      ["playbook", "clickhouse-setup.yml"],
-      () => {},
-      onOutput,
-    );
-    await ensureClickHouseRunning(onOutput);
-    onOutput?.("Provisioning metrics GUI (Tabix)…");
-    await runOrchestrationAction(
-      ["playbook", "tabix-setup.yml"],
-      () => {},
-      onOutput,
-    );
-    await ensureTabixRunning(onOutput);
-  }
 
   await runOrchestrationAction(
     ["playbook", "instance-launch-only.yml", ...playbookExtra],

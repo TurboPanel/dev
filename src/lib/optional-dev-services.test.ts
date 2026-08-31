@@ -86,18 +86,16 @@ test("defaults enable ui, website, mailpit, and drizzle studio", () => {
     ui: true,
     website: true,
     redisinsight: false,
-    tabix: false,
   });
 });
 
 test("normalizeOptionalSelection fills missing keys from defaults", () => {
-  expect(normalizeOptionalSelection({ ui: false, tabix: true })).toEqual({
+  expect(normalizeOptionalSelection({ ui: false, redisinsight: true })).toEqual({
     dbstudio: true,
     smtp: true,
     ui: false,
     website: true,
-    redisinsight: false,
-    tabix: true,
+    redisinsight: true,
   });
 });
 
@@ -135,16 +133,14 @@ test("optionalServicesOrchestrationEnv emits TURBOPANEL_OPTIONAL_* flags", () =>
     smtp: false,
     ui: false,
     website: true,
-    redisinsight: false,
-    tabix: true,
+    redisinsight: true,
   });
   expect(env).toEqual([
     "TURBOPANEL_OPTIONAL_DBSTUDIO=true",
     "TURBOPANEL_OPTIONAL_MAILPIT=false",
     "TURBOPANEL_OPTIONAL_UI=false",
     "TURBOPANEL_OPTIONAL_WEBSITE=true",
-    "TURBOPANEL_OPTIONAL_REDIS_INSIGHT=false",
-    "TURBOPANEL_OPTIONAL_TABIX=true",
+    "TURBOPANEL_OPTIONAL_REDIS_INSIGHT=true",
   ]);
 });
 
@@ -166,12 +162,8 @@ test("persistOptionalServiceToggle writes E/X into prefs", () => {
 });
 
 test("optionalDevServiceCatalogIdsForRuntime omits Deno-only tools on Workers", () => {
-  expect(optionalDevServiceCatalogIdsForRuntime("deno")).toContain("tabix");
   expect(optionalDevServiceCatalogIdsForRuntime("deno")).toContain(
     "redisinsight",
-  );
-  expect(optionalDevServiceCatalogIdsForRuntime("workers")).not.toContain(
-    "tabix",
   );
   expect(optionalDevServiceCatalogIdsForRuntime("workers")).not.toContain(
     "redisinsight",
@@ -302,7 +294,6 @@ test("applyOptionalDevServices throws when systemctl enable fails", async () => 
       ui: true,
       website: true,
       redisinsight: true,
-      tabix: true,
     }),
   ).rejects.toThrow("systemctl enable --now turbopanel-dbstudio failed");
 });

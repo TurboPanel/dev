@@ -7,7 +7,6 @@ import {
   MAILPIT_CONTAINER_NAME,
   REDIS_INSIGHT_BRIDGE_CONTAINER_NAME,
   REDIS_INSIGHT_CONTAINER_NAME,
-  TABIX_CONTAINER_NAME,
 } from "./platform-docker-resources.ts";
 import { spawnSyncTrustedText } from "./spawn-trusted.ts";
 
@@ -18,7 +17,6 @@ export const OPTIONAL_DEV_SERVICE_IDS = [
   "ui",
   "website",
   "redisinsight",
-  "tabix",
 ] as const;
 
 export type OptionalDevServiceId = (typeof OPTIONAL_DEV_SERVICE_IDS)[number];
@@ -42,7 +40,6 @@ export type OptionalDevServiceDef = {
 /** Optional services that only apply to the Deno self-hosted dev stack. */
 export const OPTIONAL_DENO_ONLY_SERVICE_IDS = [
   "redisinsight",
-  "tabix",
 ] as const satisfies readonly OptionalDevServiceId[];
 
 export const OPTIONAL_DEV_SERVICE_DEFS: readonly OptionalDevServiceDef[] = [
@@ -86,24 +83,15 @@ export const OPTIONAL_DEV_SERVICE_DEFS: readonly OptionalDevServiceDef[] = [
       REDIS_INSIGHT_BRIDGE_CONTAINER_NAME,
     ],
   },
-  {
-    id: "tabix",
-    label: "Tabix",
-    hint: "ClickHouse GUI on :8125",
-    ansibleStem: "tabix",
-    unit: "turbopanel-tabix",
-    containers: [TABIX_CONTAINER_NAME],
-  },
 ] as const;
 
-/** Defaults: UI, website, Mailpit, and Drizzle Studio on; Redis Insight / Tabix off. */
+/** Defaults: UI, website, Mailpit, and Drizzle Studio on; Redis Insight off. */
 export const DEFAULT_OPTIONAL_DEV_SERVICES: OptionalDevServiceSelection = {
   dbstudio: true,
   smtp: true,
   ui: true,
   website: true,
   redisinsight: false,
-  tabix: false,
 };
 
 export const OPTIONAL_SERVICES_PREFS_PATH =

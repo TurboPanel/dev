@@ -3,12 +3,10 @@ import { isDevInstanceEnabled, readInstanceRuntime } from "./lib/daemon-env.ts";
 import { daemonRepoPath, DAEMON_SYSTEMD_UNIT, platformRepoPath } from "./lib/paths.ts";
 import { spawnDocker } from "./lib/docker-access.ts";
 import {
-  CLICKHOUSE_CONTAINER_NAME,
   MAILPIT_CONTAINER_NAME,
   POSTGRES_CONTAINER_NAME,
   RABBITMQ_CONTAINER_NAME,
   REDIS_INSIGHT_CONTAINER_NAME,
-  TABIX_CONTAINER_NAME,
 } from "./lib/platform-docker-resources.ts";
 import { spawnSyncTrusted, spawnSyncTrustedText } from "./lib/spawn-trusted.ts";
 import { mergeCatalogOptionalServices } from "./lib/service-list-visibility.ts";
@@ -31,10 +29,8 @@ const DAEMON_UNIT = DAEMON_SYSTEMD_UNIT;
 const SYSTEM_STACK_UNIT = "turbopanel-system-stack";
 const POSTGRES_CONTAINER = POSTGRES_CONTAINER_NAME;
 const RABBITMQ_CONTAINER = RABBITMQ_CONTAINER_NAME;
-const CLICKHOUSE_CONTAINER = CLICKHOUSE_CONTAINER_NAME;
 const MAILPIT_CONTAINER = MAILPIT_CONTAINER_NAME;
 const REDIS_INSIGHT_CONTAINER = REDIS_INSIGHT_CONTAINER_NAME;
-const TABIX_CONTAINER = TABIX_CONTAINER_NAME;
 const POSTGRES_SOCKET = "/var/run/turbopanel/postgres/.s.PGSQL.5432";
 
 const DOWNSTREAM_SERVICE_DEFS = [
@@ -75,10 +71,8 @@ const ANCILLARY_DENO_DEFS = [
   { id: "smtp", label: "smtp", kind: "mailpit" as const },
   { id: "cache", label: "cache", unit: "turbopanel-redis" },
   { id: "redisinsight", label: "redisinsight", kind: "redisinsight" as const },
-  // queue/analytics live in turbopanel-system Compose (not per-service units).
+  // queue lives in turbopanel-system Compose (not a per-service unit).
   { id: "queue", label: "queue", kind: "queue" as const },
-  { id: "analytics", label: "analytics", kind: "analytics" as const },
-  { id: "tabix", label: "tabix", kind: "tabix" as const },
 ] as const;
 
 const ANCILLARY_WORKERS_DEFS = [
@@ -207,16 +201,8 @@ function redisInsightStatus(): DevServiceStatus {
   return unitOrDockerStatus("turbopanel-redis-insight", REDIS_INSIGHT_CONTAINER);
 }
 
-function tabixStatus(): DevServiceStatus {
-  return unitOrDockerStatus("turbopanel-tabix", TABIX_CONTAINER);
-}
-
 function queueStatus(): DevServiceStatus {
   return dockerServiceStatus(RABBITMQ_CONTAINER);
-}
-
-function analyticsStatus(): DevServiceStatus {
-  return dockerServiceStatus(CLICKHOUSE_CONTAINER);
 }
 
 function systemdServiceStatus(unit: string): DevServiceStatus | null {
@@ -300,16 +286,10 @@ function shouldShowAncillaryServices(): boolean {
   if (dockerContainerExists(RABBITMQ_CONTAINER)) {
     return true;
   }
-  if (dockerContainerExists(CLICKHOUSE_CONTAINER)) {
-    return true;
-  }
   if (dockerContainerExists(MAILPIT_CONTAINER)) {
     return true;
   }
   if (dockerContainerExists(REDIS_INSIGHT_CONTAINER)) {
-    return true;
-  }
-  if (dockerContainerExists(TABIX_CONTAINER)) {
     return true;
   }
   return downstreamServices().length > 0;
@@ -349,27 +329,11 @@ function ancillaryServices(): DevService[] {
       };
     }
 
-    if ("kind" in def && def.kind === "tabix") {
-      return {
-        id: def.id,
-        label: def.label,
-        status: tabixStatus(),
-      };
-    }
-
     if ("kind" in def && def.kind === "queue") {
       return {
         id: def.id,
         label: def.label,
         status: queueStatus(),
-      };
-    }
-
-    if ("kind" in def && def.kind === "analytics") {
-      return {
-        id: def.id,
-        label: def.label,
-        status: analyticsStatus(),
       };
     }
 

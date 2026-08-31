@@ -54,8 +54,8 @@ test("documented defaults apply when both sources are absent", async () => {
   expect(urls.redisInsightBrowserUrl()).toBe(
     `http://127.0.0.1:${urls.DEFAULT_REDIS_INSIGHT_WEB_PORT}`,
   );
-  expect(urls.tabixBrowserUrl()).toBe(
-    `http://127.0.0.1:${urls.DEFAULT_TABIX_WEB_PORT}`,
+  expect(urls.duckdbUiBrowserUrl()).toBe(
+    `http://127.0.0.1:${urls.DEFAULT_DUCKDB_UI_PORT}`,
   );
 });
 
@@ -87,7 +87,7 @@ test("browser URL host conventions match the documented scheme/host pairs", asyn
   expect(urls.redisInsightBrowserUrl().startsWith("http://127.0.0.1:")).toBe(
     true,
   );
-  expect(urls.tabixBrowserUrl().startsWith("http://127.0.0.1:")).toBe(true);
+  expect(urls.duckdbUiBrowserUrl().startsWith("http://127.0.0.1:")).toBe(true);
 });
 
 test("serviceBrowserUrl maps every known service and returns null for unknown", async () => {
@@ -105,7 +105,6 @@ test("serviceBrowserUrl maps every known service and returns null for unknown", 
   expect(urls.serviceBrowserUrl("redisinsight")).toBe(
     urls.redisInsightBrowserUrl(),
   );
-  expect(urls.serviceBrowserUrl("tabix")).toBe(urls.tabixBrowserUrl());
   expect(urls.serviceBrowserUrl("nope")).toBeNull();
 });
 
@@ -120,7 +119,6 @@ test("serviceSupportsOpen agrees with serviceBrowserUrl", async () => {
     "smtp",
     "queue",
     "redisinsight",
-    "tabix",
   ]) {
     expect(urls.serviceSupportsOpen(id)).toBe(true);
     expect(urls.serviceBrowserUrl(id)).not.toBeNull();

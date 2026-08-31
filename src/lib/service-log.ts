@@ -66,7 +66,6 @@ const SERVICE_UNITS: Record<string, string> = {
   cache: "turbopanel-redis",
   redisinsight: "turbopanel-redis-insight",
   smtp: "turbopanel-mailpit",
-  tabix: "turbopanel-tabix",
 };
 
 const DOCKER_LOG_CONTAINERS: Record<string, string> = {
@@ -74,8 +73,6 @@ const DOCKER_LOG_CONTAINERS: Record<string, string> = {
   smtp: "turbopanel-dev-mailpit",
   redisinsight: "turbopanel-dev-redis-insight",
   queue: "turbopanel-queue",
-  analytics: "turbopanel-analytics",
-  tabix: "turbopanel-dev-tablix",
 };
 
 export function serviceSystemdUnit(serviceId: string): string | null {

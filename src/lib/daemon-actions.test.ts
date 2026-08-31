@@ -15,6 +15,7 @@ vi.mock("../dev-services.ts", () => ({
 
 vi.mock("./daemon-env.ts", () => ({
   readInstanceRuntime: vi.fn(() => "deno"),
+  isDeveloperSurfaceInstance: vi.fn(() => true),
 }));
 
 vi.mock("./spawn-trusted.ts", () => ({
@@ -46,7 +47,7 @@ vi.mock("./run-repo-tests.ts", () => ({
 }));
 
 import { isDaemonSystemdInstalled } from "../dev-services.ts";
-import { readInstanceRuntime } from "./daemon-env.ts";
+import { isDeveloperSurfaceInstance, readInstanceRuntime } from "./daemon-env.ts";
 import { spawnSyncTrustedText } from "./spawn-trusted.ts";
 import { runCaptured } from "./install-output.ts";
 import { syncDevToAllDaemons, updateConnectedDaemons } from "./developer-client.ts";
@@ -69,6 +70,7 @@ import {
 
 const mockedIsDaemonSystemdInstalled = vi.mocked(isDaemonSystemdInstalled);
 const mockedReadInstanceRuntime = vi.mocked(readInstanceRuntime);
+const mockedIsDeveloperSurfaceInstance = vi.mocked(isDeveloperSurfaceInstance);
 const mockedSpawnSyncTrustedText = vi.mocked(spawnSyncTrustedText);
 const mockedRunCaptured = vi.mocked(runCaptured);
 const mockedSyncDev = vi.mocked(syncDevToAllDaemons);
@@ -93,6 +95,7 @@ function syncResponse(results: DaemonSyncResult[]): SyncDevResponse {
 beforeEach(() => {
   mockedIsDaemonSystemdInstalled.mockReturnValue(true);
   mockedReadInstanceRuntime.mockReturnValue("deno");
+  mockedIsDeveloperSurfaceInstance.mockReturnValue(true);
   mockedSpawnSyncTrustedText.mockReturnValue(textResult("inactive"));
   mockedRunCaptured.mockResolvedValue(0);
   mockedEnsureDeno.mockResolvedValue("/opt/turbopanel/vendor/deno/current/deno");
@@ -137,6 +140,7 @@ describe("daemon menus", () => {
       "run-tests",
       "toggle-cell-trace",
       "view-cell-trace",
+      "open-duckdb-ui",
       "sync-dev-build",
       "rebuild-daemon-upgrade",
       "purge",
@@ -145,11 +149,22 @@ describe("daemon menus", () => {
 
   it("omits Deno-only actions on the Workers runtime", () => {
     mockedReadInstanceRuntime.mockReturnValue("workers");
+    mockedIsDeveloperSurfaceInstance.mockReturnValue(false);
     const actions = developerMenuActions("stopped");
+    expect(actions).not.toContain("open-duckdb-ui");
     expect(actions).not.toContain("sync-dev-build");
     expect(actions).not.toContain("rebuild-daemon-upgrade");
     expect(actions.at(-1)).toBe("purge");
     expect(actions[0]).toBe("repair");
+  });
+
+  it("hides open-duckdb-ui without the developer-surface build even on Deno", () => {
+    mockedReadInstanceRuntime.mockReturnValue("deno");
+    mockedIsDeveloperSurfaceInstance.mockReturnValue(false);
+    const actions = developerMenuActions("running");
+    expect(actions).not.toContain("open-duckdb-ui");
+    expect(actions).toContain("sync-dev-build");
+    expect(actions).toContain("rebuild-daemon-upgrade");
   });
 
   it("labels every action id", () => {

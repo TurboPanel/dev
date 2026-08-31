@@ -175,7 +175,6 @@ test("optionalServices are forwarded to runOrchestrationAction", async () => {
     ui: true,
     website: false,
     redisinsight: true,
-    tabix: false,
   };
 
   await installDevEnvironment(
@@ -405,8 +404,7 @@ describe("runOrchestrationAction", () => {
       smtp: false,
       ui: false,
       website: false,
-      redisinsight: false,
-      tabix: true,
+      redisinsight: true,
     };
     await runOrchestrationAction(["ping"], () => {}, undefined, {
       denoBin: "/d",
@@ -418,7 +416,7 @@ describe("runOrchestrationAction", () => {
       throw new TypeError("expected /usr/bin/env argv");
     }
     expect(envArgs).toContain("TURBOPANEL_OPTIONAL_DBSTUDIO=true");
-    expect(envArgs).toContain("TURBOPANEL_OPTIONAL_TABIX=true");
+    expect(envArgs).toContain("TURBOPANEL_OPTIONAL_REDIS_INSIGHT=true");
     expect(envArgs).toContain("TURBOPANEL_OPTIONAL_UI=false");
   });
 

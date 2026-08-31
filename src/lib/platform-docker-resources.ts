@@ -15,13 +15,6 @@ export const REDIS_INSIGHT_BRIDGE_CONTAINER_NAME =
   "turbopanel-dev-redis-insight-bridge";
 export const REDIS_INSIGHT_VOLUME_NAME = "turbopanel-dev-redis-insight";
 
-/** Dev Tabix container (daemon `tabix` role default; no named volume). */
-export const TABIX_CONTAINER_NAME = "turbopanel-dev-tablix";
-
-/** ClickHouse / analytics container/volume (daemon `clickhouse` role defaults). */
-export const CLICKHOUSE_CONTAINER_NAME = "turbopanel-analytics";
-export const CLICKHOUSE_VOLUME_NAME = "turbopanel-analytics";
-
 /** All TurboPanel-owned containers that can survive across dev installs. */
 export const PLATFORM_DOCKER_CONTAINER_NAMES = [
   POSTGRES_CONTAINER_NAME,
@@ -29,8 +22,6 @@ export const PLATFORM_DOCKER_CONTAINER_NAMES = [
   MAILPIT_CONTAINER_NAME,
   REDIS_INSIGHT_BRIDGE_CONTAINER_NAME,
   REDIS_INSIGHT_CONTAINER_NAME,
-  TABIX_CONTAINER_NAME,
-  CLICKHOUSE_CONTAINER_NAME,
 ] as const;
 
 /** All TurboPanel-owned volumes that can repopulate fresh installs. */
@@ -38,5 +29,4 @@ export const PLATFORM_DOCKER_VOLUME_NAMES = [
   POSTGRES_VOLUME_NAME,
   RABBITMQ_VOLUME_NAME,
   REDIS_INSIGHT_VOLUME_NAME,
-  CLICKHOUSE_VOLUME_NAME,
 ] as const;
