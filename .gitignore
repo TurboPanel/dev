@@ -46,3 +46,6 @@ coverage/
 
 # macOS Finder metadata
 .DS_Store
+
+# Local Claude Code settings (background-session isolation)
+.claude/settings.json
