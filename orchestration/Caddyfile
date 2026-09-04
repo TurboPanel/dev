@@ -58,6 +58,12 @@
 
 	@api path /api/*
 	handle @api {
+		# Defense in depth only — the app's own streaming readers enforce the
+		# real per-route budgets (a few KB for auth, 2 MB for the largest
+		# daemon body) and never buffer past them either way.
+		request_body {
+			max_size 8MB
+		}
 		@workers_runtime expression `"{$TURBOPANEL_INSTANCE_RUNTIME:deno}" == "workers"`
 		handle @workers_runtime {
 			reverse_proxy 127.0.0.1:{$WRANGLER_DEV_PORT:18787} {
@@ -91,6 +97,11 @@
 	# load-bearing: the webhook rate limiter keys per peer address.
 	@webhook path /webhook/*
 	handle @webhook {
+		# Defense in depth — GITHUB_WEBHOOK_MAX_BODY_BYTES / GITLAB_WEBHOOK_MAX_BODY_BYTES
+		# are both 1 MB; the app's own streaming reader is the authoritative limit.
+		request_body {
+			max_size 2MB
+		}
 		@workers_runtime expression `"{$TURBOPANEL_INSTANCE_RUNTIME:deno}" == "workers"`
 		handle @workers_runtime {
 			reverse_proxy 127.0.0.1:{$WRANGLER_DEV_PORT:18787} {
@@ -194,6 +205,12 @@
 
 	@api path /api/*
 	handle @api {
+		# Defense in depth only — the app's own streaming readers enforce the
+		# real per-route budgets (a few KB for auth, 2 MB for the largest
+		# daemon body) and never buffer past them either way.
+		request_body {
+			max_size 8MB
+		}
 		@workers_runtime expression `"{$TURBOPANEL_INSTANCE_RUNTIME:deno}" == "workers"`
 		handle @workers_runtime {
 			reverse_proxy 127.0.0.1:{$WRANGLER_DEV_PORT:18787} {
@@ -227,6 +244,11 @@
 	# load-bearing: the webhook rate limiter keys per peer address.
 	@webhook path /webhook/*
 	handle @webhook {
+		# Defense in depth — GITHUB_WEBHOOK_MAX_BODY_BYTES / GITLAB_WEBHOOK_MAX_BODY_BYTES
+		# are both 1 MB; the app's own streaming reader is the authoritative limit.
+		request_body {
+			max_size 2MB
+		}
 		@workers_runtime expression `"{$TURBOPANEL_INSTANCE_RUNTIME:deno}" == "workers"`
 		handle @workers_runtime {
 			reverse_proxy 127.0.0.1:{$WRANGLER_DEV_PORT:18787} {
