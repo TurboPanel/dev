@@ -98,10 +98,12 @@ export function developerMenuActions(
   // Open DuckDB UI needs /api/developer/v1/metrics/duckdb-ui, which only the
   // developer-surface build (src/deno-dev.ts) mounts — compiled and static
   // Deno builds run src/deno.ts and must not offer the action.
-  const developerSurfaceActions: DaemonActionId[] =
-    (env ? isDeveloperSurfaceInstance(env) : isDeveloperSurfaceInstance())
-      ? ["open-duckdb-ui"]
-      : [];
+  const onDeveloperSurface = env
+    ? isDeveloperSurfaceInstance(env)
+    : isDeveloperSurfaceInstance();
+  const developerSurfaceActions: DaemonActionId[] = onDeveloperSurface
+    ? ["open-duckdb-ui"]
+    : [];
 
   const denoActions: DaemonActionId[] = runtime === "deno"
     ? ["sync-dev-build", "rebuild-daemon-upgrade"]

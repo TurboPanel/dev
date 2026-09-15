@@ -31,7 +31,8 @@ tp_in_guest() {
 }
 
 tp_quote() {
-  printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"
+  _arg=$1
+  printf "'%s'" "$(printf '%s' "$_arg" | sed "s/'/'\\\\''/g")"
 }
 
 tp_usage() {
