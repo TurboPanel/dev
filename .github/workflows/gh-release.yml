@@ -84,6 +84,7 @@ jobs:
           if [ -n "${{ inputs.assets-artifact-name }}" ]; then
             gh release create "$_tag" \
               --repo "${{ github.repository }}" \
+              --target "${{ github.sha }}" \
               --prerelease \
               --title "$_title" \
               --notes "${{ inputs.release-notes }}" \
@@ -91,6 +92,7 @@ jobs:
           else
             gh release create "$_tag" \
               --repo "${{ github.repository }}" \
+              --target "${{ github.sha }}" \
               --prerelease \
               --title "$_title" \
               --notes "${{ inputs.release-notes }}"
