@@ -1,0 +1,55 @@
+# Cuts a GitHub Release on a v* tag. dev has no build/package step to
+# release — the tag itself is what's needed for version-tracking across the
+# five repos — so this is a notes-only release. See the Road to 0.1.x page's
+# `other-repos` item. Calls gh-release.yml locally (./...) rather than
+# TurboPanel/dev/...@trunk since it's the same repo — the same pattern
+# publish-daemon-trunk.yml already uses for its own local verify.yml call.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to release without a leading v (e.g. 0.0.0-workflow-test)
+        required: true
+        type: string
+      channel:
+        description: Channel label for this release
+        required: true
+        type: string
+        default: rc
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
+      channel: ${{ steps.resolve.outputs.channel }}
+    steps:
+      - name: Resolve version and channel
+        id: resolve
+        run: |
+          set -eu
+          if [ -n "${{ inputs.version }}" ]; then
+            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+            echo "channel=${{ inputs.channel }}" >> "$GITHUB_OUTPUT"
+          else
+            _ref="${{ github.ref_name }}"
+            echo "version=${_ref#v}" >> "$GITHUB_OUTPUT"
+            echo "channel=release" >> "$GITHUB_OUTPUT"
+          fi
+
+  release:
+    needs: prepare
+    uses: ./.github/workflows/gh-release.yml
+    with:
+      version: ${{ needs.prepare.outputs.version }}
+      channel: ${{ needs.prepare.outputs.channel }}
+      release-notes: "See https://github.com/${{ github.repository }}/commits/v${{ needs.prepare.outputs.version }} for changes."

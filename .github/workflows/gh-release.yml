@@ -1,0 +1,149 @@
+# Reusable release-publish workflow, called by TurboPanel/turbopaneld,
+# TurboPanel/website, and TurboPanel/dev's own tag-triggered
+# .github/workflows/release.yml — see the Road to 0.1.x page's `other-repos`
+# item. Kept centralized here (rather than duplicated per repo) because `dev`
+# is already the cross-repo tooling home (dev/scripts/ci-verify.sh already
+# orchestrates all five repos from here).
+#
+# This workflow does the part that's the same for every repo: create the
+# GitHub Release on the tag, attach whatever assets the calling workflow
+# already built and uploaded as a job artifact, and — when a manifest.json is
+# among those assets — re-verify every artifact's sha256 against it once it's
+# actually on the release, the same "don't trust the upload, re-download and
+# hash it" check publish-daemon-trunk.yml already does against the CDN.
+#
+# What it deliberately does NOT do: build or package anything repo-specific.
+# turbopaneld's compile/package/verify-release-root steps stay in
+# turbopaneld/.github/workflows/release.yml; this workflow only ever receives
+# already-built files via actions/upload-artifact from the calling job.
+
+name: GitHub Release
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: Release version without a leading v (e.g. 0.1.0-rc1)
+        required: true
+        type: string
+      channel:
+        description: Channel this release publishes to (e.g. rc, release, or a throwaway test channel for a dry run)
+        required: true
+        type: string
+      release-notes:
+        description: Body text for the GitHub Release
+        required: false
+        type: string
+        default: ""
+      assets-artifact-name:
+        description: Name of a job artifact (uploaded by the caller via actions/upload-artifact) holding the files to attach. Empty means a notes-only release with no assets.
+        required: false
+        type: string
+        default: ""
+      manifest-filename:
+        description: Filename of manifest.json within the assets artifact, if one exists. Empty skips the post-publish hash re-verification.
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    concurrency:
+      # One release publish at a time per repo — gh release create on a tag
+      # that's mid-publish from a concurrent run would race.
+      group: gh-release-${{ github.repository }}
+      cancel-in-progress: false
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Download release assets
+        if: inputs.assets-artifact-name != ''
+        uses: actions/download-artifact@v7
+        with:
+          name: ${{ inputs.assets-artifact-name }}
+          path: release-assets
+
+      - name: Require non-empty assets when an artifact name was given
+        if: inputs.assets-artifact-name != ''
+        run: |
+          set -eu
+          if [ -z "$(ls -A release-assets 2>/dev/null)" ]; then
+            echo "::error::assets-artifact-name was set but release-assets/ is empty after download"
+            exit 1
+          fi
+
+      - name: Create the GitHub Release
+        run: |
+          set -eu
+          _tag="v${{ inputs.version }}"
+          _title="${_tag} (${{ inputs.channel }})"
+          if [ -n "${{ inputs.assets-artifact-name }}" ]; then
+            gh release create "$_tag" \
+              --repo "${{ github.repository }}" \
+              --prerelease \
+              --title "$_title" \
+              --notes "${{ inputs.release-notes }}" \
+              release-assets/*
+          else
+            gh release create "$_tag" \
+              --repo "${{ github.repository }}" \
+              --prerelease \
+              --title "$_title" \
+              --notes "${{ inputs.release-notes }}"
+          fi
+
+      - name: Verify release assets against the manifest
+        if: inputs.manifest-filename != ''
+        run: |
+          python3 <<'PY'
+          import hashlib
+          import json
+          import os
+          import sys
+          import urllib.request
+
+          manifest_path = os.path.join(
+              "release-assets", "${{ inputs.manifest-filename }}"
+          )
+          with open(manifest_path) as f:
+              manifest = json.load(f)
+
+          repo = "${{ github.repository }}"
+          tag = "v${{ inputs.version }}"
+
+          checks = [
+              ("linux-amd64", manifest["binaryArtifacts"]["linux-amd64"]),
+              ("linux-arm64", manifest["binaryArtifacts"]["linux-arm64"]),
+              ("js", manifest["jsFallbackArtifact"]),
+              ("orchestration", manifest["orchestrationArtifact"]),
+          ]
+
+          failed = False
+          for name, entry in checks:
+              filename = entry["url"].rsplit("/", 1)[-1]
+              release_url = (
+                  f"https://github.com/{repo}/releases/download/{tag}/{filename}"
+              )
+              req = urllib.request.Request(
+                  release_url, headers={"User-Agent": "turbopanel-release-verify"}
+              )
+              with urllib.request.urlopen(req) as resp:
+                  data = resp.read()
+              digest = hashlib.sha256(data).hexdigest()
+              if digest != entry["sha256"] or len(data) != entry["size"]:
+                  print(
+                      f"::error::{name} release-asset mismatch: "
+                      f"expected sha256={entry['sha256']} size={entry['size']} "
+                      f"got sha256={digest} size={len(data)} url={release_url}",
+                      file=sys.stderr,
+                  )
+                  failed = True
+
+          if failed:
+              sys.exit(1)
+          print(f"Verified {tag} release assets for commit {manifest['commit']}")
+          PY
