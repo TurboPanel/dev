@@ -5,7 +5,7 @@ This file is generated from the resolved dependency graph. Do not edit it by han
 Third-party components remain under their own copyright and license terms and are not relicensed by TurboPanel Development Environment's repository license (AGPL-3.0-only).
 
 <!-- lockfiles
-pnpm-lock.yaml sha256:91cb53d8dff6581093a9e68489f7450d3589d25668760a1c0ed8d79d24d3c082
+pnpm-lock.yaml sha256:a2dc26b960b286197a8f6267edd3265d12a728c2936ed7293f45343223483963
 -->
 
 ## Production dependencies
@@ -548,43 +548,43 @@ These packages are used for development, test, or build tooling and are not bund
 - Copyright: Evan You
 - Homepage: https://github.com/vitejs/vite-plugin-react/tree/main/packages/plugin-react#readme
 
-### @vitest/coverage-v8@4.1.10
+### @vitest/coverage-v8@4.1.11
 
 - License: MIT
 - Copyright: Anthony Fu
 - Homepage: https://vitest.dev/guide/coverage
 
-### @vitest/expect@4.1.10
+### @vitest/expect@4.1.11
 
 - License: MIT
 - Homepage: https://vitest.dev/api/expect
 
-### @vitest/mocker@4.1.10
+### @vitest/mocker@4.1.11
 
 - License: MIT
 - Homepage: https://github.com/vitest-dev/vitest/tree/main/packages/mocker
 
-### @vitest/pretty-format@4.1.10
+### @vitest/pretty-format@4.1.11
 
 - License: MIT
 - Homepage: https://github.com/vitest-dev/vitest/tree/main/packages/pretty-format
 
-### @vitest/runner@4.1.10
+### @vitest/runner@4.1.11
 
 - License: MIT
 - Homepage: https://vitest.dev/api/advanced/runner
 
-### @vitest/snapshot@4.1.10
+### @vitest/snapshot@4.1.11
 
 - License: MIT
 - Homepage: https://vitest.dev/guide/snapshot
 
-### @vitest/spy@4.1.10
+### @vitest/spy@4.1.11
 
 - License: MIT
 - Homepage: https://vitest.dev/api/mock
 
-### @vitest/utils@4.1.10
+### @vitest/utils@4.1.11
 
 - License: MIT
 - Homepage: https://github.com/vitest-dev/vitest/tree/main/packages/utils
@@ -601,12 +601,12 @@ These packages are used for development, test, or build tooling and are not bund
 - Copyright: Ari Perkkiö
 - Homepage: https://github.com/AriPerkkio/ast-v8-to-istanbul
 
-### baseline-browser-mapping@2.10.38
+### baseline-browser-mapping@2.11.23
 
 - License: Apache-2.0
 - Homepage: https://github.com/web-platform-dx/baseline-browser-mapping#readme
 
-### browserslist@4.28.2
+### browserslist@4.28.9
 
 - License: MIT
 - Copyright: Andrey Sitnik
@@ -618,7 +618,7 @@ These packages are used for development, test, or build tooling and are not bund
 - Copyright: egoist
 - Homepage: https://github.com/cacjs/cac#readme
 
-### caniuse-lite@1.0.30001799
+### caniuse-lite@1.0.30001810
 
 - License: CC-BY-4.0
 - Copyright: Ben Briggs
@@ -654,7 +654,7 @@ These packages are used for development, test, or build tooling and are not bund
 - Copyright: Lovell Fuller
 - Homepage: https://github.com/lovell/detect-libc#readme
 
-### electron-to-chromium@1.5.375
+### electron-to-chromium@1.5.428
 
 - License: ISC
 - Copyright: Kilian Valkhof
@@ -787,13 +787,13 @@ These packages are used for development, test, or build tooling and are not bund
 - License: MIT
 - Homepage: https://github.com/vercel/ms#readme
 
-### nanoid@3.3.12
+### nanoid@3.3.19
 
 - License: MIT
 - Copyright: Andrey Sitnik
 - Homepage: https://github.com/ai/nanoid#readme
 
-### node-releases@2.0.48
+### node-releases@2.0.55
 
 - License: MIT
 - Copyright: Sergey Rubanov
@@ -822,7 +822,7 @@ These packages are used for development, test, or build tooling and are not bund
 - Copyright: Jon Schlinkert
 - Homepage: https://github.com/micromatch/picomatch
 
-### postcss@8.5.15
+### postcss@8.5.28
 
 - License: MIT
 - Copyright: Andrey Sitnik
@@ -912,7 +912,7 @@ These packages are used for development, test, or build tooling and are not bund
 - License: MIT
 - Homepage: https://undici.nodejs.org
 
-### update-browserslist-db@1.2.3
+### update-browserslist-db@1.3.3
 
 - License: MIT
 - Copyright: Andrey Sitnik
@@ -930,7 +930,7 @@ These packages are used for development, test, or build tooling and are not bund
 - Copyright: Anthony Fu
 - Homepage: https://github.com/antfu-collective/vite-node#readme
 
-### vitest@4.1.10
+### vitest@4.1.11
 
 - License: MIT
 - Copyright: Anthony Fu
