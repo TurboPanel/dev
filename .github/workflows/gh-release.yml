@@ -62,7 +62,7 @@ jobs:
     steps:
       - name: Download release assets
         if: inputs.assets-artifact-name != ''
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           name: ${{ inputs.assets-artifact-name }}
           path: release-assets
