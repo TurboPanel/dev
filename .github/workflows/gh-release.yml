@@ -10,7 +10,11 @@
 # already built and uploaded as a job artifact, and — when a manifest.json is
 # among those assets — re-verify every artifact's sha256 against it once it's
 # actually on the release, the same "don't trust the upload, re-download and
-# hash it" check publish-daemon-trunk.yml already does against the CDN.
+# hash it" check publish-daemon-trunk.yml already does against the CDN. The
+# verifier walks the manifest for any object carrying url + sha256 + size,
+# so the daemon's shape (binaryArtifacts / jsFallbackArtifact /
+# orchestrationArtifact) and the instance's and UI's (artifacts.<name>)
+# share one code path.
 #
 # What it deliberately does NOT do: build or package anything repo-specific.
 # turbopaneld's compile/package/verify-release-root steps stay in
@@ -117,12 +121,29 @@ jobs:
           repo = "${{ github.repository }}"
           tag = "v${{ inputs.version }}"
 
-          checks = [
-              ("linux-amd64", manifest["binaryArtifacts"]["linux-amd64"]),
-              ("linux-arm64", manifest["binaryArtifacts"]["linux-arm64"]),
-              ("js", manifest["jsFallbackArtifact"]),
-              ("orchestration", manifest["orchestrationArtifact"]),
-          ]
+          # Walk the manifest for every artifact entry — an object carrying
+          # url + sha256 + size — wherever it sits. The daemon's manifest
+          # nests them under binaryArtifacts / jsFallbackArtifact /
+          # orchestrationArtifact; the instance's and the UI's put them under
+          # artifacts.<name>. One verifier, every shape.
+          def walk(node, path):
+              if isinstance(node, dict):
+                  if {"url", "sha256", "size"} <= node.keys():
+                      yield path, node
+                      return
+                  for key, value in node.items():
+                      yield from walk(value, f"{path}.{key}" if path else key)
+              elif isinstance(node, list):
+                  for i, value in enumerate(node):
+                      yield from walk(value, f"{path}[{i}]")
+
+          checks = list(walk(manifest, ""))
+          if not checks:
+              print(
+                  f"::error::{manifest_path} names no artifacts (no object with url+sha256+size)",
+                  file=sys.stderr,
+              )
+              sys.exit(1)
 
           failed = False
           for name, entry in checks:
@@ -130,10 +151,10 @@ jobs:
               release_url = (
                   f"https://github.com/{repo}/releases/download/{tag}/{filename}"
               )
-              # The manifest must point daemons at this exact release asset
-              # (turbopaneld's release.yml sets ARTIFACT_BASE_URL to the
-              # tag-pinned download path); anything else is a manifest that
-              # verifies here but sends installs somewhere we never published.
+              # The manifest must point consumers at this exact release asset
+              # (the callers set the manifest's base to the tag-pinned
+              # download path); anything else is a manifest that verifies
+              # here but sends installs somewhere we never published.
               if entry["url"] != release_url:
                   print(
                       f"::error::{name} manifest url is not this release's asset: "
@@ -159,5 +180,8 @@ jobs:
 
           if failed:
               sys.exit(1)
-          print(f"Verified {tag} release assets for commit {manifest['commit']}")
+          print(
+              f"Verified {len(checks)} {tag} release asset(s) for commit "
+              f"{manifest.get('commit', '?')}"
+          )
           PY
