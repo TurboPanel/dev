@@ -130,6 +130,18 @@ jobs:
               release_url = (
                   f"https://github.com/{repo}/releases/download/{tag}/{filename}"
               )
+              # The manifest must point daemons at this exact release asset
+              # (turbopaneld's release.yml sets ARTIFACT_BASE_URL to the
+              # tag-pinned download path); anything else is a manifest that
+              # verifies here but sends installs somewhere we never published.
+              if entry["url"] != release_url:
+                  print(
+                      f"::error::{name} manifest url is not this release's asset: "
+                      f"manifest={entry['url']} expected={release_url}",
+                      file=sys.stderr,
+                  )
+                  failed = True
+                  continue
               req = urllib.request.Request(
                   release_url, headers={"User-Agent": "turbopanel-release-verify"}
               )
