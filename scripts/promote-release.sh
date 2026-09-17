@@ -73,7 +73,9 @@ workdir="$(mktemp -d)"
 trap 'rm -rf "$workdir"' EXIT INT TERM
 
 manifest_url="https://github.com/${repo}/releases/download/${tag}/manifest.json"
-if ! curl -fsSL -o "$workdir/manifest.json" "$manifest_url"; then
+# --proto '=https' --proto-redir '=https': the release-asset redirect
+# (github.com → *.githubusercontent.com) must stay on HTTPS end to end.
+if ! curl -fsSL --proto '=https' --proto-redir '=https' -o "$workdir/manifest.json" "$manifest_url"; then
   echo "promote-release: ${repo}@${tag} has no manifest.json asset (${manifest_url}) — a release without one cannot be verified, so it is not promoted" >&2
   exit 1
 fi
