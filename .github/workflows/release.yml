@@ -50,6 +50,25 @@ jobs:
             echo "channel=release" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Check out repository
+        if: inputs.version == ''
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Require the tag to match package.json's version
+        # A tag cut before the bump is a release that lies about itself
+        # (sonar.projectVersion is pinned to package.json by the repo's own
+        # checks). Dry runs (workflow_dispatch) use throwaway versions and
+        # skip this.
+        if: inputs.version == ''
+        run: |
+          set -eu
+          _tag_version="${{ steps.resolve.outputs.version }}"
+          _pkg_version="$(python3 -c 'import json; print(json.load(open("package.json"))["version"])')"
+          if [ "$_tag_version" != "$_pkg_version" ]; then
+            echo "::error::tag v${_tag_version} does not match package.json version ${_pkg_version} — bump package.json (and sonar.projectVersion) first"
+            exit 1
+          fi
+
   release:
     needs: prepare
     uses: ./.github/workflows/gh-release.yml
