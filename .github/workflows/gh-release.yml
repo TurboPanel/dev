@@ -185,3 +185,29 @@ jobs:
               f"{manifest.get('commit', '?')}"
           )
           PY
+
+      - name: Point the rolling rc pre-release at this manifest
+        # The rc rail (Road to 0.1.x, `rc-channel`) is one rolling
+        # pre-release tagged `rc` whose only asset is a manifest.json: daemons
+        # following rc read releases/download/rc/manifest.json, and every
+        # URL inside it is tag-pinned to the versioned release verified
+        # above — so the rolling release never carries the binaries, only
+        # the pointer. Created on first use, then the manifest is replaced
+        # in place. Only runs when the release verified clean, and only for
+        # the rc channel: a release channel is `releases/latest`, which is
+        # GitHub's own pointer (moved by scripts/promote-release.sh).
+        if: inputs.manifest-filename != '' && inputs.channel == 'rc'
+        run: |
+          set -eu
+          _repo="${{ github.repository }}"
+          if ! gh release view rc --repo "$_repo" >/dev/null 2>&1; then
+            gh release create rc \
+              --repo "$_repo" \
+              --target "${{ github.sha }}" \
+              --prerelease \
+              --title "rc (rolling)" \
+              --notes "Rolling rc channel pointer. Its manifest.json names the current rc pre-release's assets; see that release for the bytes."
+          fi
+          gh release upload rc --repo "$_repo" --clobber "release-assets/${{ inputs.manifest-filename }}"
+          gh release edit rc --repo "$_repo" --prerelease --notes "Rolling rc channel pointer — currently v${{ inputs.version }}. Its manifest.json names that pre-release's assets; see the versioned release for the bytes."
+          echo "rc pointer now names v${{ inputs.version }}"
