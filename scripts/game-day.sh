@@ -187,13 +187,27 @@ instance_started_at() {
   systemctl show "$INSTANCE_UNIT" -p ActiveEnterTimestampMonotonic --value
 }
 
+# docker inspect --format templates, named once so the same string is not
+# spelled four different ways as this script grows.
+RESTART_COUNT_FORMAT='{{.RestartCount}}'
+STATE_STATUS_FORMAT='{{.State.Status}}'
+STATE_PID_FORMAT='{{.State.Pid}}'
+
+restart_count() {
+  _container=$1
+  docker inspect -f "$RESTART_COUNT_FORMAT" "$_container"
+}
+
 container_state() {
-  docker inspect -f '{{.RestartCount}} {{.State.Status}}' "$1" 2>/dev/null || echo "- absent"
+  _container=$1
+  docker inspect -f "$RESTART_COUNT_FORMAT $STATE_STATUS_FORMAT" "$_container" \
+    2>/dev/null || echo "- absent"
 }
 
 require_container() {
-  if [ "$(docker inspect -f '{{.State.Status}}' "$1" 2>/dev/null || true)" != running ]; then
-    echo "game-day: container $1 is not running — bring the dev stack up first." >&2
+  _container=$1
+  if [ "$(docker inspect -f "$STATE_STATUS_FORMAT" "$_container" 2>/dev/null || true)" != running ]; then
+    echo "game-day: container $_container is not running — bring the dev stack up first." >&2
     exit 1
   fi
 }
@@ -252,9 +266,9 @@ crash_phase() {
   _baseline_health=$3
   require_container "$_container"
 
-  _restarts_before=$(docker inspect -f '{{.RestartCount}}' "$_container")
+  _restarts_before=$(restart_count "$_container")
   _instance_before=$(instance_started_at)
-  _pid=$(docker inspect -f '{{.State.Pid}}' "$_container")
+  _pid=$(docker inspect -f "$STATE_PID_FORMAT" "$_container")
 
   say ""
   say "=== crash: $_container (host pid $_pid) ==="
@@ -298,7 +312,7 @@ crash_phase() {
     return 0
   fi
 
-  _restarts_after=$(docker inspect -f '{{.RestartCount}}' "$_container")
+  _restarts_after=$(restart_count "$_container")
   if [ "$_restarts_after" -le "$_restarts_before" ]; then
     say "  FAIL: restart count did not advance ($_restarts_before -> $_restarts_after)"
     say "        the container came back some other way, not by policy"
@@ -337,7 +351,7 @@ operator_stop_phase() {
   say "=== operator stop: $_container ==="
   say "  \`docker kill\` is a manual stop. Docker will NOT restart it."
 
-  _restarts_before=$(docker inspect -f '{{.RestartCount}}' "$_container")
+  _restarts_before=$(restart_count "$_container")
   docker kill "$_container" >/dev/null
   sleep 5
 
@@ -359,7 +373,7 @@ operator_stop_phase() {
 
   # `docker start` resets RestartCount, so this is not a before/after
   # comparison — it is a note that the counter no longer means what it did.
-  _restarts_after=$(docker inspect -f '{{.RestartCount}}' "$_container")
+  _restarts_after=$(restart_count "$_container")
   say "  restart count was $_restarts_before, and \`docker start\` reset it to $_restarts_after"
 
   # Leave the stack as the crash phase found it, measured against the same

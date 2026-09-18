@@ -44,6 +44,7 @@ done
 
 case "$version" in
   v*) echo "promote-release: pass the version without a leading v (got $version)" >&2; exit 2 ;;
+  *) ;; # anything else is a bare version, which is what this script wants
 esac
 tag="v${version}"
 
