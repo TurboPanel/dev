@@ -135,9 +135,17 @@ done
 # This kills a database. It runs against the disposable dev stack and nothing
 # else, and every condition below has to hold before a single signal is sent.
 
-TURBOPANEL_MODE=${TURBOPANEL_MODE:-development}
-if [ "$TURBOPANEL_MODE" != development ]; then
-  echo "game-day: TURBOPANEL_MODE is '$TURBOPANEL_MODE', not development — refusing." >&2
+# The mode is read from the host's own daemon.env, not from the shell
+# environment: an interactive shell on a production control-plane host has
+# TURBOPANEL_MODE unset, and a default of "development" would make an unset
+# variable an authorization to kill that host's database. Affirmative or
+# nothing.
+DAEMON_ENV=${DAEMON_ENV:-/etc/turbopanel/daemon.env}
+HOST_MODE=$(sed -n 's/^TURBOPANEL_MODE=//p' "$DAEMON_ENV" 2>/dev/null | tr -d '"'"'"'\r' | tail -1)
+if [ "$HOST_MODE" != development ]; then
+  echo "game-day: this host is not marked development — refusing." >&2
+  echo "  $DAEMON_ENV says TURBOPANEL_MODE=${HOST_MODE:-<unset or unreadable>}" >&2
+  echo "  It kills a live database; it runs on a dev guest and nowhere else." >&2
   exit 1
 fi
 
