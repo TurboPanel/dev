@@ -15,14 +15,18 @@
 #                                team is one person; GitHub records each
 #                                bypass. To require PRs of yourself too,
 #                                drop the bypass_actors entry below.
-#   release tags: immutable    — no bypass: a v<digit>* tag can never be
+#   release tags: immutable    — no bypass: a bare vX.Y.Z tag can never be
 #                                moved or deleted once it exists.
-#   release tags: creation     — only repository admins create v<digit>*
+#   release tags: creation     — only repository admins create bare vX.Y.Z
 #                                tags. The pattern mirrors release.yml's
-#                                push filter (v[0-9]*), so the rolling `rc`
-#                                pointer and the vtest-* dry-run tags that
-#                                gh-release.yml creates with GITHUB_TOKEN
-#                                stay outside it.
+#                                push filter (v[0-9]*) and then EXCLUDES
+#                                hyphenated pre-release tags (v*-*): rulesets
+#                                bind GITHUB_TOKEN too, and gh-release.yml
+#                                creates v0.1.1-rc.1 / v0.1.1-canary.<id>
+#                                itself with that token, then prunes old
+#                                canaries. The rolling `rc` / `canary`
+#                                pointers and vtest-* dry-run tags never
+#                                matched the pattern in the first place.
 #
 # Required check contexts are the PR-time job names: `verify` where the
 # repo's verify.yml runs on pull_request, plus turbopanel's Build jobs.
@@ -99,7 +103,7 @@ for repo in TurboPanel/turbopanel TurboPanel/turbopaneld TurboPanel/ui TurboPane
     "target": "tag",
     "enforcement": "active",
     "bypass_actors": [],
-    "conditions": {"ref_name": {"include": ["refs/tags/v[0-9]*"], "exclude": []}},
+    "conditions": {"ref_name": {"include": ["refs/tags/v[0-9]*"], "exclude": ["refs/tags/v*-*"]}},
     "rules": [{"type": "update"}, {"type": "deletion"}]
   }'
 
@@ -108,9 +112,9 @@ for repo in TurboPanel/turbopanel TurboPanel/turbopaneld TurboPanel/ui TurboPane
     \"target\": \"tag\",
     \"enforcement\": \"active\",
     \"bypass_actors\": ${ADMIN_BYPASS},
-    \"conditions\": {\"ref_name\": {\"include\": [\"refs/tags/v[0-9]*\"], \"exclude\": []}},
+    \"conditions\": {\"ref_name\": {\"include\": [\"refs/tags/v[0-9]*\"], \"exclude\": [\"refs/tags/v*-*\"]}},
     \"rules\": [{\"type\": \"creation\"}]
   }"
 done
 
-echo "✓ rulesets applied: trunk immutable + PR/CI (admin bypass), v[0-9]* tags immutable + admin-only creation"
+echo "✓ rulesets applied: trunk immutable + PR/CI (admin bypass); bare vX.Y.Z tags immutable + admin-only creation (v*-* pre-release tags left to Actions)"
