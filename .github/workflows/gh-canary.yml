@@ -1,0 +1,293 @@
+# Reusable canary-publish workflow, called by TurboPanel/turbopaneld,
+# TurboPanel/turbopanel and TurboPanel/ui after every green trunk build —
+# the rolling sibling of gh-release.yml. Where a release is a versioned,
+# immutable GitHub Release on a vX.Y.Z tag, the canary channel is ONE
+# rolling pre-release per repo, tagged `canary`, whose assets are replaced
+# in place on every trunk merge (decided 2026-09-19: one release, not one
+# per merge, so the Releases page stays readable).
+#
+# What keeps that honest:
+#
+#   - every asset carries the build's version in its filename
+#     (`<pkg>-<X.Y.Z>-canary.<buildId>-<arch>.tar.zst`), so a manifest never
+#     names a file another build will overwrite — uploads only ever add,
+#     and `manifest.json` is the one file replaced in place, uploaded LAST
+#     so a consumer that reads it finds every asset it names already there;
+#   - the assets are re-verified from the live download URLs against the
+#     manifest's sha256 + size after upload, the same "re-download and hash
+#     it" check gh-release.yml and publish-daemon-trunk.yml run;
+#   - the last `keep` builds' assets stay so a canary host can be pinned
+#     back a few merges (`--manifest-url` is a pin, not a channel; an old
+#     manifest is not kept, only its bytes) — older builds' assets are
+#     deleted after a successful publish;
+#   - the `canary` tag is force-moved to the built commit so the release
+#     page's "compare" and source links describe the bytes it serves. The
+#     tag sits outside the `release tags` rulesets (those match v[0-9]*),
+#     so GITHUB_TOKEN may move it.
+#
+# Consumers read https://github.com/<repo>/releases/download/canary/manifest.json —
+# the built-in location the daemon (src/update/urls.ts), the control plane
+# (src/lib/update/channel.ts) and run.sh advertise for `canary`.
+#
+# What this does NOT do: build anything. The caller compiles, packages and
+# writes the manifest with ARTIFACT_BASE_URL set to this repo's
+# releases/download/canary path, then hands the files over as a job artifact.
+
+name: GitHub Canary
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: The build's version string without a leading v (e.g. 0.1.1-canary.20260919-120000-abc1234)
+        required: true
+        type: string
+      commit:
+        description: The commit these assets were built from; the `canary` tag is moved to it
+        required: true
+        type: string
+      assets-artifact-name:
+        description: Name of a job artifact (uploaded by the caller via actions/upload-artifact) holding every asset plus the manifest
+        required: true
+        type: string
+      manifest-filename:
+        description: Filename of the manifest within the assets artifact
+        required: false
+        type: string
+        default: manifest.json
+      keep:
+        description: How many builds' assets stay on the rolling release (older ones are pruned after a successful publish)
+        required: false
+        type: number
+        default: 20
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    concurrency:
+      # One canary publish at a time per repo: two runs uploading and
+      # pruning the same rolling release would race each other's manifest.
+      group: gh-canary-${{ github.repository }}
+      cancel-in-progress: false
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TAG: canary
+    steps:
+      - name: Download canary assets
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ inputs.assets-artifact-name }}
+          path: canary-assets
+
+      - name: Require the manifest and at least one asset
+        run: |
+          set -eu
+          if [ ! -s "canary-assets/${{ inputs.manifest-filename }}" ]; then
+            echo "::error::canary-assets/${{ inputs.manifest-filename }} is missing or empty"
+            exit 1
+          fi
+          _n="$(find canary-assets -type f ! -name "${{ inputs.manifest-filename }}" | wc -l)"
+          if [ "$_n" -lt 1 ]; then
+            echo "::error::the assets artifact holds only the manifest — nothing to publish"
+            exit 1
+          fi
+          # Every asset filename must carry this build's version, or a later
+          # build could overwrite it while an older manifest still names it.
+          for _f in canary-assets/*; do
+            _name="$(basename "$_f")"
+            [ "$_name" = "${{ inputs.manifest-filename }}" ] && continue
+            case "$_name" in
+              *"${{ inputs.version }}"*) ;;
+              *) echo "::error::asset ${_name} does not carry the build version ${{ inputs.version }} in its name"; exit 1 ;;
+            esac
+          done
+
+      - name: Ensure the rolling canary pre-release exists
+        run: |
+          set -eu
+          _repo="${{ github.repository }}"
+          if ! gh release view "$TAG" --repo "$_repo" >/dev/null 2>&1; then
+            gh release create "$TAG" \
+              --repo "$_repo" \
+              --target "${{ inputs.commit }}" \
+              --prerelease \
+              --title "canary (rolling)" \
+              --notes "Rolling canary channel: the newest green trunk build, replaced on every merge. Not a release."
+          fi
+
+      - name: Upload this build's assets, manifest last
+        run: |
+          set -eu
+          _repo="${{ github.repository }}"
+          for _f in canary-assets/*; do
+            _name="$(basename "$_f")"
+            [ "$_name" = "${{ inputs.manifest-filename }}" ] && continue
+            gh release upload "$TAG" "$_f" --repo "$_repo" --clobber
+          done
+          gh release upload "$TAG" "canary-assets/${{ inputs.manifest-filename }}" --repo "$_repo" --clobber
+
+      - name: Verify the published assets against the manifest
+        run: |
+          python3 <<'PY'
+          import hashlib
+          import json
+          import os
+          import sys
+          import time
+          import urllib.request
+
+          manifest_path = os.path.join(
+              "canary-assets", "${{ inputs.manifest-filename }}"
+          )
+          with open(manifest_path) as f:
+              manifest = json.load(f)
+
+          repo = "${{ github.repository }}"
+          tag = os.environ["TAG"]
+
+          # Same walker as gh-release.yml: any object carrying url + sha256 +
+          # size, wherever it sits, is an artifact to check.
+          def walk(node, path):
+              if isinstance(node, dict):
+                  if {"url", "sha256", "size"} <= node.keys():
+                      yield path, node
+                      return
+                  for key, value in node.items():
+                      yield from walk(value, f"{path}.{key}" if path else key)
+              elif isinstance(node, list):
+                  for i, value in enumerate(node):
+                      yield from walk(value, f"{path}[{i}]")
+
+          checks = list(walk(manifest, ""))
+          if not checks:
+              print(
+                  f"::error::{manifest_path} names no artifacts (no object with url+sha256+size)",
+                  file=sys.stderr,
+              )
+              sys.exit(1)
+
+          def fetch(url):
+              req = urllib.request.Request(
+                  url, headers={"User-Agent": "turbopanel-canary-verify"}
+              )
+              # A freshly replaced asset can lag a few seconds behind the
+              # by-name redirect; retry before calling it a mismatch.
+              last = None
+              for attempt in range(5):
+                  try:
+                      with urllib.request.urlopen(req) as resp:
+                          return resp.read()
+                  except Exception as exc:  # noqa: BLE001
+                      last = exc
+                      time.sleep(3 * (attempt + 1))
+              raise last
+
+          failed = False
+          for name, entry in checks:
+              filename = entry["url"].rsplit("/", 1)[-1]
+              expected_url = (
+                  f"https://github.com/{repo}/releases/download/{tag}/{filename}"
+              )
+              if entry["url"] != expected_url:
+                  print(
+                      f"::error::{name} manifest url is not this rolling release's asset: "
+                      f"manifest={entry['url']} expected={expected_url}",
+                      file=sys.stderr,
+                  )
+                  failed = True
+                  continue
+              data = fetch(expected_url)
+              digest = hashlib.sha256(data).hexdigest()
+              if digest != entry["sha256"] or len(data) != entry["size"]:
+                  print(
+                      f"::error::{name} canary-asset mismatch: "
+                      f"expected sha256={entry['sha256']} size={entry['size']} "
+                      f"got sha256={digest} size={len(data)} url={expected_url}",
+                      file=sys.stderr,
+                  )
+                  failed = True
+
+          # The manifest itself must be the one we just uploaded — the by-name
+          # redirect has to resolve to the new bytes, not a cached predecessor.
+          with open(manifest_path, "rb") as f:
+              local = f.read()
+          live = fetch(
+              f"https://github.com/{repo}/releases/download/{tag}/"
+              + "${{ inputs.manifest-filename }}"
+          )
+          if hashlib.sha256(live).hexdigest() != hashlib.sha256(local).hexdigest():
+              print(
+                  "::error::live manifest.json does not match the uploaded one",
+                  file=sys.stderr,
+              )
+              failed = True
+
+          if failed:
+              sys.exit(1)
+          print(
+              f"Verified {len(checks)} canary asset(s) for commit "
+              f"{manifest.get('commit', '?')} ({manifest.get('version', '?')})"
+          )
+          PY
+
+      - name: Prune builds older than the newest ${{ inputs.keep }}
+        # Only after a clean verify: a failed publish never deletes the
+        # previous build's bytes, so the last good manifest keeps resolving.
+        run: |
+          python3 <<'PY'
+          import json
+          import os
+          import re
+          import subprocess
+
+          repo = "${{ github.repository }}"
+          tag = os.environ["TAG"]
+          keep = int("${{ inputs.keep }}")
+          manifest_name = "${{ inputs.manifest-filename }}"
+
+          out = subprocess.run(
+              ["gh", "release", "view", tag, "--repo", repo, "--json", "assets"],
+              check=True, capture_output=True, text=True,
+          ).stdout
+          assets = [a["name"] for a in json.loads(out)["assets"]]
+
+          # buildId = <yyyymmdd>-<hhmmss>-<7-hex>, embedded in every canary
+          # asset name via the version string; sorting the ids sorts the builds.
+          build_re = re.compile(r"-canary\.(\d{8}-\d{6}-[0-9a-f]{7})")
+          by_build = {}
+          for name in assets:
+              if name == manifest_name:
+                  continue
+              m = build_re.search(name)
+              if not m:
+                  print(f"::warning::asset {name} carries no canary buildId; left alone")
+                  continue
+              by_build.setdefault(m.group(1), []).append(name)
+
+          builds = sorted(by_build, reverse=True)
+          stale = builds[keep:]
+          if not stale:
+              print(f"{len(builds)} build(s) on the rolling release, keep={keep}: nothing to prune")
+              raise SystemExit(0)
+          for build in stale:
+              for name in by_build[build]:
+                  subprocess.run(
+                      ["gh", "release", "delete-asset", tag, name, "--repo", repo, "--yes"],
+                      check=True,
+                  )
+                  print(f"pruned {name}")
+          print(f"kept {min(len(builds), keep)} build(s), pruned {len(stale)}")
+          PY
+
+      - name: Move the canary tag to this build's commit and refresh the notes
+        run: |
+          set -eu
+          _repo="${{ github.repository }}"
+          gh api --method PATCH "/repos/${_repo}/git/refs/tags/${TAG}" \
+            -f sha="${{ inputs.commit }}" -F force=true >/dev/null
+          gh release edit "$TAG" --repo "$_repo" --prerelease \
+            --notes "Rolling canary channel — currently ${{ inputs.version }} (commit ${{ inputs.commit }}), replaced on every green trunk merge. Follow it with TURBOPANEL_UPDATE_CHANNEL=canary; pin a build with --manifest-url. Not a release: the newest ${{ inputs.keep }} builds' assets are kept, older ones are pruned."
+          echo "canary now serves ${{ inputs.version }} from ${{ inputs.commit }}"
