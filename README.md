@@ -176,6 +176,7 @@ runs as the guest user.
 
 - [Local development guide](https://turbopanel.io/docs/getting-started/development?utm_source=github-dev-readme)
 - [Prerequisites](https://turbopanel.io/docs/development/prerequisites)
+- [Canary environment](https://turbopanel.io/docs/development/canary) — a self-hosted install that follows `trunk`; how the canary builds are produced
 - [Architecture](https://turbopanel.io/docs/architecture)
 - [Troubleshooting](https://turbopanel.io/docs/getting-started/console-troubleshooting)
 - [Cleanup / uninstall](https://turbopanel.io/docs/deployment/uninstall#contributor-dev-environment)
