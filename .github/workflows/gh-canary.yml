@@ -16,10 +16,10 @@
 #   - the assets are re-verified from the live download URLs against the
 #     manifest's sha256 + size after upload, the same "re-download and hash
 #     it" check gh-release.yml and publish-daemon-trunk.yml run;
-#   - the last `keep` builds' assets stay so a canary host can be pinned
-#     back a few merges (`--manifest-url` is a pin, not a channel; an old
-#     manifest is not kept, only its bytes) — older builds' assets are
-#     deleted after a successful publish;
+#   - the last `keep` builds' assets stay, each with its own
+#     `manifest-<version>.json` copy, so a canary host can be pinned back a
+#     few merges with `--manifest-url` — older builds' assets are deleted
+#     after a successful publish;
 #   - the `canary` tag is force-moved to the built commit so the release
 #     page's "compare" and source links describe the bytes it serves. The
 #     tag sits outside the `release tags` rulesets (those match v[0-9]*),
@@ -119,6 +119,10 @@ jobs:
           fi
 
       - name: Upload this build's assets, manifest last
+        # The manifest goes up twice: once under its own version
+        # (`manifest-<version>.json`, kept and pruned with the build so the
+        # build stays pinnable) and once as the rolling `manifest.json` the
+        # channel reads, uploaded last so nothing it names is missing.
         run: |
           set -eu
           _repo="${{ github.repository }}"
@@ -127,6 +131,9 @@ jobs:
             [ "$_name" = "${{ inputs.manifest-filename }}" ] && continue
             gh release upload "$TAG" "$_f" --repo "$_repo" --clobber
           done
+          _pinned="manifest-${{ inputs.version }}.json"
+          cp "canary-assets/${{ inputs.manifest-filename }}" "canary-assets/${_pinned}"
+          gh release upload "$TAG" "canary-assets/${_pinned}" --repo "$_repo" --clobber
           gh release upload "$TAG" "canary-assets/${{ inputs.manifest-filename }}" --repo "$_repo" --clobber
 
       - name: Verify the published assets against the manifest
@@ -289,5 +296,5 @@ jobs:
           gh api --method PATCH "/repos/${_repo}/git/refs/tags/${TAG}" \
             -f sha="${{ inputs.commit }}" -F force=true >/dev/null
           gh release edit "$TAG" --repo "$_repo" --prerelease \
-            --notes "Rolling canary channel — currently ${{ inputs.version }} (commit ${{ inputs.commit }}), replaced on every green trunk merge. Follow it with TURBOPANEL_UPDATE_CHANNEL=canary; pin a build with --manifest-url. Not a release: the newest ${{ inputs.keep }} builds' assets are kept, older ones are pruned."
+            --notes "Rolling canary channel — currently ${{ inputs.version }} (commit ${{ inputs.commit }}), replaced on every green trunk merge. Follow it with TURBOPANEL_UPDATE_CHANNEL=canary; pin one build with TURBOPANEL_MANIFEST_URL pointing at its manifest-<version>.json here. Not a release: the newest ${{ inputs.keep }} builds are kept, older ones are pruned."
           echo "canary now serves ${{ inputs.version }} from ${{ inputs.commit }}"
