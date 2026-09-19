@@ -23,7 +23,11 @@
 #   - the `canary` tag is force-moved to the built commit so the release
 #     page's "compare" and source links describe the bytes it serves. The
 #     tag sits outside the `release tags` rulesets (those match v[0-9]*),
-#     so GITHUB_TOKEN may move it.
+#     so GITHUB_TOKEN may move it;
+#   - a build of a commit that is already BEHIND the live canary is not
+#     published: two trunk builds can finish out of order (the instance's
+#     Build is ~25 min), and the older one landing last must not roll the
+#     channel back. Such a run ends green with a notice, publishing nothing.
 #
 # Consumers read https://github.com/<repo>/releases/download/canary/manifest.json —
 # the built-in location the daemon (src/update/urls.ts), the control plane
@@ -105,7 +109,34 @@ jobs:
             esac
           done
 
+      - name: Refuse to move the canary backwards
+        id: guard
+        run: |
+          set -eu
+          _repo="${{ github.repository }}"
+          _new="${{ inputs.commit }}"
+          _live=""
+          if _json="$(curl -fsSL --proto '=https' --proto-redir '=https' "https://github.com/${_repo}/releases/download/${TAG}/${{ inputs.manifest-filename }}" 2>/dev/null)"; then
+            _live="$(printf '%s' "$_json" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("commit",""))')"
+          fi
+          if [ -z "$_live" ] || [ "$_live" = "$_new" ]; then
+            echo "proceed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          _status="$(gh api "/repos/${_repo}/compare/${_live}...${_new}" --jq .status 2>/dev/null || echo unknown)"
+          case "$_status" in
+            behind)
+              echo "::notice::canary already serves ${_live}, which is ahead of ${_new} — this older build is not published"
+              echo "proceed=false" >> "$GITHUB_OUTPUT" ;;
+            *)
+              # ahead (the normal case), identical, diverged, or unknown
+              # (a force-moved history): publish. Trunk is linear, so
+              # diverged and unknown are not expected to occur.
+              echo "proceed=true" >> "$GITHUB_OUTPUT" ;;
+          esac
+
       - name: Ensure the rolling canary pre-release exists
+        if: steps.guard.outputs.proceed == 'true'
         run: |
           set -eu
           _repo="${{ github.repository }}"
@@ -119,6 +150,7 @@ jobs:
           fi
 
       - name: Upload this build's assets, manifest last
+        if: steps.guard.outputs.proceed == 'true'
         # The manifest goes up twice: once under its own version
         # (`manifest-<version>.json`, kept and pruned with the build so the
         # build stays pinnable) and once as the rolling `manifest.json` the
@@ -137,6 +169,7 @@ jobs:
           gh release upload "$TAG" "canary-assets/${{ inputs.manifest-filename }}" --repo "$_repo" --clobber
 
       - name: Verify the published assets against the manifest
+        if: steps.guard.outputs.proceed == 'true'
         run: |
           python3 <<'PY'
           import hashlib
@@ -241,6 +274,7 @@ jobs:
           PY
 
       - name: Prune builds older than the newest ${{ inputs.keep }}
+        if: steps.guard.outputs.proceed == 'true'
         # Only after a clean verify: a failed publish never deletes the
         # previous build's bytes, so the last good manifest keeps resolving.
         run: |
@@ -290,6 +324,7 @@ jobs:
           PY
 
       - name: Move the canary tag to this build's commit and refresh the notes
+        if: steps.guard.outputs.proceed == 'true'
         run: |
           set -eu
           _repo="${{ github.repository }}"
