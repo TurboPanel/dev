@@ -32,13 +32,19 @@ tp_platform_repo_path() {
 }
 
 # Export the dev-root/repo contract for child processes (vite-node console).
+# TURBOPANEL_DEV_ROOT is the source of truth; a TURBOPANEL_*_REPO key is
+# forwarded only when the caller set it explicitly, so consumers keep deriving
+# <dev_root>/<repo> themselves and default paths are never persisted.
 tp_export_dev_repo_contract() {
   export TURBOPANEL_MODE
   export TURBOPANEL_DEV_ROOT
-  export TURBOPANEL_DAEMON_REPO="$(tp_platform_repo_path turbopaneld)"
-  export TURBOPANEL_INSTANCE_REPO="$(tp_platform_repo_path turbopanel)"
-  export TURBOPANEL_UI_REPO="$(tp_platform_repo_path ui)"
-  export TURBOPANEL_WEBSITE_REPO="$(tp_platform_repo_path website)"
+  for _tp_repo_dir in turbopaneld turbopanel ui website; do
+    _tp_repo_key=$(tp_platform_repo_env_key "$_tp_repo_dir")
+    eval "_tp_repo_override=\${$_tp_repo_key-}"
+    if [ -n "$_tp_repo_override" ]; then
+      export "$_tp_repo_key"
+    fi
+  done
 }
 TURBOPANEL_ROOT=/opt/turbopanel
 # Vendored runtime root (override with TURBOPANEL_RUNTIMES_DIR).

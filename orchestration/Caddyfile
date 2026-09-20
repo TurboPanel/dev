@@ -19,7 +19,8 @@
 #   EXPO_PORT                    Expo dev server port when UI_MODE=dev (default: 8081)
 #   TURBOPANEL_UI_ROOT           Static export directory when UI_MODE=static
 #   TURBOPANEL_DAEMON_REPO       Daemon checkout root; /downloads/daemon + installer at /run.sh
-#   TURBOPANEL_SOCKET_DIAL       Unix socket dial path for Deno instance
+#   TURBOPANEL_RUN_DIR           Runtime dir holding instance.sock (default: /run/turbopanel);
+#                                the unix/ dial for the Deno instance is derived, never set by hand
 #   TURBOPANEL_INSTANCE_RUNTIME  "deno" | "workers" (default: deno)
 #   WRANGLER_DEV_PORT            wrangler dev port when runtime is workers
 #   CADDY_PORT                   HTTPS listen port (default: 8443)
@@ -71,7 +72,7 @@
 			}
 		}
 		handle {
-			reverse_proxy unix//{$TURBOPANEL_SOCKET_DIAL:run/turbopanel/instance.sock} {
+			reverse_proxy unix/{$TURBOPANEL_RUN_DIR:/run/turbopanel}/instance.sock {
 				header_up X-Real-IP {remote_host}
 			}
 		}
@@ -86,7 +87,7 @@
 			}
 		}
 		handle {
-			reverse_proxy unix//{$TURBOPANEL_SOCKET_DIAL:run/turbopanel/instance.sock} {
+			reverse_proxy unix/{$TURBOPANEL_RUN_DIR:/run/turbopanel}/instance.sock {
 				header_up X-Real-IP {remote_host}
 			}
 		}
@@ -109,7 +110,7 @@
 			}
 		}
 		handle {
-			reverse_proxy unix//{$TURBOPANEL_SOCKET_DIAL:run/turbopanel/instance.sock} {
+			reverse_proxy unix/{$TURBOPANEL_RUN_DIR:/run/turbopanel}/instance.sock {
 				header_up X-Real-IP {remote_host}
 			}
 		}
@@ -218,7 +219,7 @@
 			}
 		}
 		handle {
-			reverse_proxy unix//{$TURBOPANEL_SOCKET_DIAL:run/turbopanel/instance.sock} {
+			reverse_proxy unix/{$TURBOPANEL_RUN_DIR:/run/turbopanel}/instance.sock {
 				header_up X-Real-IP {remote_host}
 			}
 		}
@@ -233,7 +234,7 @@
 			}
 		}
 		handle {
-			reverse_proxy unix//{$TURBOPANEL_SOCKET_DIAL:run/turbopanel/instance.sock} {
+			reverse_proxy unix/{$TURBOPANEL_RUN_DIR:/run/turbopanel}/instance.sock {
 				header_up X-Real-IP {remote_host}
 			}
 		}
@@ -256,7 +257,7 @@
 			}
 		}
 		handle {
-			reverse_proxy unix//{$TURBOPANEL_SOCKET_DIAL:run/turbopanel/instance.sock} {
+			reverse_proxy unix/{$TURBOPANEL_RUN_DIR:/run/turbopanel}/instance.sock {
 				header_up X-Real-IP {remote_host}
 			}
 		}

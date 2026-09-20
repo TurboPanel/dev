@@ -14,8 +14,8 @@ import {
 import { isDaemonSystemdInstalled } from "../dev-services.ts";
 import { resolveDevIdentity } from "./dev-identity.ts";
 import {
+  devConvergeOptionsEnvEntry,
   type OptionalDevServiceSelection,
-  optionalServicesOrchestrationEnv,
   readOptionalDevServices,
 } from "./optional-dev-services.ts";
 import {
@@ -94,9 +94,7 @@ function orchestrationEnv(
     "UV_NO_MODIFY_PATH=1",
     "UV_PYTHON_DOWNLOADS=automatic",
     "UV_VENV_CLEAR=1",
-    ...optionalServicesOrchestrationEnv(
-      optionalServices ?? readOptionalDevServices(),
-    ),
+    devConvergeOptionsEnvEntry(optionalServices ?? readOptionalDevServices()),
   ];
   if (mode === "force") {
     env.push("TURBOPANEL_FORCE_CONVERGE=1");
@@ -112,7 +110,7 @@ export type RunOrchestrationActionOptions = {
   denoBin?: string;
   /** Dev converge mode — `force` sets TURBOPANEL_FORCE_CONVERGE=1 for the child. */
   mode?: "if-needed" | "force";
-  /** Optional tooling selection passed as TURBOPANEL_OPTIONAL_* env to Ansible. */
+  /** Optional tooling selection — sent as the TURBOPANEL_DEV_CONVERGE_OPTIONS payload. */
   optionalServices?: OptionalDevServiceSelection;
 };
 

@@ -32,12 +32,18 @@ export function resolveDevRoot(): string {
  *
  * Directory names match GitHub (`turbopaneld` / `turbopanel`), but the env
  * keys stay `TURBOPANEL_DAEMON_REPO` / `TURBOPANEL_INSTANCE_REPO` for the
- * daemon and control-plane checkouts.
+ * daemon and control-plane checkouts. These are **optional overrides only** —
+ * every consumer derives `<TURBOPANEL_DEV_ROOT>/<dir>` when the key is unset.
  */
 export function platformRepoEnvKey(dir: string): string {
   if (dir === "turbopaneld") return "TURBOPANEL_DAEMON_REPO";
   if (dir === "turbopanel") return "TURBOPANEL_INSTANCE_REPO";
   return `TURBOPANEL_${dir.toUpperCase()}_REPO`;
+}
+
+/** Every per-repo override key ({@link platformRepoEnvKey} for each platform dir). */
+export function platformRepoEnvKeys(): string[] {
+  return PLATFORM_REPO_DIRS.map((dir) => platformRepoEnvKey(dir));
 }
 
 /** Production FHS default for vendored runtimes (`/opt/turbopanel/vendor`). */
@@ -119,9 +125,14 @@ export const ANSIBLE_CURRENT_DIR = `${RUNTIMES_DIR}/ansible/current`;
 export const ANSIBLE_PLAYBOOK_BIN = `${ANSIBLE_CURRENT_DIR}/bin/ansible-playbook`;
 export const DEV_CONVERGE_STAMP_PATH = `${RUNTIMES_DIR}/ansible/dev-converge.stamp`;
 
+/** Default checkout path — what every consumer derives from the dev root. */
+function defaultPlatformRepoPath(dir: string): string {
+  return `${resolveDevRoot()}/${dir}`;
+}
+
 export function platformRepoPath(dir: string): string {
   const override = process.env[platformRepoEnvKey(dir)]?.trim();
-  return override || `${resolveDevRoot()}/${dir}`;
+  return override || defaultPlatformRepoPath(dir);
 }
 
 export function daemonRepoPath(): string {
@@ -142,11 +153,23 @@ export function platformCaCertPath(): string {
   return `${STATE_DIR}/tls/ca-bundle.pem`;
 }
 
-/** Managed repo-root entries for `daemon.env` (override-aware). */
+/**
+ * Per-repo `daemon.env` entries — **explicit overrides only**.
+ *
+ * `TURBOPANEL_DEV_ROOT` is the persisted source of truth; the daemon
+ * (`src/paths/layout.ts`, `src/instance/public-urls-apply.ts`) and the
+ * instance (`src/daemon/version.ts`, `src/developer/system-routes.ts`)
+ * already fall back to `<dev_root>/<dir>`, so a default path is never written.
+ * An override equal to the derived default is likewise dropped: nothing
+ * consumes it, and persisting it would pin a stale root.
+ */
 export function buildPlatformRepoEntries(): Record<string, string> {
   const entries: Record<string, string> = {};
   for (const dir of PLATFORM_REPO_DIRS) {
-    entries[platformRepoEnvKey(dir)] = platformRepoPath(dir);
+    const override = process.env[platformRepoEnvKey(dir)]?.trim();
+    if (override && override !== defaultPlatformRepoPath(dir)) {
+      entries[platformRepoEnvKey(dir)] = override;
+    }
   }
   return entries;
 }

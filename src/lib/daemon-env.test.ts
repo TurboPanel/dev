@@ -8,6 +8,7 @@ import {
   readInstanceRunMode,
   readInstanceRuntime,
   readInstanceUiMode,
+  stalePlatformRepoKeys,
   writeDaemonBaseEnv,
   writeDaemonInstanceEnv,
 } from "./daemon-env.ts";
@@ -68,21 +69,78 @@ test("writeDaemonInstanceEnv workers mode points TURBOPANEL_INSTANCE_CA at the d
   );
 });
 
+const PLATFORM_REPO_KEYS = [
+  "TURBOPANEL_DAEMON_REPO",
+  "TURBOPANEL_INSTANCE_REPO",
+  "TURBOPANEL_UI_REPO",
+  "TURBOPANEL_WEBSITE_REPO",
+] as const;
+
+function clearRepoOverrides(): void {
+  vi.stubEnv("TURBOPANEL_DEV_ROOT", "/dev-root");
+  for (const key of PLATFORM_REPO_KEYS) {
+    vi.stubEnv(key, "");
+  }
+}
+
 test("writeDaemonBaseEnv writes identity keys and strips the instance opt-in", () => {
+  clearRepoOverrides();
   writeDaemonBaseEnv({ EXTRA: "1" });
   expect(vi.mocked(mergeEnvFile)).toHaveBeenCalledWith(
     expect.any(String),
     expect.objectContaining({
       TURBOPANEL_MODE: "development",
+      TURBOPANEL_DEV_ROOT: "/dev-root",
       EXTRA: "1",
     }),
     expect.objectContaining({
-      removeKeys: ["TURBOPANEL_DEV_INSTANCE"],
+      removeKeys: ["TURBOPANEL_DEV_INSTANCE", ...PLATFORM_REPO_KEYS],
     }),
   );
+  vi.unstubAllEnvs();
 });
 
-test("writeDaemonInstanceEnv deno extra removes workers URL keys", () => {
+test("managed daemon.env never carries default checkout paths", () => {
+  clearRepoOverrides();
+  const entries = buildDaemonBaseEnvEntries();
+  for (const key of PLATFORM_REPO_KEYS) {
+    expect(entries).not.toHaveProperty(key);
+  }
+  expect(entries.TURBOPANEL_DEV_ROOT).toBe("/dev-root");
+  vi.unstubAllEnvs();
+});
+
+test("writeDaemonBaseEnv keeps an explicit override and removes only the stale keys", () => {
+  clearRepoOverrides();
+  vi.stubEnv("TURBOPANEL_UI_REPO", "/elsewhere/ui");
+  writeDaemonBaseEnv();
+  const call = vi.mocked(mergeEnvFile).mock.calls.at(-1);
+  if (call === undefined) {
+    throw new TypeError("expected mergeEnvFile call");
+  }
+  expect(call[1]).toMatchObject({ TURBOPANEL_UI_REPO: "/elsewhere/ui" });
+  expect(call[2]).toEqual({
+    removeKeys: [
+      "TURBOPANEL_DEV_INSTANCE",
+      "TURBOPANEL_DAEMON_REPO",
+      "TURBOPANEL_INSTANCE_REPO",
+      "TURBOPANEL_WEBSITE_REPO",
+    ],
+  });
+  vi.unstubAllEnvs();
+});
+
+test("stalePlatformRepoKeys names every override key missing from the entries", () => {
+  expect(stalePlatformRepoKeys({})).toEqual([...PLATFORM_REPO_KEYS]);
+  expect(stalePlatformRepoKeys({ TURBOPANEL_DAEMON_REPO: "/x" })).toEqual([
+    "TURBOPANEL_INSTANCE_REPO",
+    "TURBOPANEL_UI_REPO",
+    "TURBOPANEL_WEBSITE_REPO",
+  ]);
+});
+
+test("writeDaemonInstanceEnv deno extra removes workers URL keys and stale repo keys", () => {
+  clearRepoOverrides();
   writeDaemonInstanceEnv({ TURBOPANEL_INSTANCE_RUNTIME: "deno" });
   const call = vi.mocked(mergeEnvFile).mock.calls.at(-1);
   if (call === undefined) {
@@ -90,8 +148,13 @@ test("writeDaemonInstanceEnv deno extra removes workers URL keys", () => {
   }
   expect(call[1]).not.toHaveProperty("TURBOPANEL_INSTANCE_URL");
   expect(call[2]).toEqual({
-    removeKeys: ["TURBOPANEL_INSTANCE_URL", "TURBOPANEL_INSTANCE_CA"],
+    removeKeys: [
+      ...PLATFORM_REPO_KEYS,
+      "TURBOPANEL_INSTANCE_URL",
+      "TURBOPANEL_INSTANCE_CA",
+    ],
   });
+  vi.unstubAllEnvs();
 });
 
 test("writeDaemonInstanceEnv without a runtime extra uses the existing daemon.env runtime", () => {

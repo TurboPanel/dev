@@ -30,7 +30,10 @@ export type OptionalDevServiceDef = {
   label: string;
   /** One-line hint under the label. */
   hint: string;
-  /** Ansible / env extra-var stem (`turbopanel_optional_<stem>`). */
+  /**
+   * Ansible extra-var stem (`turbopanel_optional_<stem>`) — also the key the
+   * daemon reads from the dev-converge options payload ({@link devConvergeOptionsPayload}).
+   */
   ansibleStem: string;
   /** systemd unit when present. */
   unit: string;
@@ -192,10 +195,6 @@ export function persistOptionalServiceToggle(
 }
 
 /**
- * Env pairs for the orchestration child (`TURBOPANEL_OPTIONAL_*`).
- * Ansible reads these via daemon `devInstanceExtraArgs`.
- */
-/**
  * Gray catalog rows on the Services list — all optional services, minus
  * Deno-only tools when the instance runs on Workers.
  */
@@ -220,15 +219,41 @@ export function optionalDevServiceBackingContainers(
   return def.containers ?? [];
 }
 
-export function optionalServicesOrchestrationEnv(
+/**
+ * Env key carrying the structured dev-converge options payload to the daemon's
+ * `scripts/run-orchestration-action.ts` (one JSON object, parsed once there).
+ */
+export const DEV_CONVERGE_OPTIONS_ENV = "TURBOPANEL_DEV_CONVERGE_OPTIONS";
+
+/** Structured dev-converge options — the single cross-repo contract. */
+export type DevConvergeOptionsPayload = {
+  /** `ansibleStem` → enabled; the daemon emits `turbopanel_optional_<stem>`. */
+  optionalServices: Record<string, boolean>;
+};
+
+/**
+ * Build the dev-converge options payload from a picker selection. Keys are the
+ * catalog's Ansible stems so the daemon needs no service table of its own — this
+ * module is the only optional-service catalog.
+ */
+export function devConvergeOptionsPayload(
   selection: OptionalDevServiceSelection,
-): string[] {
+): DevConvergeOptionsPayload {
   const normalized = normalizeOptionalSelection(selection);
-  return OPTIONAL_DEV_SERVICE_DEFS.map((def) => {
-    const flag = normalized[def.id] ? "true" : "false";
-    const envKey = `TURBOPANEL_OPTIONAL_${def.ansibleStem.toUpperCase()}`;
-    return `${envKey}=${flag}`;
-  });
+  const optionalServices: Record<string, boolean> = {};
+  for (const def of OPTIONAL_DEV_SERVICE_DEFS) {
+    optionalServices[def.ansibleStem] = normalized[def.id];
+  }
+  return { optionalServices };
+}
+
+/** `KEY=json` pair for the orchestration child env. */
+export function devConvergeOptionsEnvEntry(
+  selection: OptionalDevServiceSelection,
+): string {
+  return `${DEV_CONVERGE_OPTIONS_ENV}=${
+    JSON.stringify(devConvergeOptionsPayload(selection))
+  }`;
 }
 
 function systemctlProperty(unit: string, property: string): string | null {
