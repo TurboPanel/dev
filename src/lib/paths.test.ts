@@ -143,7 +143,7 @@ describe("platformCaCertPath", () => {
 
 describe("version pins", () => {
   test("DENO_VERSION matches the daemon deno-runtime pin", () => {
-    expect(DENO_VERSION).toBe("2.9.6");
+    expect(DENO_VERSION).toBe("2.9.7");
   });
 
   test("NODE_VERSION matches scripts/lib/paths.sh pin", async () => {
