@@ -35,7 +35,11 @@ vi.mock("./optional-dev-services.ts", async (importOriginal) => {
 
 import { spawn } from "node:child_process";
 import { ensureOrchestrationDenoBin, orchestrationActionCommand } from "./daemon-exec.ts";
-import { defaultOptionalSelection, readOptionalDevServices } from "./optional-dev-services.ts";
+import {
+  defaultOptionalSelection,
+  devConvergeOptionsEnvEntry,
+  readOptionalDevServices,
+} from "./optional-dev-services.ts";
 import {
   DEV_ENV_CONVERGE_STEP,
   installDevEnvironment,
@@ -381,7 +385,11 @@ describe("runOrchestrationAction", () => {
     }
     expect(envArgs).not.toContain("TURBOPANEL_FORCE_CONVERGE=1");
     expect(envArgs).toContain("TURBOPANEL_DEV_USER=dev");
-    expect(envArgs).toContain("TURBOPANEL_OPTIONAL_DBSTUDIO=true");
+    expect(envArgs).toContain(
+      devConvergeOptionsEnvEntry(defaultOptionalSelection()),
+    );
+    expect(envArgs.some((arg) => String(arg).startsWith("TURBOPANEL_OPTIONAL_")))
+      .toBe(false);
   });
 
   it("ensures Deno when denoBin is omitted and sets FORCE_CONVERGE in force mode", async () => {
@@ -417,10 +425,25 @@ describe("runOrchestrationAction", () => {
     if (!Array.isArray(envArgs)) {
       throw new TypeError("expected /usr/bin/env argv");
     }
-    expect(envArgs).toContain("TURBOPANEL_OPTIONAL_DBSTUDIO=true");
-    expect(envArgs).toContain("TURBOPANEL_OPTIONAL_REDIS_INSIGHT=true");
-    expect(envArgs).toContain("TURBOPANEL_OPTIONAL_STRIPE_LISTEN=true");
-    expect(envArgs).toContain("TURBOPANEL_OPTIONAL_UI=false");
+    expect(envArgs).toContain(devConvergeOptionsEnvEntry(optionalServices));
+    const payloadEntry = envArgs.find((arg) =>
+      String(arg).startsWith("TURBOPANEL_DEV_CONVERGE_OPTIONS=")
+    );
+    if (typeof payloadEntry !== "string") {
+      throw new TypeError("expected the dev-converge options payload in env");
+    }
+    expect(
+      JSON.parse(payloadEntry.slice("TURBOPANEL_DEV_CONVERGE_OPTIONS=".length)),
+    ).toEqual({
+      optionalServices: {
+        dbstudio: true,
+        mailpit: false,
+        ui: false,
+        website: false,
+        redis_insight: true,
+        stripe_listen: true,
+      },
+    });
   });
 
   it("flushes a trailing stdout line without a newline on close", async () => {

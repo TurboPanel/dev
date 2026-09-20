@@ -31,6 +31,7 @@ import {
   PLATFORM_REPO_DIRS,
   platformCaCertPath,
   platformRepoEnvKey,
+  platformRepoEnvKeys,
   platformRepoPath,
   PYTHON_VERSION,
   resolveDevRoot,
@@ -102,17 +103,33 @@ describe("platformRepoPath", () => {
     expect(instanceRepoPath()).toBe("/override/turbopanel");
   });
 
-  test("buildPlatformRepoEntries returns one entry per PLATFORM_REPO_DIRS", () => {
+  test("buildPlatformRepoEntries persists nothing when no override is set", () => {
     vi.stubEnv("TURBOPANEL_DEV_ROOT", "/dev-root");
-    const entries = buildPlatformRepoEntries();
-    expect(Object.keys(entries).sort((a, b) => a.localeCompare(b))).toEqual(
-      PLATFORM_REPO_DIRS.map((dir) => platformRepoEnvKey(dir)).sort((a, b) =>
-        a.localeCompare(b)
-      ),
-    );
     for (const dir of PLATFORM_REPO_DIRS) {
-      expect(entries[platformRepoEnvKey(dir)]).toBe(`/dev-root/${dir}`);
+      vi.stubEnv(platformRepoEnvKey(dir), "");
     }
+    // Consumers derive <dev_root>/<dir>; default paths must never be written.
+    expect(buildPlatformRepoEntries()).toEqual({});
+  });
+
+  test("buildPlatformRepoEntries keeps only overrides that differ from the derived default", () => {
+    vi.stubEnv("TURBOPANEL_DEV_ROOT", "/dev-root");
+    vi.stubEnv("TURBOPANEL_DAEMON_REPO", "/elsewhere/turbopaneld");
+    vi.stubEnv("TURBOPANEL_INSTANCE_REPO", "/dev-root/turbopanel");
+    vi.stubEnv("TURBOPANEL_UI_REPO", "   ");
+    vi.stubEnv("TURBOPANEL_WEBSITE_REPO", "");
+    expect(buildPlatformRepoEntries()).toEqual({
+      TURBOPANEL_DAEMON_REPO: "/elsewhere/turbopaneld",
+    });
+  });
+
+  test("platformRepoEnvKeys lists one override key per platform dir", () => {
+    expect(platformRepoEnvKeys()).toEqual([
+      "TURBOPANEL_DAEMON_REPO",
+      "TURBOPANEL_INSTANCE_REPO",
+      "TURBOPANEL_UI_REPO",
+      "TURBOPANEL_WEBSITE_REPO",
+    ]);
   });
 });
 

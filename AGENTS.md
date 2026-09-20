@@ -8,7 +8,7 @@ The **dev** repository ([TurboPanel/dev](https://github.com/TurboPanel/dev)) is 
 
 **This repo runs on Node, not Deno.** In dev the console bootstraps
 orchestration and runs the **daemon from the dev user's home checkout**
-(`~/turbopaneld`, resolved via `TURBOPANEL_DEV_ROOT` / `TURBOPANEL_DAEMON_REPO`) via Deno (`deno run main.ts`) — host Deno is
+(`~/turbopaneld`, derived from `TURBOPANEL_DEV_ROOT`; `TURBOPANEL_DAEMON_REPO` is an optional override) via Deno (`deno run main.ts`) — host Deno is
 preferred, else the vendored runtime at
 `/opt/turbopanel/vendor/deno/current/deno`. It never runs a
 compiled daemon binary. Production installs (driven by `run.sh` + Ansible, **not**
@@ -70,10 +70,10 @@ The current entrypoint is a minimal launcher only (full multi-screen console was
 ├── scripts/guest/        # Vagrant SSH MOTD (T-mark banner + ~/dev/console)
 └── …
 
-~/turbopaneld/                 # TURBOPANEL_DAEMON_REPO (default: $TURBOPANEL_DEV_ROOT/turbopaneld)
-~/turbopanel/               # TURBOPANEL_INSTANCE_REPO
-~/ui/                     # TURBOPANEL_UI_REPO
-~/website/                # TURBOPANEL_WEBSITE_REPO
+~/turbopaneld/                 # $TURBOPANEL_DEV_ROOT/turbopaneld (optional override: TURBOPANEL_DAEMON_REPO)
+~/turbopanel/               # $TURBOPANEL_DEV_ROOT/turbopanel (optional override: TURBOPANEL_INSTANCE_REPO)
+~/ui/                     # $TURBOPANEL_DEV_ROOT/ui (optional override: TURBOPANEL_UI_REPO)
+~/website/                # $TURBOPANEL_DEV_ROOT/website (optional override: TURBOPANEL_WEBSITE_REPO)
 ~/.github/                # turbopanel_github_dir (github-repo Ansible role; not a TURBOPANEL_*_REPO var)
 
 /opt/turbopanel/vendor/
@@ -97,7 +97,7 @@ Node is a pinned `nodejs.org` tarball vendored under `/opt/turbopanel/vendor/nod
 
 1. Clone (or fork) the six sibling repos under one parent directory on the host (`dev`, `turbopaneld`, `turbopanel`, `ui`, `website`, `.github`).
 2. From the host `dev` checkout: `vagrant up` then `vagrant ssh`.
-3. Inside the guest: `dev/console` → prereqs, pinned Node, `pnpm install`, TUI launch (exports `TURBOPANEL_MODE=development`, `TURBOPANEL_DEV_ROOT`, `TURBOPANEL_<DIR>_REPO`).
+3. Inside the guest: `dev/console` → prereqs, pinned Node, `pnpm install`, TUI launch (exports `TURBOPANEL_MODE=development` and `TURBOPANEL_DEV_ROOT`; a `TURBOPANEL_<DIR>_REPO` override is forwarded only when you set one).
 4. **Bootstrap / converge** → the console uses `resolveDevEnvStartupPlan` (`src/lib/dev-env-readiness.ts`) on launch: **auto-bootstraps** (daemon install → systemd unit) when prerequisites are missing; after bootstrap finishes it opens the **optional services** picker then converges (`if-needed`). When the host is already installed, launch sits **idle** — no auto-converge (use Developer → **Converge / re-converge**). The converge picker defaults to UI + website + Mailpit + Drizzle Studio on (Redis Insight and the Stripe CLI forwarder off); idle for 5s continues with the current selection. The Stripe CLI service (`turbopanel-stripe-listen`, daemon role `stripe-listen`, Workers runtime only — wrangler reads secrets from `.dev.vars`) forwards sandbox events to `/webhook/stripe`; it needs a test-mode `TURBOPANEL_STRIPE_SECRET_KEY` written by hand into `/etc/turbopanel/stripe-listen/stripe.env` (never generated or committed) and exits with a pointer to that file otherwise. On the Workers runtime, Developer → **Save tier catalogue** writes the billing tiers a superadmin bound to payment-provider products (Admin → Tiers) to the gitignored `local/tiers.json`, and the dev overlay role `dev-tier-catalogue` restores them on converge when the database holds no **priced** tier row (the unpriced `SX` row a deno-mode instance creates for its licence grant does not count, and a label already present is skipped); the instance and daemon repos know nothing of it (see `local/README.md`). Drizzle Studio and Mailpit stay listed on the Services screen in gray when not enabled — select the row and press **E**, or use Developer → **Optional services…**. That menu also starts/stops optional units anytime without a full converge. Daemon bootstrap (`installDaemon` in `src/lib/platform-install.ts`) **uses an existing usable checkout** when `~/turbopaneld` already has `main.ts` or `orchestration/ansible.cfg` (Vagrant VirtFS mounts and pre-cloned siblings — no guest-side clone/pull; Git may also refuse mounted trees via `safe.directory`); it only **clones** when that path is missing. Bootstrap then writes `/etc/turbopanel/daemon.env`, runs the `dev/orchestration` overlay (runtimes into `/opt/turbopanel/vendor`, systemd units + Docker (postgres/redis/rabbitmq/mailpit) as the dev user, mutable data under FHS trees dev-user-owned; no `tp` / `tpctrl` / `tpcache` accounts created).
 5. On the **host**, open `https://localhost:8443` (or `http://localhost:8880`); edit source in the host sibling checkouts (mounted into the guest). Prefer a LAN hostname when attaching remote test machines.
 
@@ -283,7 +283,7 @@ The instance repo's `Caddyfile` stays production-only (HTTPS + Deno socket + sta
 - Contributors clone the six sibling repos on the host; Vagrant mounts them into the guest under `$HOME`.
 - Developer identity (`TURBOPANEL_DEV_USER`, `TURBOPANEL_DEV_UID`, `TURBOPANEL_DEV_GID`) is resolved from the **process UID** via `getent passwd` (`tp_resolve_dev_identity()` in `scripts/lib/dev-identity.sh`). **`USER` / `LOGNAME` are never trusted.** Unresolved identities and `root` are rejected; the only root exception is a validated `SUDO_USER` passwd entry when the console runs under `sudo`.
 - Node is pinned in `scripts/lib/paths.sh` (`NODE_VERSION` **`26.7.0`**), downloaded from `nodejs.org`, vendored to `/opt/turbopanel/vendor/node/<version>/` with a `current` symlink. pnpm is pinned solely by `packageManager` in `package.json` and provisioned via Corepack. Node 25+ dropped the bundled `corepack` binary, so `tp_ensure_corepack` installs the standalone package with vendored npm into that prefix before `corepack enable` / `prepare`. `tp_corepack_env` sets `COREPACK_DEFAULT_TO_LATEST=0` and `COREPACK_ENABLE_AUTO_PIN=0` so `pnpm --version` after `corepack prepare --activate` stays on that pin (Corepack otherwise reports the newest npm release when `./console` is launched from `$HOME`, which produced `expected vX, got Y` on every bump). The version check runs from the checkout so Corepack reads that `package.json`.
-- **`TURBOPANEL_MODE=development`** during dev converge. Source repos default under `$HOME` via `TURBOPANEL_DEV_ROOT` and per-repo `TURBOPANEL_<DIR>_REPO` overrides.
+- **`TURBOPANEL_MODE=development`** during dev converge. Source repos live under `TURBOPANEL_DEV_ROOT` (default `$HOME`); every consumer derives `<dev_root>/<repo>` itself. Per-repo `TURBOPANEL_<DIR>_REPO` keys are **optional overrides only** — `buildPlatformRepoEntries()` writes one into `daemon.env` only when it is set and differs from the derived default, and `writeDaemonBaseEnv` / `writeDaemonInstanceEnv` remove any stale per-repo key on every write.
 - Daemon bootstrap, systemd units, and Docker containers run as the **current dev user** — no `tp` / `tpctrl` / `tpcache` service accounts are created in dev.
 - Purge/reset stops and removes the daemon systemd unit **`turbopaneld.service`**, dev FHS state under `/etc/turbopanel`, `/var/lib/turbopanel`, `/var/log/turbopanel`, `/run/turbopanel`, and runtimes under `/opt/turbopanel/vendor`.
 - Do not commit secrets or environment-specific config.
@@ -296,7 +296,7 @@ The instance repo's `Caddyfile` stays production-only (HTTPS + Deno socket + sta
 - Do not add platform repo cloning to shell scripts — that belongs in the TUI when rebuilt.
 - Do not hardcode developer UID/GID — always read from `tp_resolve_dev_identity()` / `tp_require_dev_identity()` in shell scripts.
 - Do not reintroduce `pull.sh`.
-- Platform repos live under **`$HOME`** (via `TURBOPANEL_DEV_ROOT` / `TURBOPANEL_<DIR>_REPO`) — do not clone into `/opt/turbopanel/platform`.
+- Platform repos live under **`$HOME`** (via `TURBOPANEL_DEV_ROOT`; `TURBOPANEL_<DIR>_REPO` only as an explicit override) — do not clone into `/opt/turbopanel/platform`.
 - Do not bump the pinned Node version without updating `scripts/lib/paths.sh` and docs. Bump pnpm by updating `packageManager` in `package.json` only (keep the hashed Corepack pin), then run `pnpm install` so each sibling `pnpm-lock.yaml` records the `packageManagerDependencies` catalog — `--frozen-lockfile` (CI and Cloudflare) fails without it. Each pnpm checkout needs `pnpm-workspace.yaml` `allowBuilds` for packages whose postinstalls must run (`esbuild` / `workerd` for wrangler; this repo at least `esbuild`). pnpm 12 `strictDepBuilds` otherwise fails the install with `ERR_PNPM_IGNORED_BUILDS`. CI `pnpm/action-setup` must stay at **v6.1.0+** — v4 cannot install pnpm 12's native binary.
 - Do not commit directly to `trunk` — use a feature branch and open a PR.
 - Do not run unit tests, typecheck, or lint on the **host** checkout — use `vagrant ssh` (or the TUI Run tests / Services **T**). Host VirtFS trees lack a usable Node/pnpm/Deno `node_modules`.

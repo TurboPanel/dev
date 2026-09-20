@@ -4,6 +4,7 @@ import {
   DAEMON_ENV_TRUNK_BRANCH_KEY,
   devOrchestrationDir,
   platformCaCertPath,
+  platformRepoEnvKeys,
   resolveDevRoot,
   TURBOPANEL_TRUNK_BRANCH,
 } from "./paths.ts";
@@ -45,6 +46,16 @@ function buildDaemonBaseEntries(extra?: Record<string, string>): Record<string, 
   return buildDaemonBaseEnvEntries(extra);
 }
 
+/**
+ * Per-repo override keys (`TURBOPANEL_*_REPO`) absent from `entries` — removed
+ * on every write so a checkout path persisted by an earlier console run does
+ * not outlive the override that produced it. Consumers derive the path from
+ * `TURBOPANEL_DEV_ROOT` when the key is gone.
+ */
+export function stalePlatformRepoKeys(entries: Record<string, string>): string[] {
+  return platformRepoEnvKeys().filter((key) => !(key in entries));
+}
+
 function mergeDaemonEnv(
   entries: Record<string, string>,
   options?: { removeKeys?: string[] },
@@ -54,8 +65,9 @@ function mergeDaemonEnv(
 
 /** Write co-located dev identity keys without the instance activation marker. */
 export function writeDaemonBaseEnv(extra?: Record<string, string>): void {
-  mergeDaemonEnv(buildDaemonBaseEntries(extra), {
-    removeKeys: [INSTANCE_OPT_IN_KEY],
+  const entries = buildDaemonBaseEntries(extra);
+  mergeDaemonEnv(entries, {
+    removeKeys: [INSTANCE_OPT_IN_KEY, ...stalePlatformRepoKeys(entries)],
   });
 }
 
@@ -85,7 +97,7 @@ export function writeDaemonInstanceEnv(extra?: Record<string, string>): void {
     [INSTANCE_OPT_IN_KEY]: "1",
     ...extra,
   };
-  const removeKeys: string[] = [];
+  const removeKeys: string[] = stalePlatformRepoKeys(entries);
 
   if (runtime === "workers") {
     entries.TURBOPANEL_INSTANCE_URL = caddyBrowserUrl();
@@ -157,10 +169,14 @@ export function readInstanceRunMode(): "source" | "compiled" {
  * True when the co-located instance runs the developer-surface build
  * (`src/deno-dev.ts` with `TURBOPANEL_DEV_SURFACE=1`) — the only build that
  * mounts `registerDeveloperRoutes()` and serves `/api/developer/v1/*`.
- * Mirrors the instance unit template (turbopanel-instance.service.j2): Deno
- * runtime, `source` run mode, and `dev` UI mode. Workers, compiled binaries
- * (`deno task compile` targets `src/deno.ts`), and static-UI builds execute
- * the non-developer entry, so developer-surface actions must stay hidden.
+ *
+ * The instance itself keys off `TURBOPANEL_DEV_SURFACE=1` alone
+ * (`../turbopanel/src/dev-mode.ts`); this predicts whether the daemon's unit
+ * template (turbopanel-instance.service.j2, the sole managed writer of that
+ * flag) emitted it — Deno runtime, `source` run mode, and `dev` UI mode.
+ * Workers, compiled binaries (`deno task compile` targets `src/deno.ts`), and
+ * static-UI builds execute the non-developer entry without the flag, so
+ * developer-surface actions must stay hidden.
  */
 export function isDeveloperSurfaceInstance(
   snapshot: DaemonEnvSnapshot = readDaemonEnvSnapshot(),

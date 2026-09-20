@@ -11,7 +11,10 @@ import {
   normalizeOptionalSelection,
   optionalDevServiceBackingContainers,
   optionalDevServiceCatalogIdsForRuntime,
-  optionalServicesOrchestrationEnv,
+  DEV_CONVERGE_OPTIONS_ENV,
+  devConvergeOptionsEnvEntry,
+  devConvergeOptionsPayload,
+  type OptionalDevServiceSelection,
   persistOptionalServiceToggle,
   readOptionalDevServices,
   writeOptionalDevServices,
@@ -129,23 +132,52 @@ test("readOptionalDevServices returns defaults when file missing", () => {
   );
 });
 
-test("optionalServicesOrchestrationEnv emits TURBOPANEL_OPTIONAL_* flags", () => {
-  const env = optionalServicesOrchestrationEnv({
-    dbstudio: true,
-    smtp: false,
-    ui: false,
-    website: true,
-    redisinsight: true,
-    stripe: true,
+test("devConvergeOptionsPayload keys the selection by Ansible stem", () => {
+  expect(
+    devConvergeOptionsPayload({
+      dbstudio: true,
+      smtp: false,
+      ui: false,
+      website: true,
+      redisinsight: true,
+      stripe: true,
+    }),
+  ).toEqual({
+    optionalServices: {
+      dbstudio: true,
+      mailpit: false,
+      ui: false,
+      website: true,
+      redis_insight: true,
+      stripe_listen: true,
+    },
   });
-  expect(env).toEqual([
-    "TURBOPANEL_OPTIONAL_DBSTUDIO=true",
-    "TURBOPANEL_OPTIONAL_MAILPIT=false",
-    "TURBOPANEL_OPTIONAL_UI=false",
-    "TURBOPANEL_OPTIONAL_WEBSITE=true",
-    "TURBOPANEL_OPTIONAL_REDIS_INSIGHT=true",
-    "TURBOPANEL_OPTIONAL_STRIPE_LISTEN=true",
-  ]);
+});
+
+test("devConvergeOptionsPayload normalizes partial selections onto defaults", () => {
+  const payload = devConvergeOptionsPayload(
+    { redisinsight: true } as unknown as OptionalDevServiceSelection,
+  );
+  expect(payload.optionalServices).toEqual({
+    dbstudio: true,
+    mailpit: true,
+    ui: true,
+    website: true,
+    redis_insight: true,
+    stripe_listen: false,
+  });
+});
+
+test("devConvergeOptionsEnvEntry emits one TURBOPANEL_DEV_CONVERGE_OPTIONS JSON pair", () => {
+  const entry = devConvergeOptionsEnvEntry(defaultOptionalSelection());
+  expect(DEV_CONVERGE_OPTIONS_ENV).toBe("TURBOPANEL_DEV_CONVERGE_OPTIONS");
+  expect(entry.startsWith("TURBOPANEL_DEV_CONVERGE_OPTIONS=")).toBe(true);
+  const json = entry.slice("TURBOPANEL_DEV_CONVERGE_OPTIONS=".length);
+  expect(JSON.parse(json)).toEqual(
+    devConvergeOptionsPayload(defaultOptionalSelection()),
+  );
+  // No per-service env flags — the daemon parses the payload once.
+  expect(entry).not.toContain("TURBOPANEL_OPTIONAL_");
 });
 
 test("assertOptionalDevServiceId rejects unknown ids", () => {
