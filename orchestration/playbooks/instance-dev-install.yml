@@ -55,7 +55,7 @@
     github_branch: trunk
     turbopanel_ui_artifact_url: ""
     turbopanel_instance_runtime: deno
-    # Caddy/UI/mailer follow instance_start; the instance unit also checks runtime.
+    # Caddy/UI follow instance_start; the instance unit also checks runtime.
     instance_start: true
     # Unix socket is always available; expose TCP when Workers runtime needs wrangler Hyperdrive.
     postgres_expose_port: "{{ turbopanel_instance_runtime == 'workers' }}"
@@ -69,7 +69,7 @@
     # Optional tooling — console picker, delivered by the daemon as one
     # `-e {"turbopanel_optional_<stem>": …}` object parsed from the
     # TURBOPANEL_DEV_CONVERGE_OPTIONS payload (extra-vars win over these). Core stack
-    # (instance, caddy, system-stack, redis, mailer) always starts.
+    # (instance, caddy, system-stack, redis) always starts.
     # Defaults: Expo UI + website + Mailpit + Drizzle Studio on; Redis Insight
     # and the Stripe CLI forwarder off (they stay listed in the TUI, gray until
     # enabled). Stripe listen also needs a test-mode key in
@@ -167,8 +167,6 @@
           - turbopanel-system-stack
           - turbopanel-instance
           - turbopanel-caddy
-        _dev_stack_units_core_deno:
-          - turbopanel-mailer
         _dev_optional_unit_map:
           - unit: turbopanel-dbstudio
             enabled: "{{ turbopanel_optional_dbstudio | default(false) | bool }}"
@@ -193,7 +191,6 @@
         _dev_stack_units: >-
           {{
             _dev_stack_units_core
-            + (_dev_stack_units_core_deno if turbopanel_instance_runtime == 'deno' else [])
             + _dev_optional_start_units
           }}
 
