@@ -1,23 +1,23 @@
 #!/usr/bin/env bash
-# Pull the live Postgres schema into turbopanel/src/lib/db/schema.ts (database-first).
+# Pull the live Postgres schema into turbopanel/src/db/schema.ts (database-first).
 #
 # 1. drizzle-kit introspect  → drizzle/schema.ts (in the turbopanel checkout)
-# 2. copy into src/lib/db/schema.ts
+# 2. copy into src/db/schema.ts
 # 3. remove ephemeral drizzle/ artifacts
-# 4. deno check src/lib/db/schema.ts
+# 4. deno check src/db/schema.ts
 #
 # Credentials from TURBOPANEL_DATABASE_URL (env or turbopanel-instance unit).
 # Override: TURBOPANEL_DATABASE_URL=postgresql://… ./scripts/introspect.sh
 #
 # Run from the dev checkout (or any cwd): ./scripts/introspect.sh
-# See turbopanel/src/lib/db/AGENTS.md for the full workflow (Drizzle Studio → introspect).
+# See turbopanel/src/db/AGENTS.md for the full workflow (Drizzle Studio → introspect).
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/lib/paths.sh
 source "$SCRIPT_DIR/lib/paths.sh"
 ROOT="$(tp_platform_repo_path turbopanel)"
-SCHEMA_SRC="$ROOT/src/lib/db/schema.ts"
+SCHEMA_SRC="$ROOT/src/db/schema.ts"
 DRIZZLE_OUT="$ROOT/drizzle"
 DRIZZLE_SCHEMA="$DRIZZLE_OUT/schema.ts"
 # shellcheck source=/dev/null
@@ -63,7 +63,7 @@ main() {
   cleanup_drizzle_out
   TURBOPANEL_DATABASE_URL="$TURBOPANEL_DATABASE_URL" "$NODE" "$DRIZZLE_KIT" introspect --config "$ROOT/drizzle.config.mjs" --out drizzle
 
-  echo "introspect.sh: adopting drizzle/schema.ts → src/lib/db/schema.ts"
+  echo "introspect.sh: adopting drizzle/schema.ts → src/db/schema.ts"
   adopt_schema
   cleanup_drizzle_out
 

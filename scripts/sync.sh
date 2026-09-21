@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Push turbopanel/src/lib/db/schema.ts to the live dev database (no migration files).
+# Push turbopanel/src/db/schema.ts to the live dev database (no migration files).
 #
 # Uses drizzle-kit push — applies DDL directly. Does not write drizzle/*.sql.
 #
@@ -11,14 +11,14 @@
 #   --verbose  print each SQL statement
 #
 # Run from the dev checkout (or any cwd): ./scripts/sync.sh
-# See turbopanel/src/lib/db/AGENTS.md (schema-first → sync).
+# See turbopanel/src/db/AGENTS.md (schema-first → sync).
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/lib/paths.sh
 source "$SCRIPT_DIR/lib/paths.sh"
 ROOT="$(tp_platform_repo_path turbopanel)"
-SCHEMA_SRC="$ROOT/src/lib/db/schema.ts"
+SCHEMA_SRC="$ROOT/src/db/schema.ts"
 # shellcheck source=/dev/null
 source "$ROOT/scripts/db-connect.sh"
 db_connect_init sync.sh
@@ -67,7 +67,7 @@ main() {
   echo "sync.sh: pushing schema to live database (no migration files)…"
   TURBOPANEL_DATABASE_URL="$TURBOPANEL_DATABASE_URL" "$NODE" "$DRIZZLE_KIT" push --config "$ROOT/drizzle.config.mjs" "${PUSH_ARGS[@]}"
 
-  echo "sync.sh: done — database should match src/lib/db/schema.ts"
+  echo "sync.sh: done — database should match src/db/schema.ts"
 }
 
 main "$@"
