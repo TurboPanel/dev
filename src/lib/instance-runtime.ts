@@ -89,20 +89,6 @@ async function stopRabbitMq(onOutput?: InstallOutputHandler): Promise<void> {
   }
 }
 
-async function ensureMailerRunning(onOutput?: InstallOutputHandler): Promise<void> {
-  if (!isSystemdUnitInstalled("turbopanel-mailer")) {
-    return;
-  }
-  await runSystemctl(["enable", "--now", "turbopanel-mailer"], onOutput);
-}
-
-async function stopMailer(onOutput?: InstallOutputHandler): Promise<void> {
-  if (!isSystemdUnitInstalled("turbopanel-mailer")) {
-    return;
-  }
-  await runSystemctl(["disable", "--now", "turbopanel-mailer"], onOutput);
-}
-
 function runtimePlaybookExtraArgs(target: "deno" | "workers"): string[] {
   return [
     "-e",
@@ -148,12 +134,10 @@ export async function switchInstanceRuntime(
       onOutput,
     );
     await ensureRabbitMqRunning(onOutput);
-    await ensureMailerRunning(onOutput);
     await ensureRedisInsightRunning(onOutput);
   } else {
     await stopRedisInsight(onOutput);
     await stopRabbitMq(onOutput);
-    await stopMailer(onOutput);
   }
 
   // instance-launch-only handlers already restart turbopanel-instance when runtime
