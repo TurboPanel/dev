@@ -176,11 +176,12 @@ Guest commands:
 | `pnpm test` | Vitest once (`vitest run`) |
 | `pnpm test:watch` | Vitest watch mode |
 | `pnpm test:coverage` | Vitest + LCOV (`coverage/lcov.info`) |
-| `pnpm verify:ci` | GitHub Actions `verify.yml` minus Sonar upload (notices + typecheck + LCOV) |
+| `pnpm verify:ci` | GitHub Actions `verify.yml` minus Sonar upload (vocabulary + notices + typecheck + LCOV) |
 | `./scripts/ci-verify.sh` | Same job for every sibling checkout (guest; re-execs via `vagrant ssh` from the host) |
 | `pnpm typecheck` | `tsc --noEmit` |
 | `pnpm notices:generate` | Write `THIRD_PARTY_NOTICES.md` from the resolved pnpm graph |
 | `pnpm notices:check` | Fail when notices are stale vs the lockfile, or a production dependency has an unreviewed license class |
+| `pnpm check:vocabulary` | Reject daemon-as-agent and marketing-phrase copy (`scripts/check-vocabulary.mjs`; same phrase list as the sibling repos) |
 
 **Vitest convention:** place suites at `src/**/*.test.ts` / `src/**/*.test.tsx`. Use the `node` environment (Ink TUI, not a browser). Import `describe` / `it` / `expect` from `vitest` — do not use `node:test` + `node:assert/strict`. Assert shapes with `new TypeError()` per `typescript:S7786`.
 
@@ -207,7 +208,7 @@ often lack a usable Node/pnpm tree). CI `verify.yml` still gates PRs.
 - Analysis runs in GitHub Actions (`.github/workflows/verify.yml`) with
   `SONAR_TOKEN` and `sonar-project.properties`
   (`sonar.projectKey=turbopanel_dev`, `sonar.organization=turbopanel`). The job
-  runs typecheck + **`pnpm test:coverage`** (Vitest v8 LCOV at
+  runs `check:vocabulary`, `notices:check`, typecheck, and **`pnpm test:coverage`** (Vitest v8 LCOV at
   `coverage/lcov.info`), then scans with
   `sonar.javascript.lcov.reportPaths=coverage/lcov.info`. The scan waits on the
   quality gate (`sonar.qualitygate.wait=true`); if the gate fails, the workflow
@@ -234,16 +235,27 @@ The **`dev-shell-path`** role (dev-only) always installs `/etc/profile.d/turbopa
 
 ### Development Caddyfile
 
-Co-located hosts load **`orchestration/Caddyfile`** (not `~/turbopanel/Caddyfile`) when `turbopanel_dev_user` is set — wired by the daemon `instance-launch` role via `turbopanel_caddyfile`. That file owns:
+Co-located hosts load **`orchestration/Caddyfile`** (not the managed
+`instance-launch` template) when `turbopanel_dev_user` is set — wired by the
+daemon `instance-launch` role via `turbopanel_caddyfile`. That file wins over
+the rendered production Caddyfile, so a development host has no per-hostname
+sites and refuses a Let's Encrypt hostname. `:8880` here is a full plaintext
+mirror of `:8443`, gated by `TURBOPANEL_DEV_HTTP_CONTROL_PLANE=1` (the instance
+answers **403** when the flag is off). On a managed host the same port is the
+HTTP-01 solver, and every other path redirects to `:8443`. That file owns:
 
-- HTTPS `:8443` plus plaintext `:8880` (always on; no serve-time flag)
+- HTTPS `:8443` plus plaintext `:8880` (always on in this file; the instance still requires `TURBOPANEL_DEV_HTTP_CONTROL_PLANE=1`)
 - Expo reverse_proxy when `TURBOPANEL_UI_MODE=dev` (with `expo-loading.html` for cold-start 502s; `flush_interval -1` so Fast Refresh `/hot` is unbuffered). Host edits on VirtioFS/9p need Metro poll watch in the UI repo (`scripts/metro-virtfs-poll-watch.cjs`) — inotify does not cross the share.
 - Optional wrangler upstream when `TURBOPANEL_INSTANCE_RUNTIME=workers`
 - `/downloads/daemon/*` (always — overlay catalog + artifacts; not gated on `TURBOPANEL_UI_MODE`) and the install script at **`/run.sh`** from the daemon checkout (`dist/` after Developer → **Rebuild daemon and upgrade connected servers** / `deno task release:dev`)
 
 - Stripping `CF-Connecting-IP` / `True-Client-IP` / `X-Forwarded-For` from non-loopback peers, so only a connector on this host can present them
 
-The instance repo's `Caddyfile` stays production-only (HTTPS + Deno socket + static UI). See **`../turbopanel/AGENTS.md`** (Caddy) and **`../turbopaneld/AGENTS.md`** (plaintext HTTP client gate).
+The managed production Caddyfile is rendered by the daemon
+`instance-launch` role (`orchestration/roles/instance-launch/templates/Caddyfile.j2`),
+not from this checkout and not from the instance checkout. See
+**`../turbopanel/caddy.md`** and **`../turbopaneld/AGENTS.md`** (plaintext HTTP
+client gate). The overlay does not write `00-instance-acme-http01.caddy`.
 
 **Server addresses in development.** Vagrant forwards `8443` / `8880` **over SSH**, so a daemon anywhere on the LAN reaches Caddy from `127.0.0.1` — the header-stripping matcher above never fires for it, and the peer address on the wire is `127.0.0.1` for every server. That is why the instance falls back to the interface addresses the daemon reports rather than trusting the wire (`src/lib/peer-address.ts` → `resolveServerAddress`, documented in **`../turbopanel/AGENTS.md`** → Caddy → Server addresses). A Cloudflare Tunnel pointed at this guest still resolves correctly: `cloudflared` is a loopback peer, so its `CF-Connecting-IP` is believed. Mixing LAN servers, tunnelled servers, and the co-located guest daemon in one fleet is the case this is built for.
 
