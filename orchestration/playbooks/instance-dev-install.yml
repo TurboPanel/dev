@@ -104,6 +104,42 @@
         - getent_passwd is defined
         - getent_passwd[turbopanel_dev_user] is defined
 
+    # The guest cannot see the Vagrant host's LAN address. dev/Vagrantfile
+    # publishes that address, the host FQDN, and configured LAN aliases
+    # (`TURBOPANEL_DEV_LAN_ALIASES` or local/lan-aliases) here so
+    # instance-certs includes them on the Platform CA leaf before Add Server
+    # dials that name through the 8443 forward. A direct playbook run uses
+    # this fact; devInstanceExtraArgs passes the same names as
+    # turbopanel_public_urls, which wins when that extra-var is set.
+    - name: Read Vagrant host LAN names for the Platform CA leaf
+      ansible.builtin.slurp:
+        src: /etc/turbopanel/dev-forward-hosts
+      register: turbopanel_dev_forward_hosts_slurp
+      failed_when: false
+      changed_when: false
+
+    - name: Add forwarded host LAN names to certificate public URLs
+      when:
+        - turbopanel_dev_forward_hosts_slurp.content is defined
+        - (turbopanel_dev_forward_hosts_slurp.content | default('')) | length > 0
+      ansible.builtin.set_fact:
+        turbopanel_public_urls: >-
+          {{
+            (
+              (turbopanel_public_urls | default('', true)).split(',')
+              + (
+                  (turbopanel_dev_forward_hosts_slurp.content | b64decode).splitlines()
+                  | map('trim')
+                  | select('match', '^[A-Za-z0-9.:_-]+$')
+                  | list
+                )
+            )
+            | map('trim')
+            | reject('equalto', '')
+            | unique
+            | join(',')
+          }}
+
   roles:
     - role: turbopanel-user
     - role: runtime-sockets

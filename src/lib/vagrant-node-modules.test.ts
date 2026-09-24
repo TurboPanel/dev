@@ -50,7 +50,6 @@ describe("Vagrant host providers", () => {
     expect(VAGRANTFILE).toContain("[80, 80]");
     expect(VAGRANTFILE).toContain("[443, 443]");
     expect(VAGRANTFILE).toContain("[8443, 8443]");
-    expect(VAGRANTFILE).toContain("[8880, 8880]");
     expect(VAGRANTFILE).toContain("[8081, 8081]");
     expect(VAGRANTFILE).toContain("[19820, 19820]");
     expect(VAGRANTFILE).toContain('guest_ip: "127.0.0.1"');

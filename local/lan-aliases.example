@@ -1,0 +1,8 @@
+# Extra DNS names for the Platform CA leaf, one per line.
+# Interface IPv4 addresses and the host FQDN are discovered automatically.
+# Copy this file to lan-aliases (gitignored), uncomment the names Add Server
+# will dial, then:
+#   vagrant provision --provision-with dev-forward-hosts
+# Converge afterwards so instance-certs remints the leaf. A name that is
+# not on the leaf is refused before an install command is issued.
+# dev.lan
