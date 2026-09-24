@@ -27,7 +27,7 @@ beforeEach(() => {
 
 test("process.env port override wins over daemon.env", async () => {
   vi.stubEnv("CADDY_PORT", "9443");
-  const urls = await loadServiceUrls("CADDY_PORT=8444\n");
+  const urls = await loadServiceUrls("CADDY_PORT=9090\n");
   expect(urls.caddyBrowserUrl()).toBe("https://localhost:9443");
 });
 

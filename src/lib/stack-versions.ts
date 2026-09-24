@@ -4,7 +4,7 @@ import { DENO_VERSION, NODE_VERSION } from "./paths.ts";
 export { NODE_VERSION };
 
 /** daemon orchestration/roles/caddy/defaults/main.yml */
-export const CADDY_VERSION = "2.10.2";
+export const CADDY_VERSION = "2.11.4";
 
 /** instance/package.json devDependencies.wrangler */
 export const WRANGLER_VERSION = "4.124.0";

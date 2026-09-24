@@ -46,13 +46,22 @@ resolves to `<dev_root>/<repo>` when `turbopanel_dev_user` is set, and
 binary, and the built static UI — never source checkouts. `../.github`
 (community health files) mounts to `$HOME/.github` when present on the host;
 otherwise the `github-repo` Ansible role clones it inside the guest via HTTPS.
-FHS trees stay **guest-local**. Ports `80` / `443` (hosting Caddy) / `8443` / `8880` / `8081` / `8088` / `19820` forward
+FHS trees stay **guest-local**. Ports `80` / `443` (hosting Caddy) / `8443` / `8081` / `8088` / `19820` forward
 to the host on `0.0.0.0` (LAN-reachable, not localhost-only). Drizzle Studio
 `4983`, Mailpit `8025`, Redis Insight `5540`, and the DuckDB UI `4213` are loopback-only
 on both sides of the forward (`127.0.0.1` host and guest): those APIs are
 unauthenticated. The hosted HTTPS Studio UI must use `?host=localhost` rather
 than a private hostname such as `studio.lan`. All forwards target **guest
-loopback** so they still work when the libvirt DHCP address changes.
+loopback** so they still work when the libvirt DHCP address changes. The
+`dev-forward-hosts` provisioner (`run: always`) writes the host's LAN
+addresses, `Socket.gethostname` when it is a dotted FQDN, and any extra
+LAN aliases to `/etc/turbopanel/dev-forward-hosts` so the Platform CA leaf
+covers the name Add Server dials through the 8443 forward. Aliases are
+not discovered from a NIC: set `TURBOPANEL_DEV_LAN_ALIASES` (comma or
+whitespace separated) or list one name per line in gitignored
+`local/lan-aliases` (see `local/lan-aliases.example`). Re-provision that
+step, then converge, before dialing the alias. A name that is still not a
+SAN is refused when the install command is minted.
 
 The current entrypoint is a minimal launcher only (full multi-screen console was removed during a rewrite).
 
@@ -63,7 +72,7 @@ The current entrypoint is a minimal launcher only (full multi-screen console was
 ├── Vagrantfile           # libvirt/UTM guest: mounts + port forwards + light provision
 ├── console               # ensure Node, pnpm install, launch the TUI via vite-node
 ├── orchestration/        # Ansible dev overlay + development Caddyfile
-│   ├── Caddyfile         # co-located control-plane proxy (Expo, :8880, wrangler)
+│   ├── Caddyfile         # co-located control-plane proxy (Expo, :8443, wrangler)
 │   └── expo-loading.html # Expo cold-start page served by the development Caddyfile
 ├── package.json          # Node project (pnpm, pinned via packageManager); ink + react + vite
 ├── src/tui.tsx           # Ink entrypoint
@@ -99,7 +108,7 @@ Node is a pinned `nodejs.org` tarball vendored under `/opt/turbopanel/vendor/nod
 2. From the host `dev` checkout: `vagrant up` then `vagrant ssh`.
 3. Inside the guest: `dev/console` → prereqs, pinned Node, `pnpm install`, TUI launch (exports `TURBOPANEL_MODE=development` and `TURBOPANEL_DEV_ROOT`; a `TURBOPANEL_<DIR>_REPO` override is forwarded only when you set one).
 4. **Bootstrap / converge** → the console uses `resolveDevEnvStartupPlan` (`src/lib/dev-env-readiness.ts`) on launch: **auto-bootstraps** (daemon install → systemd unit) when prerequisites are missing; after bootstrap finishes it opens the **optional services** picker then converges (`if-needed`). When the host is already installed, launch sits **idle** — no auto-converge (use Developer → **Converge / re-converge**). The converge picker defaults to UI + website + Mailpit + Drizzle Studio on (Redis Insight and the Stripe CLI forwarder off); idle for 5s continues with the current selection. The Stripe CLI service (`turbopanel-stripe-listen`, daemon role `stripe-listen`, Workers runtime only — wrangler reads secrets from `.dev.vars`) forwards sandbox events to `/webhook/stripe`; it needs a test-mode `TURBOPANEL_STRIPE_SECRET_KEY` written by hand into `/etc/turbopanel/stripe-listen/stripe.env` (never generated or committed) and exits with a pointer to that file otherwise. On the Workers runtime, Developer → **Save tier catalogue** writes the billing tiers a superadmin bound to payment-provider products (Admin → Tiers) to the gitignored `local/tiers.json`, and the dev overlay role `dev-tier-catalogue` restores them on converge when the database holds no **priced** tier row (the unpriced `SX` row a deno-mode instance creates for its licence grant does not count, and a label already present is skipped); the instance and daemon repos know nothing of it (see `local/README.md`). Drizzle Studio and Mailpit stay listed on the Services screen in gray when not enabled — select the row and press **E**, or use Developer → **Optional services…**. That menu also starts/stops optional units anytime without a full converge. Daemon bootstrap (`installDaemon` in `src/lib/platform-install.ts`) **uses an existing usable checkout** when `~/turbopaneld` already has `main.ts` or `orchestration/ansible.cfg` (Vagrant VirtFS mounts and pre-cloned siblings — no guest-side clone/pull; Git may also refuse mounted trees via `safe.directory`); it only **clones** when that path is missing. Bootstrap then writes `/etc/turbopanel/daemon.env`, runs the `dev/orchestration` overlay (runtimes into `/opt/turbopanel/vendor`, systemd units + Docker (postgres/redis/rabbitmq/mailpit) as the dev user, mutable data under FHS trees dev-user-owned; no `tp` / `tpctrl` / `tpcache` accounts created).
-5. On the **host**, open `https://localhost:8443` (or `http://localhost:8880`); edit source in the host sibling checkouts (mounted into the guest). Prefer a LAN hostname when attaching remote test machines.
+5. On the **host**, open `https://localhost:8443`; edit source in the host sibling checkouts (mounted into the guest). Prefer a LAN hostname when attaching remote test machines.
 
 ## Entry points
 
@@ -126,7 +135,7 @@ dev/console
 
 ## Responsibilities
 
-- **`Vagrantfile`** — host-aware libvirt/UTM provider config, bidirectional VirtioFS/VirtFS mounts of the five workspace repos plus optional `.github`, SSH agent forwarding, port forwards `80`/`443` (hosting Caddy) / `8443`/`8880`/`8081`/`8088`/`19820` (LAN `0.0.0.0`) plus loopback-only `4983`/`8025`/`5540`/`4213`, all with `guest_ip: 127.0.0.1`, and idempotent shell
+- **`Vagrantfile`** — host-aware libvirt/UTM provider config, bidirectional VirtioFS/VirtFS mounts of the five workspace repos plus optional `.github`, SSH agent forwarding, port forwards `80`/`443` (hosting Caddy) / `8443`/`8081`/`8088`/`19820` (LAN `0.0.0.0`) plus loopback-only `4983`/`8025`/`5540`/`4213`, all with `guest_ip: 127.0.0.1`, and idempotent shell
 provision split as `system-upgrade` → `turbopanel_reboot_if_needed` → `guest-setup` → `sshd-port-forward-keepalives` (`run: always`) → `guest-motd` (`run: always`) → `turbopanel_ensure_libvirt_port_forwards` (`run: always`). Upgrades run `apt-get update` + `upgrade` + `autoremove` + `curl` and set the `vagrant` login password; when Debian leaves `/var/run/reboot-required` or the running kernel differs from the newest `/boot/vmlinuz-*`, the reboot provisioner prints that SSH will drop for about a minute, reboots via the guest reboot capability (Vagrant waits for SSH), **remounts VirtioFS synced folders** (mid-provision reboot otherwise leaves empty `~/dev` mount-point dirs — Vagrant only mounts shares on `up`/`reload`), then `guest-setup` finishes (passwordless sudo, `/etc/profile.d/turbopanel-vagrant.sh`, pnpm's `~/.config/pnpm/config.yaml` pointing `storeDir` at guest-local `/var/lib/pnpm/store`, per-repo `node_modules` **bind mounts** from `/var/lib/turbopanel-dev/node_modules/<repo>/node_modules` (systemd `turbopanel-virtfs-node-modules.service` at boot), 8 GiB `/swapfile`). **Libvirt port forwards are SSH `-L` tunnels** (not QEMU `hostfwd`); guest reboot / sshd restart / OpenSSH 9.8+ `UnusedConnectionTimeout` drop idle one-shot vagrant-libvirt `ssh -N` sessions. `sshd-port-forward-keepalives` writes `/etc/ssh/sshd_config.d/turbopanel-vagrant.conf` (`UnusedConnectionTimeout 0` when the guest sshd supports it; `PrintMotd no` so PAM owns the banner). `guest-motd` replaces Debian's default login MOTD with the official T-mark banner from `scripts/guest/motd.sh` (`/etc/motd.d/10-turbopanel`, empty `/etc/motd`, stock `update-motd.d` fragments chmod `-x`) — safe while `./console` is up. `turbopanel_ensure_libvirt_port_forwards` then replaces those one-shot tunnels with a restarting `ssh_forward_supervisor.sh` per port (health = host TCP listen plus our supervisor pid, not leftover libvirt ssh; host **80**/**443** wrap the supervisor in `sudo -n` when `net.ipv4.ip_unprivileged_port_start` still blocks the bind). Heal without a full reload: `vagrant provision --provision-with sshd-port-forward-keepalives,guest-motd,turbopanel_ensure_libvirt_port_forwards` (do not run a full `vagrant provision` while `./console` is up — that re-runs guest-setup). Linux defaults to libvirt + `debian/trixie64`; macOS defaults to UTM + `utm/bookworm`. Does not clone platform repos or run `./console`. Why bind-mount `node_modules`: on ARM64, FUSE-backed filesystems (9p/virtiofs, which is how UTM VirtFS is implemented) don't invalidate the instruction cache for pages faulted in from mmap'd executable files, so native Node addons (esbuild, `@rolldown/binding-*`, lightningcss, ...) crash with `SIGSEGV`/`SIGILL` when `node_modules` lives directly on the VirtFS mount — the pnpm store already being local isn't enough, since `packageImportMethod: copy` still writes the actual files into `node_modules` on the mount. A **symlink** is not enough: Next.js Turbopack rejects `node_modules` that points outside the project (`Symlink [project]/node_modules is invalid, it points out of the filesystem root`), and Node ESM/CJS realpath walks miss packages unless the physical path ends in a directory named `node_modules` (flat `<repo>/drizzle-orm` makes `drizzle-kit` fail with "Please install latest version of drizzle-orm"; Tamagui fails with `Cannot find module 'typescript'`). The provisioner runs for every mounted repo with a `package.json` (`dev`, `turbopanel`, `ui`, `website`; `turbopaneld` has none) and is idempotent across `vagrant provision` re-runs. On boot, its helper waits for all four Vagrant shares to expose `package.json` before binding—the shares are mounted over SSH after userspace starts, so an immediate check can otherwise exit successfully without mounting anything—and dbstudio/UI/website/instance units are ordered after it. Ansible `instance-repo` / `ui-repo` / `website-repo` must probe a nested package (`drizzle-kit`, `expo`, `next`) before skipping `pnpm install` — the mount point exists while the guest tree is still empty. A provisioner layout change wipes a flat tree; the next `pnpm install` (console for `dev`, converge for the others) refills it from the guest pnpm store. Do not `vagrant provision` while `./console` is running if that would rebuild the `dev` tree.
 - **`console`** — runs the prerequisite check, ensures pinned **Node** (`/opt/turbopanel/vendor/node/current/bin/node`, runs this repo) is installed, installs Corepack via vendored npm when Node did not ship it (25+), enables Corepack/pnpm, runs `pnpm install`, and launches the Ink TUI via `vite-node`. Add `--watch` to use `scripts/hot-reload.tsx`, which keeps the Ink process alive and rerenders when imported `src/` modules change. When stdin/stdout/stderr are not TTYs, reattaches stdio to `/dev/tty` when `tp_is_interactive()` succeeds. Does **not** install Deno via `./console` itself (Deno bootstrap is via `ensureBootstrapDeno` during daemon install).
 - **`src/tui.tsx`** — minimal Ink app: full-height shell with a one-row `MenuBar`, a bordered `MainPanel`, and a one-row `StatusBar`. `← →` switches areas; Ctrl-C exits. Uses `alternateScreen`. No stack orchestration or platform install yet — rebuild features in `src/` incrementally.
@@ -176,11 +185,12 @@ Guest commands:
 | `pnpm test` | Vitest once (`vitest run`) |
 | `pnpm test:watch` | Vitest watch mode |
 | `pnpm test:coverage` | Vitest + LCOV (`coverage/lcov.info`) |
-| `pnpm verify:ci` | GitHub Actions `verify.yml` minus Sonar upload (notices + typecheck + LCOV) |
+| `pnpm verify:ci` | GitHub Actions `verify.yml` minus Sonar upload (vocabulary + notices + typecheck + LCOV) |
 | `./scripts/ci-verify.sh` | Same job for every sibling checkout (guest; re-execs via `vagrant ssh` from the host) |
 | `pnpm typecheck` | `tsc --noEmit` |
 | `pnpm notices:generate` | Write `THIRD_PARTY_NOTICES.md` from the resolved pnpm graph |
 | `pnpm notices:check` | Fail when notices are stale vs the lockfile, or a production dependency has an unreviewed license class |
+| `pnpm check:vocabulary` | Reject daemon-as-agent and marketing-phrase copy (`scripts/check-vocabulary.mjs`; same phrase list as the sibling repos) |
 
 **Vitest convention:** place suites at `src/**/*.test.ts` / `src/**/*.test.tsx`. Use the `node` environment (Ink TUI, not a browser). Import `describe` / `it` / `expect` from `vitest` — do not use `node:test` + `node:assert/strict`. Assert shapes with `new TypeError()` per `typescript:S7786`.
 
@@ -207,7 +217,7 @@ often lack a usable Node/pnpm tree). CI `verify.yml` still gates PRs.
 - Analysis runs in GitHub Actions (`.github/workflows/verify.yml`) with
   `SONAR_TOKEN` and `sonar-project.properties`
   (`sonar.projectKey=turbopanel_dev`, `sonar.organization=turbopanel`). The job
-  runs typecheck + **`pnpm test:coverage`** (Vitest v8 LCOV at
+  runs `check:vocabulary`, `notices:check`, typecheck, and **`pnpm test:coverage`** (Vitest v8 LCOV at
   `coverage/lcov.info`), then scans with
   `sonar.javascript.lcov.reportPaths=coverage/lcov.info`. The scan waits on the
   quality gate (`sonar.qualitygate.wait=true`); if the gate fails, the workflow
@@ -234,18 +244,25 @@ The **`dev-shell-path`** role (dev-only) always installs `/etc/profile.d/turbopa
 
 ### Development Caddyfile
 
-Co-located hosts load **`orchestration/Caddyfile`** (not `~/turbopanel/Caddyfile`) when `turbopanel_dev_user` is set — wired by the daemon `instance-launch` role via `turbopanel_caddyfile`. That file owns:
+Co-located hosts load **`orchestration/Caddyfile`** (not the managed
+`instance-launch` template) when `turbopanel_dev_user` is set — wired by the
+daemon `instance-launch` role via `turbopanel_caddyfile`. That file wins over
+the rendered production Caddyfile, so a development host has no per-hostname
+sites and refuses a Let's Encrypt hostname. `:8880` here is a full plaintext
+mirror of `:8443`, gated by `TURBOPANEL_DEV_HTTP_CONTROL_PLANE=1` (the instance
+answers **403** when the flag is off). On a managed host the same port is the
+HTTP-01 solver, and every other path redirects to `:8443`. That file owns:
 
-- HTTPS `:8443` plus plaintext `:8880` (always on; no serve-time flag)
+- HTTPS `:8443` (always on; Platform CA). There is no plaintext control-plane listener.
 - Expo reverse_proxy when `TURBOPANEL_UI_MODE=dev` (with `expo-loading.html` for cold-start 502s; `flush_interval -1` so Fast Refresh `/hot` is unbuffered). Host edits on VirtioFS/9p need Metro poll watch in the UI repo (`scripts/metro-virtfs-poll-watch.cjs`) — inotify does not cross the share.
 - Optional wrangler upstream when `TURBOPANEL_INSTANCE_RUNTIME=workers`
 - `/downloads/daemon/*` (always — overlay catalog + artifacts; not gated on `TURBOPANEL_UI_MODE`) and the install script at **`/run.sh`** from the daemon checkout (`dist/` after Developer → **Rebuild daemon and upgrade connected servers** / `deno task release:dev`)
 
 - Stripping `CF-Connecting-IP` / `True-Client-IP` / `X-Forwarded-For` from non-loopback peers, so only a connector on this host can present them
 
-The instance repo's `Caddyfile` stays production-only (HTTPS + Deno socket + static UI). See **`../turbopanel/AGENTS.md`** (Caddy) and **`../turbopaneld/AGENTS.md`** (plaintext HTTP client gate).
+The instance repo's `Caddyfile` stays production-only (HTTPS + Deno socket + static UI). See **`../turbopanel/AGENTS.md`** (Caddy) and **`../turbopaneld/src/instance/AGENTS.md`** (daemon TLS trust).
 
-**Server addresses in development.** Vagrant forwards `8443` / `8880` **over SSH**, so a daemon anywhere on the LAN reaches Caddy from `127.0.0.1` — the header-stripping matcher above never fires for it, and the peer address on the wire is `127.0.0.1` for every server. That is why the instance falls back to the interface addresses the daemon reports rather than trusting the wire (`src/lib/peer-address.ts` → `resolveServerAddress`, documented in **`../turbopanel/AGENTS.md`** → Caddy → Server addresses). A Cloudflare Tunnel pointed at this guest still resolves correctly: `cloudflared` is a loopback peer, so its `CF-Connecting-IP` is believed. Mixing LAN servers, tunnelled servers, and the co-located guest daemon in one fleet is the case this is built for.
+**Server addresses in development.** Vagrant forwards `8443` **over SSH**, so a daemon anywhere on the LAN reaches Caddy from `127.0.0.1` — the header-stripping matcher above never fires for it, and the peer address on the wire is `127.0.0.1` for every server. That is why the instance falls back to the interface addresses the daemon reports rather than trusting the wire (`src/lib/peer-address.ts` → `resolveServerAddress`, documented in **`../turbopanel/AGENTS.md`** → Caddy → Server addresses). A Cloudflare Tunnel pointed at this guest still resolves correctly: `cloudflared` is a loopback peer, so its `CF-Connecting-IP` is believed. Mixing LAN servers, tunnelled servers, and the co-located guest daemon in one fleet is the case this is built for.
 
 ## Shell libraries
 

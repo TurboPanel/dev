@@ -16,6 +16,7 @@
 # (utm/bookworm) until a Debian 13 / Trixie UTM box is published.
 
 require "rbconfig"
+require "socket"
 
 HOST_OS = RbConfig::CONFIG.fetch("host_os")
 HOST_PROVIDER =
@@ -35,6 +36,48 @@ HOST_BOX = HOST_PROVIDER == "libvirt" ? "debian/trixie64" : "utm/bookworm"
 SYNCED_FOLDER_OPTIONS = HOST_PROVIDER == "libvirt" ? { type: "virtiofs" } : {}
 
 GITHUB_HOST_DIR = File.join(__dir__, "..", ".github")
+LAN_ALIAS_TOKEN = /\A[A-Za-z0-9.:_-]+\z/
+LAN_ALIAS_MAX = 253
+
+# Extra names for the Platform CA leaf. Interface addresses and the host
+# FQDN are discovered; a LAN alias such as dev.lan is not. Set
+# TURBOPANEL_DEV_LAN_ALIASES (comma or whitespace separated) or list one
+# name per line in local/lan-aliases (# comments allowed). A name that is
+# not published here is not a SAN, and Add Server refuses it.
+def configured_lan_aliases
+  tokens = ENV.fetch("TURBOPANEL_DEV_LAN_ALIASES", "").split(/[\s,]+/)
+  path = File.join(__dir__, "local", "lan-aliases")
+  if File.file?(path)
+    File.foreach(path) do |line|
+      token = line.strip
+      next if token.empty? || token.start_with?("#")
+
+      tokens << token
+    end
+  end
+  tokens.select { |token| token.match?(LAN_ALIAS_TOKEN) && token.length <= LAN_ALIAS_MAX }.uniq
+end
+
+# Addresses a second machine uses to reach the forwarded :8443 listener.
+# The guest mints the Platform CA leaf and cannot see these on its own NICs.
+def host_lan_forward_names
+  skip = /\A(lo|docker|br-|virbr|veth|cni|flannel|tun|tailscale|wg|zt|vboxnet|vmnet)/
+  names = []
+  Socket.getifaddrs.each do |ifaddr|
+    addr = ifaddr.addr
+    next unless addr&.ipv4?
+
+    ip = addr.ip_address
+    next if ip == "127.0.0.1" || ip.start_with?("169.254.")
+    next if ifaddr.name&.match?(skip)
+
+    names << ip
+  end
+  host = Socket.gethostname
+  names << host if host&.include?(".") && host != "localhost"
+  names.concat(configured_lan_aliases)
+  names.uniq
+end
 
 # Conditional guest reboot after apt upgrades (pending kernel / reboot-required).
 # Vagrant's shell `reboot: true` always reboots; this provisioner only reboots
@@ -48,7 +91,7 @@ GITHUB_HOST_DIR = File.join(__dir__, "..", ".github")
 # Guest sshd (OpenSSH 9.8+) closes idle `-N` sessions via UnusedConnectionTimeout,
 # and apt/sshd reloads during converge drop them too. `EnsureLibvirtPortForwards`
 # replaces one-shot vagrant-libvirt tunnels with a restarting supervisor so
-# localhost/LAN binds (80, 443, 8443, 8880, 8025, 4983, …) survive guest lifecycle.
+# localhost/LAN binds (80, 443, 8443, 8025, 4983, …) survive guest lifecycle.
 module TurbopanelVagrant
   class RebootIfNeeded < Vagrant.plugin("2", :provisioner)
     def provision
@@ -461,10 +504,9 @@ Vagrant.configure("2") do |config|
   # vagrant-libvirt otherwise targets the DHCP NIC (192.168.121.x), which
   # misses Mailpit/Studio (127.0.0.1-only) and breaks when the lease
   # changes. Guest ports:
-  #   80    hosting Caddy HTTP (tenant sites; distinct from :8880)
+  #   80    hosting Caddy HTTP (tenant sites; distinct from control-plane :8443)
   #   443   hosting Caddy HTTPS (tenant sites; distinct from :8443)
-  #   8443  control-plane Caddy HTTPS
-  #   8880  control-plane Caddy plaintext HTTP (dev overlay)
+  #   8443  control-plane Caddy HTTPS (Platform CA)
   #   8081  Expo / Metro (native + direct; Caddy also proxies this)
   #   8088  optional extra forward (guest must listen)
   #   19820 website (Next.js)
@@ -482,7 +524,6 @@ Vagrant.configure("2") do |config|
     [80, 80],
     [443, 443],
     [8443, 8443],
-    [8880, 8880],
     [8081, 8081],
     [8088, 8088],
     [19820, 19820],
@@ -811,4 +852,22 @@ EOF
   # port-forward tunnels when they are missing/dead. `run: "always"` so a later
   # `vagrant provision` also heals host binds without a full reload.
   config.vm.provision "turbopanel_ensure_libvirt_port_forwards", run: "always"
+
+  # Publish the host LAN address, FQDN, and configured aliases into the guest
+  # before instance-certs mints the Platform CA leaf. `run: "always"` so a
+  # later `vagrant up` refreshes the file when the host address or
+  # local/lan-aliases changes. Safe while ./console is up. Converge after
+  # this file changes so the leaf picks up the new names.
+  forward_names = host_lan_forward_names
+  config.vm.provision "shell", name: "dev-forward-hosts", run: "always", inline: <<~SHELL
+    set -eu
+    if [ ! -d /etc/turbopanel ]; then
+      install -d -o vagrant -g vagrant -m 0750 /etc/turbopanel
+    fi
+    cat > /etc/turbopanel/dev-forward-hosts <<'EOF'
+#{forward_names.join("\n")}
+EOF
+    chown vagrant:vagrant /etc/turbopanel/dev-forward-hosts
+    chmod 0640 /etc/turbopanel/dev-forward-hosts
+  SHELL
 end

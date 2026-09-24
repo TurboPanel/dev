@@ -57,6 +57,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
 
+      - name: Check vocabulary
+        run: pnpm check:vocabulary
+
       - name: Check third-party notices
         run: pnpm notices:check
 

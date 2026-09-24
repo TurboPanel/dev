@@ -128,8 +128,7 @@ the IDE, browsers, or remote test machines.
 | --- | --- | --- |
 | **80** | Hosting Caddy HTTP (tenant sites) | `0.0.0.0` (LAN) |
 | **443** | Hosting Caddy HTTPS (tenant sites) | `0.0.0.0` (LAN) |
-| **8443** | Control plane (Caddy HTTPS) | `0.0.0.0` (LAN) |
-| **8880** | Control plane (Caddy plaintext HTTP, dev overlay) | `0.0.0.0` (LAN) |
+| **8443** | Control plane (Caddy HTTPS, Platform CA) | `0.0.0.0` (LAN) |
 | **8081** | Expo / Metro (native + direct; Caddy also proxies this) | `0.0.0.0` (LAN) |
 | **8088** | Optional extra forward (guest must listen) | `0.0.0.0` (LAN) |
 | **19820** | Website (Next.js) | `0.0.0.0` (LAN) |
@@ -138,14 +137,14 @@ the IDE, browsers, or remote test machines.
 | **5540** | Redis Insight (unauthenticated) | `127.0.0.1` only |
 | **4213** | DuckDB UI (embedded metrics DB browser, unauthenticated) | `127.0.0.1` only |
 
-- **Local browsing / VS Code / Cursor:** `https://localhost:8443` or
-  `http://localhost:8880`.
+- **Local browsing / VS Code / Cursor:** `https://localhost:8443`.
 - **Remote test machines / extra daemons:** prefer a hostname for your
   development host (for example `https://dev.lan:8443` or your LAN IP) so
-  clients are not stuck on `localhost`. Ports `80` / `443` / `8443` / `8880` /
+  clients are not stuck on `localhost`. Ports `80` / `443` / `8443` /
   `8081` / `8088` / `19820` listen on all host interfaces. Trust the platform CA
   (`/var/lib/turbopanel/tls/ca-bundle.pem` after converge, or
-  `GET /api/daemon/v1/instance/ca`) when using HTTPS.
+  `GET /api/daemon/v1/instance/ca`) when using HTTPS. LAN names can use
+  `curl -k` for a one-off health check.
 - **Studio / Mailpit / Redis Insight / DuckDB UI** stay loopback-only on purpose —
   those UIs are unauthenticated.
 - **Tenant sites:** `http://localhost` and `https://localhost` (ports **80** /
@@ -157,7 +156,6 @@ Smoke test from the host:
 
 ```sh
 curl -k https://localhost:8443/api/health
-curl http://localhost:8880/api/health
 ```
 
 ## What converge changes (inside the guest)
@@ -167,7 +165,7 @@ curl http://localhost:8880/api/health
 | FHS mutable data | `/etc/turbopanel`, `/var/lib/turbopanel`, `/var/log/turbopanel`, `/run/turbopanel` (dev-user-owned) |
 | Vendored runtimes | `/opt/turbopanel/vendor/{node,deno,caddy,…}` |
 | systemd units | `turbopaneld`, `turbopanel-instance`, `turbopanel-caddy`, `turbopanel-ui`, Docker-backed services |
-| Local URL | `https://localhost:8443` (TLS) and `http://localhost:8880` (plaintext) |
+| Local URL | `https://localhost:8443` (Platform CA) |
 
 No dedicated `tp` / `tpctrl` service accounts are created in dev — everything
 runs as the guest user.
