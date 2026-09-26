@@ -1,0 +1,64 @@
+# One-click promotion for this repo (Testing Checklist rel-s19..s21). dev
+# has nothing to build and no deploy branch, so a promotion here is a
+# notes-only release: `to=rc` tags the given commit (trunk by default) as
+# v<package.json version>-rc.1; `to=release` turns that rc into the bare
+# v<version> release. Order across repos: turbopaneld → turbopanel → ui →
+# website → dev.
+#
+# Calls the three reusable workflows locally (./…) since this is the repo
+# they live in; the sibling repos pin TurboPanel/dev@<sha> and pass that
+# same sha as dev-ref.
+
+name: Promote
+
+on:
+  workflow_dispatch:
+    inputs:
+      to:
+        description: Promote to
+        required: true
+        type: choice
+        options:
+          - rc
+          - release
+      source:
+        description: "to=rc: the commit-ish to tag (default trunk). to=release: the rc tag (vX.Y.Z-rc.1)."
+        required: true
+        type: string
+        default: trunk
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    uses: ./.github/workflows/gh-promote.yml
+    with:
+      repo-kind: notes-only
+      to: ${{ inputs.to }}
+      source: ${{ inputs.source }}
+      dev-ref: ${{ github.sha }}
+    secrets: inherit
+
+  publish:
+    needs: prepare
+    uses: ./.github/workflows/gh-release.yml
+    with:
+      version: ${{ needs.prepare.outputs.version }}
+      channel: ${{ inputs.to }}
+      release-notes: ${{ needs.prepare.outputs.release-notes }}
+      target-commit: ${{ needs.prepare.outputs.commit }}
+    secrets: inherit
+
+  finalize:
+    # dev has no deploy branch, so there is nothing to finalize for an rc;
+    # a release still flips `latest`.
+    needs: [prepare, publish]
+    if: inputs.to == 'release'
+    uses: ./.github/workflows/gh-promote-finalize.yml
+    with:
+      to: ${{ inputs.to }}
+      version: ${{ needs.prepare.outputs.version }}
+      commit: ${{ needs.prepare.outputs.commit }}
+      branch: ""
+    secrets: inherit
