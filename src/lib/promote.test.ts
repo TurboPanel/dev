@@ -322,6 +322,8 @@ describe("workflow shape", () => {
   });
 
   test("release.yml ignores tag pushes by the Release App", () => {
-    expect(read("release.yml")).toMatch(/if: github\.event_name != 'push' \|\| !endsWith\(github\.actor, '\[bot\]'\)/);
+    expect(read("release.yml")).toMatch(
+      /if: github\.event_name != 'push' \|\| !startsWith\(github\.ref, 'refs\/tags\/'\) \|\| !endsWith\(github\.actor, '\[bot\]'\)/,
+    );
   });
 });
