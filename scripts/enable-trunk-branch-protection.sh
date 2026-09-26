@@ -3,7 +3,8 @@
 # repository rulesets (run once with gh authenticated as an org admin;
 # re-running updates the rulesets in place).
 #
-# Per repo, four rulesets:
+# Per repo, four rulesets (plus two more on repos that deploy from staging
+# and live — see STAGING_LIVE_REPOS):
 #
 #   trunk: immutable history   — no bypass for anyone: trunk cannot be
 #                                deleted or force-pushed, ever.
@@ -27,6 +28,16 @@
 #                                canaries. The rolling `rc` / `canary`
 #                                pointers and vtest-* dry-run tags never
 #                                matched the pattern in the first place.
+#   staging & live: immutable history — no bypass: the Workers deploy branches
+#                                cannot be deleted or force-pushed.
+#   staging & live: review and CI — pull request + the repo's required checks,
+#                                repository-admin bypass so hotfixes can still
+#                                be pushed straight to staging/live. Unlike
+#                                trunk: merge commits allowed (promotions are
+#                                trunk→staging→live merge PRs), no linear-history
+#                                rule, and checks need not be up to date with
+#                                the base (a hotfix on staging must not block
+#                                the next promotion PR).
 #
 # Required check contexts are the PR-time job names: `verify` where the
 # repo's verify.yml runs on pull_request, plus turbopanel's Build jobs.
@@ -41,6 +52,9 @@ fi
 
 # Repository role "admin" (the fixed id GitHub assigns it).
 ADMIN_BYPASS='[{"actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "always"}]'
+
+# Repos whose Workers deploy from `staging` / `live` branches.
+STAGING_LIVE_REPOS="TurboPanel/turbopanel TurboPanel/turbopaneld TurboPanel/ui TurboPanel/website"
 
 checks_for() {
   case "$1" in
@@ -115,6 +129,42 @@ for repo in TurboPanel/turbopanel TurboPanel/turbopaneld TurboPanel/ui TurboPane
     \"conditions\": {\"ref_name\": {\"include\": [\"refs/tags/v[0-9]*\"], \"exclude\": [\"refs/tags/v*-*\"]}},
     \"rules\": [{\"type\": \"creation\"}]
   }"
+
+  case " ${STAGING_LIVE_REPOS} " in
+    *" ${repo} "*) ;;
+    *) continue ;;
+  esac
+
+  upsert "$repo" "staging & live: immutable history" '{
+    "name": "staging & live: immutable history",
+    "target": "branch",
+    "enforcement": "active",
+    "bypass_actors": [],
+    "conditions": {"ref_name": {"include": ["refs/heads/staging", "refs/heads/live"], "exclude": []}},
+    "rules": [{"type": "deletion"}, {"type": "non_fast_forward"}]
+  }'
+
+  upsert "$repo" "staging & live: review and CI" "{
+    \"name\": \"staging & live: review and CI\",
+    \"target\": \"branch\",
+    \"enforcement\": \"active\",
+    \"bypass_actors\": ${ADMIN_BYPASS},
+    \"conditions\": {\"ref_name\": {\"include\": [\"refs/heads/staging\", \"refs/heads/live\"], \"exclude\": []}},
+    \"rules\": [
+      {\"type\": \"pull_request\", \"parameters\": {
+        \"required_approving_review_count\": 0,
+        \"dismiss_stale_reviews_on_push\": true,
+        \"require_code_owner_review\": false,
+        \"require_last_push_approval\": false,
+        \"required_review_thread_resolution\": true,
+        \"allowed_merge_methods\": [\"merge\", \"squash\", \"rebase\"]
+      }},
+      {\"type\": \"required_status_checks\", \"parameters\": {
+        \"strict_required_status_checks_policy\": false,
+        \"required_status_checks\": $(checks_for "$repo")
+      }}
+    ]
+  }"
 done
 
-echo "✓ rulesets applied: trunk immutable + PR/CI (admin bypass); bare vX.Y.Z tags immutable + admin-only creation (v*-* pre-release tags left to Actions)"
+echo "✓ rulesets applied: trunk immutable + PR/CI (admin bypass); staging & live immutable + PR/CI (admin bypass, merge commits allowed); bare vX.Y.Z tags immutable + admin-only creation (v*-* pre-release tags left to Actions)"
