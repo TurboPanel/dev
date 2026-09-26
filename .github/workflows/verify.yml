@@ -57,6 +57,10 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
 
+      - name: Secret scan (every tracked file)
+        # The pre-commit hook scans staged files only; CI scans the whole tree.
+        run: sh scripts/scan-secrets.sh --all
+
       - name: Check vocabulary
         run: pnpm check:vocabulary
 
@@ -72,6 +76,19 @@ jobs:
 
       - name: Dependency vulnerability scan (osv-scanner)
         run: osv-scanner scan source --recursive .
+
+      - name: Check out sibling repos (cross-repo pin tests)
+        # Public repos, trunk. Cloned outside the workspace so osv-scanner,
+        # tsc and Sonar never see them. TURBOPANEL_REQUIRE_SIBLINGS makes a
+        # missing sibling an error, so the cross-repo tests cannot skip here.
+        run: |
+          mkdir -p "$RUNNER_TEMP/siblings"
+          for repo in turbopanel turbopaneld ui website; do
+            git clone --quiet --depth 1 --branch trunk \
+              "https://github.com/TurboPanel/${repo}.git" "$RUNNER_TEMP/siblings/${repo}"
+          done
+          echo "TURBOPANEL_SIBLINGS_DIR=$RUNNER_TEMP/siblings" >> "$GITHUB_ENV"
+          echo "TURBOPANEL_REQUIRE_SIBLINGS=1" >> "$GITHUB_ENV"
 
       - name: Typecheck
         run: pnpm typecheck

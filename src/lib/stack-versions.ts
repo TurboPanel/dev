@@ -10,10 +10,10 @@ export const CADDY_VERSION = "2.11.4";
 export const WRANGLER_VERSION = "4.124.0";
 
 /** website/package.json dependencies.next */
-export const NEXT_VERSION = "16.2.9";
+export const NEXT_VERSION = "16.3.3";
 
 /** ui/package.json dependencies.expo */
-export const EXPO_SDK_VERSION = "57.0.13";
+export const EXPO_SDK_VERSION = "57.0.14";
 
 /** daemon orchestration/roles/postgres/defaults/main.yml postgres_image */
 export const POSTGRES_VERSION = "18";

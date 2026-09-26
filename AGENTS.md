@@ -171,6 +171,16 @@ vagrant ssh -c 'export PATH="/opt/turbopanel/vendor/node/current/bin:/opt/turbop
 vagrant ssh -c 'export PATH="/opt/turbopanel/vendor/node/current/bin:/opt/turbopanel/vendor/deno/current:$PATH"; cd ~/website && pnpm typecheck'
 ```
 
+**Cross-repo pin tests** (`dev-converge-email-settings.test.ts`,
+`paths.test.ts` Deno pin, `stack-versions.pins.test.ts`) read sibling
+checkouts through `siblingCheckout()` (`src/lib/sibling-checkout.ts`):
+`<dev>/../<repo>` locally, `TURBOPANEL_SIBLINGS_DIR/<repo>` in CI. They skip
+when a sibling is absent, except where `TURBOPANEL_REQUIRE_SIBLINGS=1` —
+`verify.yml` clones the four siblings at trunk into `$RUNNER_TEMP/siblings`
+and sets both, so in CI a missing sibling fails instead of skipping. CI also
+runs `sh scripts/scan-secrets.sh --all` (every tracked file; the pre-commit
+hook scans staged files only). There is no linter configured in this repo.
+
 Interactive: `vagrant ssh`, then `cd ~/dev` (or `~/turbopaneld` /
 `~/turbopanel` / `~/ui` / `~/website`) and the same commands. The TUI
 also runs suites in-guest: Developer → **Run tests…**, or on Services

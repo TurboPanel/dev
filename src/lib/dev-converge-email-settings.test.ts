@@ -2,10 +2,11 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { siblingCheckout } from "./sibling-checkout.ts";
 
 const DEV_LIB = dirname(fileURLToPath(import.meta.url));
 const DEV_ROOT = join(DEV_LIB, "../..");
-const TURBOPANELD_ORCH = join(DEV_ROOT, "../turbopaneld/orchestration");
+const TURBOPANELD = siblingCheckout("turbopaneld");
 
 describe("dev converge email defaults (Deno)", () => {
   it("instance-dev-install passes Mailpit ports into instance-launch", () => {
@@ -18,11 +19,15 @@ describe("dev converge email defaults (Deno)", () => {
     expect(playbook).toContain("- role: instance-launch");
   });
 
-  it("turbopanel-instance unit injects mailpit-smtp for co-located Deno dev", () => {
+  // Reads the daemon's unit template; CI checks turbopaneld out beside this
+  // repo and requires it (TURBOPANEL_REQUIRE_SIBLINGS), so this never skips there.
+  it.skipIf(TURBOPANELD === null)(
+    "turbopanel-instance unit injects mailpit-smtp for co-located Deno dev",
+    () => {
     const unit = readFileSync(
       join(
-        TURBOPANELD_ORCH,
-        "roles/instance-launch/templates/turbopanel-instance.service.j2",
+        TURBOPANELD!,
+        "orchestration/roles/instance-launch/templates/turbopanel-instance.service.j2",
       ),
       "utf8",
     );
@@ -31,5 +36,6 @@ describe("dev converge email defaults (Deno)", () => {
       "TURBOPANEL_SYSTEM_EMAIL__MAILPIT_SMTP_PORT={{ mailpit_smtp_port",
     );
     expect(unit).not.toContain("TURBOPANEL_SYSTEM_EMAIL__SMTP_HOST");
-  });
+    },
+  );
 });
