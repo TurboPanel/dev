@@ -32,6 +32,11 @@ permissions:
 
 jobs:
   prepare:
+    # A tag pushed by a `[bot]` actor is the TurboPanel Release App
+    # promoting a tested build (promote.yml → gh-promote.yml); that flow
+    # publishes the release itself, so this from-source path must not race
+    # it. A person pushing a tag still gets the classic cut.
+    if: github.event_name != 'push' || !endsWith(github.actor, '[bot]')
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.resolve.outputs.version }}

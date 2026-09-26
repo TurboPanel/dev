@@ -1,0 +1,147 @@
+# Reusable promotion — step 3 of 3 (finalize), after gh-promote.yml
+# (prepare) and gh-release.yml (publish + re-verify). See gh-promote.yml for
+# the whole picture.
+#
+# For a release: flip the versioned release to `latest` (the daemon's
+# `release` rail is releases/latest/download/manifest.json) and re-point the
+# rolling `rc` pre-release's manifest.json at the same signed manifest, so rc
+# followers land on the release they were testing. Nothing on the consumer
+# side enforces manifest.channel, so the release manifest is uploaded as-is
+# — no second signing, no key in this job.
+#
+# Then fast-forward the deploy branch (`staging` for rc, `live` for
+# release) to the tag's commit — Workers Builds deploy from those branches
+# by decision. When the branch has diverged (a hotfix landed there), a
+# merge commit is created instead — never a squash, never a force push —
+# and the summary says so. Branch pushes need the TurboPanel Release App
+# (rulesets require PRs on staging/live); without it this step fails with
+# the exact `git push` to run by hand.
+
+name: Promote (finalize)
+
+on:
+  workflow_call:
+    inputs:
+      to:
+        description: rc | release
+        required: true
+        type: string
+      version:
+        description: The promoted version without a leading v (gh-promote.yml's `version` output)
+        required: true
+        type: string
+      commit:
+        description: The tag's commit (gh-promote.yml's `commit` output)
+        required: true
+        type: string
+      branch:
+        description: Deploy branch to move (gh-promote.yml's `branch` output); "" skips the push
+        required: false
+        type: string
+        default: ""
+      manifest-filename:
+        description: manifest.json when the release carries one (re-points the rolling rc on a release); "" for notes-only
+        required: false
+        type: string
+        default: ""
+    secrets:
+      RELEASE_APP_ID:
+        required: false
+      RELEASE_APP_PRIVATE_KEY:
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    environment: release
+    concurrency:
+      group: gh-promote-${{ github.repository }}
+      cancel-in-progress: false
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      REPO: ${{ github.repository }}
+      TO: ${{ inputs.to }}
+      VERSION: ${{ inputs.version }}
+      COMMIT: ${{ inputs.commit }}
+      BRANCH: ${{ inputs.branch }}
+    steps:
+      - name: Mark v${{ inputs.version }} as the latest release
+        if: inputs.to == 'release'
+        run: |
+          set -eu
+          gh release edit "v$VERSION" --repo "$REPO" --prerelease=false --latest --title "v$VERSION (release)"
+          echo "releases/latest now resolves to v$VERSION"
+
+      - name: Point the rolling rc pre-release at the release
+        if: inputs.to == 'release' && inputs.manifest-filename != ''
+        env:
+          MANIFEST: ${{ inputs.manifest-filename }}
+        run: |
+          set -eu
+          mkdir -p release-manifest
+          gh release download "v$VERSION" --repo "$REPO" --pattern "$MANIFEST" --output "release-manifest/$MANIFEST"
+          if ! gh release view rc --repo "$REPO" >/dev/null 2>&1; then
+            gh release create rc \
+              --repo "$REPO" \
+              --target "$COMMIT" \
+              --prerelease \
+              --title "rc (rolling)" \
+              --notes "Rolling rc channel pointer. Its manifest.json names the current rc pre-release's assets; see that release for the bytes."
+          fi
+          gh release upload rc --repo "$REPO" --clobber "release-manifest/$MANIFEST"
+          gh release edit rc --repo "$REPO" --prerelease --notes "Rolling rc channel pointer — currently v$VERSION (released). Its manifest.json names that release's assets."
+          echo "rc pointer now names v$VERSION"
+
+      - name: Mint a Release App token
+        if: inputs.branch != ''
+        id: app-token
+        env:
+          HAS_APP: ${{ secrets.RELEASE_APP_ID != '' && secrets.RELEASE_APP_PRIVATE_KEY != '' }}
+        run: |
+          set -eu
+          echo "has-app=$HAS_APP" >> "$GITHUB_OUTPUT"
+
+      - name: Mint a Release App token (App)
+        if: inputs.branch != '' && steps.app-token.outputs.has-app == 'true'
+        id: app
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+
+      - name: Fast-forward ${{ inputs.branch }} to v${{ inputs.version }}
+        if: inputs.branch != ''
+        env:
+          TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          set -eu
+          if [ -z "$TOKEN" ]; then
+            echo "::error::Pushing $BRANCH needs the TurboPanel Release GitHub App (staging/live only accept PRs, or the App as bypass actor). v$VERSION is published; move the branch by hand from a checkout with push rights: git push origin $COMMIT:refs/heads/$BRANCH"
+            exit 1
+          fi
+          git init -q branch-push
+          cd branch-push
+          git config user.name "turbopanel-release[bot]"
+          git config user.email "turbopanel-release[bot]@users.noreply.github.com"
+          git remote add origin "https://x-access-token:${TOKEN}@github.com/${REPO}.git"
+          git fetch -q --no-tags origin "$COMMIT"
+          if git fetch -q --no-tags origin "refs/heads/$BRANCH:refs/remotes/origin/$BRANCH"; then
+            if git merge-base --is-ancestor "origin/$BRANCH" "$COMMIT"; then
+              git push origin "$COMMIT:refs/heads/$BRANCH"
+              echo "fast-forwarded $BRANCH to $COMMIT (v$VERSION)"
+              echo "### $BRANCH fast-forwarded to v$VERSION ($COMMIT)" >> "$GITHUB_STEP_SUMMARY"
+            else
+              git checkout -q -b "$BRANCH" "origin/$BRANCH"
+              git merge --no-ff --no-edit -m "Promote v$VERSION to $BRANCH" "$COMMIT"
+              git push origin "HEAD:refs/heads/$BRANCH"
+              echo "::warning::$BRANCH had commits not in v$VERSION — merged with a merge commit (no squash, no force). Check what was on $BRANCH: git log $COMMIT..origin/$BRANCH"
+              echo "### $BRANCH merged v$VERSION ($COMMIT) with a merge commit — the branch had diverged" >> "$GITHUB_STEP_SUMMARY"
+            fi
+          else
+            git push origin "$COMMIT:refs/heads/$BRANCH"
+            echo "created $BRANCH at $COMMIT (v$VERSION)"
+            echo "### $BRANCH created at v$VERSION ($COMMIT)" >> "$GITHUB_STEP_SUMMARY"
+          fi

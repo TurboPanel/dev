@@ -1,0 +1,377 @@
+# Reusable promotion — step 1 of 3 (prepare). Testing Checklist rel-s19..s21.
+#
+# One click by the maintainer moves a tested build up a channel:
+#
+#   canary (trunk / testing)  --to=rc-->      X.Y.Z-rc.1 + `staging` branch
+#   X.Y.Z-rc.1 (staging)      --to=release--> X.Y.Z (releases/latest) + `live` branch
+#
+# The bytes never change (decision D9): this job downloads the source
+# build's assets and manifest, proves the manifest is signed by the release
+# key and every asset hashes to what it names, renames the assets to the
+# target version, rewrites the manifest (version, channel, urls — commit,
+# buildId, builtAt and every sha256 stay), signs the new manifest with the
+# same offline key, creates the target tag at the source commit, and hands
+# the assets to gh-release.yml as a job artifact. gh-promote-finalize.yml
+# then flips `latest` / re-points the rolling `rc` and fast-forwards the
+# deploy branch. Callers chain the three `uses:` jobs (a reusable workflow
+# cannot call another at a parameterised ref).
+#
+# Version model (D8, Option A): a canary is `<base>-canary.<buildId>`, its rc
+# is always `<base>-rc.1`, the release is `<base>`. A bad rc is fixed on
+# trunk with a changeset and becomes the next number — never rc.2.
+#
+# Tags: `v<base>-rc.1` is created with GITHUB_TOKEN (the tag ruleset leaves
+# hyphenated tags to automation, and GITHUB_TOKEN-created refs fire no
+# workflows). The bare `v<base>` tag is admin/App-only, so `to=release`
+# needs the "TurboPanel Release" GitHub App (RELEASE_APP_ID +
+# RELEASE_APP_PRIVATE_KEY, environment `release`) and refuses to start
+# without it — nothing is downloaded or tagged for a release this job
+# cannot finish. An App-created tag does fire tag-push workflows, which is
+# why every repo's release.yml ignores tag pushes by a `[bot]` actor.
+#
+# The `release` environment is the approval gate (D7): the owner approves
+# this job, then finalize's deploy step. Environment secrets reach this job
+# through the caller's `secrets: inherit`.
+
+name: Promote (prepare)
+
+on:
+  workflow_call:
+    inputs:
+      repo-kind:
+        description: daemon | instance | ui | notes-only — which manifest shape the repo publishes (notes-only skips assets entirely)
+        required: true
+        type: string
+      to:
+        description: rc | release
+        required: true
+        type: string
+      source:
+        description: >-
+          What to promote. to=rc — a canary build id (yyyymmdd-hhmmss-sha7), a canary
+          version, or the manifest-<version>.json copy on the rolling canary release;
+          notes-only repos pass a commit-ish instead. to=release — the rc tag (vX.Y.Z-rc.1).
+        required: true
+        type: string
+      dev-ref:
+        description: The TurboPanel/dev commit this workflow was called at (must equal the `uses:` pin — the scripts live there)
+        required: true
+        type: string
+      signer-ref:
+        description: TurboPanel/turbopaneld commit carrying scripts/sign-manifest.ts and the release public-key pin (required unless notes-only)
+        required: false
+        type: string
+        default: ""
+    secrets:
+      RELEASE_SIGNING_KEY:
+        description: PKCS#8 PEM of the offline release key (required unless notes-only)
+        required: false
+      RELEASE_APP_ID:
+        description: TurboPanel Release GitHub App id (required for to=release)
+        required: false
+      RELEASE_APP_PRIVATE_KEY:
+        description: TurboPanel Release GitHub App private key PEM (required for to=release)
+        required: false
+    outputs:
+      version:
+        description: The promoted version without a leading v
+        value: ${{ jobs.prepare.outputs.target-version }}
+      tag:
+        description: The tag created at the source commit
+        value: ${{ jobs.prepare.outputs.tag }}
+      commit:
+        description: The source build's commit (the tag points here)
+        value: ${{ jobs.prepare.outputs.commit }}
+      source-version:
+        description: The version promoted from
+        value: ${{ jobs.prepare.outputs.source-version }}
+      branch:
+        description: Deploy branch for this hop (staging for rc, live for release)
+        value: ${{ jobs.prepare.outputs.branch }}
+      assets-artifact-name:
+        description: Job artifact holding the renamed assets + signed manifest ("" for notes-only)
+        value: ${{ jobs.prepare.outputs.assets-artifact-name }}
+      manifest-filename:
+        description: manifest.json, or "" for notes-only
+        value: ${{ jobs.prepare.outputs.manifest-filename }}
+      release-notes:
+        description: Body for the GitHub Release
+        value: ${{ jobs.prepare.outputs.release-notes }}
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    environment: release
+    concurrency:
+      group: gh-promote-${{ github.repository }}
+      cancel-in-progress: false
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      REPO: ${{ github.repository }}
+      TO: ${{ inputs.to }}
+      REPO_KIND: ${{ inputs.repo-kind }}
+      SOURCE: ${{ inputs.source }}
+      CLI: .promote/scripts/promote/cli.mjs
+    outputs:
+      target-version: ${{ steps.plan.outputs.target-version }}
+      tag: ${{ steps.plan.outputs.tag }}
+      commit: ${{ steps.commit.outputs.commit }}
+      source-version: ${{ steps.plan.outputs.source-version }}
+      branch: ${{ steps.plan.outputs.branch }}
+      assets-artifact-name: ${{ steps.artifact-name.outputs.name }}
+      manifest-filename: ${{ steps.artifact-name.outputs.manifest }}
+      release-notes: ${{ steps.notes.outputs.notes }}
+    steps:
+      - name: Refuse a release without the Release App
+        if: inputs.to == 'release'
+        env:
+          HAS_APP: ${{ secrets.RELEASE_APP_ID != '' && secrets.RELEASE_APP_PRIVATE_KEY != '' }}
+        run: |
+          set -eu
+          if [ "$HAS_APP" != "true" ]; then
+            echo "::error::to=release creates the bare v<version> tag and pushes live, which only the TurboPanel Release GitHub App may do. Add RELEASE_APP_ID and RELEASE_APP_PRIVATE_KEY to the release environment (or the repo's secrets) and re-run."
+            exit 1
+          fi
+
+      - name: Require a signer for a repo with assets
+        if: inputs.repo-kind != 'notes-only'
+        env:
+          SIGNER_REF: ${{ inputs.signer-ref }}
+          HAS_KEY: ${{ secrets.RELEASE_SIGNING_KEY != '' }}
+        run: |
+          set -eu
+          if [ -z "$SIGNER_REF" ]; then
+            echo "::error::signer-ref is required for repo-kind=$REPO_KIND (a turbopaneld commit with scripts/sign-manifest.ts)"
+            exit 1
+          fi
+          if [ "$HAS_KEY" != "true" ]; then
+            echo "::error::RELEASE_SIGNING_KEY is not set — the promoted manifest cannot be signed"
+            exit 1
+          fi
+
+      - name: Check out the promotion scripts (TurboPanel/dev)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: TurboPanel/dev
+          ref: ${{ inputs.dev-ref }}
+          path: .promote
+          fetch-depth: 1
+          persist-credentials: false
+          sparse-checkout: scripts/promote
+          sparse-checkout-cone-mode: false
+
+      - name: Resolve the source and the target version
+        id: plan
+        run: |
+          set -eu
+          if [ "$REPO_KIND" != "notes-only" ]; then
+            if [ "$TO" = "rc" ]; then
+              gh release view canary --repo "$REPO" --json assets --jq '.assets[].name' > canary-assets.txt
+              node "$CLI" plan --to "$TO" --source "$SOURCE" --repo-kind "$REPO_KIND" --canary-assets canary-assets.txt
+            else
+              node "$CLI" plan --to "$TO" --source "$SOURCE" --repo-kind "$REPO_KIND"
+            fi
+          elif [ "$TO" = "rc" ]; then
+            # Notes-only rc: the source is a commit-ish; the number is that
+            # commit's package.json version.
+            _commit="$(gh api "repos/$REPO/commits/$SOURCE" --jq .sha)"
+            _version="$(gh api "repos/$REPO/contents/package.json?ref=$_commit" --jq .content | base64 -d | python3 -c 'import json,sys; print(json.load(sys.stdin)["version"])')"
+            echo "source-commit=$_commit" >> "$GITHUB_OUTPUT"
+            node "$CLI" plan-notes-only --to "$TO" --source-version "$_version"
+          else
+            node "$CLI" plan --to "$TO" --source "$SOURCE" --repo-kind "$REPO_KIND"
+          fi
+
+      - name: Download the source build
+        if: inputs.repo-kind != 'notes-only'
+        env:
+          SOURCE_ASSET: ${{ steps.plan.outputs.source-asset }}
+          SOURCE_TAG: ${{ steps.plan.outputs.source-tag }}
+        run: |
+          set -eu
+          mkdir -p source-assets
+          if [ "$TO" = "rc" ]; then
+            # The manifest-<version>.json copy names this build's assets on
+            # the rolling canary release; fetch exactly those.
+            gh release download canary --repo "$REPO" --pattern "$SOURCE_ASSET" --output source-assets/manifest.json
+            jq -r '.. | objects | select(has("url") and has("sha256") and has("size")) | .url | split("/") | last' source-assets/manifest.json \
+              | while IFS= read -r _name; do
+                  gh release download canary --repo "$REPO" --pattern "$_name" --dir source-assets
+                done
+          else
+            gh release download "$SOURCE_TAG" --repo "$REPO" --dir source-assets
+          fi
+          ls -l source-assets
+
+      - name: Resolve the source commit
+        id: commit
+        env:
+          SOURCE_TAG: ${{ steps.plan.outputs.source-tag }}
+          SOURCE_COMMIT: ${{ steps.plan.outputs.source-commit }}
+        run: |
+          set -eu
+          _tag_commit=""
+          if [ -n "$SOURCE_TAG" ]; then
+            _tag_commit="$(gh api "repos/$REPO/commits/$SOURCE_TAG" --jq .sha)"
+          fi
+          if [ "$REPO_KIND" != "notes-only" ]; then
+            _commit="$(jq -r '.commit // empty' source-assets/manifest.json)"
+            [ -n "$_commit" ] || { echo "::error::source manifest has no commit"; exit 1; }
+            if [ -n "$_tag_commit" ] && [ "$_tag_commit" != "$_commit" ]; then
+              echo "::error::$SOURCE_TAG points at $_tag_commit but its manifest was built from $_commit"
+              exit 1
+            fi
+          elif [ -n "$_tag_commit" ]; then
+            _commit="$_tag_commit"
+          else
+            _commit="$SOURCE_COMMIT"
+          fi
+          echo "commit=$_commit" >> "$GITHUB_OUTPUT"
+          echo "source commit $_commit"
+
+      - name: Check out the manifest signer (turbopaneld)
+        if: inputs.repo-kind != 'notes-only'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: TurboPanel/turbopaneld
+          ref: ${{ inputs.signer-ref }}
+          path: .manifest-signer
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Read the signer's Deno pin
+        if: inputs.repo-kind != 'notes-only'
+        id: signer-pins
+        run: |
+          set -eu
+          _file=.manifest-signer/orchestration/roles/deno-runtime/defaults/main.yml
+          _version="$(sed -n 's/^deno_version: "\([0-9][0-9.]*\)".*/\1/p' "$_file" | head -n 1)"
+          [ -n "$_version" ] || { echo "::error::no deno_version in $_file"; exit 1; }
+          echo "deno-version=$_version" >> "$GITHUB_OUTPUT"
+
+      - name: Install Deno
+        if: inputs.repo-kind != 'notes-only'
+        uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
+        with:
+          deno-version: ${{ steps.signer-pins.outputs.deno-version }}
+
+      - name: Verify the source manifest's signature
+        if: inputs.repo-kind != 'notes-only'
+        run: deno run --config .manifest-signer/deno.json --allow-read .promote/scripts/promote/verify-signature.ts .manifest-signer source-assets/manifest.json
+
+      - name: Verify the source assets against their manifest
+        if: inputs.repo-kind != 'notes-only'
+        run: node "$CLI" verify --manifest source-assets/manifest.json --assets-dir source-assets
+
+      - name: Refuse an rc while changesets are pending at the source commit
+        if: inputs.to == 'rc'
+        env:
+          COMMIT: ${{ steps.commit.outputs.commit }}
+        run: |
+          set -eu
+          if gh api "repos/$REPO/contents/.changeset?ref=$COMMIT" --jq '.[].name' > changesets.txt 2> changesets.err; then
+            node "$CLI" changesets --to "$TO" --listing changesets.txt
+          elif grep -q 'HTTP 404' changesets.err; then
+            echo "::notice::$REPO has no .changeset/ at $COMMIT — changeset gate skipped"
+          else
+            cat changesets.err
+            exit 1
+          fi
+
+      - name: Rename the assets and rewrite the manifest for ${{ inputs.to }}
+        if: inputs.repo-kind != 'notes-only'
+        env:
+          SOURCE_VERSION: ${{ steps.plan.outputs.source-version }}
+          TARGET_VERSION: ${{ steps.plan.outputs.target-version }}
+        run: |
+          set -eu
+          mkdir -p release-assets
+          for _file in source-assets/*; do
+            case "$(basename "$_file")" in
+              manifest.json|manifest-*.json) ;;
+              *) cp "$_file" release-assets/ ;;
+            esac
+          done
+          node "$CLI" rewrite --manifest source-assets/manifest.json --assets-dir release-assets \
+            --repo "$REPO" --to "$TO" --source-version "$SOURCE_VERSION" --target-version "$TARGET_VERSION" \
+            --out release-assets/manifest.json
+          ls -l release-assets
+
+      - name: Sign the promoted manifest
+        if: inputs.repo-kind != 'notes-only'
+        env:
+          RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
+        run: |
+          set -eu
+          deno run --config .manifest-signer/deno.json \
+            --allow-read --allow-write=release-assets/manifest.json \
+            --allow-env=RELEASE_SIGNING_KEY \
+            .manifest-signer/scripts/sign-manifest.ts release-assets/manifest.json
+          deno run --config .manifest-signer/deno.json --allow-read .promote/scripts/promote/verify-signature.ts .manifest-signer release-assets/manifest.json
+          node "$CLI" verify --manifest release-assets/manifest.json --assets-dir release-assets
+
+      - name: Mint a Release App token
+        if: inputs.to == 'release'
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+
+      - name: Create the ${{ steps.plan.outputs.tag }} tag at the source commit
+        env:
+          TAG: ${{ steps.plan.outputs.tag }}
+          COMMIT: ${{ steps.commit.outputs.commit }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          if _ref="$(gh api "repos/$REPO/git/ref/tags/$TAG" 2>/dev/null)"; then
+            _type="$(printf '%s' "$_ref" | jq -r .object.type)"
+            _sha="$(printf '%s' "$_ref" | jq -r .object.sha)"
+            if [ "$_type" = "tag" ]; then
+              _sha="$(gh api "repos/$REPO/git/tags/$_sha" --jq .object.sha)"
+            fi
+            if [ "$_sha" != "$COMMIT" ]; then
+              echo "::error::$TAG already exists at $_sha, not the source commit $COMMIT — that version is taken; fix on trunk with a changeset and promote the next number"
+              exit 1
+            fi
+            echo "$TAG already points at $COMMIT (re-run)"
+          else
+            gh api "repos/$REPO/git/refs" -f "ref=refs/tags/$TAG" -f "sha=$COMMIT" --jq '.ref + " -> " + .object.sha'
+          fi
+
+      - name: Upload the promoted assets
+        if: inputs.repo-kind != 'notes-only'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: promote-assets
+          path: release-assets
+          if-no-files-found: error
+          retention-days: 3
+
+      - name: Name the artifact for gh-release.yml
+        id: artifact-name
+        run: |
+          set -eu
+          if [ "$REPO_KIND" = "notes-only" ]; then
+            echo "name=" >> "$GITHUB_OUTPUT"
+            echo "manifest=" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=promote-assets" >> "$GITHUB_OUTPUT"
+            echo "manifest=manifest.json" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Write the release notes
+        id: notes
+        env:
+          SOURCE_VERSION: ${{ steps.plan.outputs.source-version }}
+          TARGET_VERSION: ${{ steps.plan.outputs.target-version }}
+          COMMIT: ${{ steps.commit.outputs.commit }}
+        run: |
+          set -eu
+          _notes="$(node "$CLI" notes --to "$TO" --repo-kind "$REPO_KIND" --source-version "$SOURCE_VERSION" --target-version "$TARGET_VERSION" --commit "$COMMIT")"
+          echo "notes=$_notes" >> "$GITHUB_OUTPUT"
+          echo "$_notes"
