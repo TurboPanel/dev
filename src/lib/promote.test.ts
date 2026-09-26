@@ -302,6 +302,10 @@ describe("workflow shape", () => {
     }
     expect(text).not.toMatch(/git merge --squash/);
     expect(text).toMatch(/^    environment: release$/m);
+    // Without the App the manual route is a PR: direct pushes to staging/live
+    // are refused for everyone by the rulesets.
+    expect(text).toMatch(/gh pr create --repo \$REPO --base \$BRANCH --head promote\/v\$VERSION/);
+    expect(text).not.toMatch(/by hand from a checkout with push rights/);
   });
 
   test("gh-release.yml takes a target commit and defaults to the caller's sha", () => {

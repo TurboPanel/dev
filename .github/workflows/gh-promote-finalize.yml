@@ -14,8 +14,11 @@
 # by decision. When the branch has diverged (a hotfix landed there), a
 # merge commit is created instead — never a squash, never a force push —
 # and the summary says so. Branch pushes need the TurboPanel Release App
-# (rulesets require PRs on staging/live); without it this step fails with
-# the exact `git push` to run by hand.
+# (rulesets require PRs on staging/live, no bypass for anyone else); without
+# it this step fails and prints the two commands that move the branch the
+# manual way: push a `promote/v<version>` branch at the tag commit and open a
+# PR into the deploy branch as the owner (a PR opened with GITHUB_TOKEN would
+# never start `ci-ok`), then merge it with a merge commit once `ci-ok` is green.
 
 name: Promote (finalize)
 
@@ -119,7 +122,16 @@ jobs:
         run: |
           set -eu
           if [ -z "$TOKEN" ]; then
-            echo "::error::Pushing $BRANCH needs the TurboPanel Release GitHub App (staging/live only accept PRs, or the App as bypass actor). v$VERSION is published; move the branch by hand from a checkout with push rights: git push origin $COMMIT:refs/heads/$BRANCH"
+            echo "::error::Moving $BRANCH needs the TurboPanel Release GitHub App (staging/live accept only PRs; the App is the one bypass actor). v$VERSION is published; move $BRANCH with a PR instead — see the run summary for the two commands."
+            {
+              echo "### v$VERSION is published — move \`$BRANCH\` by PR"
+              echo "No Release App yet, so this run could not push \`$BRANCH\`. From any checkout, as yourself:"
+              echo '```sh'
+              echo "git push origin $COMMIT:refs/heads/promote/v$VERSION"
+              echo "gh pr create --repo $REPO --base $BRANCH --head promote/v$VERSION --title \"Promote v$VERSION to $BRANCH\" --body \"Moves $BRANCH to the v$VERSION tag commit ($COMMIT).\""
+              echo '```'
+              echo "When \`ci-ok\` is green: \`gh pr merge --repo $REPO --merge --delete-branch promote/v$VERSION\` (merge commit only on $BRANCH)."
+            } >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
           git init -q branch-push
