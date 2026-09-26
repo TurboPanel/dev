@@ -275,6 +275,22 @@ The instance repo's `Caddyfile` stays production-only (HTTPS + Deno socket + sta
 
 **Server addresses in development.** Vagrant forwards `8443` **over SSH**, so a daemon anywhere on the LAN reaches Caddy from `127.0.0.1` — the header-stripping matcher above never fires for it, and the peer address on the wire is `127.0.0.1` for every server. That is why the instance falls back to the interface addresses the daemon reports rather than trusting the wire (`src/lib/peer-address.ts` → `resolveServerAddress`, documented in **`../turbopanel/AGENTS.md`** → Caddy → Server addresses). A Cloudflare Tunnel pointed at this guest still resolves correctly: `cloudflared` is a loopback peer, so its `CF-Connecting-IP` is believed. Mixing LAN servers, tunnelled servers, and the co-located guest daemon in one fleet is the case this is built for.
 
+## Repository rulesets
+
+`scripts/enable-trunk-branch-protection.sh` is the source of truth for every
+GitHub ruleset on the five repos (upsert by name; re-run to change). It makes
+`trunk`, `staging` and `live` PR-only for everyone — no bypass actors, zero
+required approvals, one required check `ci-ok` pinned to the GitHub Actions
+app (integration id 15368), squash-only on trunk and merge-commits-only on
+staging/live, `require_extra_approval_for_unattributed_changes` explicitly
+false. Break-glass is flipping a ruleset's enforcement to Disabled in the repo
+settings, pushing, and re-enabling. Bare `vX.Y.Z` tag creation stays
+admin-only until the "TurboPanel Release" GitHub App exists
+(`RELEASE_APP_BYPASS`). Do not apply a version that requires `ci-ok` before
+that job runs on trunk in every repo, or every PR blocks.
+`src/lib/branch-protection-script.test.ts` runs the script against a stub `gh`
+and asserts the JSON it would send.
+
 ## Shell libraries
 
 - **`scripts/lib/privileges.sh`** — POSIX sudo re-exec helpers (`tp_ensure_privileges`), logging helpers, `tp_is_interactive()` (stdin TTY or readable/writable `/dev/tty`).
