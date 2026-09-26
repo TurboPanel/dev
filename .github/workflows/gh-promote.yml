@@ -24,14 +24,16 @@
 # hyphenated tags to automation, and GITHUB_TOKEN-created refs fire no
 # workflows). The bare `v<base>` tag is admin/App-only, so `to=release`
 # needs the "TurboPanel Release" GitHub App (RELEASE_APP_ID +
-# RELEASE_APP_PRIVATE_KEY, environment `release`) and refuses to start
+# RELEASE_APP_PRIVATE_KEY, repo secrets) and refuses to start
 # without it — nothing is downloaded or tagged for a release this job
 # cannot finish. An App-created tag does fire tag-push workflows, which is
 # why every repo's release.yml ignores tag pushes by a `[bot]` actor.
 #
 # The `release` environment is the approval gate (D7): the owner approves
-# this job, then finalize's deploy step. Environment secrets reach this job
-# through the caller's `secrets: inherit`.
+# this job once per promotion; publish and finalize run on without asking
+# again. Secrets (RELEASE_SIGNING_KEY, RELEASE_APP_ID,
+# RELEASE_APP_PRIVATE_KEY) are repo secrets reaching every step through the
+# caller's `secrets: inherit`.
 
 name: Promote (prepare)
 
@@ -132,7 +134,7 @@ jobs:
         run: |
           set -eu
           if [ "$HAS_APP" != "true" ]; then
-            echo "::error::to=release creates the bare v<version> tag and pushes live, which only the TurboPanel Release GitHub App may do. Add RELEASE_APP_ID and RELEASE_APP_PRIVATE_KEY to the release environment (or the repo's secrets) and re-run."
+            echo "::error::to=release creates the bare v<version> tag and pushes live, which only the TurboPanel Release GitHub App may do. Add RELEASE_APP_ID and RELEASE_APP_PRIVATE_KEY as repository secrets and re-run."
             exit 1
           fi
 

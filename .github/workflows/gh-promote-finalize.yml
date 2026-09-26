@@ -59,7 +59,10 @@ permissions:
 jobs:
   finalize:
     runs-on: ubuntu-latest
-    environment: release
+    # No environment here: the owner approved this run once, at prepare
+    # (owner decision 2026-09-26 — one approval per promotion). The App's
+    # credentials are repo secrets, reachable only by workflows on trunk,
+    # which only the owner can merge to.
     concurrency:
       group: gh-promote-${{ github.repository }}
       cancel-in-progress: false

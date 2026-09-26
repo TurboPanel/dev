@@ -301,7 +301,8 @@ describe("workflow shape", () => {
       expect(push).not.toMatch(/--force|-f\b|\+refs\//);
     }
     expect(text).not.toMatch(/git merge --squash/);
-    expect(text).toMatch(/^    environment: release$/m);
+    // One approval per promotion: only prepare is environment-gated.
+    expect(text).not.toMatch(/^\s*environment:/m);
     // Without the App the manual route is a PR: direct pushes to staging/live
     // are refused for everyone by the rulesets.
     expect(text).toMatch(/gh pr create --repo \$REPO --base \$BRANCH --head promote\/v\$VERSION/);
