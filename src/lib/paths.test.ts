@@ -42,6 +42,7 @@ import {
   TURBOPANEL_ROOT,
   TURBOPANEL_TRUNK_BRANCH,
 } from "./paths.ts";
+import { siblingCheckout } from "./sibling-checkout.ts";
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -142,9 +143,23 @@ describe("platformCaCertPath", () => {
 });
 
 describe("version pins", () => {
-  test("DENO_VERSION matches the daemon deno-runtime pin", () => {
-    expect(DENO_VERSION).toBe("2.9.7");
-  });
+  test.skipIf(siblingCheckout("turbopaneld") === null)(
+    "DENO_VERSION matches the daemon deno-runtime pin",
+    async () => {
+      const { readFileSync } = await import("node:fs");
+      const { join } = await import("node:path");
+      const daemon = siblingCheckout("turbopaneld")!;
+      const defaults = readFileSync(
+        join(daemon, "orchestration/roles/deno-runtime/defaults/main.yml"),
+        "utf8",
+      );
+      const match = /^deno_version:\s*"?([\d.]+)"?\s*$/m.exec(defaults);
+      if (!match) {
+        throw new TypeError("could not read deno_version from the daemon deno-runtime role");
+      }
+      expect(DENO_VERSION).toBe(match[1]);
+    },
+  );
 
   test("NODE_VERSION matches scripts/lib/paths.sh pin", async () => {
     const { readFileSync } = await import("node:fs");
