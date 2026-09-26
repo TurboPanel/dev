@@ -180,6 +180,7 @@ when a sibling is absent, except where `TURBOPANEL_REQUIRE_SIBLINGS=1` —
 and sets both, so in CI a missing sibling fails instead of skipping. CI also
 runs `sh scripts/scan-secrets.sh --all` (every tracked file; the pre-commit
 hook scans staged files only). There is no linter configured in this repo.
+`scripts/scan-secrets.sh` is byte-identical in turbopanel, turbopaneld, ui, website and dev — change all five together. It refuses a committed secret-bearing file (`license.token`, `server-key.json`, `.pgpass`, `.rabbitmq_pass`, …), flags credential URLs (`amqp(s)`/`postgres(ql)` with `user:pass@`) and `TURBOPANEL_SECRET(S)` bindings, and flags any line that names a secret-bearing file unless that exact `path:line:content` is in `.secretscan-allowlist`. dev's `src/lib/scan-secrets.test.ts` tests the rules and, with the siblings checked out in dev CI, fails if any copy drifts.
 
 Interactive: `vagrant ssh`, then `cd ~/dev` (or `~/turbopaneld` /
 `~/turbopanel` / `~/ui` / `~/website`) and the same commands. The TUI
