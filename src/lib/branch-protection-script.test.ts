@@ -121,10 +121,11 @@ describe("enable-trunk-branch-protection.sh", () => {
         expect(tags.bypass_actors).toEqual([]);
       });
 
-      it("release tag creation stays admin-only until the Release App exists", () => {
+      it("release tag creation: admins and the Release App only", () => {
         const rs = named("release tags: creation");
         expect(rs.bypass_actors).toEqual([
           { actor_id: 5, actor_type: "RepositoryRole", bypass_mode: "always" },
+          { actor_id: 5089081, actor_type: "Integration", bypass_mode: "always" },
         ]);
       });
 
@@ -133,9 +134,11 @@ describe("enable-trunk-branch-protection.sh", () => {
           expect(rulesets.map((r) => r.name)).not.toContain("staging & live: review and CI");
         });
       } else {
-        it("staging & live review: PR-only, merge commits only, ci-ok, no bypass", () => {
+        it("staging & live review: PR-only, merge commits only, ci-ok, Release App is the only bypass", () => {
           const rs = named("staging & live: review and CI");
-          expect(rs.bypass_actors).toEqual([]);
+          expect(rs.bypass_actors).toEqual([
+            { actor_id: 5089081, actor_type: "Integration", bypass_mode: "always" },
+          ]);
           const pr = rule(rs, "pull_request");
           expect(pr.require_extra_approval_for_unattributed_changes).toBe(false);
           expect(pr.allowed_merge_methods).toEqual(["merge"]);

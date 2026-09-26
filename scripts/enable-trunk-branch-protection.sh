@@ -50,12 +50,15 @@
 #                                pointers and vtest-* dry-run tags never
 #                                matched the pattern in the first place.
 #
-# Planned (not yet wired): a "TurboPanel Release" GitHub App becomes an
-# Integration bypass actor on `release tags: creation` and on `staging & live:
-# review and CI`, so an environment-approved promotion run can create the bare
-# tag and fast-forward the deploy branches. Fill RELEASE_APP_BYPASS with
-# `[{"actor_id": <app installation id>, "actor_type": "Integration",
-# "bypass_mode": "always"}]` once the owner has created and installed the App.
+# The "TurboPanel Release" GitHub App (slug turbopanel-release, App ID
+# 5089081, installed on all repos 2026-09-26) is the one Integration bypass
+# actor: on `release tags: creation` (next to the admin role, so the owner can
+# still create a bare tag by hand in an emergency) and on `staging & live:
+# review and CI`, so an approved promotion run can create the bare tag and
+# fast-forward the deploy branches. For an Integration, actor_id is the App
+# ID (`gh api orgs/TurboPanel/installations --jq '.installations[] |
+# select(.app_slug == "turbopanel-release") | .app_id'`), not the
+# installation id. Trunk has no bypass: the App only opens PRs there.
 #
 # Required check: one context, `ci-ok`, pinned to the GitHub Actions app
 # (integration_id 15368 — `gh api apps/github-actions --jq .id`) so a
@@ -69,14 +72,11 @@ if ! command -v gh >/dev/null 2>&1; then
   exit 1
 fi
 
-# Repository role "admin" (the fixed id GitHub assigns it). Used only on
-# `release tags: creation` until the Release App takes that role over.
-ADMIN_BYPASS='[{"actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "always"}]'
-
-# The "TurboPanel Release" GitHub App — empty until the owner creates it; see
-# the header. When set, it is added to the tag-creation and staging/live
-# review rulesets in a later edit of this script.
-RELEASE_APP_BYPASS='[]'
+# The "TurboPanel Release" GitHub App — see the header.
+RELEASE_APP_BYPASS='[{"actor_id": 5089081, "actor_type": "Integration", "bypass_mode": "always"}]'
+# `release tags: creation`: repository role "admin" (the fixed id 5 GitHub
+# assigns it) and the Release App.
+TAG_CREATION_BYPASS='[{"actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "always"}, {"actor_id": 5089081, "actor_type": "Integration", "bypass_mode": "always"}]'
 
 # GitHub Actions app id: `gh api apps/github-actions --jq .id`.
 ACTIONS_INTEGRATION_ID=15368
@@ -152,7 +152,7 @@ for repo in TurboPanel/turbopanel TurboPanel/turbopaneld TurboPanel/ui TurboPane
     \"name\": \"release tags: creation\",
     \"target\": \"tag\",
     \"enforcement\": \"active\",
-    \"bypass_actors\": ${ADMIN_BYPASS},
+    \"bypass_actors\": ${TAG_CREATION_BYPASS},
     \"conditions\": {\"ref_name\": {\"include\": [\"refs/tags/v[0-9]*\"], \"exclude\": [\"refs/tags/v*-*\"]}},
     \"rules\": [{\"type\": \"creation\"}]
   }"

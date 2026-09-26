@@ -232,7 +232,7 @@ The one-click promotion every repo runs (Testing Checklist `release` section, re
 - **`gh-release.yml`** — unchanged behaviour plus `target-commit` (tag commit when the tag does not exist; default `github.sha`) and optional App secrets (release created with an App token when set).
 - **`gh-promote-finalize.yml` (no environment — the one approval is at prepare)** — release: `gh release edit --prerelease=false --latest`, then the signed release `manifest.json` is uploaded as the rolling `rc` pointer (consumers do not enforce `manifest.channel`; no second signing). Both hops: fast-forward `staging` (rc) / `live` (release) to the tag commit; a diverged branch gets a `--no-ff` merge commit (never squash, never force) and the run summary says so; without the App the push step fails and its run summary prints the manual route — push `promote/v<version>` at the tag commit, open a PR into the branch as the owner (a GITHUB_TOKEN PR never starts `ci-ok`), merge it with a merge commit once `ci-ok` is green (direct pushes to staging/live are refused for everyone).
 - **Pure logic** is `scripts/promote/lib.mjs` (+ `lib.d.mts`, `cli.mjs`), tested by `src/lib/promote.test.ts`, which also pins the workflow shapes. `release.yml`'s tag-push path skips tags pushed by `[bot]` actors (trunk pushes are unaffected) so an App-created tag does not race the promotion with a from-source rebuild.
-- **Owner-side setup**: a `release` environment (required reviewer = owner, prevent-self-review off) in every calling repo as the one approval gate; `RELEASE_SIGNING_KEY` and, once the App exists, `RELEASE_APP_ID` / `RELEASE_APP_PRIVATE_KEY` are **repo secrets** (owner decision 2026-09-26: one approval per promotion); the App as bypass actor on the tag ruleset and `staging & live: review and CI` (`RELEASE_APP_BYPASS` in `scripts/enable-trunk-branch-protection.sh`). One approval per promotion (prepare).
+- **Owner-side setup**: a `release` environment (required reviewer = owner, prevent-self-review off) in every calling repo as the one approval gate; `RELEASE_SIGNING_KEY` (repo secret) and `RELEASE_APP_ID` / `RELEASE_APP_PRIVATE_KEY` (org secrets, all repos) are plain Actions secrets, not environment secrets (owner decision 2026-09-26: one approval per promotion); the App as bypass actor on the tag ruleset and `staging & live: review and CI` (`RELEASE_APP_BYPASS` in `scripts/enable-trunk-branch-protection.sh`). One approval per promotion (prepare).
 
 ### SonarQube (CI-based analysis)
 
@@ -290,14 +290,15 @@ The instance repo's `Caddyfile` stays production-only (HTTPS + Deno socket + sta
 
 `scripts/enable-trunk-branch-protection.sh` is the source of truth for every
 GitHub ruleset on the five repos (upsert by name; re-run to change). It makes
-`trunk`, `staging` and `live` PR-only for everyone — no bypass actors, zero
+`trunk`, `staging` and `live` PR-only for everyone — no human bypass, zero
 required approvals, one required check `ci-ok` pinned to the GitHub Actions
 app (integration id 15368), squash-only on trunk and merge-commits-only on
 staging/live, `require_extra_approval_for_unattributed_changes` explicitly
 false. Break-glass is flipping a ruleset's enforcement to Disabled in the repo
-settings, pushing, and re-enabling. Bare `vX.Y.Z` tag creation stays
-admin-only until the "TurboPanel Release" GitHub App exists
-(`RELEASE_APP_BYPASS`). Do not apply a version that requires `ci-ok` before
+settings, pushing, and re-enabling. The "TurboPanel Release" GitHub App
+(App ID 5089081, `RELEASE_APP_BYPASS`) is the only bypass: on `staging & live:
+review and CI` (promotion fast-forwards) and, next to repository admins, on
+bare `vX.Y.Z` tag creation. Do not apply a version that requires `ci-ok` before
 that job runs on trunk in every repo, or every PR blocks.
 `src/lib/branch-protection-script.test.ts` runs the script against a stub `gh`
 and asserts the JSON it would send.
