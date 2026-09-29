@@ -27,19 +27,27 @@ export type ParsedSource =
 export const CANARY_BUILD_ID_RE: RegExp;
 export const TARGETS: readonly PromoteTarget[];
 export const REPO_KINDS: readonly RepoKind[];
-export const BRANCH_FOR_TARGET: Readonly<Record<PromoteTarget, "staging" | "live">>;
+export const BRANCH_FOR_TARGET: Readonly<
+  Record<PromoteTarget, "staging" | "live">
+>;
 
 export function hasAssets(repoKind: string): boolean;
 export function assertTarget(to: string): PromoteTarget;
 export function assertRepoKind(repoKind: string): RepoKind;
-export function nextRcNumber(base: string, existingTags?: readonly string[]): number;
+export function nextRcNumber(
+  base: string,
+  existingTags?: readonly string[],
+): number;
 export function targetVersion(
   to: string,
   sourceVersion: string,
   existingTags?: readonly string[],
 ): string;
 export function parseSource(to: string, source: string): ParsedSource;
-export function findCanaryManifestAsset(assetNames: string[], buildId: string): string;
+export function findCanaryManifestAsset(
+  assetNames: string[],
+  buildId: string,
+): string;
 export function walkArtifactEntries(
   node: unknown,
   path?: string,
@@ -51,7 +59,12 @@ export function artifactMismatches(
 ): string[];
 export function rewriteManifest(
   manifest: Record<string, unknown>,
-  options: { repo: string; sourceVersion: string; targetVersion: string; channel: string },
+  options: {
+    repo: string;
+    sourceVersion: string;
+    targetVersion: string;
+    channel: string;
+  },
 ): { manifest: Record<string, unknown>; renames: Rename[] };
 export function pendingChangesetCount(changesetDirEntries: string[]): number;
 export function releaseNotes(options: {
@@ -62,3 +75,9 @@ export function releaseNotes(options: {
   repoKind: string;
 }): string;
 export function outputLines(plan: Record<string, string | number>): string[];
+export function nextVersion(
+  current: string,
+  options?: { minor?: boolean; floorMinor?: number },
+): string;
+export function minorOf(version: string): number;
+export function bumpVersionText(text: string, from: string, to: string): string;
