@@ -32,7 +32,12 @@ export const BRANCH_FOR_TARGET: Readonly<Record<PromoteTarget, "staging" | "live
 export function hasAssets(repoKind: string): boolean;
 export function assertTarget(to: string): PromoteTarget;
 export function assertRepoKind(repoKind: string): RepoKind;
-export function targetVersion(to: string, sourceVersion: string): string;
+export function nextRcNumber(base: string, existingTags?: readonly string[]): number;
+export function targetVersion(
+  to: string,
+  sourceVersion: string,
+  existingTags?: readonly string[],
+): string;
 export function parseSource(to: string, source: string): ParsedSource;
 export function findCanaryManifestAsset(assetNames: string[], buildId: string): string;
 export function walkArtifactEntries(
