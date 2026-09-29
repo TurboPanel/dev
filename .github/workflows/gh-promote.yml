@@ -2,8 +2,8 @@
 #
 # One click by the maintainer moves a tested build up a channel:
 #
-#   canary (trunk / testing)  --to=rc-->      X.Y.Z-rc.1 + `staging` branch
-#   X.Y.Z-rc.1 (staging)      --to=release--> X.Y.Z (releases/latest) + `live` branch
+#   canary (trunk / testing)  --to=rc-->      X.Y.Z-rc + `staging` branch
+#   X.Y.Z-rc (staging)        --to=release--> X.Y.Z (releases/latest) + `live` branch
 #
 # The bytes never change (decision D9): this job downloads the source
 # build's assets and manifest, proves the manifest is signed by the release
@@ -17,10 +17,10 @@
 # cannot call another at a parameterised ref).
 #
 # Version model (D8, Option A): a canary is `<base>-canary.<buildId>`, its rc
-# is always `<base>-rc.1`, the release is `<base>`. A bad rc is fixed on
+# is always `<base>-rc`, the release is `<base>`. A bad rc is fixed on
 # trunk with a changeset and becomes the next number — never rc.2.
 #
-# Tags: `v<base>-rc.1` is created with GITHUB_TOKEN (the tag ruleset leaves
+# Tags: `v<base>-rc` is created with GITHUB_TOKEN (the tag ruleset leaves
 # hyphenated tags to automation, and GITHUB_TOKEN-created refs fire no
 # workflows). The bare `v<base>` tag is admin/App-only, so `to=release`
 # needs the "TurboPanel Release" GitHub App (RELEASE_APP_ID +
@@ -52,7 +52,7 @@ on:
         description: >-
           What to promote. to=rc — a canary build id (yyyymmdd-hhmmss-sha7), a canary
           version, or the manifest-<version>.json copy on the rolling canary release;
-          notes-only repos pass a commit-ish instead. to=release — the rc tag (vX.Y.Z-rc.1).
+          notes-only repos pass a commit-ish instead. to=release — the rc tag (vX.Y.Z-rc).
         required: true
         type: string
       dev-ref:

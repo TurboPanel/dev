@@ -1,7 +1,7 @@
 # One-click promotion for this repo (Testing Checklist rel-s19..s21). dev
 # has nothing to build and no deploy branch, so a promotion here is a
 # notes-only release: `to=rc` tags the given commit (trunk by default) as
-# v<package.json version>-rc.1; `to=release` turns that rc into the bare
+# v<package.json version>-rc; `to=release` turns that rc into the bare
 # v<version> release. Order across repos: turbopaneld → turbopanel → ui →
 # website → dev.
 #
@@ -22,7 +22,7 @@ on:
           - rc
           - release
       source:
-        description: "to=rc: the commit-ish to tag (default trunk). to=release: the rc tag (vX.Y.Z-rc.1)."
+        description: "to=rc: the commit-ish to tag (default trunk). to=release: the rc tag (vX.Y.Z-rc)."
         required: true
         type: string
         default: trunk

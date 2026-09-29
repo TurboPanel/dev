@@ -3,24 +3,43 @@
 // ESM with no dependencies so the workflow can run it on a bare runner with
 // `node scripts/promote/cli.mjs`; src/lib/promote.test.ts covers it.
 //
-// The version model (release-flow decision D8, "Option A"): every canary of a
-// cycle carries the calculated next number plus a build label
-// (`0.1.2-canary.20260926-101530-abc1234`); promoting makes it exactly one rc
-// (`0.1.2-rc.1`, never rc.2) and then the bare release (`0.1.2`). The bytes
-// never change across the hops — only the asset names, the manifest's
-// version/channel/urls, and the manifest's signature.
+// The version model (release-flow decisions D8 and 2026-09-28): every canary
+// of a cycle carries the calculated next number plus a plain build counter
+// (`0.1.3-canary.412`, the workflow run number); promoting makes it exactly
+// one rc (`0.1.3-rc`, never a second) and then the bare release (`0.1.3`).
+// The bytes never change across the hops — only the asset names, the
+// manifest's version/channel/urls, and the manifest's signature.
+//
+// Builds cut before 2026-09-28 spell the canary label as a timestamped id
+// (`0.1.2-canary.20260926-101530-abc1234`) and the rc as `0.1.2-rc.1`; both
+// old spellings are still read so an existing canary can be promoted and an
+// existing `-rc.1` tag can be released. New rcs are always `-rc`.
 
-/** Build id a canary asset name carries: yyyymmdd-hhmmss-sha7. */
-export const CANARY_BUILD_ID_RE = /^\d{8}-\d{6}-[0-9a-f]{7}$/;
-const CANARY_LABEL_RE = /-canary\.(\d{8}-\d{6}-[0-9a-f]{7})$/;
-const RC_LABEL = "-rc.1";
+/**
+ * Build id a canary asset name carries: the run counter (`412`), or the
+ * pre-2026-09-28 spelling yyyymmdd-hhmmss-sha7.
+ */
+export const CANARY_BUILD_ID_RE = /^(?:\d+|\d{8}-\d{6}-[0-9a-f]{7})$/;
+const CANARY_LABEL_RE = /-canary\.(\d+|\d{8}-\d{6}-[0-9a-f]{7})$/;
+/** The rc label every new rc carries. */
+const RC_LABEL = "-rc";
+/** rc labels a release may be cut from: the current one and the old `-rc.1`. */
+const RC_LABELS_ACCEPTED = Object.freeze(["-rc", "-rc.1"]);
 const BASE_VERSION_RE = /^\d+\.\d+\.\d+$/;
 
 export const TARGETS = Object.freeze(["rc", "release"]);
-export const REPO_KINDS = Object.freeze(["daemon", "instance", "ui", "notes-only"]);
+export const REPO_KINDS = Object.freeze([
+  "daemon",
+  "instance",
+  "ui",
+  "notes-only",
+]);
 
 /** Branch each hop fast-forwards (Workers Builds deploy from these). */
-export const BRANCH_FOR_TARGET = Object.freeze({ rc: "staging", release: "live" });
+export const BRANCH_FOR_TARGET = Object.freeze({
+  rc: "staging",
+  release: "live",
+});
 
 /** Repo kinds that publish assets + a signed manifest (everything but notes-only). */
 export function hasAssets(repoKind) {
@@ -29,7 +48,9 @@ export function hasAssets(repoKind) {
 
 export function assertTarget(to) {
   if (!TARGETS.includes(to)) {
-    throw new Error(`to must be one of ${TARGETS.join("|")}, got ${JSON.stringify(to)}`);
+    throw new Error(
+      `to must be one of ${TARGETS.join("|")}, got ${JSON.stringify(to)}`,
+    );
   }
   return to;
 }
@@ -46,7 +67,8 @@ export function assertRepoKind(repoKind) {
 /**
  * The version a promotion publishes, derived from the version it starts
  * from. rc strips the canary label (a bare version — notes-only repos have
- * no canary — is accepted as-is); release strips `-rc.1` and nothing else.
+ * no canary — is accepted as-is) and appends `-rc`; release strips `-rc`
+ * (or the legacy `-rc.1`) and nothing else.
  */
 export function targetVersion(to, sourceVersion) {
   assertTarget(to);
@@ -62,12 +84,19 @@ export function targetVersion(to, sourceVersion) {
     }
     return `${base}${RC_LABEL}`;
   }
-  if (!sourceVersion.endsWith(RC_LABEL)) {
-    throw new Error(`a release is cut from an ${RC_LABEL.slice(1)} pre-release, not ${sourceVersion}`);
+  const suffix = RC_LABELS_ACCEPTED.find((label) =>
+    sourceVersion.endsWith(label),
+  );
+  if (!suffix) {
+    throw new Error(
+      `a release is cut from an rc pre-release, not ${sourceVersion}`,
+    );
   }
-  const base = sourceVersion.slice(0, -RC_LABEL.length);
+  const base = sourceVersion.slice(0, -suffix.length);
   if (!BASE_VERSION_RE.test(base)) {
-    throw new Error(`rc version ${sourceVersion} does not wrap a bare X.Y.Z version`);
+    throw new Error(
+      `rc version ${sourceVersion} does not wrap a bare X.Y.Z version`,
+    );
   }
   return base;
 }
@@ -83,12 +112,15 @@ export function parseSource(to, source) {
   if (text === "") throw new Error("source is empty");
   if (to === "release") {
     const version = text.startsWith("v") ? text.slice(1) : text;
-    if (!version.endsWith(RC_LABEL)) {
-      throw new Error(`source for a release must be the rc tag (vX.Y.Z${RC_LABEL}), got ${text}`);
+    if (!RC_LABELS_ACCEPTED.some((label) => version.endsWith(label))) {
+      throw new Error(
+        `source for a release must be the rc tag (vX.Y.Z${RC_LABEL}), got ${text}`,
+      );
     }
     return { kind: "rc-tag", version, tag: `v${version}` };
   }
-  if (CANARY_BUILD_ID_RE.test(text)) return { kind: "canary-build-id", buildId: text };
+  if (CANARY_BUILD_ID_RE.test(text))
+    return { kind: "canary-build-id", buildId: text };
   const manifest = /^manifest-(.+)\.json$/.exec(text);
   if (manifest) {
     const version = manifest[1];
@@ -106,7 +138,7 @@ export function parseSource(to, source) {
     };
   }
   throw new Error(
-    `source for an rc must be a canary build id (yyyymmdd-hhmmss-sha7), a canary version, or manifest-<version>.json; got ${text}`,
+    `source for an rc must be a canary build number, a canary version, or manifest-<version>.json; got ${text}`,
   );
 }
 
@@ -116,9 +148,11 @@ export function parseSource(to, source) {
  * build's version, which ends in the build id.
  */
 export function findCanaryManifestAsset(assetNames, buildId) {
-  if (!CANARY_BUILD_ID_RE.test(buildId)) throw new Error(`not a canary build id: ${buildId}`);
+  if (!CANARY_BUILD_ID_RE.test(buildId))
+    throw new Error(`not a canary build id: ${buildId}`);
   const matches = assetNames.filter(
-    (name) => name.startsWith("manifest-") && name.endsWith(`-canary.${buildId}.json`),
+    (name) =>
+      name.startsWith("manifest-") && name.endsWith(`-canary.${buildId}.json`),
   );
   if (matches.length !== 1) {
     throw new Error(
@@ -137,7 +171,9 @@ export function findCanaryManifestAsset(assetNames, buildId) {
 export function walkArtifactEntries(node, path = "") {
   const out = [];
   if (Array.isArray(node)) {
-    node.forEach((value, i) => out.push(...walkArtifactEntries(value, `${path}[${i}]`)));
+    node.forEach((value, i) =>
+      out.push(...walkArtifactEntries(value, `${path}[${i}]`)),
+    );
     return out;
   }
   if (node && typeof node === "object") {
@@ -163,7 +199,10 @@ export function assetFilename(url) {
 export function artifactMismatches(manifest, files) {
   const problems = [];
   const entries = walkArtifactEntries(manifest);
-  if (entries.length === 0) problems.push("manifest names no artifacts (no object with url+sha256+size)");
+  if (entries.length === 0)
+    problems.push(
+      "manifest names no artifacts (no object with url+sha256+size)",
+    );
   for (const { path, entry } of entries) {
     const name = assetFilename(entry.url);
     const file = files.get(name);
@@ -186,9 +225,14 @@ export function artifactMismatches(manifest, files) {
  * version to the target version and its url re-pinned to the target
  * release. The old signature is dropped; the workflow signs the result.
  */
-export function rewriteManifest(manifest, { repo, sourceVersion, targetVersion: target, channel }) {
+export function rewriteManifest(
+  manifest,
+  { repo, sourceVersion, targetVersion: target, channel },
+) {
   if (manifest.version !== sourceVersion) {
-    throw new Error(`manifest version ${manifest.version} is not the source version ${sourceVersion}`);
+    throw new Error(
+      `manifest version ${manifest.version} is not the source version ${sourceVersion}`,
+    );
   }
   if (typeof manifest.commit !== "string" || manifest.commit === "") {
     throw new Error("manifest has no commit");
@@ -202,13 +246,17 @@ export function rewriteManifest(manifest, { repo, sourceVersion, targetVersion: 
     const from = assetFilename(entry.url);
     const to = from.replaceAll(sourceVersion, target);
     if (to === from) {
-      throw new Error(`${path}: asset ${from} does not carry the source version ${sourceVersion} in its name`);
+      throw new Error(
+        `${path}: asset ${from} does not carry the source version ${sourceVersion} in its name`,
+      );
     }
-    if (renames.some((r) => r.to === to)) throw new Error(`${path}: two assets would be renamed to ${to}`);
+    if (renames.some((r) => r.to === to))
+      throw new Error(`${path}: two assets would be renamed to ${to}`);
     entry.url = `https://github.com/${repo}/releases/download/v${target}/${to}`;
     renames.push({ from, to });
   }
-  if (renames.length === 0) throw new Error("manifest names no artifacts to promote");
+  if (renames.length === 0)
+    throw new Error("manifest names no artifacts to promote");
   return { manifest: next, renames };
 }
 
@@ -218,12 +266,23 @@ export function rewriteManifest(manifest, { repo, sourceVersion, targetVersion: 
  * pending would carry a number the Version Packages PR is about to change.
  */
 export function pendingChangesetCount(changesetDirEntries) {
-  return changesetDirEntries.filter((name) => name.endsWith(".md") && name !== "README.md").length;
+  return changesetDirEntries.filter(
+    (name) => name.endsWith(".md") && name !== "README.md",
+  ).length;
 }
 
 /** Text for the promoted GitHub Release. */
-export function releaseNotes({ to, targetVersion: target, sourceVersion, commit, repoKind }) {
-  const hop = to === "rc" ? `promoted from canary build ${sourceVersion}` : `promoted from ${sourceVersion}`;
+export function releaseNotes({
+  to,
+  targetVersion: target,
+  sourceVersion,
+  commit,
+  repoKind,
+}) {
+  const hop =
+    to === "rc"
+      ? `promoted from canary build ${sourceVersion}`
+      : `promoted from ${sourceVersion}`;
   const bytes = hasAssets(repoKind)
     ? "Same bytes as the source build; only the asset names, manifest and its signature changed."
     : "Notes-only release (no assets).";

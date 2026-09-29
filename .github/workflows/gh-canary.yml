@@ -9,7 +9,7 @@
 # What keeps that honest:
 #
 #   - every asset carries the build's version in its filename
-#     (`<pkg>-<X.Y.Z>-canary.<buildId>-<arch>.tar.zst`), so a manifest never
+#     (`<pkg>-<X.Y.Z>-canary.<N>-<arch>.tar.zst`), so a manifest never
 #     names a file another build will overwrite — uploads only ever add,
 #     and `manifest.json` is the one file replaced in place, uploaded LAST
 #     so a consumer that reads it finds every asset it names already there;
@@ -43,7 +43,7 @@ on:
   workflow_call:
     inputs:
       version:
-        description: The build's version string without a leading v (e.g. 0.1.1-canary.20260919-120000-abc1234)
+        description: The build's version string without a leading v (e.g. 0.1.3-canary.412)
         required: true
         type: string
       commit:
@@ -295,9 +295,13 @@ jobs:
           ).stdout
           assets = [a["name"] for a in json.loads(out)["assets"]]
 
-          # buildId = <yyyymmdd>-<hhmmss>-<7-hex>, embedded in every canary
-          # asset name via the version string; sorting the ids sorts the builds.
-          build_re = re.compile(r"-canary\.(\d{8}-\d{6}-[0-9a-f]{7})")
+          # The canary label is the run counter (`0.1.3-canary.412`); builds cut
+          # before 2026-09-28 carry a timestamped id (`-canary.<yyyymmdd>-<hhmmss>-<sha7>`).
+          # Counter builds are always newer than timestamped ones, and a counter
+          # sorts numerically, never as text.
+          build_re = re.compile(r"-canary\.(\d{8}-\d{6}-[0-9a-f]{7}|\d+)(?![0-9A-Za-z-])")
+          def order(build):
+              return (1, int(build), "") if build.isdigit() else (0, 0, build)
           by_build = {}
           for name in assets:
               if name == manifest_name:
@@ -308,7 +312,7 @@ jobs:
                   continue
               by_build.setdefault(m.group(1), []).append(name)
 
-          builds = sorted(by_build, reverse=True)
+          builds = sorted(by_build, key=order, reverse=True)
           stale = builds[keep:]
           if not stale:
               print(f"{len(builds)} build(s) on the rolling release, keep={keep}: nothing to prune")
