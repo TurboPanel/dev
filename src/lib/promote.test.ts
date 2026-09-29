@@ -554,6 +554,8 @@ describe("workflow shape", () => {
     expect(text).toMatch(/gh release upload rc --repo "\$REPO" --clobber/);
     expect(text).toMatch(/git merge-base --is-ancestor/);
     expect(text).toMatch(/git merge --no-ff/);
+    // A merged PR may already have brought the tag commit in: no move, no false 'diverged' warning.
+    expect(text).toMatch(/is-ancestor "\$COMMIT" "origin\/\$BRANCH"/);
     for (const push of text.match(/git push[^\n]*/g) ?? []) {
       expect(push).not.toMatch(/--force|-f\b|\+refs\//);
     }

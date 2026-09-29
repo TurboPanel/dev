@@ -144,7 +144,12 @@ jobs:
           git remote add origin "https://x-access-token:${TOKEN}@github.com/${REPO}.git"
           git fetch -q --no-tags origin "$COMMIT"
           if git fetch -q --no-tags origin "refs/heads/$BRANCH:refs/remotes/origin/$BRANCH"; then
-            if git merge-base --is-ancestor "origin/$BRANCH" "$COMMIT"; then
+            if git merge-base --is-ancestor "$COMMIT" "origin/$BRANCH"; then
+              # A merged PR already brought the tag commit in (the automatic
+              # trunk -> staging / staging -> live path): nothing to move.
+              echo "$BRANCH already contains $COMMIT (v$VERSION) — nothing to move"
+              echo "### $BRANCH already contains v$VERSION ($COMMIT)" >> "$GITHUB_STEP_SUMMARY"
+            elif git merge-base --is-ancestor "origin/$BRANCH" "$COMMIT"; then
               git push origin "$COMMIT:refs/heads/$BRANCH"
               echo "fast-forwarded $BRANCH to $COMMIT (v$VERSION)"
               echo "### $BRANCH fast-forwarded to v$VERSION ($COMMIT)" >> "$GITHUB_STEP_SUMMARY"
