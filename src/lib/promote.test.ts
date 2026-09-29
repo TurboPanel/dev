@@ -823,4 +823,13 @@ describe("release notes with contributors", () => {
     expect(text).toMatch(/notes<<TP_RELEASE_NOTES_EOF/);
     expect(text).toMatch(/--exclude-pre-releases/);
   });
+
+  test("gh-promote stops when the changelog cannot be built instead of dropping it", () => {
+    const text = readFileSync(join(WORKFLOWS, "gh-promote.yml"), "utf8");
+    const step = text.slice(text.indexOf("Write the release notes"));
+    expect(step).not.toMatch(/changelog\.sh[^\n]*\|\| true/);
+    expect(step).not.toMatch(
+      /--jq '\.\[0\]\.tagName \/\/ empty'[^\n]*\|\| true/,
+    );
+  });
 });

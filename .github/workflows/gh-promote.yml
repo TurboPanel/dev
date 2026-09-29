@@ -388,12 +388,16 @@ jobs:
           set -eu
           _notes="$(node "$CLI" notes --to "$TO" --repo-kind "$REPO_KIND" --source-version "$SOURCE_VERSION" --target-version "$TARGET_VERSION" --commit "$COMMIT")"
           # What changed since the last release, each contributor credited (avatar,
-          # @name linked to their profile, PR number). No previous release, or any
-          # failure here, leaves the one-line note as it was.
-          _base="$(gh release list --repo "$REPO" --exclude-pre-releases --limit 1 --json tagName --jq '.[0].tagName // empty' 2>/dev/null || true)"
-          _log="$(sh "$(dirname "$CLI")/changelog.sh" "$REPO" "$_base" "$COMMIT" 2>/dev/null || true)"
-          if [ -n "$_log" ]; then
-            _notes="$(printf '%s\n\n### What changed\n\n%s' "$_notes" "$_log")"
+          # name linked to their profile, PR number, closed issues). A repo with no
+          # earlier release has nothing to compare against and keeps the one-line
+          # note; any other failure stops the promotion, because a release that
+          # quietly loses its commit list is worse than one that does not ship.
+          _base="$(gh release list --repo "$REPO" --exclude-pre-releases --limit 1 --json tagName --jq '.[0].tagName // empty')"
+          if [ -n "$_base" ]; then
+            _log="$(sh "$(dirname "$CLI")/changelog.sh" "$REPO" "$_base" "$COMMIT" 200)"
+            if [ -n "$_log" ]; then
+              _notes="$(printf '%s\n\n### What changed\n\n%s' "$_notes" "$_log")"
+            fi
           fi
           {
             echo "notes<<TP_RELEASE_NOTES_EOF"
