@@ -8,21 +8,19 @@ import { describe, expect, test } from "vitest";
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const SCRIPT = join(ROOT, "scripts", "promote", "changelog.sh");
 
-/** A fake `gh` earlier on PATH that answers `gh api …` with canned compare JSON. */
-function run(commits: unknown[], args: string[]): string {
+/** A fake `gh` earlier on PATH: `gh api graphql` gets `graphql`, any other `gh api` the compare JSON. */
+function run(commits: unknown[], args: string[], graphql = "{}"): string {
   const dir = mkdtempSync(join(tmpdir(), "changelog-"));
   const gh = join(dir, "gh");
-  const payload = JSON.stringify({ total_commits: commits.length, commits });
+  const compare = JSON.stringify({
+    total: commits.length,
+    commits: (commits as { parents: unknown[] }[]).filter(
+      (c) => c.parents.length === 1,
+    ),
+  });
   writeFileSync(
     gh,
-    `#!/bin/sh\n# gh api <path> --jq <expr>: the script applies its own jq, so echo raw JSON\ncat <<'JSON'\n${JSON.stringify(
-      {
-        total: commits.length,
-        commits: JSON.parse(payload).commits.filter(
-          (c: { parents: unknown[] }) => c.parents.length === 1,
-        ),
-      },
-    )}\nJSON\n`,
+    `#!/bin/sh\ncase "$2" in\n  graphql) cat <<'JSON'\n${graphql}\nJSON\n  ;;\n  *) cat <<'JSON'\n${compare}\nJSON\n  ;;\nesac\n`,
   );
   chmodSync(gh, 0o755);
   return execFileSync("sh", [SCRIPT, ...args], {
@@ -56,6 +54,54 @@ describe("changelog.sh", () => {
     expect(out).toContain("fix: retry the probe (#12)");
     expect(out).not.toContain("body");
     expect(out).toContain("**Thanks to**");
+  });
+
+  test("lists the issues a pull request closes beside its commit", () => {
+    const graphql = JSON.stringify({
+      data: {
+        repository: {
+          p12: {
+            closingIssuesReferences: {
+              nodes: [
+                {
+                  number: 7,
+                  title: "probe flaps",
+                  url: "https://github.com/TurboPanel/x/issues/7",
+                },
+                {
+                  number: 9,
+                  title: "second",
+                  url: "https://github.com/TurboPanel/x/issues/9",
+                },
+              ],
+            },
+          },
+          p13: { closingIssuesReferences: { nodes: [] } },
+        },
+      },
+    });
+    const out = run(
+      [
+        commit("fix: retry the probe (#12)", ana),
+        commit("chore: bump (#13)", ana),
+      ],
+      ["TurboPanel/x", "v0.1.2", "abc"],
+      graphql,
+    );
+    expect(out).toContain(
+      "fix: retry the probe (#12) · closes [#7](https://github.com/TurboPanel/x/issues/7), [#9](https://github.com/TurboPanel/x/issues/9)",
+    );
+    expect(out).toMatch(/chore: bump \(#13\)\n/);
+  });
+
+  test("still lists the commits when the issue lookup fails", () => {
+    const out = run(
+      [commit("fix: x (#12)", ana)],
+      ["TurboPanel/x", "v0.1.2", "abc"],
+      "not json",
+    );
+    expect(out).toContain("fix: x (#12)");
+    expect(out).not.toContain("closes");
   });
 
   test("credits each contributor once in the Thanks line", () => {
