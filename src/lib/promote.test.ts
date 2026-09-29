@@ -3,7 +3,10 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
 import {
+  bumpVersionText,
+  minorOf,
   nextRcNumber,
+  nextVersion,
   artifactMismatches,
   assertRepoKind,
   assertTarget,
@@ -616,5 +619,62 @@ describe("nextRcNumber", () => {
 
   test("refuses a base that is not X.Y.Z", () => {
     expect(() => nextRcNumber("0.1")).toThrow(/bare X\.Y\.Z/);
+  });
+});
+
+describe("nextVersion", () => {
+  test("patch by default, minor when asked", () => {
+    expect(nextVersion("0.1.3")).toBe("0.1.4");
+    expect(nextVersion("0.1.3", { minor: true })).toBe("0.2.0");
+  });
+
+  test("never lands below the highest minor any repo is on", () => {
+    expect(nextVersion("0.1.3", { floorMinor: 2 })).toBe("0.2.0");
+    expect(nextVersion("0.1.3", { floorMinor: 1 })).toBe("0.1.4");
+    expect(nextVersion("0.2.5", { floorMinor: 2 })).toBe("0.2.6");
+    expect(nextVersion("0.1.3", { minor: true, floorMinor: 3 })).toBe("0.3.0");
+  });
+
+  test("refuses anything but a bare X.Y.Z", () => {
+    expect(() => nextVersion("0.1.3-rc.1")).toThrow(/bare X\.Y\.Z/);
+    expect(() => minorOf("v1")).toThrow(/bare X\.Y\.Z/);
+    expect(minorOf("0.12.4")).toBe(12);
+  });
+});
+
+describe("bumpVersionText", () => {
+  test("rewrites the top-level json version and Sonar's project version only", () => {
+    const pkg =
+      '{\n  "name": "x",\n  "version": "0.1.3",\n  "dependencies": { "y": "0.1.3" }\n}\n';
+    expect(bumpVersionText(pkg, "0.1.3", "0.1.4")).toBe(
+      '{\n  "name": "x",\n  "version": "0.1.4",\n  "dependencies": { "y": "0.1.3" }\n}\n',
+    );
+    expect(
+      bumpVersionText(
+        "sonar.projectKey=a\nsonar.projectVersion=0.1.3\n",
+        "0.1.3",
+        "0.2.0",
+      ),
+    ).toBe("sonar.projectKey=a\nsonar.projectVersion=0.2.0\n");
+  });
+
+  test("throws when the file does not declare the version", () => {
+    expect(() =>
+      bumpVersionText('{"version": "0.1.9"}', "0.1.3", "0.1.4"),
+    ).toThrow(/no version 0\.1\.3/);
+    expect(() =>
+      bumpVersionText('{"version": "0.1.30"}', "0.1.3", "0.1.4"),
+    ).toThrow(/no version/);
+  });
+});
+
+describe("gh-next-version.yml", () => {
+  test("opens a PR with the App token, never pushes to trunk, and reads the CLI's floor", () => {
+    const text = readFileSync(join(WORKFLOWS, "gh-next-version.yml"), "utf8");
+    expect(text).toMatch(/create-github-app-token/);
+    expect(text).toMatch(/gh pr create --repo "\$REPO" --base trunk/);
+    expect(text).not.toMatch(/git push[^\n]*(trunk|--force)/);
+    expect(text).toMatch(/cli\.mjs|\$CLI" next-version/);
+    expect(text).toMatch(/--label minor/);
   });
 });

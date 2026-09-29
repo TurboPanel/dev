@@ -311,3 +311,41 @@ export function releaseNotes({
 export function outputLines(plan) {
   return Object.entries(plan).map(([key, value]) => `${key}=${value}`);
 }
+
+/**
+ * The number a repo starts working on after `current` shipped: the next patch,
+ * the next minor (`minor`, set when a merged PR carried the `minor` label), or
+ * — whichever of those lands below the highest minor any TurboPanel repo is
+ * already on (`floorMinor`, same major) — that minor's `.0`. The future
+ * catalog repo is left out of the floor by the caller.
+ */
+export function nextVersion(current, { minor = false, floorMinor = 0 } = {}) {
+  const m = /^(\d+)\.(\d+)\.(\d+)$/.exec(current);
+  if (!m) throw new Error(`not a bare X.Y.Z version: ${current}`);
+  const [major, mid, patch] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  const next = minor ? [major, mid + 1, 0] : [major, mid, patch + 1];
+  if (next[1] < floorMinor) return `${major}.${floorMinor}.0`;
+  return next.join(".");
+}
+
+/** The minor of a bare X.Y.Z version (the floor input). */
+export function minorOf(version) {
+  const m = /^\d+\.(\d+)\.\d+$/.exec(version);
+  if (!m) throw new Error(`not a bare X.Y.Z version: ${version}`);
+  return Number(m[1]);
+}
+
+/**
+ * Rewrite the version a file declares: the top-level `"version": "<from>"` of
+ * a package.json / deno.json / app.json, or Sonar's `sonar.projectVersion=`.
+ * Throws when the file declares neither, so a moved file cannot silently keep
+ * the old number.
+ */
+export function bumpVersionText(text, from, to) {
+  const escaped = from.replaceAll(".", "\\.");
+  const json = new RegExp(`^(\\s*"version"\\s*:\\s*")${escaped}(")`, "m");
+  const sonar = new RegExp(`^(sonar\\.projectVersion=)${escaped}$`, "m");
+  if (json.test(text)) return text.replace(json, `$1${to}$2`);
+  if (sonar.test(text)) return text.replace(sonar, `$1${to}`);
+  throw new Error(`no version ${from} declared to bump`);
+}

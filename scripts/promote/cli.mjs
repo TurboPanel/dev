@@ -10,6 +10,8 @@
 //   node cli.mjs rewrite --manifest <path> --assets-dir <dir> --repo O/R --to rc \
 //       --source-version X --target-version Y --out <path>
 //   node cli.mjs changesets --to rc --listing <file with .changeset entries, one per line>
+//   node cli.mjs next-version --current X [--minor true] --versions <file: one X.Y.Z per line, every repo's trunk version>
+//   node cli.mjs bump-files --from X --to Y --files <file: one path per line>
 //   node cli.mjs notes --to rc --repo-kind daemon --source-version X --target-version Y --commit SHA
 import { createHash } from "node:crypto";
 import {
@@ -27,7 +29,10 @@ import {
   assertTarget,
   BRANCH_FOR_TARGET,
   findCanaryManifestAsset,
+  bumpVersionText,
   hasAssets,
+  minorOf,
+  nextVersion,
   outputLines,
   parseSource,
   pendingChangesetCount,
@@ -185,7 +190,28 @@ function notes(args) {
   );
 }
 
+function nextVersionCommand(args) {
+  const current = required(args, "current");
+  const floorMinor = Math.max(
+    0,
+    ...lines(required(args, "versions")).map(minorOf),
+  );
+  emit({
+    next: nextVersion(current, { minor: args.minor === "true", floorMinor }),
+  });
+}
+
+function bumpFiles(args) {
+  const [from, to] = [required(args, "from"), required(args, "to")];
+  for (const path of lines(required(args, "files"))) {
+    writeFileSync(path, bumpVersionText(readFileSync(path, "utf8"), from, to));
+    console.log(`${path}: ${from} -> ${to}`);
+  }
+}
+
 const COMMANDS = {
+  "next-version": nextVersionCommand,
+  "bump-files": bumpFiles,
   plan,
   "plan-notes-only": planNotesOnly,
   verify,
