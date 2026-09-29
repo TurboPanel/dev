@@ -22,7 +22,7 @@ for repo in "$@"; do
     if gh run rerun "$id" --repo "TurboPanel/$repo" --failed >/dev/null 2>&1; then
       echo "$repo: re-ran the failed checks of run $id"
     else
-      echo "::warning::$repo: could not re-run run $id — re-run its failed checks by hand"
+      echo "::warning::$repo: could not re-run run $id — re-run its failed checks by hand" >&2
     fi
   done
 done

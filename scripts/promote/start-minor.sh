@@ -14,7 +14,7 @@ shift
 skip=" $* "
 case "$target" in
   [0-9]*.[0-9]*.0) ;;
-  *) echo "::error::start-minor takes a minor (X.Y.0), got '$target'"; exit 1 ;;
+  *) echo "::error::start-minor takes a minor (X.Y.0), got '$target'" >&2; exit 1 ;;
 esac
 tmajmin="${target%.*}"
 
