@@ -646,3 +646,156 @@ test("applyOptionalDevServices starts container-only services when unit is missi
     ),
   ).toBe(true);
 });
+
+/** Commands as `argv` minus the `sudo -n` prefix, in the order `runCaptured` received them. */
+function recordCommandsOneAtATime(): { commands: string[]; maxActive: () => number } {
+  const commands: string[] = [];
+  let active = 0;
+  let maxActive = 0;
+  mockedRunCaptured.mockImplementation(async (cmd) => {
+    const argv = (cmd as string[]).filter((part) => part !== "sudo" && part !== "-n");
+    commands.push(argv.join(" "));
+    active += 1;
+    maxActive = Math.max(maxActive, active);
+    await new Promise((resolve) => setTimeout(resolve, commands.length === 1 ? 10 : 1));
+    active -= 1;
+    return 0;
+  });
+  return { commands, maxActive: () => maxActive };
+}
+
+/** Only the Redis Insight containers exist; every other container is missing. */
+function onlyRedisInsightContainersExist(): void {
+  mockedSpawnDocker.mockImplementation((args) => {
+    const name = String(args[1] ?? "");
+    const exists = name.startsWith("turbopanel-dev-redis-insight");
+    return {
+      status: exists ? 0 : 1,
+      stdout: exists ? "true" : "",
+      stderr: "",
+      pid: 0,
+      output: ["", "", ""],
+      signal: null,
+    };
+  });
+}
+
+test("applyOptionalDevServices applies services one at a time in catalog order", async () => {
+  const recorded = recordCommandsOneAtATime();
+  await applyOptionalDevServices({
+    dbstudio: true,
+    smtp: false,
+    ui: true,
+    website: false,
+    redisinsight: true,
+    stripe: false,
+  });
+  expect(recorded.commands).toEqual([
+    "systemctl enable --now turbopanel-dbstudio",
+    "systemctl disable --now turbopanel-mailpit",
+    `docker update --restart=no ${MAILPIT_CONTAINER_NAME}`,
+    `docker stop ${MAILPIT_CONTAINER_NAME}`,
+    "systemctl enable --now turbopanel-ui",
+    "systemctl disable --now turbopanel-website",
+    "systemctl enable --now turbopanel-redis-insight",
+    "systemctl disable --now turbopanel-stripe-listen",
+  ]);
+  expect(recorded.maxActive()).toBe(1);
+});
+
+test("applyOptionalDevServices starts each backing container update-then-start, one at a time", async () => {
+  mockedSpawnSyncTrustedText.mockReturnValue({
+    status: 0,
+    stdout: "not-found",
+    stderr: "",
+    pid: 0,
+    output: ["", "not-found", ""],
+    signal: null,
+  });
+  onlyRedisInsightContainersExist();
+  const recorded = recordCommandsOneAtATime();
+  const lines: string[] = [];
+  await applyOptionalDevServices(
+    {
+      dbstudio: false,
+      smtp: false,
+      ui: false,
+      website: false,
+      redisinsight: true,
+      stripe: false,
+    },
+    (line) => lines.push(line),
+  );
+  expect(recorded.commands).toEqual([
+    `docker update --restart=unless-stopped ${REDIS_INSIGHT_CONTAINER_NAME}`,
+    `docker start ${REDIS_INSIGHT_CONTAINER_NAME}`,
+    `docker update --restart=unless-stopped ${REDIS_INSIGHT_BRIDGE_CONTAINER_NAME}`,
+    `docker start ${REDIS_INSIGHT_BRIDGE_CONTAINER_NAME}`,
+  ]);
+  expect(recorded.maxActive()).toBe(1);
+  expect(lines).toEqual([
+    "Starting optional container Redis Insight",
+    `Starting optional container ${REDIS_INSIGHT_CONTAINER_NAME}`,
+    `Starting optional container ${REDIS_INSIGHT_BRIDGE_CONTAINER_NAME}`,
+  ]);
+});
+
+test("applyOptionalDevServices stops at the first failed container step", async () => {
+  mockedSpawnSyncTrustedText.mockReturnValue({
+    status: 0,
+    stdout: "not-found",
+    stderr: "",
+    pid: 0,
+    output: ["", "not-found", ""],
+    signal: null,
+  });
+  onlyRedisInsightContainersExist();
+  const seen: string[] = [];
+  mockedRunCaptured.mockImplementation(async (cmd) => {
+    const argv = (cmd as string[]).join(" ");
+    seen.push(argv);
+    return argv.includes(`update --restart=unless-stopped ${REDIS_INSIGHT_CONTAINER_NAME}`)
+      ? 1
+      : 0;
+  });
+  await expect(
+    applyOptionalDevServices({
+      dbstudio: false,
+      smtp: false,
+      ui: false,
+      website: false,
+      redisinsight: true,
+      stripe: false,
+    }),
+  ).rejects.toThrow(
+    `docker update --restart=unless-stopped ${REDIS_INSIGHT_CONTAINER_NAME} failed`,
+  );
+  // Both attempts (plain, then sudo) of the failing step ran; nothing after it did.
+  expect(seen).toEqual([
+    `docker update --restart=unless-stopped ${REDIS_INSIGHT_CONTAINER_NAME}`,
+    `sudo -n docker update --restart=unless-stopped ${REDIS_INSIGHT_CONTAINER_NAME}`,
+  ]);
+});
+
+test("applyOptionalDevServices does not touch later services once one fails", async () => {
+  const seen: string[] = [];
+  mockedRunCaptured.mockImplementation(async (cmd) => {
+    const argv = (cmd as string[]).join(" ");
+    seen.push(argv);
+    return argv.includes("disable --now turbopanel-mailpit") ? 1 : 0;
+  });
+  await expect(
+    applyOptionalDevServices({
+      dbstudio: true,
+      smtp: false,
+      ui: true,
+      website: true,
+      redisinsight: true,
+      stripe: true,
+    }),
+  ).rejects.toThrow("systemctl disable --now turbopanel-mailpit failed");
+  expect(seen).toEqual([
+    "sudo -n systemctl enable --now turbopanel-dbstudio",
+    "sudo -n systemctl disable --now turbopanel-mailpit",
+  ]);
+});

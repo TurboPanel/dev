@@ -281,6 +281,30 @@ describe("waitForDaemonRunning", () => {
     await expect(pending).resolves.toBe(false);
   });
 
+  it("probes, reports and sleeps once per poll interval before the final probe", async () => {
+    vi.useFakeTimers();
+    mockedSpawnSyncTrustedText.mockClear();
+    mockedSpawnSyncTrustedText.mockReturnValue(textResult("inactive"));
+    const onPoll = vi.fn();
+    const pending = waitForDaemonRunning({ timeoutMs: 400, pollMs: 200, onPoll });
+    await vi.advanceTimersByTimeAsync(1_000);
+    await expect(pending).resolves.toBe(false);
+    expect(onPoll.mock.calls.map(([elapsed]) => elapsed)).toEqual([0, 200]);
+    // Two in-loop probes plus the final one after the deadline.
+    expect(mockedSpawnSyncTrustedText).toHaveBeenCalledTimes(3);
+  });
+
+  it("does not poll at all when the timeout is already spent", async () => {
+    mockedSpawnSyncTrustedText.mockClear();
+    mockedSpawnSyncTrustedText.mockReturnValue(textResult("inactive"));
+    const onPoll = vi.fn();
+    await expect(
+      waitForDaemonRunning({ timeoutMs: 0, pollMs: 200, onPoll }),
+    ).resolves.toBe(false);
+    expect(onPoll).not.toHaveBeenCalled();
+    expect(mockedSpawnSyncTrustedText).toHaveBeenCalledTimes(1);
+  });
+
   it("returns true when the unit becomes active on the post-timeout probe", async () => {
     vi.useFakeTimers();
     let probes = 0;

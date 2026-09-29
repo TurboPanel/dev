@@ -663,6 +663,55 @@ describe('fillMissingLicenses', () => {
     )
     expect(filled[0]?.license).toBe('')
   })
+
+  it('looks up one package at a time, in input order, without touching resolved ones', async () => {
+    let active = 0
+    let maxActive = 0
+    const started: string[] = []
+    const filled = await fillMissingLicenses(
+      [
+        pkg({ name: 'slow', license: '' }),
+        pkg({ name: 'kept', license: 'ISC' }),
+        pkg({ name: 'unknown', license: 'UNKNOWN' }),
+        pkg({ name: 'last', license: '' }),
+      ],
+      async (row) => {
+        started.push(row.name)
+        active += 1
+        maxActive = Math.max(maxActive, active)
+        await new Promise((resolve) => setTimeout(resolve, row.name === 'slow' ? 15 : 1))
+        active -= 1
+        return `Lic-${row.name}`
+      },
+    )
+    expect(started).toEqual(['slow', 'unknown', 'last'])
+    expect(maxActive).toBe(1)
+    expect(filled.map((row) => [row.name, row.license])).toEqual([
+      ['slow', 'Lic-slow'],
+      ['kept', 'ISC'],
+      ['unknown', 'Lic-unknown'],
+      ['last', 'Lic-last'],
+    ])
+  })
+
+  it('stops at the first failed lookup and starts no later one', async () => {
+    const started: string[] = []
+    await expect(
+      fillMissingLicenses(
+        [
+          pkg({ name: 'one', license: '' }),
+          pkg({ name: 'two', license: '' }),
+          pkg({ name: 'three', license: '' }),
+        ],
+        async (row) => {
+          started.push(row.name)
+          if (row.name === 'two') throw new Error('registry throttled')
+          return 'MIT'
+        },
+      ),
+    ).rejects.toThrow('registry throttled')
+    expect(started).toEqual(['one', 'two'])
+  })
 })
 
 describe('enrichMissingPackageLicenses', () => {
