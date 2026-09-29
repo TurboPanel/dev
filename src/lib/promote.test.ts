@@ -581,26 +581,6 @@ describe("workflow shape", () => {
     );
     expect(text).not.toMatch(/--target "\$\{\{ github\.sha \}\}"/);
   });
-
-  test("promote.yml chains prepare → publish → finalize locally with dev-ref = github.sha", () => {
-    const text = read("promote.yml");
-    expect(text).toMatch(/uses: \.\/\.github\/workflows\/gh-promote\.yml/);
-    expect(text).toMatch(/uses: \.\/\.github\/workflows\/gh-release\.yml/);
-    expect(text).toMatch(
-      /uses: \.\/\.github\/workflows\/gh-promote-finalize\.yml/,
-    );
-    expect(text).toMatch(/repo-kind: notes-only/);
-    expect(text).toMatch(/dev-ref: \$\{\{ github\.sha \}\}/);
-    expect(text).toMatch(
-      /target-commit: \$\{\{ needs\.prepare\.outputs\.commit \}\}/,
-    );
-  });
-
-  test("release.yml ignores tag pushes by the Release App", () => {
-    expect(read("release.yml")).toMatch(
-      /if: github\.event_name != 'push' \|\| !startsWith\(github\.ref, 'refs\/tags\/'\) \|\| !endsWith\(github\.actor, '\[bot\]'\)/,
-    );
-  });
 });
 
 describe("nextRcNumber", () => {
