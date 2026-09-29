@@ -6,14 +6,15 @@
 // The version model (release-flow decisions D8 and 2026-09-28): every canary
 // of a cycle carries the calculated next number plus a plain build counter
 // (`0.1.3-canary.412`, the workflow run number); promoting makes it exactly
-// one rc (`0.1.3-rc`, never a second) and then the bare release (`0.1.3`).
+// rc candidate (`0.1.3-rc.1`; a bad candidate is fixed on trunk and the next
+// merge cuts `0.1.3-rc.2` — the number stays until it ships) and then the bare
+// release (`0.1.3`), cut from the newest rc.
 // The bytes never change across the hops — only the asset names, the
 // manifest's version/channel/urls, and the manifest's signature.
 //
 // Builds cut before 2026-09-28 spell the canary label as a timestamped id
-// (`0.1.2-canary.20260926-101530-abc1234`) and the rc as `0.1.2-rc.1`; both
-// old spellings are still read so an existing canary can be promoted and an
-// existing `-rc.1` tag can be released. New rcs are always `-rc`.
+// (`0.1.2-canary.20260926-101530-abc1234`); that spelling is still read so an
+// existing canary can be promoted.
 
 /**
  * Build id a canary asset name carries: the run counter (`412`), or the
@@ -21,10 +22,8 @@
  */
 export const CANARY_BUILD_ID_RE = /^(?:\d+|\d{8}-\d{6}-[0-9a-f]{7})$/;
 const CANARY_LABEL_RE = /-canary\.(\d+|\d{8}-\d{6}-[0-9a-f]{7})$/;
-/** The rc label every new rc carries. */
-const RC_LABEL = "-rc";
-/** rc labels a release may be cut from: the current one and the old `-rc.1`. */
-const RC_LABELS_ACCEPTED = Object.freeze(["-rc", "-rc.1"]);
+/** `-rc.<N>` on a version: N counts the candidates cut for one number. */
+const RC_LABEL_RE = /-rc\.(\d+)$/;
 const BASE_VERSION_RE = /^\d+\.\d+\.\d+$/;
 
 export const TARGETS = Object.freeze(["rc", "release"]);
@@ -65,12 +64,33 @@ export function assertRepoKind(repoKind) {
 }
 
 /**
+ * The next rc number for a base version: one past the highest `v<base>-rc.N`
+ * among the repo's tags (`existingTags`, tag names with or without refs/tags/),
+ * or 1 when there is none. Numeric, so rc.10 follows rc.9.
+ */
+export function nextRcNumber(base, existingTags = []) {
+  if (!BASE_VERSION_RE.test(base)) throw new Error(`not a bare X.Y.Z: ${base}`);
+  const prefix = `v${base}-rc.`;
+  let highest = 0;
+  for (const raw of existingTags) {
+    const tag = raw.replace(/^refs\/tags\//, "");
+    if (!tag.startsWith(prefix)) continue;
+    const n = /^\d+$/.test(tag.slice(prefix.length))
+      ? Number(tag.slice(prefix.length))
+      : 0;
+    if (n > highest) highest = n;
+  }
+  return highest + 1;
+}
+
+/**
  * The version a promotion publishes, derived from the version it starts
  * from. rc strips the canary label (a bare version — notes-only repos have
- * no canary — is accepted as-is) and appends `-rc`; release strips `-rc`
- * (or the legacy `-rc.1`) and nothing else.
+ * no canary — is accepted as-is) and appends `-rc.<N>`, N being one past the
+ * highest existing rc tag for that number (`existingTags`); release strips
+ * `-rc.<N>` and nothing else.
  */
-export function targetVersion(to, sourceVersion) {
+export function targetVersion(to, sourceVersion, existingTags = []) {
   assertTarget(to);
   if (typeof sourceVersion !== "string" || sourceVersion === "") {
     throw new Error("source version is empty");
@@ -82,17 +102,15 @@ export function targetVersion(to, sourceVersion) {
         `an rc is cut from a canary build or a bare X.Y.Z version, not ${sourceVersion}`,
       );
     }
-    return `${base}${RC_LABEL}`;
+    return `${base}-rc.${nextRcNumber(base, existingTags)}`;
   }
-  const suffix = RC_LABELS_ACCEPTED.find((label) =>
-    sourceVersion.endsWith(label),
-  );
-  if (!suffix) {
+  const rc = RC_LABEL_RE.exec(sourceVersion);
+  if (!rc) {
     throw new Error(
       `a release is cut from an rc pre-release, not ${sourceVersion}`,
     );
   }
-  const base = sourceVersion.slice(0, -suffix.length);
+  const base = sourceVersion.slice(0, -rc[0].length);
   if (!BASE_VERSION_RE.test(base)) {
     throw new Error(
       `rc version ${sourceVersion} does not wrap a bare X.Y.Z version`,
@@ -112,9 +130,9 @@ export function parseSource(to, source) {
   if (text === "") throw new Error("source is empty");
   if (to === "release") {
     const version = text.startsWith("v") ? text.slice(1) : text;
-    if (!RC_LABELS_ACCEPTED.some((label) => version.endsWith(label))) {
+    if (!RC_LABEL_RE.test(version)) {
       throw new Error(
-        `source for a release must be the rc tag (vX.Y.Z${RC_LABEL}), got ${text}`,
+        `source for a release must be the rc tag (vX.Y.Z-rc.N), got ${text}`,
       );
     }
     return { kind: "rc-tag", version, tag: `v${version}` };

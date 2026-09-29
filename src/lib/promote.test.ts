@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
 import {
+  nextRcNumber,
   artifactMismatches,
   assertRepoKind,
   assertTarget,
@@ -61,22 +62,25 @@ function daemonManifest(version: string, base: string) {
 }
 
 describe("targetVersion", () => {
-  test("rc strips the canary label and appends -rc", () => {
-    expect(targetVersion("rc", CANARY)).toBe("0.1.2-rc");
+  test("rc strips the canary label and appends -rc.1 when none exists", () => {
+    expect(targetVersion("rc", CANARY)).toBe("0.1.2-rc.1");
   });
 
-  test("rc strips a counter canary label too (0.1.3-canary.412 becomes 0.1.3-rc)", () => {
-    expect(targetVersion("rc", "0.1.3-canary.412")).toBe("0.1.3-rc");
+  test("rc strips a counter canary label too (0.1.3-canary.412 becomes 0.1.3-rc.1)", () => {
+    expect(targetVersion("rc", "0.1.3-canary.412")).toBe("0.1.3-rc.1");
   });
 
   test("rc accepts a bare version (notes-only repos have no canary)", () => {
-    expect(targetVersion("rc", "0.1.2")).toBe("0.1.2-rc");
+    expect(targetVersion("rc", "0.1.2")).toBe("0.1.2-rc.1");
+  });
+
+  test("rc numbers itself one past the highest existing rc tag for that number", () => {
+    const tags = ["v0.1.3-rc.1", "refs/tags/v0.1.3-rc.2", "v0.1.2-rc.9"];
+    expect(targetVersion("rc", "0.1.3-canary.412", tags)).toBe("0.1.3-rc.3");
+    expect(targetVersion("rc", "0.1.4-canary.500", tags)).toBe("0.1.4-rc.1");
   });
 
   test("rc refuses any other pre-release label — an rc is never cut from an rc", () => {
-    expect(() => targetVersion("rc", "0.1.2-rc")).toThrow(
-      /canary build or a bare/,
-    );
     expect(() => targetVersion("rc", "0.1.2-rc.1")).toThrow(
       /canary build or a bare/,
     );
@@ -86,18 +90,18 @@ describe("targetVersion", () => {
     expect(() => targetVersion("rc", "")).toThrow(/empty/);
   });
 
-  test("release strips -rc, and the legacy -rc.1 an older release was cut from", () => {
-    expect(targetVersion("release", "0.1.3-rc")).toBe("0.1.3");
+  test("release strips -rc.N", () => {
+    expect(targetVersion("release", "0.1.3-rc.2")).toBe("0.1.3");
     expect(targetVersion("release", "0.1.2-rc.1")).toBe("0.1.2");
+    expect(targetVersion("release", "0.1.3-rc.12")).toBe("0.1.3");
   });
 
-  test("release refuses rc.2, canaries and bare versions", () => {
-    expect(() => targetVersion("release", "0.1.2-rc.2")).toThrow(
-      /rc pre-release/,
-    );
+  test("release refuses canaries, bare versions and a label-less rc", () => {
     expect(() => targetVersion("release", CANARY)).toThrow(/rc pre-release/);
     expect(() => targetVersion("release", "0.1.2")).toThrow(/rc pre-release/);
-    expect(() => targetVersion("release", "x-rc")).toThrow(/bare X\.Y\.Z/);
+    expect(() => targetVersion("release", "0.1.2-rc")).toThrow(
+      /rc pre-release/,
+    );
     expect(() => targetVersion("release", "x-rc.1")).toThrow(/bare X\.Y\.Z/);
   });
 
@@ -168,17 +172,13 @@ describe("parseSource", () => {
     });
   });
 
-  test("release: the plain -rc tag, with or without the v", () => {
-    expect(parseSource("release", "v0.1.3-rc")).toEqual({
+  test("release: a later rc number and a label-less rc", () => {
+    expect(parseSource("release", "v0.1.3-rc.12")).toEqual({
       kind: "rc-tag",
-      version: "0.1.3-rc",
-      tag: "v0.1.3-rc",
+      version: "0.1.3-rc.12",
+      tag: "v0.1.3-rc.12",
     });
-    expect(parseSource("release", "0.1.3-rc")).toEqual({
-      kind: "rc-tag",
-      version: "0.1.3-rc",
-      tag: "v0.1.3-rc",
-    });
+    expect(() => parseSource("release", "v0.1.3-rc")).toThrow(/rc tag/);
   });
 
   test("release: a canary or bare version is not an rc tag", () => {
@@ -595,5 +595,24 @@ describe("workflow shape", () => {
     expect(read("release.yml")).toMatch(
       /if: github\.event_name != 'push' \|\| !startsWith\(github\.ref, 'refs\/tags\/'\) \|\| !endsWith\(github\.actor, '\[bot\]'\)/,
     );
+  });
+});
+
+describe("nextRcNumber", () => {
+  test("counts numerically and ignores other bases and non-rc tags", () => {
+    expect(nextRcNumber("0.1.3")).toBe(1);
+    expect(
+      nextRcNumber("0.1.3", [
+        "v0.1.3",
+        "v0.1.3-rc.9",
+        "v0.1.3-rc.10",
+        "v0.1.30-rc.4",
+        "v0.1.3-rc.x",
+      ]),
+    ).toBe(11);
+  });
+
+  test("refuses a base that is not X.Y.Z", () => {
+    expect(() => nextRcNumber("0.1")).toThrow(/bare X\.Y\.Z/);
   });
 });

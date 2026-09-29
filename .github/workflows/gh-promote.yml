@@ -2,8 +2,8 @@
 #
 # One click by the maintainer moves a tested build up a channel:
 #
-#   canary (trunk / testing)  --to=rc-->      X.Y.Z-rc + `staging` branch
-#   X.Y.Z-rc (staging)        --to=release--> X.Y.Z (releases/latest) + `live` branch
+#   canary (trunk / testing)  --to=rc-->      X.Y.Z-rc.N + `staging` branch
+#   X.Y.Z-rc.N (staging)        --to=release--> X.Y.Z (releases/latest) + `live` branch
 #
 # The bytes never change (decision D9): this job downloads the source
 # build's assets and manifest, proves the manifest is signed by the release
@@ -16,11 +16,12 @@
 # deploy branch. Callers chain the three `uses:` jobs (a reusable workflow
 # cannot call another at a parameterised ref).
 #
-# Version model (D8, Option A): a canary is `<base>-canary.<N>` (run counter; older builds carry a timestamped id), its rc
-# is always `<base>-rc`, the release is `<base>`. A bad rc is fixed on
-# trunk with a changeset and becomes the next number — never rc.2.
+# Version model: a canary is `<base>-canary.<N>` (run counter; older builds carry a timestamped id), its rc
+# is `<base>-rc.<N>` (N = one past the highest existing rc tag for that base),
+# the release is `<base>` cut from the newest rc. A bad rc is fixed on trunk
+# and the next promotion cuts rc.N+1; the number stays until it ships.
 #
-# Tags: `v<base>-rc` is created with GITHUB_TOKEN (the tag ruleset leaves
+# Tags: `v<base>-rc.<N>` is created with GITHUB_TOKEN (the tag ruleset leaves
 # hyphenated tags to automation, and GITHUB_TOKEN-created refs fire no
 # workflows). The bare `v<base>` tag is admin/App-only, so `to=release`
 # needs the "TurboPanel Release" GitHub App (RELEASE_APP_ID +
@@ -52,7 +53,7 @@ on:
         description: >-
           What to promote. to=rc — a canary build id (yyyymmdd-hhmmss-sha7), a canary
           version, or the manifest-<version>.json copy on the rolling canary release;
-          notes-only repos pass a commit-ish instead. to=release — the rc tag (vX.Y.Z-rc).
+          notes-only repos pass a commit-ish instead. to=release — the rc tag (vX.Y.Z-rc.N).
         required: true
         type: string
       dev-ref:
@@ -178,10 +179,12 @@ jobs:
         id: plan
         run: |
           set -eu
+          # The next rc number is one past the highest v<base>-rc.N tag.
+          gh api --paginate "repos/$REPO/git/matching-refs/tags/v" --jq '.[].ref' > existing-tags.txt
           if [ "$REPO_KIND" != "notes-only" ]; then
             if [ "$TO" = "rc" ]; then
               gh release view canary --repo "$REPO" --json assets --jq '.assets[].name' > canary-assets.txt
-              node "$CLI" plan --to "$TO" --source "$SOURCE" --repo-kind "$REPO_KIND" --canary-assets canary-assets.txt
+              node "$CLI" plan --to "$TO" --source "$SOURCE" --repo-kind "$REPO_KIND" --canary-assets canary-assets.txt --existing-tags existing-tags.txt
             else
               node "$CLI" plan --to "$TO" --source "$SOURCE" --repo-kind "$REPO_KIND"
             fi
@@ -191,7 +194,7 @@ jobs:
             _commit="$(gh api "repos/$REPO/commits/$SOURCE" --jq .sha)"
             _version="$(gh api "repos/$REPO/contents/package.json?ref=$_commit" --jq .content | base64 -d | python3 -c 'import json,sys; print(json.load(sys.stdin)["version"])')"
             echo "source-commit=$_commit" >> "$GITHUB_OUTPUT"
-            node "$CLI" plan-notes-only --to "$TO" --source-version "$_version"
+            node "$CLI" plan-notes-only --to "$TO" --source-version "$_version" --existing-tags existing-tags.txt
           else
             node "$CLI" plan --to "$TO" --source "$SOURCE" --repo-kind "$REPO_KIND"
           fi
