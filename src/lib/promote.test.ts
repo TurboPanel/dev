@@ -524,7 +524,13 @@ describe("workflow shape", () => {
         ),
       );
     }
-    expect(text).toMatch(/^    environment: release$/m);
+    // The approval gate defaults to `release` and a caller can pass "" to drop it.
+    expect(text).toMatch(
+      /^      approval-environment:\n(?:        .*\n)*?        default: release$/m,
+    );
+    expect(text).toMatch(
+      /^    environment: \$\{\{ inputs\.approval-environment \|\| null \}\}$/m,
+    );
     // Every falsifiable check runs before the tag is created — a tag on a
     // build that then fails verification would burn the version.
     const order = [
