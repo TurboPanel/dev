@@ -227,7 +227,7 @@ function logSystemdRestartProgress(
   }
 }
 
-async function waitForSystemdRestartActive(
+function waitForSystemdRestartActive(
   serviceId: string,
   name: string,
   wasActive: boolean,
@@ -243,7 +243,11 @@ async function waitForSystemdRestartActive(
     loggedStarting: false,
   };
 
-  while (Date.now() - started < timeoutMs) {
+  const pollUntilActive = async (): Promise<boolean> => {
+    if (Date.now() - started >= timeoutMs) {
+      return false;
+    }
+
     logTailer?.drain((line) => {
       onLog(consoleLogLine(line));
     });
@@ -259,9 +263,10 @@ async function waitForSystemdRestartActive(
     }
 
     await sleep(pollMs);
-  }
+    return pollUntilActive();
+  };
 
-  return false;
+  return pollUntilActive();
 }
 
 export async function watchServiceRestart(

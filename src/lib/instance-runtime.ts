@@ -206,7 +206,10 @@ export async function watchInstanceRuntimeSwitch(
   onLog(consoleLogLine(`[console] ${labels.start}`));
 
   const started = Date.now();
-  while (Date.now() - started < RUNTIME_SWITCH_TIMEOUT_MS) {
+  const pollUntilActive = async (): Promise<boolean> => {
+    if (Date.now() - started >= RUNTIME_SWITCH_TIMEOUT_MS) {
+      return false;
+    }
     drainServiceLogs();
     const state = queryServiceActiveState("instance");
     if (state === "active") {
@@ -214,9 +217,14 @@ export async function watchInstanceRuntimeSwitch(
       onLog(consoleLogLine(
         `[console] turbopanel-instance is active (${target === "workers" ? "Wrangler" : "Deno"})`,
       ));
-      return;
+      return true;
     }
     await sleep(RUNTIME_SWITCH_POLL_MS);
+    return pollUntilActive();
+  };
+
+  if (await pollUntilActive()) {
+    return;
   }
 
   drainServiceLogs();

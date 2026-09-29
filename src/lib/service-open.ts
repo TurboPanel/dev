@@ -5,18 +5,24 @@ import { serviceBrowserUrl } from "./service-urls.ts";
 
 type StartUnit = () => Promise<void>;
 
-async function waitForListening(
+function waitForListening(
   url: string,
   timeoutMs = 30_000,
 ): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
+
+  const pollUntilListening = async (): Promise<boolean> => {
+    if (Date.now() >= deadline) {
+      return false;
+    }
     if (isHttpListening(url)) {
       return true;
     }
     await new Promise((resolve) => setTimeout(resolve, 200));
-  }
-  return false;
+    return pollUntilListening();
+  };
+
+  return pollUntilListening();
 }
 
 async function ensureHttpServiceReady(
