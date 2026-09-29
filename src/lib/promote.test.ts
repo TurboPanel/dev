@@ -738,3 +738,19 @@ describe("minor start + re-run scripts", () => {
     expect(rerun.trimEnd().endsWith("exit 0")).toBe(true);
   });
 });
+
+describe("release notes with contributors", () => {
+  test("gh-release passes the notes through the environment, never into the shell text", () => {
+    const text = readFileSync(join(WORKFLOWS, "gh-release.yml"), "utf8");
+    expect(text).toMatch(/RELEASE_NOTES: \$\{\{ inputs\.release-notes \}\}/);
+    expect(text).not.toMatch(/--notes "\$\{\{/);
+    expect(text).toMatch(/--notes "\$RELEASE_NOTES"/);
+  });
+
+  test("gh-promote appends the changelog (multi-line output) to the release notes", () => {
+    const text = readFileSync(join(WORKFLOWS, "gh-promote.yml"), "utf8");
+    expect(text).toMatch(/changelog\.sh/);
+    expect(text).toMatch(/notes<<TP_RELEASE_NOTES_EOF/);
+    expect(text).toMatch(/--exclude-pre-releases/);
+  });
+});

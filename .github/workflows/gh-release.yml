@@ -115,6 +115,10 @@ jobs:
           fi
 
       - name: Create the GitHub Release
+        env:
+          # Through the environment, never pasted into the script: the notes carry
+          # commit titles and HTML (avatars), which must not be parsed as shell.
+          RELEASE_NOTES: ${{ inputs.release-notes }}
         run: |
           set -eu
           _tag="v${{ inputs.version }}"
@@ -125,7 +129,7 @@ jobs:
               --target "$TARGET_COMMIT" \
               --prerelease \
               --title "$_title" \
-              --notes "${{ inputs.release-notes }}" \
+              --notes "$RELEASE_NOTES" \
               release-assets/*
           else
             gh release create "$_tag" \
@@ -133,7 +137,7 @@ jobs:
               --target "$TARGET_COMMIT" \
               --prerelease \
               --title "$_title" \
-              --notes "${{ inputs.release-notes }}"
+              --notes "$RELEASE_NOTES"
           fi
 
       - name: Verify release assets against the manifest

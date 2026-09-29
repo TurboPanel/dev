@@ -387,5 +387,17 @@ jobs:
         run: |
           set -eu
           _notes="$(node "$CLI" notes --to "$TO" --repo-kind "$REPO_KIND" --source-version "$SOURCE_VERSION" --target-version "$TARGET_VERSION" --commit "$COMMIT")"
-          echo "notes=$_notes" >> "$GITHUB_OUTPUT"
-          echo "$_notes"
+          # What changed since the last release, each contributor credited (avatar,
+          # @name linked to their profile, PR number). No previous release, or any
+          # failure here, leaves the one-line note as it was.
+          _base="$(gh release list --repo "$REPO" --exclude-pre-releases --limit 1 --json tagName --jq '.[0].tagName // empty' 2>/dev/null || true)"
+          _log="$(sh "$(dirname "$CLI")/changelog.sh" "$REPO" "$_base" "$COMMIT" 2>/dev/null || true)"
+          if [ -n "$_log" ]; then
+            _notes="$(printf '%s\n\n### What changed\n\n%s' "$_notes" "$_log")"
+          fi
+          {
+            echo "notes<<TP_RELEASE_NOTES_EOF"
+            printf '%s\n' "$_notes"
+            echo "TP_RELEASE_NOTES_EOF"
+          } >> "$GITHUB_OUTPUT"
+          printf '%s\n' "$_notes"
