@@ -1,0 +1,138 @@
+# Reusable "minor release gate" — a check on the staging → live Release PR.
+#
+# Repos release independently: a PATCH release (x.y.z, z > 0) waits on nothing.
+# A new MINOR (x.y.0) is different, because the three pieces have to move
+# together, in this order:
+#
+#   1. turbopanel (control plane) and ui each have an rc of x.y.0
+#      (a `vx.y.0-rc.N` tag),
+#   2. then the daemon (turbopaneld) releases x.y.0,
+#   3. then turbopanel and ui release x.y.0 (the daemon x.y.0 release exists).
+#
+# So this check is red on:
+#   role=daemon      a minor Release PR while turbopanel or ui lacks an x.y.0 rc
+#   role=dependent   a minor Release PR while the daemon has not released x.y.0
+# and green otherwise, including on every non-minor PR and every push (it only
+# looks at a pull_request into `live`). website and dev are never gated.
+#
+# It sits inside the caller's required `ci-ok`. A sibling that later gets its rc
+# (or the daemon that later releases) re-runs this check on the waiting PR
+# (scripts/promote/rerun-release-pr-checks.sh), best effort — re-running the
+# failed check by hand also works.
+
+name: Minor release gate
+
+on:
+  workflow_call:
+    inputs:
+      role:
+        description: daemon | dependent
+        required: true
+        type: string
+      version-file:
+        description: File whose top-level "version" is this repo's version (deno.json, package.json)
+        required: true
+        type: string
+      siblings:
+        description: "role=daemon: the repos that must have an rc of the minor, one per line (turbopanel, ui)"
+        required: false
+        type: string
+        default: ""
+    secrets:
+      RELEASE_APP_ID:
+        required: false
+      RELEASE_APP_PRIVATE_KEY:
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  minor-gate:
+    name: minor-gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Only a Release PR into live is gated
+        id: scope
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.base_ref }}
+        run: |
+          if [ "$EVENT" = "pull_request" ] && [ "$BASE" = "live" ]; then
+            echo "gated=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "gated=false" >> "$GITHUB_OUTPUT"
+            echo "not a pull request into live — nothing to gate"
+          fi
+
+      - name: Read the version this Release PR ships
+        id: version
+        if: steps.scope.outputs.gated == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          FILE: ${{ inputs.version-file }}
+        run: |
+          set -eu
+          version="$(gh api "repos/$REPO/contents/$FILE?ref=$HEAD_SHA" --jq .content | base64 -d | jq -r .version)"
+          case "$version" in
+            [0-9]*.[0-9]*.[0-9]*) ;;
+            *) echo "::error::could not read a version from $FILE at $HEAD_SHA (got '$version')"; exit 1 ;;
+          esac
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          patch="${version##*.}"
+          if [ "$patch" = "0" ]; then
+            echo "minor=true" >> "$GITHUB_OUTPUT"
+            echo "$version is a new minor — cross-repo rules apply"
+          else
+            echo "minor=false" >> "$GITHUB_OUTPUT"
+            echo "$version is a patch release — no cross-repo requirement"
+          fi
+
+      - name: Mint a Release App token (read the other repos)
+        id: app
+        if: steps.version.outputs.minor == 'true'
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          owner: TurboPanel
+          repositories: |
+            turbopaneld
+            turbopanel
+            ui
+
+      - name: Check the other repos are where a minor needs them
+        if: steps.version.outputs.minor == 'true'
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          ROLE: ${{ inputs.role }}
+          VERSION: ${{ steps.version.outputs.version }}
+          SIBLINGS: ${{ inputs.siblings }}
+        run: |
+          set -eu
+          missing=""
+          case "$ROLE" in
+            daemon)
+              for repo in $SIBLINGS; do
+                n="$(gh api "repos/TurboPanel/$repo/git/matching-refs/tags/v$VERSION-rc." --jq 'length')"
+                if [ "$n" = "0" ]; then missing="$missing $repo"; fi
+              done
+              if [ -n "$missing" ]; then
+                echo "::error::v$VERSION is a new minor: cut an rc of $VERSION in$missing first (merge their \"Cut rc for $VERSION\" PRs), then this check goes green."
+                exit 1
+              fi
+              echo "every sibling has a v$VERSION-rc.N — the daemon may release the minor"
+              ;;
+            dependent)
+              pre="$(gh api "repos/TurboPanel/turbopaneld/releases/tags/v$VERSION" --jq .prerelease 2>/dev/null || echo missing)"
+              if [ "$pre" != "false" ]; then
+                echo "::error::v$VERSION is a new minor: the daemon (TurboPanel/turbopaneld) must release v$VERSION first. Merge its \"Release $VERSION\" PR, then this check goes green."
+                exit 1
+              fi
+              echo "the daemon has released v$VERSION — this repo may release the minor"
+              ;;
+            *) echo "::error::role must be daemon or dependent, got '$ROLE'"; exit 1 ;;
+          esac

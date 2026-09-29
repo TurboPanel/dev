@@ -134,3 +134,10 @@ jobs:
           gh pr create --repo "$REPO" --base trunk --head "$branch" \
             --title "Start $next" \
             --body "v$RELEASED shipped. This moves trunk to **$next** ($kind; never below the highest minor across the TurboPanel repos) so the next canary carries the right number. Squash-merge when \`ci-ok\` is green; label any PR \`minor\` before the next release to make it a minor."
+
+          # A new minor moves turbopaneld, turbopanel and ui together: give the
+          # other two the same Start PR (repos already on it are left alone).
+          if [ "${next%.*}" != "${RELEASED%.*}" ]; then
+            cd "$GITHUB_WORKSPACE"
+            CLI="$CLI" sh .promote/scripts/promote/start-minor.sh "$next" "${REPO#TurboPanel/}"
+          fi
