@@ -727,6 +727,15 @@ describe("gh-next-version.yml", () => {
     expect(text).toMatch(/cli\.mjs|\$CLI" next-version/);
     expect(text).toMatch(/--label minor/);
   });
+
+  test("merges its own Start PR (squash) once ci-ok and GitGuardian are green, and leaves it open on a failed check", () => {
+    const text = readFileSync(join(WORKFLOWS, "gh-next-version.yml"), "utf8");
+    expect(text).toMatch(/gh pr merge "\$pr_number" --repo "\$REPO" --squash/);
+    expect(text).toMatch(/select\(\.name == "ci-ok"\)/);
+    expect(text).toMatch(/GitGuardian/);
+    expect(text).toMatch(/leaving it open/);
+    expect(text).not.toMatch(/--admin/);
+  });
 });
 
 describe("gh-minor-gate.yml", () => {

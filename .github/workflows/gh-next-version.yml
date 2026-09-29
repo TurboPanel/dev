@@ -11,8 +11,9 @@
 #     (deno.json / package.json on each repo's trunk; the future catalog repo
 #     is not part of the floor).
 #
-# The PR is opened with the Release App token so `ci-ok` runs on it. Nothing
-# merges itself: the owner merges (squash). Idempotent — if trunk is already
+# The PR is opened with the Release App token so `ci-ok` runs on it, and the
+# same App merges it (squash) once ci-ok and GitGuardian are green, so the next
+# number never depends on someone remembering to. Idempotent — if trunk is already
 # past the released version, or the PR is open, it does nothing.
 
 name: Start the next version
@@ -131,9 +132,35 @@ jobs:
           git commit -q -m "Start $next"
           git push -q origin "$branch"
           kind="patch"; [ "$minor" = "true" ] && kind="minor (a merged PR carried the minor label)"
-          gh pr create --repo "$REPO" --base trunk --head "$branch" \
+          pr_url="$(gh pr create --repo "$REPO" --base trunk --head "$branch" \
             --title "Start $next" \
-            --body "v$RELEASED shipped. This moves trunk to **$next** ($kind; never below the highest minor across the TurboPanel repos) so the next canary carries the right number. Squash-merge when \`ci-ok\` is green; label any PR \`minor\` before the next release to make it a minor."
+            --body "v$RELEASED shipped. This moves trunk to **$next** ($kind; never below the highest minor across the TurboPanel repos) so the next canary carries the right number. It is a version bump only and merges itself (squash) once \`ci-ok\` and GitGuardian are green; label any PR \`minor\` before the next release to make it a minor.")"
+          echo "opened $pr_url"
+
+          # Nothing here needs a human: the PR only bumps the version files, so
+          # once its checks are green the same Release App merges it (squash, the
+          # only way trunk takes). A failed check leaves it open for the owner.
+          pr_number="${pr_url##*/}"
+          merged=false
+          for _ in $(seq 1 90); do
+            sleep 30
+            # gh exits non-zero while checks are pending but still prints the JSON.
+            checks="$(gh pr checks "$pr_number" --repo "$REPO" --json name,bucket 2>/dev/null || true)"
+            echo "$checks" | jq -e . >/dev/null 2>&1 || checks='[]'
+            if echo "$checks" | jq -e 'any(.[]; .bucket == "fail" or .bucket == "cancel")' >/dev/null; then
+              echo "::warning::a check on $pr_url failed; leaving it open"
+              break
+            fi
+            if echo "$checks" | jq -e '([.[] | select(.name == "ci-ok") | .bucket] == ["pass"]) and ([.[] | select(.name | test("GitGuardian")) | .bucket] == ["pass"])' >/dev/null; then
+              if gh pr merge "$pr_number" --repo "$REPO" --squash --delete-branch; then
+                merged=true
+              else
+                echo "::warning::could not merge $pr_url; leaving it open"
+              fi
+              break
+            fi
+          done
+          [ "$merged" = true ] || echo "$pr_url stays open for the owner"
 
           # A new minor moves turbopaneld, turbopanel and ui together: give the
           # other two the same Start PR (repos already on it are left alone).
