@@ -43,4 +43,9 @@ test("firstSequential returns the first defined result and stops trying", async 
   expect(tried).toEqual([1, 2]);
   expect(await firstSequential([1, 2], () => undefined)).toBeUndefined();
   expect(await firstSequential([], () => "never")).toBeUndefined();
+  expect(await firstSequential([1, 2], (n) => (n === 1 ? undefined : "later"))).toBe("later");
+  const skipNull = (n: number) => (n === 1 ? null : "later");
+  expect(await firstSequential([1, 2], skipNull as (n: number) => string | undefined)).toBe(
+    "later",
+  );
 });

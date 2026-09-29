@@ -99,12 +99,14 @@ export async function ensureFhsTreeOwnership(
 export function ensureDevUserDockerAccess(
   onOutput?: InstallOutputHandler,
 ): Promise<boolean> {
-  // The work is synchronous. Run it inside the executor so a failure still
-  // surfaces as a rejected promise (as it did when this was an async function)
-  // rather than a synchronous throw, and the spawns still start immediately.
-  return new Promise((resolve) => {
-    resolve(addDevUserToDockerGroup(onOutput));
-  });
+  // The work is synchronous and starts immediately. A failure still surfaces
+  // as a rejected promise (as it did when this was an async function) rather
+  // than a synchronous throw.
+  try {
+    return Promise.resolve(addDevUserToDockerGroup(onOutput));
+  } catch (error) {
+    return Promise.reject(error);
+  }
 }
 
 function addDevUserToDockerGroup(onOutput?: InstallOutputHandler): boolean {
