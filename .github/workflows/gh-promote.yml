@@ -16,7 +16,7 @@
 # deploy branch. Callers chain the three `uses:` jobs (a reusable workflow
 # cannot call another at a parameterised ref).
 #
-# Version model (D8, Option A): a canary is `<base>-canary.<buildId>`, its rc
+# Version model (D8, Option A): a canary is `<base>-canary.<N>` (run counter; older builds carry a timestamped id), its rc
 # is always `<base>-rc`, the release is `<base>`. A bad rc is fixed on
 # trunk with a changeset and becomes the next number — never rc.2.
 #
@@ -64,6 +64,15 @@ on:
         required: false
         type: string
         default: ""
+      approval-environment:
+        description: >-
+          GitHub environment whose reviewers must approve this run before it does anything
+          (default `release`). Pass "" to run without an approval gate: a merged PR is
+          already a deliberate maintainer action (the automatic rc path uses this). An
+          `environment` expression that resolves to an empty string means no environment.
+        required: false
+        type: string
+        default: release
     secrets:
       RELEASE_SIGNING_KEY:
         description: PKCS#8 PEM of the offline release key (required unless notes-only)
@@ -106,7 +115,7 @@ permissions:
 jobs:
   prepare:
     runs-on: ubuntu-latest
-    environment: release
+    environment: ${{ inputs.approval-environment || null }}
     concurrency:
       group: gh-promote-${{ github.repository }}
       cancel-in-progress: false
