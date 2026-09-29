@@ -121,7 +121,7 @@ jobs:
                 if [ "$n" = "0" ]; then missing="$missing $repo"; fi
               done
               if [ -n "$missing" ]; then
-                echo "::error::v$VERSION is a new minor: cut an rc of $VERSION in$missing first (merge their \"Cut rc for $VERSION\" PRs), then this check goes green."
+                echo "::error::v$VERSION is a new minor: cut an rc of $VERSION in$missing first (merge their \"Release candidate $VERSION-rc.N\" PRs), then this check goes green."
                 exit 1
               fi
               echo "every sibling has a v$VERSION-rc.N — the daemon may release the minor"
