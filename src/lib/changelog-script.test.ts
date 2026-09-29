@@ -42,7 +42,7 @@ const ana = {
 };
 
 describe("changelog.sh", () => {
-  test("puts the contributor's avatar, @name link and the PR number on each commit", () => {
+  test("puts the PR number first and the contributor's avatar and name link after the text", () => {
     const out = run(
       [commit("fix: retry the probe (#12)\n\nbody", ana)],
       ["TurboPanel/x", "v0.1.2", "abc"],
@@ -50,8 +50,10 @@ describe("changelog.sh", () => {
     expect(out).toContain(
       '<img src="https://avatars.githubusercontent.com/u/1?v=4&s=40"',
     );
-    expect(out).toContain("[@ana](https://github.com/ana)");
-    expect(out).toContain("fix: retry the probe (#12)");
+    expect(out).toContain("[ana](https://github.com/ana)");
+    expect(out).not.toContain("@ana");
+    expect(out).toContain('align="absmiddle"');
+    expect(out).toMatch(/^- fix: retry the probe \(#12\) — <a href=.*<img /m);
     expect(out).not.toContain("body");
     expect(out).toContain("**Thanks to**");
   });
@@ -91,7 +93,7 @@ describe("changelog.sh", () => {
     expect(out).toContain(
       "fix: retry the probe (#12) · closes [#7](https://github.com/TurboPanel/x/issues/7), [#9](https://github.com/TurboPanel/x/issues/9)",
     );
-    expect(out).toMatch(/chore: bump \(#13\)\n/);
+    expect(out).toMatch(/chore: bump \(#13\) — <a href/);
   });
 
   test("still lists the commits when the issue lookup fails", () => {
@@ -111,7 +113,7 @@ describe("changelog.sh", () => {
     );
     const thanks =
       out.split("\n").find((l) => l.startsWith("**Thanks to**")) ?? "";
-    expect(thanks.match(/\[@ana\]/g)).toHaveLength(1);
+    expect(thanks.match(/\[ana\]/g)).toHaveLength(1);
   });
 
   test("skips merge commits and falls back to the git name without an account", () => {
@@ -123,7 +125,7 @@ describe("changelog.sh", () => {
       ["TurboPanel/x", "v0.1.2", "abc"],
     );
     expect(out).not.toContain("Merge pull request");
-    expect(out).toContain("- Git Name — chore: bump (#13)");
+    expect(out).toContain("- chore: bump (#13) — Git Name");
   });
 
   test("prints nothing without a base (a first release)", () => {

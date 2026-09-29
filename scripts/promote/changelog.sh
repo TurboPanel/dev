@@ -1,8 +1,8 @@
 #!/bin/sh
 # Markdown changelog for a release candidate / release / promotion PR: one line
-# per commit between two refs, each with its author's avatar, @name (a link to
-# their profile) and the PR number the squash-merge title carries, plus the
-# issues that PR closes ("closes #12"), then a "Thanks to" line crediting each
+# per commit between two refs: the squash-merge title (with its PR number), the
+# issues that PR closes ("closes #12"), then the author's avatar and name (a
+# link to their profile) after the text; then a "Thanks to" line crediting each
 # contributor once.
 #
 #   GH_TOKEN=<token> changelog.sh <owner/repo> <base-ref> <head-ref> [max-lines]
@@ -46,14 +46,14 @@ printf '%s' "$json" | jq -r --arg repo "$repo" --argjson max "$max" --argjson is
     | if length > 0 then " · closes " + join(", ") else "" end;
   def who:
     if .author then
-      "<a href=\"" + .author.html_url + "\"><img src=\"" + .author.avatar_url + "&s=40\" width=\"20\" height=\"20\" alt=\"@" + .author.login + "\"></a> [@" + .author.login + "](" + .author.html_url + ")"
+      "<a href=\"" + .author.html_url + "\"><img src=\"" + .author.avatar_url + "&s=40\" width=\"20\" height=\"20\" align=\"absmiddle\" alt=\"" + .author.login + "\"></a> [" + .author.login + "](" + .author.html_url + ")"
     else
       .commit.author.name
     end;
   def person:
-    "<a href=\"" + .author.html_url + "\"><img src=\"" + .author.avatar_url + "&s=40\" width=\"24\" height=\"24\" alt=\"@" + .author.login + "\"></a> [@" + .author.login + "](" + .author.html_url + ")";
+    "<a href=\"" + .author.html_url + "\"><img src=\"" + .author.avatar_url + "&s=40\" width=\"20\" height=\"20\" align=\"absmiddle\" alt=\"" + .author.login + "\"></a> [" + .author.login + "](" + .author.html_url + ")";
   (.commits | length) as $n
-  | (.commits[:$max][] | "- " + who + " — " + subject + closes),
+  | (.commits[:$max][] | "- " + subject + closes + " — " + who),
     (if $n > $max then "- … and \($n - $max) more commits: https://github.com/\($repo)/compare/'"$base"'...'"$head"'" else empty end),
     ([.commits[] | select(.author != null)] | unique_by(.author.login) as $people
      | if ($people | length) > 0 then "", "**Thanks to** " + ($people | map(person) | join(" · ")) else empty end)
