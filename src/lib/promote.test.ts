@@ -678,3 +678,63 @@ describe("gh-next-version.yml", () => {
     expect(text).toMatch(/--label minor/);
   });
 });
+
+describe("gh-minor-gate.yml", () => {
+  const text = readFileSync(join(WORKFLOWS, "gh-minor-gate.yml"), "utf8");
+
+  test("only gates a pull request into live, and only a minor (patch 0)", () => {
+    expect(text).toMatch(
+      /"\$EVENT" = "pull_request" \] && \[ "\$BASE" = "live"/,
+    );
+    expect(text).toMatch(/patch="\$\{version##\*\.\}"/);
+    expect(text).toMatch(/if: steps\.version\.outputs\.minor == 'true'/);
+  });
+
+  test("daemon role wants an rc of the minor in each sibling; dependent role wants the daemon release", () => {
+    expect(text).toMatch(/matching-refs\/tags\/v\$VERSION-rc\./);
+    expect(text).toMatch(/releases\/tags\/v\$VERSION/);
+    expect(text).toMatch(/\.prerelease/);
+  });
+
+  test("never gates website or dev, and never a patch on another repo's release", () => {
+    expect(text).toMatch(
+      /repositories: \|\n\s+turbopaneld\n\s+turbopanel\n\s+ui\n/,
+    );
+  });
+});
+
+describe("minor start + re-run scripts", () => {
+  const start = readFileSync(
+    join(REPO_ROOT, "scripts/promote/start-minor.sh"),
+    "utf8",
+  );
+  const rerun = readFileSync(
+    join(REPO_ROOT, "scripts/promote/rerun-release-pr-checks.sh"),
+    "utf8",
+  );
+
+  test("start-minor covers exactly the three repos that ship a minor together, only minors", () => {
+    expect(start).toMatch(/turbopaneld:deno\.json/);
+    expect(start).toMatch(/turbopanel:deno\.json:deno\.json,package\.json/);
+    expect(start).toMatch(/ui:package\.json:package\.json,app\.json/);
+    expect(start).not.toMatch(/website|"dev:/);
+    expect(start).toMatch(/\[0-9\]\*\.\[0-9\]\*\.0\)/);
+  });
+
+  test("gh-next-version hands a new minor to start-minor, skipping its own repo", () => {
+    const next = readFileSync(join(WORKFLOWS, "gh-next-version.yml"), "utf8");
+    expect(next).toMatch(/start-minor\.sh "\$next"/);
+    expect(next).toMatch(/"\$\{next%\.\*\}" != "\$\{RELEASED%\.\*\}"/);
+  });
+
+  test("the manual start-minor workflow is a dispatch that opens PRs only", () => {
+    const wf = readFileSync(join(WORKFLOWS, "start-minor.yml"), "utf8");
+    expect(wf).toMatch(/workflow_dispatch/);
+    expect(wf).not.toMatch(/git push[^\n]*trunk/);
+  });
+
+  test("re-running sibling checks never fails the caller", () => {
+    expect(rerun).toMatch(/gh run rerun/);
+    expect(rerun.trimEnd().endsWith("exit 0")).toBe(true);
+  });
+});
