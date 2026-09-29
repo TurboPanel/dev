@@ -102,7 +102,7 @@ jobs:
 
           # Highest minor across every TurboPanel repo's trunk.
           : > "$RUNNER_TEMP/versions.txt"
-          for spec in turbopaneld:deno.json turbopanel:deno.json ui:package.json website:package.json dev:package.json; do
+          for spec in turbopaneld:deno.json turbopanel:deno.json ui:package.json website:package.json; do
             r="${spec%%:*}"; f="${spec#*:}"
             v="$(gh api "repos/TurboPanel/$r/contents/$f?ref=trunk" --jq .content | base64 -d | jq -r '.version // empty')" || v=""
             case "$v" in [0-9]*.[0-9]*.[0-9]*) echo "${v%%-*}" >> "$RUNNER_TEMP/versions.txt" ;; *) echo "::warning::no version read from $r/$f — left out of the minor floor" ;; esac
