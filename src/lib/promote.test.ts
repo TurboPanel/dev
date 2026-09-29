@@ -666,6 +666,76 @@ describe("bumpVersionText", () => {
       bumpVersionText('{"version": "0.1.30"}', "0.1.3", "0.1.4"),
     ).toThrow(/no version/);
   });
+
+  test("dots in the old version are literal, not wildcards", () => {
+    expect(() =>
+      bumpVersionText('{\n  "version": "0x1y3"\n}', "0.1.3", "0.1.4"),
+    ).toThrow(/no version 0\.1\.3/);
+    expect(() =>
+      bumpVersionText("sonar.projectVersion=0x1y3\n", "0.1.3", "0.1.4"),
+    ).toThrow(/no version/);
+  });
+
+  test("a dotted prefix or suffix does not match (0.1.3 vs 0.1.30 and 10.1.3)", () => {
+    expect(() =>
+      bumpVersionText("sonar.projectVersion=0.1.30\n", "0.1.3", "0.1.4"),
+    ).toThrow(/no version/);
+    expect(() =>
+      bumpVersionText('{\n  "version": "10.1.3"\n}', "0.1.3", "0.1.4"),
+    ).toThrow(/no version/);
+    expect(
+      bumpVersionText('{\n  "version": "0.1.30"\n}', "0.1.30", "0.1.31"),
+    ).toBe('{\n  "version": "0.1.31"\n}');
+  });
+
+  test("only the first declaration is rewritten, and whitespace around the key is tolerated", () => {
+    const app =
+      '{\n  "expo": {\n    "name": "x",\n    "version": "0.1.3"\n  },\n  "version"\n  :\n  "0.1.3"\n}\n';
+    expect(bumpVersionText(app, "0.1.3", "0.1.4")).toBe(
+      '{\n  "expo": {\n    "name": "x",\n    "version": "0.1.4"\n  },\n  "version"\n  :\n  "0.1.3"\n}\n',
+    );
+    expect(bumpVersionText('  "version"\t:\t"0.1.3",', "0.1.3", "0.1.4")).toBe(
+      '  "version"\t:\t"0.1.4",',
+    );
+  });
+
+  test("a key that merely ends in version, or a value without the closing quote, is left alone", () => {
+    expect(() =>
+      bumpVersionText('{\n  "appversion": "0.1.3"\n}', "0.1.3", "0.1.4"),
+    ).toThrow(/no version/);
+    expect(() =>
+      bumpVersionText('{\n  "version": "0.1.3-rc.1"\n}', "0.1.3", "0.1.4"),
+    ).toThrow(/no version/);
+  });
+
+  test("the Sonar line must end at the version: trailing text or a comment key is not matched", () => {
+    expect(() =>
+      bumpVersionText("sonar.projectVersion=0.1.3 # x\n", "0.1.3", "0.1.4"),
+    ).toThrow(/no version/);
+    expect(() =>
+      bumpVersionText("# sonar.projectVersion=0.1.3\n", "0.1.3", "0.1.4"),
+    ).toThrow(/no version/);
+    expect(() =>
+      bumpVersionText("sonar_projectVersion=0.1.3\n", "0.1.3", "0.1.4"),
+    ).toThrow(/no version/);
+    expect(
+      bumpVersionText(
+        "sonar.projectVersion=0.1.3\nsonar.other=0.1.3\n",
+        "0.1.3",
+        "0.1.4",
+      ),
+    ).toBe("sonar.projectVersion=0.1.4\nsonar.other=0.1.3\n");
+  });
+
+  test("the json form wins when a file carries both", () => {
+    expect(
+      bumpVersionText(
+        'sonar.projectVersion=0.1.3\n"version": "0.1.3"\n',
+        "0.1.3",
+        "0.1.4",
+      ),
+    ).toBe('sonar.projectVersion=0.1.3\n"version": "0.1.4"\n');
+  });
 });
 
 describe("gh-next-version.yml", () => {

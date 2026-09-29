@@ -342,9 +342,15 @@ export function minorOf(version) {
  * the old number.
  */
 export function bumpVersionText(text, from, to) {
-  const escaped = from.replaceAll(".", "\\.");
-  const json = new RegExp(`^(\\s*"version"\\s*:\\s*")${escaped}(")`, "m");
-  const sonar = new RegExp(`^(sonar\\.projectVersion=)${escaped}$`, "m");
+  const escaped = from.replaceAll(".", String.raw`\.`);
+  const json = new RegExp(
+    String.raw`^(\s*"version"\s*:\s*")${escaped}(")`,
+    "m",
+  );
+  const sonar = new RegExp(
+    String.raw`^(sonar\.projectVersion=)${escaped}$`,
+    "m",
+  );
   if (json.test(text)) return text.replace(json, `$1${to}$2`);
   if (sonar.test(text)) return text.replace(sonar, `$1${to}`);
   throw new Error(`no version ${from} declared to bump`);
