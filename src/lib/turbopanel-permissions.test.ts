@@ -161,6 +161,33 @@ test("ensureDevUserDockerAccess throws when sudo usermod fails", async () => {
   expect(lines).toContain("usermod: permission denied");
 });
 
+test("ensureDevUserDockerAccess reports every failure as a rejected promise, never a sync throw", async () => {
+  mockedTryResolve.mockReturnValue({ user: "dev", uid: 1000, gid: 1000 });
+  mockedSpawnSync.mockImplementation((command) => {
+    const cmd = String(command);
+    if (cmd === "getent") {
+      return spawnRet(0, "docker:x:999:");
+    }
+    if (cmd === "sudo") {
+      return spawnRet(1, "", "");
+    }
+    return spawnRet(1);
+  });
+  let pending: Promise<boolean> | undefined;
+  expect(() => {
+    pending = ensureDevUserDockerAccess();
+  }).not.toThrow();
+  await expect(pending).rejects.toThrow("Failed to add dev user to docker group");
+
+  mockedTryResolve.mockImplementation(() => {
+    throw new Error("identity lookup blew up");
+  });
+  expect(() => {
+    pending = ensureDevUserDockerAccess();
+  }).not.toThrow();
+  await expect(pending).rejects.toThrow("identity lookup blew up");
+});
+
 test("refreshDevPermissionsQuietly no-ops when not in development", () => {
   mockedTryResolve.mockReturnValue(null);
   mockedRunCaptured.mockClear();

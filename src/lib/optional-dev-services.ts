@@ -8,6 +8,7 @@ import {
   REDIS_INSIGHT_BRIDGE_CONTAINER_NAME,
   REDIS_INSIGHT_CONTAINER_NAME,
 } from "./platform-docker-resources.ts";
+import { forEachSequential } from "./sequential.ts";
 import { spawnSyncTrustedText } from "./spawn-trusted.ts";
 
 /** Optional co-located tooling — not required for core control-plane work. */
@@ -310,28 +311,34 @@ async function startOptionalContainers(
   def: OptionalDevServiceDef,
   onOutput?: InstallOutputHandler,
 ): Promise<void> {
-  for (const container of optionalDevServiceBackingContainers(def)) {
-    if (!dockerContainerExists(container)) {
-      continue;
-    }
-    onOutput?.(`Starting optional container ${container}`);
-    await runDocker(["update", "--restart=unless-stopped", container], onOutput);
-    await runDocker(["start", container], onOutput);
-  }
+  await forEachSequential(
+    optionalDevServiceBackingContainers(def),
+    async (container) => {
+      if (!dockerContainerExists(container)) {
+        return;
+      }
+      onOutput?.(`Starting optional container ${container}`);
+      await runDocker(["update", "--restart=unless-stopped", container], onOutput);
+      await runDocker(["start", container], onOutput);
+    },
+  );
 }
 
 async function stopOptionalContainers(
   def: OptionalDevServiceDef,
   onOutput?: InstallOutputHandler,
 ): Promise<void> {
-  for (const container of optionalDevServiceBackingContainers(def)) {
-    if (!dockerContainerExists(container)) {
-      continue;
-    }
-    onOutput?.(`Stopping optional container ${container}`);
-    await runDocker(["update", "--restart=no", container], onOutput);
-    await runDocker(["stop", container], onOutput);
-  }
+  await forEachSequential(
+    optionalDevServiceBackingContainers(def),
+    async (container) => {
+      if (!dockerContainerExists(container)) {
+        return;
+      }
+      onOutput?.(`Stopping optional container ${container}`);
+      await runDocker(["update", "--restart=no", container], onOutput);
+      await runDocker(["stop", container], onOutput);
+    },
+  );
 }
 
 function hasInstalledOptionalContainers(def: OptionalDevServiceDef): boolean {
@@ -393,11 +400,11 @@ export async function applyOptionalDevServices(
   const normalized = normalizeOptionalSelection(selection);
   writeOptionalDevServices(normalized);
 
-  for (const def of OPTIONAL_DEV_SERVICE_DEFS) {
+  await forEachSequential(OPTIONAL_DEV_SERVICE_DEFS, async (def) => {
     const want = normalized[def.id];
     if (isSystemdUnitInstalled(def.unit)) {
       await applyInstalledOptionalUnit(def, want, onOutput);
-      continue;
+      return;
     }
 
     if (optionalDevServiceBackingContainers(def).length === 0) {
@@ -406,11 +413,11 @@ export async function applyOptionalDevServices(
           `${def.label} is not installed yet — run Converge to provision it`,
         );
       }
-      continue;
+      return;
     }
 
     await applyContainerOnlyOptional(def, want, onOutput);
-  }
+  });
 }
 
 /** Test helper — keep the id guard reachable for shape assertions. */

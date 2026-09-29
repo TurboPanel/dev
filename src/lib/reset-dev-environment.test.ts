@@ -230,3 +230,53 @@ test("default resetRepo fails the step when git exits non-zero", async () => {
   ).toBe(true);
   expect(mockedInstall).not.toHaveBeenCalled();
 });
+
+test("reset resets the repos one at a time, in order", async () => {
+  const log: string[] = [];
+  const deps: ResetDevEnvironmentDeps = {
+    runShellStep: async () => {},
+    resetRepo: async (repo) => {
+      log.push(`start ${repo}`);
+      await new Promise((resolve) => setTimeout(resolve, repo === "turbopaneld" ? 15 : 1));
+      log.push(`end ${repo}`);
+    },
+    installDevEnvironment: async () => {
+      log.push("install");
+    },
+  };
+
+  await resetDevEnvironment(() => {}, () => {}, deps);
+
+  expect(log).toEqual([
+    "start turbopaneld",
+    "end turbopaneld",
+    "start turbopanel",
+    "end turbopanel",
+    "start ui",
+    "end ui",
+    "start website",
+    "end website",
+    "install",
+  ]);
+});
+
+test("reset stops at the first failed repo and never rebuilds", async () => {
+  const resetRepos: string[] = [];
+  const deps: ResetDevEnvironmentDeps = {
+    runShellStep: async () => {},
+    resetRepo: async (repo) => {
+      resetRepos.push(repo);
+      if (repo === "turbopanel") {
+        throw new Error("reset failed");
+      }
+    },
+    installDevEnvironment: vi.fn(async () => {}),
+  };
+
+  await expect(resetDevEnvironment(() => {}, () => {}, deps)).rejects.toThrow(
+    "reset failed",
+  );
+
+  expect(resetRepos).toEqual(["turbopaneld", "turbopanel"]);
+  expect(deps.installDevEnvironment).not.toHaveBeenCalled();
+});

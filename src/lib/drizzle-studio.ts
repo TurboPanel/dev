@@ -44,15 +44,22 @@ export async function ensureDrizzleStudioReady(
   await startUnit();
 
   const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
+
+  const pollUntilListening = async (): Promise<
+    { ok: true; url: string } | { ok: false; error: string }
+  > => {
+    if (Date.now() >= deadline) {
+      return {
+        ok: false,
+        error: `Drizzle Studio did not become ready on port ${DRIZZLE_STUDIO_PORT}`,
+      };
+    }
     if (isDrizzleStudioListening()) {
       return { ok: true, url: drizzleStudioBrowserUrl() };
     }
     await new Promise((resolve) => setTimeout(resolve, 200));
-  }
-
-  return {
-    ok: false,
-    error: `Drizzle Studio did not become ready on port ${DRIZZLE_STUDIO_PORT}`,
+    return pollUntilListening();
   };
+
+  return pollUntilListening();
 }

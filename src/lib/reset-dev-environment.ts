@@ -17,6 +17,7 @@ import {
   platformRepoPath,
   TURBOPANEL_TRUNK_BRANCH,
 } from "./paths.ts";
+import { forEachSequential } from "./sequential.ts";
 import { shellQuote } from "./shell-quote.ts";
 
 const PLATFORM_REPOS = ["turbopaneld", "turbopanel", "ui", "website"] as const;
@@ -111,9 +112,9 @@ export async function resetDevEnvironment(
     onStep,
   );
 
-  for (const repo of PLATFORM_REPOS) {
-    await deps.resetRepo(repo, onOutput, onStep);
-  }
+  await forEachSequential(PLATFORM_REPOS, (repo) =>
+    deps.resetRepo(repo, onOutput, onStep)
+  );
 
   // Always force-rebuild after teardown — `"if-needed"` would honor a stale
   // converge stamp and exit without recreating the stack.

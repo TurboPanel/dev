@@ -146,7 +146,7 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-export async function waitForDaemonRunning(
+export function waitForDaemonRunning(
   options: {
     timeoutMs?: number;
     pollMs?: number;
@@ -157,15 +157,19 @@ export async function waitForDaemonRunning(
   const pollMs = options.pollMs ?? DEFAULT_WAIT_POLL_MS;
   const started = Date.now();
 
-  while (Date.now() - started < timeoutMs) {
+  const pollUntilActive = async (): Promise<boolean> => {
+    if (Date.now() - started >= timeoutMs) {
+      return isDaemonServiceActive();
+    }
     if (isDaemonServiceActive()) {
       return true;
     }
     options.onPoll?.(Date.now() - started);
     await sleep(pollMs);
-  }
+    return pollUntilActive();
+  };
 
-  return isDaemonServiceActive();
+  return pollUntilActive();
 }
 
 /** First activation after opt-in — enable the unit and start it (not a restart). */

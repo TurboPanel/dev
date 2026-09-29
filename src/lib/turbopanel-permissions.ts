@@ -96,9 +96,20 @@ export async function ensureFhsTreeOwnership(
  * installed. The Ansible `docker` role does this on every converge; this is only
  * a pre-first-converge convenience so early docker calls can reach the socket.
  */
-export async function ensureDevUserDockerAccess(
+export function ensureDevUserDockerAccess(
   onOutput?: InstallOutputHandler,
 ): Promise<boolean> {
+  // The work is synchronous and starts immediately. A failure still surfaces
+  // as a rejected promise (as it did when this was an async function) rather
+  // than a synchronous throw.
+  try {
+    return Promise.resolve(addDevUserToDockerGroup(onOutput));
+  } catch (error) {
+    return Promise.reject(error);
+  }
+}
+
+function addDevUserToDockerGroup(onOutput?: InstallOutputHandler): boolean {
   const dev = tryResolveDevIdentity();
   if (!dev || !dockerIsPresent()) {
     return false;
