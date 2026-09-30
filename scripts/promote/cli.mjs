@@ -10,8 +10,10 @@
 //   node cli.mjs rewrite --manifest <path> --assets-dir <dir> --repo O/R --to rc \
 //       --source-version X --target-version Y --out <path>
 //   node cli.mjs changesets --to rc --listing <file with .changeset entries, one per line>
-//   node cli.mjs next-version --current X [--minor true] --versions <file: one X.Y.Z per line, every repo's trunk version>
-//   node cli.mjs bump-files --from X --to Y --files <file: one path per line>
+//   node cli.mjs base --tags <file with one tag or refs/tags/ ref per line>
+//   node cli.mjs canary-version --tags <file> --canary-assets <file with one asset name per line>
+//   node cli.mjs release-rc --tags <file>
+//   node cli.mjs start --bump minor|major --tags <file>
 //   node cli.mjs notes --to rc --repo-kind daemon --source-version X --target-version Y --commit SHA
 import { createHash } from "node:crypto";
 import {
@@ -29,15 +31,17 @@ import {
   assertTarget,
   BRANCH_FOR_TARGET,
   findCanaryManifestAsset,
-  bumpVersionText,
   hasAssets,
-  minorOf,
-  nextVersion,
+  latestRelease,
+  nextBase,
+  nextCanaryNumber,
+  newestUnreleasedRc,
   outputLines,
   parseSource,
   pendingChangesetCount,
   releaseNotes,
   rewriteManifest,
+  startTarget,
   targetVersion,
 } from "./lib.mjs";
 
@@ -111,7 +115,8 @@ function plan(args) {
 }
 
 function planNotesOnly(args) {
-  // Notes-only rc: the source is a commit, the number comes from its package.json.
+  // Notes-only rc: the source is a commit, the number is the repo's base
+  // (`base`, from its tags) at the time of the promotion.
   const to = assertTarget(required(args, "to"));
   const sourceVersion = required(args, "source-version");
   const target = targetVersion(to, sourceVersion, existingTags(args));
@@ -190,28 +195,37 @@ function notes(args) {
   );
 }
 
-function nextVersionCommand(args) {
-  const current = required(args, "current");
-  const floorMinor = Math.max(
-    0,
-    ...lines(required(args, "versions")).map(minorOf),
-  );
-  emit({
-    next: nextVersion(current, { minor: args.minor === "true", floorMinor }),
-  });
+/** The repo's newest release and the base trunk is building now. */
+function base(args) {
+  const tags = lines(required(args, "tags"));
+  emit({ release: latestRelease(tags) ?? "", base: nextBase(tags) });
 }
 
-function bumpFiles(args) {
-  const [from, to] = [required(args, "from"), required(args, "to")];
-  for (const path of lines(required(args, "files"))) {
-    writeFileSync(path, bumpVersionText(readFileSync(path, "utf8"), from, to));
-    console.log(`${path}: ${from} -> ${to}`);
-  }
+/** The next canary: the base plus its counter from the rolling canary release. */
+function canaryVersion(args) {
+  const tags = lines(required(args, "tags"));
+  const version = nextBase(tags);
+  const assets = args["canary-assets"] ? lines(args["canary-assets"]) : [];
+  const number = nextCanaryNumber(version, assets);
+  emit({ base: version, number, version: `${version}-canary.${number}` });
+}
+
+/** The rc a Release PR ships (empty when every rc has shipped). */
+function releaseRc(args) {
+  const rc = newestUnreleasedRc(lines(required(args, "tags")));
+  emit({ "rc-tag": rc?.tag ?? "", version: rc?.version ?? "" });
+}
+
+/** What "Start Next Version" would start in this repo. */
+function start(args) {
+  emit(startTarget(required(args, "bump"), lines(required(args, "tags"))));
 }
 
 const COMMANDS = {
-  "next-version": nextVersionCommand,
-  "bump-files": bumpFiles,
+  base,
+  "canary-version": canaryVersion,
+  "release-rc": releaseRc,
+  start,
   plan,
   "plan-notes-only": planNotesOnly,
   verify,

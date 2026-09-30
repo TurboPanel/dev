@@ -8,6 +8,7 @@ import { describe, expect, test } from "vitest";
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const CHECK = join(ROOT, "scripts", "promote", "promote-ok.sh");
 const RECHECK = join(ROOT, "scripts", "promote", "promote-recheck.sh");
+const VERSION = join(ROOT, "scripts", "promote", "version.sh");
 
 /**
  * A route: the first whose pattern matches the joined `gh` arguments answers.
@@ -15,7 +16,13 @@ const RECHECK = join(ROOT, "scripts", "promote", "promote-recheck.sh");
  * script's filters are exercised); `file` is what `gh release download
  * --output` writes; `exit` fails the call.
  */
-type Route = { match: RegExp; body?: unknown; file?: unknown; exit?: number };
+type Route = {
+  match: RegExp;
+  body?: unknown;
+  file?: unknown;
+  exit?: number;
+  stderr?: string;
+};
 
 // The fake gh (node, so it can apply --jq with the real jq and log each call).
 const FAKE_GH = `#!/usr/bin/env node
@@ -27,7 +34,7 @@ appendFileSync(process.env.FAKE_GH_LOG, line + "\\n");
 const routes = JSON.parse(readFileSync(process.env.FAKE_GH_ROUTES, "utf8"));
 const route = routes.find((r) => new RegExp(r.match).test(line));
 if (!route) { process.stderr.write("fake gh: no route for " + line + "\\n"); process.exit(1); }
-if (route.exit) { process.stderr.write("HTTP 404\\n"); process.exit(route.exit); }
+if (route.exit) { process.stderr.write((route.stderr ?? "HTTP 404") + "\\n"); process.exit(route.exit); }
 const out = args.indexOf("--output");
 if (out >= 0) { writeFileSync(args[out + 1], JSON.stringify(route.file)); process.exit(0); }
 const jq = args.indexOf("--jq");
@@ -43,6 +50,7 @@ function run(
   script: string,
   routes: Route[],
   env: Record<string, string>,
+  args: string[] = [],
 ): Result {
   const dir = mkdtempSync(join(tmpdir(), "promote-ok-"));
   writeFileSync(join(dir, "gh"), FAKE_GH);
@@ -58,7 +66,7 @@ function run(
   const log = join(dir, "calls.log");
   writeFileSync(log, "");
   const summary = join(dir, "summary.md");
-  const r = spawnSync("/bin/sh", [script], {
+  const r = spawnSync("/bin/sh", [script, ...args], {
     env: {
       PATH: `${dir}:${process.env.PATH ?? ""}`,
       FAKE_GH_ROUTES: routesFile,
@@ -77,17 +85,16 @@ function run(
 
 const HEAD = "a".repeat(40);
 const OTHER = "b".repeat(40);
-const base64 = (text: string) => Buffer.from(text).toString("base64");
-const versionFile = (version: string): Route => ({
-  match: /^api repos\/o\/r\/contents\/deno\.json\?ref=/,
-  body: { content: base64(JSON.stringify({ version })) },
+/** Every tag of o/r, as `gh api --paginate …/matching-refs/tags/` lists them. */
+const tags = (...names: string[]): Route => ({
+  match: /^api --paginate repos\/o\/r\/git\/matching-refs\/tags\/ /,
+  body: names.map((name) => ({ ref: `refs/tags/${name}` })),
 });
 
 const checkEnv = (base: string, kind = "instance") => ({
   REPO: "o/r",
   REPO_KIND: kind,
   CI_WORKFLOW: "build.yml",
-  VERSION_FILE: "deno.json",
   BASE: base,
   HEAD_SHA: HEAD,
 });
@@ -121,7 +128,6 @@ describe("promote-ok.sh — Release Candidate PR (base staging)", () => {
       CHECK,
       [
         ciRuns(run1({})),
-        versionFile("0.1.4"),
         canaryAssets(
           "manifest-0.1.4-canary.9.json",
           "manifest-0.1.4-canary.10.json",
@@ -134,11 +140,15 @@ describe("promote-ok.sh — Release Candidate PR (base staging)", () => {
     );
     expect(r.status).toBe(0);
     expect(r.out).toContain("PASS");
-    expect(r.out).toContain("manifest-0.1.4-canary.10.json");
-    // Newest first, stops at the first match; another version is never read.
+    expect(r.out).toContain(
+      "canary manifest-0.1.4-canary.10.json was built from aaaaaaa; merging publishes the next 0.1.4 rc from those bytes.",
+    );
+    // Newest first (highest version, then counter), stops at the first match;
+    // no version file is read.
     const downloads = r.calls.filter((c) => c.startsWith("release download"));
     expect(downloads).toHaveLength(1);
     expect(r.calls.join("\n")).not.toContain("0.1.3-canary.99");
+    expect(r.calls.join("\n")).not.toContain("contents/");
   });
 
   test("red, waiting, while no canary names the head commit yet", () => {
@@ -146,7 +156,6 @@ describe("promote-ok.sh — Release Candidate PR (base staging)", () => {
       CHECK,
       [
         ciRuns(run1({})),
-        versionFile("0.1.4"),
         canaryAssets("manifest-0.1.4-canary.9.json"),
         manifest("manifest-0.1.4-canary.9.json", OTHER),
       ],
@@ -154,7 +163,7 @@ describe("promote-ok.sh — Release Candidate PR (base staging)", () => {
     );
     expect(r.status).toBe(1);
     expect(r.out).toContain(
-      "waiting for the canary of aaaaaaa (no manifest-0.1.4-canary.N.json on the canary release names it yet); this re-checks automatically. If the canary run for it failed, re-run that run.",
+      "waiting for the canary of aaaaaaa (no manifest-X.Y.Z-canary.N.json on the canary release names it yet); this re-checks automatically. If the canary run for it failed, re-run that run.",
     );
     expect(r.out).toContain("::error title=promote-ok::");
   });
@@ -212,18 +221,13 @@ describe("promote-ok.sh — Release Candidate PR (base staging)", () => {
 
 describe("promote-ok.sh — Release PR (base live)", () => {
   const RC = "c".repeat(40);
-  const noBareTag: Route = {
-    match: /^api repos\/o\/r\/git\/ref\/tags\/v0\.1\.4 --silent/,
-    exit: 1,
-  };
-  const rcTags: Route = {
-    match: /matching-refs\/tags\/v0\.1\.4-rc\./,
-    body: [
-      { ref: "refs/tags/v0.1.4-rc.2" },
-      { ref: "refs/tags/v0.1.4-rc.10" },
-      { ref: "refs/tags/v0.1.4-rc.9" },
-    ],
-  };
+  const released = ["v0.1.3", "v0.1.3-rc.1"];
+  const rcTags = tags(
+    ...released,
+    "v0.1.4-rc.2",
+    "v0.1.4-rc.10",
+    "v0.1.4-rc.9",
+  );
   const published: Route = {
     match: /^api repos\/o\/r\/releases\/tags\/v0\.1\.4-rc\.10/,
     body: { draft: false },
@@ -240,13 +244,24 @@ describe("promote-ok.sh — Release PR (base live)", () => {
     body: { tree: { sha: "tree-1" } },
   };
 
-  test("green when the newest rc is published and staging is exactly it", () => {
+  test("green when the newest unreleased rc is published and staging is exactly it", () => {
+    const r = run(
+      CHECK,
+      [rcTags, published, compare(0, "tree-1"), headTree],
+      checkEnv("live"),
+    );
+    expect(r.status).toBe(0);
+    expect(r.out).toContain(
+      "v0.1.4-rc.10 is published and staging (aaaaaaa) is exactly its content; merging releases v0.1.4 from it.",
+    );
+    expect(r.calls.join("\n")).not.toContain("contents/");
+  });
+
+  test("a started minor does not strand the patch rc staging already holds", () => {
     const r = run(
       CHECK,
       [
-        versionFile("0.1.4"),
-        noBareTag,
-        rcTags,
+        tags(...released, "start/v0.2.0", "v0.1.4-rc.10"),
         published,
         compare(0, "tree-1"),
         headTree,
@@ -254,20 +269,13 @@ describe("promote-ok.sh — Release PR (base live)", () => {
       checkEnv("live"),
     );
     expect(r.status).toBe(0);
-    expect(r.out).toContain("v0.1.4-rc.10 is published");
+    expect(r.out).toContain("merging releases v0.1.4 from it.");
   });
 
   test("red when staging has changes the newest rc lacks", () => {
     const r = run(
       CHECK,
-      [
-        versionFile("0.1.4"),
-        noBareTag,
-        rcTags,
-        published,
-        compare(0, "tree-0"),
-        headTree,
-      ],
+      [rcTags, published, compare(0, "tree-0"), headTree],
       checkEnv("live"),
     );
     expect(r.status).toBe(1);
@@ -279,56 +287,36 @@ describe("promote-ok.sh — Release PR (base live)", () => {
   test("red when staging does not contain the newest rc", () => {
     const r = run(
       CHECK,
-      [
-        versionFile("0.1.4"),
-        noBareTag,
-        rcTags,
-        published,
-        compare(3, "tree-1"),
-        headTree,
-      ],
+      [rcTags, published, compare(3, "tree-1"), headTree],
       checkEnv("live"),
     );
     expect(r.status).toBe(1);
     expect(r.out).toContain("does not contain v0.1.4-rc.10");
   });
 
-  test("red while the rc has no published release, or no rc exists", () => {
+  test("red while the rc has no published release, or every rc has shipped", () => {
     const draft = run(
       CHECK,
-      [
-        versionFile("0.1.4"),
-        noBareTag,
-        rcTags,
-        { ...published, body: { draft: true } },
-      ],
+      [rcTags, { ...published, body: { draft: true } }],
       checkEnv("live"),
     );
     expect(draft.status).toBe(1);
     expect(draft.out).toContain("waiting for the v0.1.4-rc.10 GitHub release");
-    const none = run(
+    const shipped = run(
       CHECK,
-      [versionFile("0.1.4"), noBareTag, { ...rcTags, body: [] }],
+      [tags(...released, "v0.1.4-rc.10", "v0.1.4")],
       checkEnv("live"),
     );
-    expect(none.status).toBe(1);
-    expect(none.out).toContain("no v0.1.4-rc.N exists yet");
-  });
-
-  test("red when the version is already released", () => {
-    const r = run(
-      CHECK,
-      [versionFile("0.1.4"), { ...noBareTag, exit: 0, body: {} }],
-      checkEnv("live"),
+    expect(shipped.status).toBe(1);
+    expect(shipped.out).toContain(
+      "no rc newer than the latest release exists yet; merge the Release Candidate PR first.",
     );
-    expect(r.status).toBe(1);
-    expect(r.out).toContain("v0.1.4 is already released");
   });
 
-  test("red on an unreadable version file", () => {
-    const r = run(CHECK, [versionFile("oops")], checkEnv("live"));
+  test("red when the tags cannot be listed", () => {
+    const r = run(CHECK, [{ ...tags(), exit: 1 }], checkEnv("live"));
     expect(r.status).toBe(1);
-    expect(r.out).toContain("could not read a version from deno.json");
+    expect(r.out).toContain("could not work out the newest rc from o/r's tags");
   });
 });
 
@@ -462,5 +450,131 @@ describe("promote-recheck.sh", () => {
     const unset = run(RECHECK, [], { REPO: "" });
     expect(unset.status).toBe(0);
     expect(unset.out).toContain("needs REPO and WORKFLOW");
+  });
+});
+
+describe("version.sh — numbers from tags, never a file", () => {
+  const env = { REPO: "o/r" };
+  const daemon = tags(
+    "canary",
+    "rc",
+    "v0.1.0",
+    "v0.1.1-rc.1",
+    "v0.1.4",
+    "v0.1.5",
+    "v0.1.5-rc.2",
+  );
+
+  test("base: the newest release's next patch", () => {
+    const r = run(VERSION, [daemon], env, ["base"]);
+    expect(r.status).toBe(0);
+    expect(r.out).toBe("release=0.1.5\nbase=0.1.6\n");
+    expect(r.calls.join("\n")).not.toContain("contents/");
+  });
+
+  test("base: a start/ marker lifts it to the started minor", () => {
+    const r = run(VERSION, [tags("v0.1.5", "start/v0.2.0")], env, ["base"]);
+    expect(r.out).toContain("base=0.2.0");
+  });
+
+  test("canary: continues the base's counter, and restarts at 1 for a new base", () => {
+    const assets = canaryAssets(
+      "manifest.json",
+      "manifest-0.1.5-canary.449.json",
+      "manifest-0.1.6-canary.450.json",
+    );
+    const inFlight = run(VERSION, [daemon, assets], env, ["canary"]);
+    expect(inFlight.status).toBe(0);
+    expect(inFlight.out).toBe(
+      "base=0.1.6\nnumber=451\nversion=0.1.6-canary.451\n",
+    );
+    const next = run(VERSION, [tags("v0.1.6"), assets], env, ["canary"]);
+    expect(next.out).toContain("version=0.1.7-canary.1");
+  });
+
+  test("canary: a repo with no canary release starts at 1; any other failure stops", () => {
+    const none = run(
+      VERSION,
+      [
+        daemon,
+        { match: /^release view canary/, exit: 1, stderr: "release not found" },
+      ],
+      env,
+      ["canary"],
+    );
+    expect(none.status).toBe(0);
+    expect(none.out).toContain("version=0.1.6-canary.1");
+    const broken = run(
+      VERSION,
+      [daemon, { match: /^release view canary/, exit: 1, stderr: "HTTP 502" }],
+      env,
+      ["canary"],
+    );
+    expect(broken.status).toBe(1);
+    expect(broken.out).toContain("could not read o/r's canary release");
+    expect(broken.out).not.toContain("version=");
+  });
+
+  test("canary-of: the manifest copy built from the commit, newest first", () => {
+    const r = run(
+      VERSION,
+      [
+        canaryAssets(
+          "manifest-0.1.6-canary.2.json",
+          "manifest-0.1.6-canary.10.json",
+          "manifest-0.1.5-canary.449.json",
+        ),
+        manifest("manifest-0.1.6-canary.10.json", OTHER),
+        manifest("manifest-0.1.6-canary.2.json", HEAD),
+      ],
+      env,
+      ["canary-of", HEAD],
+    );
+    expect(r.status).toBe(0);
+    expect(r.out).toBe(
+      "asset=manifest-0.1.6-canary.2.json\nversion=0.1.6-canary.2\nbase=0.1.6\n",
+    );
+    expect(r.calls.join("\n")).not.toContain("0.1.5-canary.449");
+  });
+
+  test("canary-of: empty answers when no canary names the commit; a commit is required", () => {
+    const r = run(
+      VERSION,
+      [
+        canaryAssets("manifest-0.1.6-canary.1.json"),
+        manifest("manifest-0.1.6-canary.1.json", OTHER),
+      ],
+      env,
+      ["canary-of", HEAD],
+    );
+    expect(r.status).toBe(0);
+    expect(r.out).toBe("asset=\nversion=\nbase=\n");
+    const bare = run(VERSION, [], env, ["canary-of"]);
+    expect(bare.status).toBe(1);
+    expect(bare.out).toContain("canary-of needs a commit");
+  });
+
+  test("release-rc: the newest unreleased rc, appended to GITHUB_OUTPUT too", () => {
+    const dir = mkdtempSync(join(tmpdir(), "version-out-"));
+    const output = join(dir, "out");
+    writeFileSync(output, "");
+    const r = run(
+      VERSION,
+      [tags("v0.1.5", "v0.1.6-rc.1", "v0.1.6-rc.2")],
+      { ...env, GITHUB_OUTPUT: output },
+      ["release-rc"],
+    );
+    expect(r.status).toBe(0);
+    expect(readFileSync(output, "utf8")).toBe(
+      "rc-tag=v0.1.6-rc.2\nversion=0.1.6\n",
+    );
+  });
+
+  test("refuses an unknown mode, a missing REPO, and an unlistable tag set", () => {
+    expect(run(VERSION, [], env, ["next"]).out).toContain("usage: version.sh");
+    expect(run(VERSION, [], {}, ["base"]).out).toContain("REPO is not set");
+    const r = run(VERSION, [{ ...daemon, exit: 1 }], env, ["base"]);
+    expect(r.status).toBe(1);
+    expect(r.out).toContain("could not list o/r's tags");
   });
 });

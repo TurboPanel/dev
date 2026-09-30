@@ -105,8 +105,6 @@ describe(".github/workflows", () => {
     );
     expect(names).toEqual({
       "gh-canary.yml": "GitHub Canary",
-      "gh-minor-gate.yml": "Minor Release Gate",
-      "gh-next-version.yml": "Start the Next Version",
       "gh-promote-ok-recheck.yml": "Promote OK Recheck",
       "gh-promote-ok.yml": "Promote OK",
       "gh-promote-finalize.yml": "Promote (Finalize)",
@@ -123,11 +121,15 @@ describe(".github/workflows", () => {
     expect(text).not.toMatch(/^ {4}if: always\(\)$/m);
   });
 
-  test("the minor gate keeps its required check name", () => {
-    expect(read("gh-minor-gate.yml")).toMatch(
-      /^ {2}minor-gate:\n {4}name: minor-gate$/m,
-    );
-  });
+  test.each(files)(
+    "%s opens no Start PR and has no minor gate (versions come from tags)",
+    (file) => {
+      const text = read(file);
+      expect(text).not.toMatch(/gh-next-version|gh-minor-gate|minor-gate/);
+      expect(text).not.toMatch(/start-minor|--label minor/);
+      expect(text).not.toMatch(/--title "Start /);
+    },
+  );
 
   test("promote-ok only reads, and its recheck only re-runs runs", () => {
     expect(topLevelPermissions(read("gh-promote-ok.yml"))).toEqual([

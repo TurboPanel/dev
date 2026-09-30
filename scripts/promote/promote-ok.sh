@@ -7,10 +7,11 @@
 #       CI run succeeded AND (repos with binaries) a canary manifest naming
 #       exactly that commit is on the rolling `canary` release.
 #   base live     (the "Release" PR, head = staging)
-#       merging runs publish-release.yml, which releases the newest
-#       v<version>-rc.N. Green only when that rc has a published GitHub
-#       release and staging's head holds exactly its content (the rc commit
-#       is in staging and the trees are identical).
+#       merging runs publish-release.yml, which releases the newest rc that
+#       has not shipped (`version.sh release-rc`: versions come from tags, not a
+#       file). Green only when that rc has a published GitHub release and
+#       staging's head holds exactly its content (the rc commit is in staging
+#       and the trees are identical).
 #
 # Read-only and fast: it looks at runs, releases, tags and commits; it never
 # re-runs tests. Red means "not yet" (or "cannot ever", said plainly); the
@@ -20,11 +21,13 @@
 #   REPO           owner/name
 #   REPO_KIND      daemon | instance | ui | notes-only (notes-only: no canary)
 #   CI_WORKFLOW    the trunk CI workflow file (publish-daemon-trunk.yml, build.yml, verify.yml)
-#   VERSION_FILE   file whose top-level "version" is the repo's version
 #   BASE, HEAD_SHA the PR's base branch and head commit, or
 #   PR_NUMBER      a PR to read them from (the manual dry run)
 #   GITHUB_STEP_SUMMARY  optional; the verdict is appended to it
 set -eu
+
+# Versions come from tags and the canary release, never a file (version.sh).
+VERSION_SH="$(dirname "$0")/version.sh"
 
 say_summary() {
   _line="$1"
@@ -71,16 +74,6 @@ resolve_pr() {
   return 0
 }
 
-version_at() {
-  _ref="$1"
-  _v="$(gh api "repos/$REPO/contents/$VERSION_FILE?ref=$_ref" --jq .content | base64 -d | jq -r .version)"
-  case "$_v" in
-    [0-9]*.[0-9]*.[0-9]*) printf '%s\n' "$_v" ;;
-    *) fail "could not read a version from $VERSION_FILE at $SHORT (got '$_v')" ;;
-  esac
-  return 0
-}
-
 # The trunk CI run of HEAD_SHA: success | failure | cancelled | … | pending | missing.
 # Only a run that tested the trunk commit itself counts (a push, or a manual
 # re-run for a push GitHub failed to deliver) — a pull_request run tested a merge.
@@ -92,24 +85,11 @@ trunk_ci_state() {
   return 0
 }
 
-# The canary manifest built from HEAD_SHA, or nothing. Newest first, stops at
-# the first match (the head is almost always the newest canary).
-canary_manifest() {
-  _version="$1"
-  _dir="$(mktemp -d)"
-  _found=""
-  _names="$(gh release view canary --repo "$REPO" --json assets --jq '.assets[].name' 2>/dev/null \
-    | grep -E "^manifest-$(printf '%s' "$_version" | sed 's/\./\\./g')-canary\.[[:digit:]]+\.json$" \
-    | sort -V -r || true)"
-  for _name in $_names; do
-    gh release download canary --repo "$REPO" --pattern "$_name" --output "$_dir/m.json" --clobber
-    if [ "$(jq -r '.commit // empty' "$_dir/m.json")" = "$HEAD_SHA" ]; then
-      _found="$_name"
-      break
-    fi
-  done
-  rm -rf "$_dir"
-  printf '%s\n' "$_found"
+# One key of a version.sh answer (key=value lines).
+version_key() {
+  _key="$1"
+  _answer="$2"
+  printf '%s\n' "$_answer" | sed -n "s/^$_key=//p"
   return 0
 }
 
@@ -129,29 +109,20 @@ check_rc_pr() {
   if [ "$REPO_KIND" = "notes-only" ]; then
     pass "trunk $CI_WORKFLOW passed on $SHORT; merging tags it as the next rc (notes-only repo, no canary)."
   fi
-  _version="$(version_at "$HEAD_SHA")"
-  _manifest="$(canary_manifest "$_version")"
+  _answer="$(GITHUB_OUTPUT="" sh "$VERSION_SH" canary-of "$HEAD_SHA")" || fail "could not read $REPO's canary release"
+  _manifest="$(version_key asset "$_answer")"
+  _version="$(version_key base "$_answer")"
   if [ -z "$_manifest" ]; then
-    fail "waiting for the canary of $SHORT (no manifest-$_version-canary.N.json on the canary release names it yet); this re-checks automatically. If the canary run for it failed, re-run that run."
+    fail "waiting for the canary of $SHORT (no manifest-X.Y.Z-canary.N.json on the canary release names it yet); this re-checks automatically. If the canary run for it failed, re-run that run."
   fi
   pass "canary $_manifest was built from $SHORT; merging publishes the next $_version rc from those bytes."
 }
 
-# The newest v<version>-rc.N tag, or nothing.
-newest_rc_tag() {
-  _version="$1"
-  gh api --paginate "repos/$REPO/git/matching-refs/tags/v$_version-rc." --jq '.[].ref' \
-    | sed 's#^refs/tags/##' | sort -V | tail -n 1
-  return 0
-}
-
 check_release_pr() {
-  _version="$(version_at "$HEAD_SHA")"
-  if gh api "repos/$REPO/git/ref/tags/v$_version" --silent 2>/dev/null; then
-    fail "v$_version is already released, so merging would publish nothing. Trunk needs the next version first."
-  fi
-  _rc="$(newest_rc_tag "$_version")"
-  [ -n "$_rc" ] || fail "no v$_version-rc.N exists yet; merge the Release Candidate PR first. This re-checks automatically."
+  _answer="$(GITHUB_OUTPUT="" sh "$VERSION_SH" release-rc)" || fail "could not work out the newest rc from $REPO's tags"
+  _rc="$(version_key rc-tag "$_answer")"
+  _version="$(version_key version "$_answer")"
+  [ -n "$_rc" ] || fail "no rc newer than the latest release exists yet; merge the Release Candidate PR first. This re-checks automatically."
   _draft="$(gh api "repos/$REPO/releases/tags/$_rc" --jq .draft 2>/dev/null || echo missing)"
   [ "$_draft" = "false" ] || fail "waiting for the $_rc GitHub release to be published; this re-checks automatically."
   _cmp="$(gh api "repos/$REPO/compare/$_rc...$HEAD_SHA" --jq '"\(.behind_by) \(.base_commit.commit.tree.sha)"')"
@@ -171,7 +142,6 @@ main() {
   need REPO "${REPO:-}"
   need REPO_KIND "${REPO_KIND:-}"
   need CI_WORKFLOW "${CI_WORKFLOW:-}"
-  need VERSION_FILE "${VERSION_FILE:-}"
   resolve_pr
   SHORT="$(printf '%s' "$HEAD_SHA" | cut -c1-7)"
   case "$BASE" in

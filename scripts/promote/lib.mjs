@@ -3,12 +3,14 @@
 // ESM with no dependencies so the workflow can run it on a bare runner with
 // `node scripts/promote/cli.mjs`; src/lib/promote.test.ts covers it.
 //
-// The version model (release-flow decisions D8 and 2026-09-28): every canary
-// of a cycle carries the calculated next number plus a plain build counter
-// (`0.1.3-canary.412`, the workflow run number); promoting makes it exactly
-// rc candidate (`0.1.3-rc.1`; a bad candidate is fixed on trunk and the next
-// merge cuts `0.1.3-rc.2` — the number stays until it ships) and then the bare
-// release (`0.1.3`), cut from the newest rc.
+// The version model (release-flow decisions D8, 2026-09-28, and Phase 3
+// "versions from tags"): the number comes from the repo's git tags, never a
+// file (nextBase below). Every canary of a cycle is that base plus a counter
+// that restarts at 1 for each base (`0.1.4-canary.3`); promoting makes it the
+// next rc candidate (`0.1.4-rc.1`; a bad candidate is fixed on trunk and the
+// next merge cuts `0.1.4-rc.2` — the number stays until it ships) and then the
+// bare release (`0.1.4`), cut from the newest rc. Only the base is stamped
+// into the binaries; the channel and counter live in the signed manifest.
 // The bytes never change across the hops — only the asset names, the
 // manifest's version/channel/urls, and the manifest's signature.
 //
@@ -17,8 +19,9 @@
 // existing canary can be promoted.
 
 /**
- * Build id a canary asset name carries: the run counter (`412`), or the
- * pre-2026-09-28 spelling yyyymmdd-hhmmss-sha7.
+ * Build id a canary asset name carries: the counter (`3`; builds cut before
+ * Phase 3 carry the workflow run number, `412`), or the pre-2026-09-28
+ * spelling yyyymmdd-hhmmss-sha7.
  */
 export const CANARY_BUILD_ID_RE = /^(?:\d+|\d{8}-\d{6}-[0-9a-f]{7})$/;
 const CANARY_LABEL_RE = /-canary\.(\d+|\d{8}-\d{6}-[0-9a-f]{7})$/;
@@ -312,46 +315,151 @@ export function outputLines(plan) {
   return Object.entries(plan).map(([key, value]) => `${key}=${value}`);
 }
 
-/**
- * The number a repo starts working on after `current` shipped: the next patch,
- * the next minor (`minor`, set when a merged PR carried the `minor` label), or
- * — whichever of those lands below the highest minor any TurboPanel repo is
- * already on (`floorMinor`, same major) — that minor's `.0`. The future
- * catalog repo is left out of the floor by the caller.
- */
-export function nextVersion(current, { minor = false, floorMinor = 0 } = {}) {
-  const m = /^(\d+)\.(\d+)\.(\d+)$/.exec(current);
-  if (!m) throw new Error(`not a bare X.Y.Z version: ${current}`);
-  const [major, mid, patch] = [Number(m[1]), Number(m[2]), Number(m[3])];
-  const next = minor ? [major, mid + 1, 0] : [major, mid, patch + 1];
-  if (next[1] < floorMinor) return `${major}.${floorMinor}.0`;
-  return next.join(".");
-}
+// ---------------------------------------------------------------------------
+// Versions from tags (Road to 0.2.x, versioning Phase 3). No file and no
+// "Start x.y.z" PR decides a repo's next number: its git tags do.
+//
+//   release  the highest bare `vX.Y.Z` tag (R).
+//   base     the number trunk is building now: R's next patch, unless an
+//            unreleased `vB-rc.N` tag or a `start/vB` marker (pushed by the
+//            daemon repo's "Start Next Version" workflow) names a higher B —
+//            then the highest such B. Once B ships, R = B and the base moves
+//            on to B's next patch by itself.
+//   canary   `<base>-canary.<N>`: N is one past the highest build of that base
+//            on the rolling canary release (its `manifest-<version>.json`
+//            copies), so it restarts at 1 for every new base. Every canary
+//            build runs in a per-repo queue, so two builds never read the
+//            same highest N.
+// ---------------------------------------------------------------------------
 
-/** The minor of a bare X.Y.Z version (the floor input). */
-export function minorOf(version) {
-  const m = /^\d+\.(\d+)\.\d+$/.exec(version);
+const BARE_VERSION_PARTS_RE = /^(\d+)\.(\d+)\.(\d+)$/;
+const RELEASE_TAG_RE = /^v(\d+\.\d+\.\d+)$/;
+const RC_TAG_RE = /^v(\d+\.\d+\.\d+)-rc\.(\d+)$/;
+const START_TAG_RE = /^start\/v(\d+\.\d+\.\d+)$/;
+const CANARY_MANIFEST_RE = /^manifest-(\d+\.\d+\.\d+)-canary\.(\d+)\.json$/;
+
+/** The base a repo with no release at all starts from. */
+export const FIRST_VERSION = "0.1.0";
+
+/** What "Start Next Version" can start. */
+export const BUMPS = Object.freeze(["minor", "major"]);
+
+function versionParts(version) {
+  const m = BARE_VERSION_PARTS_RE.exec(version);
   if (!m) throw new Error(`not a bare X.Y.Z version: ${version}`);
-  return Number(m[1]);
+  return [Number(m[1]), Number(m[2]), Number(m[3])];
+}
+
+/** Numeric X.Y.Z order: negative when a < b, 0 when equal, positive when a > b. */
+export function compareVersions(a, b) {
+  const [x, y] = [versionParts(a), versionParts(b)];
+  const i = x.findIndex((part, index) => part !== y[index]);
+  return i < 0 ? 0 : x[i] - y[i];
+}
+
+function highestVersion(versions) {
+  let best = null;
+  for (const version of versions) {
+    if (best === null || compareVersions(version, best) > 0) best = version;
+  }
+  return best;
+}
+
+/** Tag names without refs/tags/, blank lines dropped. */
+function tagNames(tags) {
+  return tags
+    .map((raw) => raw.trim().replace(/^refs\/tags\//, ""))
+    .filter((name) => name !== "");
+}
+
+function matches(tags, re) {
+  return tagNames(tags)
+    .map((name) => re.exec(name))
+    .filter((m) => m !== null);
+}
+
+/** The newest release (highest bare vX.Y.Z tag) without the v, or null. */
+export function latestRelease(tags) {
+  return highestVersion(matches(tags, RELEASE_TAG_RE).map((m) => m[1]));
+}
+
+function isAbove(version, released) {
+  return released === null || compareVersions(version, released) > 0;
+}
+
+/** The next patch of a bare X.Y.Z. */
+export function nextPatch(version) {
+  const [major, minor, patch] = versionParts(version);
+  return `${major}.${minor}.${patch + 1}`;
 }
 
 /**
- * Rewrite the version a file declares: the top-level `"version": "<from>"` of
- * a package.json / deno.json / app.json, or Sonar's `sonar.projectVersion=`.
- * Throws when the file declares neither, so a moved file cannot silently keep
- * the old number.
+ * The version trunk is building now (see the block comment above): the
+ * newest release's next patch, or the highest unreleased rc / started
+ * version above that release when there is one.
  */
-export function bumpVersionText(text, from, to) {
-  const escaped = from.replaceAll(".", String.raw`\.`);
-  const json = new RegExp(
-    String.raw`^(\s*"version"\s*:\s*")${escaped}(")`,
-    "m",
-  );
-  const sonar = new RegExp(
-    String.raw`^(sonar\.projectVersion=)${escaped}$`,
-    "m",
-  );
-  if (json.test(text)) return text.replace(json, `$1${to}$2`);
-  if (sonar.test(text)) return text.replace(sonar, `$1${to}`);
-  throw new Error(`no version ${from} declared to bump`);
+export function nextBase(tags) {
+  const released = latestRelease(tags);
+  const floor = released === null ? FIRST_VERSION : nextPatch(released);
+  const inFlight = [...matches(tags, RC_TAG_RE), ...matches(tags, START_TAG_RE)]
+    .map((m) => m[1])
+    .filter((version) => isAbove(version, released));
+  return highestVersion([floor, ...inFlight]);
+}
+
+/**
+ * The canary number for a base: one past the highest `manifest-<base>-canary.<N>.json`
+ * on the rolling canary release (`assetNames`), or 1 when that base has none.
+ */
+export function nextCanaryNumber(base, assetNames = []) {
+  versionParts(base);
+  let highest = 0;
+  for (const name of assetNames) {
+    const m = CANARY_MANIFEST_RE.exec(name.trim());
+    if (m && m[1] === base) highest = Math.max(highest, Number(m[2]));
+  }
+  return highest + 1;
+}
+
+/**
+ * The rc a Release PR ships: the newest `vB-rc.N` whose B is above the newest
+ * release (highest B, then highest N), or null when every rc has shipped.
+ */
+export function newestUnreleasedRc(tags) {
+  const released = latestRelease(tags);
+  let best = null;
+  for (const m of matches(tags, RC_TAG_RE)) {
+    const candidate = { tag: m[0], version: m[1], number: Number(m[2]) };
+    if (!isAbove(candidate.version, released)) continue;
+    const order =
+      best === null ? 1 : compareVersions(candidate.version, best.version);
+    if (order > 0 || (order === 0 && candidate.number > best.number)) {
+      best = candidate;
+    }
+  }
+  return best;
+}
+
+/**
+ * What "Start Next Version" does for one repo: the next minor or major after
+ * that repo's newest release (`target`), and whether the repo's base is
+ * already there or past it (`started`: then nothing is pushed).
+ */
+export function startTarget(bump, tags) {
+  if (!BUMPS.includes(bump)) {
+    throw new Error(
+      `bump must be one of ${BUMPS.join("|")}, got ${JSON.stringify(bump)}`,
+    );
+  }
+  const released = latestRelease(tags);
+  const [major, minor] = versionParts(released ?? "0.0.0");
+  const target =
+    bump === "major" ? `${major + 1}.0.0` : `${major}.${minor + 1}.0`;
+  const base = nextBase(tags);
+  return {
+    released: released ?? "",
+    target,
+    base,
+    started: compareVersions(base, target) >= 0,
+  };
 }

@@ -16,10 +16,13 @@
 # deploy branch. Callers chain the three `uses:` jobs (a reusable workflow
 # cannot call another at a parameterised ref).
 #
-# Version model: a canary is `<base>-canary.<N>` (run counter; older builds carry a timestamped id), its rc
-# is `<base>-rc.<N>` (N = one past the highest existing rc tag for that base),
-# the release is `<base>` cut from the newest rc. A bad rc is fixed on trunk
-# and the next promotion cuts rc.N+1; the number stays until it ships.
+# Version model (versions from tags, no version file): a canary is
+# `<base>-canary.<N>` (N restarts at 1 for each base; older builds carry the
+# workflow run number or a timestamped id), its rc is `<base>-rc.<N>` (N = one
+# past the highest existing rc tag for that base), the release is `<base>` cut
+# from the newest rc. A bad rc is fixed on trunk and the next promotion cuts
+# rc.N+1; the number stays until it ships. A notes-only repo has no canary:
+# its rc takes the repo's base (`cli.mjs base`) at promotion time.
 #
 # Tags: `v<base>-rc.<N>` is created with GITHUB_TOKEN (the tag ruleset leaves
 # hyphenated tags to automation, and GITHUB_TOKEN-created refs fire no
@@ -190,8 +193,9 @@ jobs:
         id: plan
         run: |
           set -eu
-          # The next rc number is one past the highest v<base>-rc.N tag.
-          gh api --paginate "repos/$REPO/git/matching-refs/tags/v" --jq '.[].ref' > existing-tags.txt
+          # The next rc number is one past the highest v<base>-rc.N tag; every
+          # tag (start/ markers too) so a notes-only repo can work out its base.
+          gh api --paginate "repos/$REPO/git/matching-refs/tags/" --jq '.[].ref' > existing-tags.txt
           if [ "$REPO_KIND" != "notes-only" ]; then
             if [ "$TO" = "rc" ]; then
               gh release view canary --repo "$REPO" --json assets --jq '.assets[].name' > canary-assets.txt
@@ -200,10 +204,11 @@ jobs:
               node "$CLI" plan --to "$TO" --source "$SOURCE" --repo-kind "$REPO_KIND"
             fi
           elif [ "$TO" = "rc" ]; then
-            # Notes-only rc: the source is a commit-ish; the number is that
-            # commit's package.json version.
+            # Notes-only rc: the source is a commit-ish; the number is the
+            # repo's base, worked out from its tags (no version file).
             _commit="$(gh api "repos/$REPO/commits/$SOURCE" --jq .sha)"
-            _version="$(gh api "repos/$REPO/contents/package.json?ref=$_commit" --jq .content | base64 -d | python3 -c 'import json,sys; print(json.load(sys.stdin)["version"])')"
+            _version="$(GITHUB_OUTPUT="" node "$CLI" base --tags existing-tags.txt | sed -n 's/^base=//p')"
+            [ -n "$_version" ] || { echo "::error::could not work out $REPO's version from its tags"; exit 1; }
             echo "source-commit=$_commit" >> "$GITHUB_OUTPUT"
             node "$CLI" plan-notes-only --to "$TO" --source-version "$_version" --existing-tags existing-tags.txt
           else

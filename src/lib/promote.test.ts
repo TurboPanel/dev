@@ -3,21 +3,25 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
 import {
-  bumpVersionText,
-  minorOf,
   nextRcNumber,
-  nextVersion,
   artifactMismatches,
   assertRepoKind,
   assertTarget,
   BRANCH_FOR_TARGET,
+  compareVersions,
   findCanaryManifestAsset,
   hasAssets,
+  latestRelease,
+  newestUnreleasedRc,
+  nextBase,
+  nextCanaryNumber,
+  nextPatch,
   outputLines,
   parseSource,
   pendingChangesetCount,
   releaseNotes,
   rewriteManifest,
+  startTarget,
   targetVersion,
   walkArtifactEntries,
 } from "../../scripts/promote/lib.mjs";
@@ -602,190 +606,181 @@ describe("nextRcNumber", () => {
   });
 });
 
-describe("nextVersion", () => {
-  test("patch by default, minor when asked", () => {
-    expect(nextVersion("0.1.3")).toBe("0.1.4");
-    expect(nextVersion("0.1.3", { minor: true })).toBe("0.2.0");
+// The real tags of TurboPanel/turbopaneld on 2026-09-30, as the API lists them.
+const DAEMON_TAGS = [
+  "refs/tags/canary",
+  "refs/tags/rc",
+  "refs/tags/v0.1.0",
+  "refs/tags/v0.1.1-rc.1",
+  "refs/tags/v0.1.2",
+  "refs/tags/v0.1.2-rc.1",
+  "refs/tags/v0.1.3",
+  "refs/tags/v0.1.3-rc.1",
+  "refs/tags/v0.1.3-rc.2",
+  "refs/tags/v0.1.4",
+  "refs/tags/v0.1.4-rc.1",
+  "refs/tags/v0.1.5",
+  "refs/tags/v0.1.5-rc.1",
+  "refs/tags/v0.1.5-rc.2",
+];
+
+describe("versions from tags", () => {
+  test("compareVersions and nextPatch are numeric, never textual", () => {
+    expect(compareVersions("0.1.10", "0.1.9")).toBeGreaterThan(0);
+    expect(compareVersions("0.2.0", "0.10.0")).toBeLessThan(0);
+    expect(compareVersions("1.0.0", "1.0.0")).toBe(0);
+    expect(nextPatch("0.1.9")).toBe("0.1.10");
+    expect(() => compareVersions("0.1", "0.1.0")).toThrow(/bare X\.Y\.Z/);
   });
 
-  test("never lands below the highest minor any repo is on", () => {
-    expect(nextVersion("0.1.3", { floorMinor: 2 })).toBe("0.2.0");
-    expect(nextVersion("0.1.3", { floorMinor: 1 })).toBe("0.1.4");
-    expect(nextVersion("0.2.5", { floorMinor: 2 })).toBe("0.2.6");
-    expect(nextVersion("0.1.3", { minor: true, floorMinor: 3 })).toBe("0.3.0");
+  test("the newest release is the highest bare vX.Y.Z; rolling and rc tags are not releases", () => {
+    expect(latestRelease(DAEMON_TAGS)).toBe("0.1.5");
+    expect(latestRelease(["v0.1.9", "v0.1.10", "v0.1.10-rc.1"])).toBe("0.1.10");
+    expect(latestRelease(["canary", "v0.1.1-rc.1"])).toBeNull();
   });
 
-  test("refuses anything but a bare X.Y.Z", () => {
-    expect(() => nextVersion("0.1.3-rc.1")).toThrow(/bare X\.Y\.Z/);
-    expect(() => minorOf("v1")).toThrow(/bare X\.Y\.Z/);
-    expect(minorOf("0.12.4")).toBe(12);
+  test("the base is the newest release's next patch — the state the four repos are in now", () => {
+    expect(nextBase(DAEMON_TAGS)).toBe("0.1.6");
+    expect(nextBase(["v0.1.3", "v0.1.4", "v0.1.4-rc.3"])).toBe("0.1.5");
+    expect(nextBase(["v0.1.0", "v0.1.2", "v0.1.3-rc.1", "v0.1.3"])).toBe(
+      "0.1.4",
+    );
+    // An old rc below the newest release (v0.1.1-rc.1 never shipped) is ignored.
+    expect(nextBase(["v0.1.1-rc.1", "v0.1.0"])).toBe("0.1.1");
+    expect(nextBase(["v0.1.1-rc.1", "v0.1.2"])).toBe("0.1.3");
+  });
+
+  test("an unreleased rc or a start/ marker above the release lifts the base", () => {
+    expect(nextBase([...DAEMON_TAGS, "refs/tags/v0.1.6-rc.1"])).toBe("0.1.6");
+    expect(nextBase([...DAEMON_TAGS, "refs/tags/start/v0.2.0"])).toBe("0.2.0");
+    expect(
+      nextBase([...DAEMON_TAGS, "start/v0.2.0", "start/v1.0.0", "v0.1.6-rc.2"]),
+    ).toBe("1.0.0");
+    // Once the started version ships, the marker is history and patches resume.
+    expect(
+      nextBase([...DAEMON_TAGS, "start/v0.2.0", "v0.2.0-rc.1", "v0.2.0"]),
+    ).toBe("0.2.1");
+    // A marker at or below the release, or a malformed one, changes nothing.
+    expect(
+      nextBase([...DAEMON_TAGS, "start/v0.1.5", "start/v0.3", "start/0.9.0"]),
+    ).toBe("0.1.6");
+  });
+
+  test("a repo with no release yet starts at 0.1.0 (or a higher started version)", () => {
+    expect(nextBase([])).toBe("0.1.0");
+    expect(nextBase(["", "refs/tags/canary"])).toBe("0.1.0");
+    expect(nextBase(["start/v0.3.0"])).toBe("0.3.0");
+  });
+
+  test("the canary counter restarts at 1 for each base and continues from the highest build", () => {
+    const assets = [
+      "manifest.json",
+      "manifest-0.1.5-canary.449.json",
+      "manifest-0.1.6-canary.9.json",
+      "manifest-0.1.6-canary.10.json",
+      "manifest-0.1.2-canary.20260926-101530-abc1234.json",
+      "turbopaneld-0.1.6-canary.11-amd64.tar.zst",
+      "manifest-0.1.60-canary.99.json",
+    ];
+    expect(nextCanaryNumber("0.1.6", assets)).toBe(11);
+    expect(nextCanaryNumber("0.1.7", assets)).toBe(1);
+    expect(nextCanaryNumber("0.2.0")).toBe(1);
+    // The version in flight when Phase 3 lands continues from the run counter.
+    expect(nextCanaryNumber("0.1.5", assets)).toBe(450);
+    expect(() => nextCanaryNumber("0.1")).toThrow(/bare X\.Y\.Z/);
+  });
+
+  test("the Release PR ships the newest rc above the newest release, or nothing", () => {
+    expect(newestUnreleasedRc(DAEMON_TAGS)).toBeNull();
+    expect(
+      newestUnreleasedRc([...DAEMON_TAGS, "v0.1.6-rc.9", "v0.1.6-rc.10"]),
+    ).toEqual({ tag: "v0.1.6-rc.10", version: "0.1.6", number: 10 });
+    // A started minor does not strand the patch rc already on staging…
+    expect(
+      newestUnreleasedRc([...DAEMON_TAGS, "start/v0.2.0", "v0.1.6-rc.2"]),
+    ).toEqual({ tag: "v0.1.6-rc.2", version: "0.1.6", number: 2 });
+    // …and once the minor has its own rc, that is the newest.
+    expect(
+      newestUnreleasedRc([...DAEMON_TAGS, "v0.1.6-rc.2", "v0.2.0-rc.1"]),
+    ).toEqual({ tag: "v0.2.0-rc.1", version: "0.2.0", number: 1 });
+    expect(newestUnreleasedRc(["v0.1.1-rc.3"])).toEqual({
+      tag: "v0.1.1-rc.3",
+      version: "0.1.1",
+      number: 3,
+    });
+  });
+
+  test("Start Next Version targets the next minor or major after the repo's own release", () => {
+    expect(startTarget("minor", DAEMON_TAGS)).toEqual({
+      released: "0.1.5",
+      target: "0.2.0",
+      base: "0.1.6",
+      started: false,
+    });
+    expect(startTarget("major", DAEMON_TAGS)).toMatchObject({
+      target: "1.0.0",
+      started: false,
+    });
+    // Pressing it twice is harmless: the second run finds the minor started.
+    expect(
+      startTarget("minor", [...DAEMON_TAGS, "start/v0.2.0"]),
+    ).toMatchObject({
+      target: "0.2.0",
+      base: "0.2.0",
+      started: true,
+    });
+    expect(startTarget("major", ["v1.4.2"])).toMatchObject({ target: "2.0.0" });
+    expect(startTarget("minor", [])).toMatchObject({
+      released: "",
+      target: "0.1.0",
+    });
+    expect(() => startTarget("patch", DAEMON_TAGS)).toThrow(/minor\|major/);
   });
 });
 
-describe("bumpVersionText", () => {
-  test("rewrites the top-level json version and Sonar's project version only", () => {
-    const pkg =
-      '{\n  "name": "x",\n  "version": "0.1.3",\n  "dependencies": { "y": "0.1.3" }\n}\n';
-    expect(bumpVersionText(pkg, "0.1.3", "0.1.4")).toBe(
-      '{\n  "name": "x",\n  "version": "0.1.4",\n  "dependencies": { "y": "0.1.3" }\n}\n',
+describe("no Start PR, no minor gate", () => {
+  test("the Start-PR and minor-gate machinery is gone for good", () => {
+    for (const gone of [
+      ".github/workflows/gh-next-version.yml",
+      ".github/workflows/gh-minor-gate.yml",
+      ".github/workflows/start-minor.yml",
+      "scripts/promote/start-minor.sh",
+      "scripts/promote/rerun-release-pr-checks.sh",
+    ]) {
+      expect(() => readFileSync(join(REPO_ROOT, gone)), gone).toThrow();
+    }
+    const cli = readFileSync(
+      join(REPO_ROOT, "scripts/promote/cli.mjs"),
+      "utf8",
     );
-    expect(
-      bumpVersionText(
-        "sonar.projectKey=a\nsonar.projectVersion=0.1.3\n",
-        "0.1.3",
-        "0.2.0",
-      ),
-    ).toBe("sonar.projectKey=a\nsonar.projectVersion=0.2.0\n");
+    expect(cli).not.toMatch(/next-version|bump-files/);
   });
 
-  test("throws when the file does not declare the version", () => {
-    expect(() =>
-      bumpVersionText('{"version": "0.1.9"}', "0.1.3", "0.1.4"),
-    ).toThrow(/no version 0\.1\.3/);
-    expect(() =>
-      bumpVersionText('{"version": "0.1.30"}', "0.1.3", "0.1.4"),
-    ).toThrow(/no version/);
-  });
-
-  test("dots in the old version are literal, not wildcards", () => {
-    expect(() =>
-      bumpVersionText('{\n  "version": "0x1y3"\n}', "0.1.3", "0.1.4"),
-    ).toThrow(/no version 0\.1\.3/);
-    expect(() =>
-      bumpVersionText("sonar.projectVersion=0x1y3\n", "0.1.3", "0.1.4"),
-    ).toThrow(/no version/);
-  });
-
-  test("a dotted prefix or suffix does not match (0.1.3 vs 0.1.30 and 10.1.3)", () => {
-    expect(() =>
-      bumpVersionText("sonar.projectVersion=0.1.30\n", "0.1.3", "0.1.4"),
-    ).toThrow(/no version/);
-    expect(() =>
-      bumpVersionText('{\n  "version": "10.1.3"\n}', "0.1.3", "0.1.4"),
-    ).toThrow(/no version/);
-    expect(
-      bumpVersionText('{\n  "version": "0.1.30"\n}', "0.1.30", "0.1.31"),
-    ).toBe('{\n  "version": "0.1.31"\n}');
-  });
-
-  test("only the first declaration is rewritten, and whitespace around the key is tolerated", () => {
-    const app =
-      '{\n  "expo": {\n    "name": "x",\n    "version": "0.1.3"\n  },\n  "version"\n  :\n  "0.1.3"\n}\n';
-    expect(bumpVersionText(app, "0.1.3", "0.1.4")).toBe(
-      '{\n  "expo": {\n    "name": "x",\n    "version": "0.1.4"\n  },\n  "version"\n  :\n  "0.1.3"\n}\n',
+  test("the Version From Tags action runs version.sh from its own commit", () => {
+    const action = readFileSync(
+      join(REPO_ROOT, ".github/actions/version/action.yml"),
+      "utf8",
     );
-    expect(bumpVersionText('  "version"\t:\t"0.1.3",', "0.1.3", "0.1.4")).toBe(
-      '  "version"\t:\t"0.1.4",',
+    expect(action).toMatch(/^name: Version From Tags$/m);
+    expect(action).toMatch(/^ {2}using: composite$/m);
+    expect(action).toMatch(
+      /run: sh "\$GITHUB_ACTION_PATH\/\.\.\/\.\.\/\.\.\/scripts\/promote\/version\.sh" "\$MODE" "\$COMMIT"/,
     );
-  });
-
-  test("a key that merely ends in version, or a value without the closing quote, is left alone", () => {
-    expect(() =>
-      bumpVersionText('{\n  "appversion": "0.1.3"\n}', "0.1.3", "0.1.4"),
-    ).toThrow(/no version/);
-    expect(() =>
-      bumpVersionText('{\n  "version": "0.1.3-rc.1"\n}', "0.1.3", "0.1.4"),
-    ).toThrow(/no version/);
-  });
-
-  test("the Sonar line must end at the version: trailing text or a comment key is not matched", () => {
-    expect(() =>
-      bumpVersionText("sonar.projectVersion=0.1.3 # x\n", "0.1.3", "0.1.4"),
-    ).toThrow(/no version/);
-    expect(() =>
-      bumpVersionText("# sonar.projectVersion=0.1.3\n", "0.1.3", "0.1.4"),
-    ).toThrow(/no version/);
-    expect(() =>
-      bumpVersionText("sonar_projectVersion=0.1.3\n", "0.1.3", "0.1.4"),
-    ).toThrow(/no version/);
-    expect(
-      bumpVersionText(
-        "sonar.projectVersion=0.1.3\nsonar.other=0.1.3\n",
-        "0.1.3",
-        "0.1.4",
-      ),
-    ).toBe("sonar.projectVersion=0.1.4\nsonar.other=0.1.3\n");
-  });
-
-  test("the json form wins when a file carries both", () => {
-    expect(
-      bumpVersionText(
-        'sonar.projectVersion=0.1.3\n"version": "0.1.3"\n',
-        "0.1.3",
-        "0.1.4",
-      ),
-    ).toBe('sonar.projectVersion=0.1.3\n"version": "0.1.4"\n');
-  });
-});
-
-describe("gh-next-version.yml", () => {
-  test("opens a PR with the App token, never pushes to trunk, and reads the CLI's floor", () => {
-    const text = readFileSync(join(WORKFLOWS, "gh-next-version.yml"), "utf8");
-    expect(text).toMatch(/create-github-app-token/);
-    expect(text).toMatch(/gh pr create --repo "\$REPO" --base trunk/);
-    expect(text).not.toMatch(/git push[^\n]*(trunk|--force)/);
-    expect(text).toMatch(/cli\.mjs|\$CLI" next-version/);
-    expect(text).toMatch(/--label minor/);
-  });
-});
-
-describe("gh-minor-gate.yml", () => {
-  const text = readFileSync(join(WORKFLOWS, "gh-minor-gate.yml"), "utf8");
-
-  test("only gates a pull request into live, and only a minor (patch 0)", () => {
-    expect(text).toMatch(
-      /"\$EVENT" = "pull_request" \] && \[ "\$BASE" = "live"/,
-    );
-    expect(text).toMatch(/patch="\$\{version##\*\.\}"/);
-    expect(text).toMatch(/if: steps\.version\.outputs\.minor == 'true'/);
-  });
-
-  test("daemon role wants an rc of the minor in each sibling; dependent role wants the daemon release", () => {
-    expect(text).toMatch(/matching-refs\/tags\/v\$VERSION-rc\./);
-    expect(text).toMatch(/releases\/tags\/v\$VERSION/);
-    expect(text).toMatch(/\.prerelease/);
-  });
-
-  test("never gates website or dev, and never a patch on another repo's release", () => {
-    expect(text).toMatch(
-      /repositories: \|\n\s+turbopaneld\n\s+turbopanel\n\s+ui\n/,
-    );
-  });
-});
-
-describe("minor start + re-run scripts", () => {
-  const start = readFileSync(
-    join(REPO_ROOT, "scripts/promote/start-minor.sh"),
-    "utf8",
-  );
-  const rerun = readFileSync(
-    join(REPO_ROOT, "scripts/promote/rerun-release-pr-checks.sh"),
-    "utf8",
-  );
-
-  test("start-minor covers exactly the three repos that ship a minor together, only minors", () => {
-    expect(start).toMatch(/turbopaneld:deno\.json/);
-    expect(start).toMatch(/turbopanel:deno\.json:deno\.json,package\.json/);
-    expect(start).toMatch(/ui:package\.json:package\.json,app\.json/);
-    expect(start).not.toMatch(/website|"dev:/);
-    expect(start).toMatch(/\[0-9\]\*\.\[0-9\]\*\.0\)/);
-  });
-
-  test("gh-next-version hands a new minor to start-minor, skipping its own repo", () => {
-    const next = readFileSync(join(WORKFLOWS, "gh-next-version.yml"), "utf8");
-    expect(next).toMatch(/start-minor\.sh "\$next"/);
-    expect(next).toMatch(/"\$\{next%\.\*\}" != "\$\{RELEASED%\.\*\}"/);
-  });
-
-  test("the manual start-minor workflow is a dispatch that opens PRs only", () => {
-    const wf = readFileSync(join(WORKFLOWS, "start-minor.yml"), "utf8");
-    expect(wf).toMatch(/workflow_dispatch/);
-    expect(wf).not.toMatch(/git push[^\n]*trunk/);
-  });
-
-  test("re-running sibling checks never fails the caller", () => {
-    expect(rerun).toMatch(/gh run rerun/);
-    expect(rerun.trimEnd().endsWith("exit 0")).toBe(true);
+    for (const output of [
+      "release",
+      "base",
+      "number",
+      "version",
+      "asset",
+      "rc-tag",
+    ]) {
+      expect(action, output).toMatch(
+        new RegExp(
+          `^ {2}${output}:\\n {4}description: .*\\n {4}value: \\$\\{\\{ steps\\.version\\.outputs\\.${output} \\}\\}$`,
+          "m",
+        ),
+      );
+    }
   });
 });
 

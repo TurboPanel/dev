@@ -75,9 +75,20 @@ export function releaseNotes(options: {
   repoKind: string;
 }): string;
 export function outputLines(plan: Record<string, string | number>): string[];
-export function nextVersion(
-  current: string,
-  options?: { minor?: boolean; floorMinor?: number },
-): string;
-export function minorOf(version: string): number;
-export function bumpVersionText(text: string, from: string, to: string): string;
+export const FIRST_VERSION: string;
+export const BUMPS: readonly ("minor" | "major")[];
+export function compareVersions(a: string, b: string): number;
+export function latestRelease(tags: readonly string[]): string | null;
+export function nextPatch(version: string): string;
+export function nextBase(tags: readonly string[]): string;
+export function nextCanaryNumber(
+  base: string,
+  assetNames?: readonly string[],
+): number;
+export function newestUnreleasedRc(
+  tags: readonly string[],
+): { tag: string; version: string; number: number } | null;
+export function startTarget(
+  bump: string,
+  tags: readonly string[],
+): { released: string; target: string; base: string; started: boolean };
