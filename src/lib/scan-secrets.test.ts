@@ -25,7 +25,9 @@ describe("scan-secrets.sh is byte-identical in every repo", () => {
   for (const name of SIBLINGS) {
     const dir = siblingCheckout(name);
     it.skipIf(dir === null)(`${name} carries the same scanner`, () => {
-      expect(readFileSync(join(dir!, "scripts/scan-secrets.sh"), "utf8")).toBe(own);
+      expect(readFileSync(join(dir!, "scripts/scan-secrets.sh"), "utf8")).toBe(
+        own,
+      );
     });
   }
 });
@@ -68,7 +70,8 @@ function scan(dir: string, ...args: string[]): { code: number; err: string } {
 describe("scan-secrets.sh rules", () => {
   it("passes ordinary code and prose", () => {
     const dir = repo({
-      "src/a.ts": "const url = 'https://example.com';\n// TURBOPANEL_SECRET is required\n",
+      "src/a.ts":
+        "const url = 'https://example.com';\n// TURBOPANEL_SECRET is required\n",
     });
     expect(scan(dir, "--all").code).toBe(0);
   });
@@ -94,26 +97,124 @@ describe("scan-secrets.sh rules", () => {
   });
 
   it("refuses a committed secret-bearing file whatever it contains", () => {
-    for (const path of ["state/license.token", "server-key.json", "db/.pgpass", "x.rabbitmq_pass"]) {
+    for (const path of [
+      "state/license.token",
+      "server-key.json",
+      "db/.pgpass",
+      "x.rabbitmq_pass",
+    ]) {
       const dir = repo({ [path]: "harmless\n" });
       const { code, err } = scan(dir, "--all");
       expect(code, path).toBe(1);
-      expect(err).toContain(`secret-bearing path must not be committed: ${path}`);
+      expect(err).toContain(
+        `secret-bearing path must not be committed: ${path}`,
+      );
     }
   });
 
-  it("accepts an exactly allowlisted line, and only at that line", () => {
+  describe("allowlist is keyed by path and full line text", () => {
     const line = "see license.token in the state dir";
-    const allowed = repo({ "docs/a.md": `${line}\n` }, `docs/a.md:1:${line}\n`);
-    expect(scan(allowed, "--all").code).toBe(0);
+    const stale = "docs/a.md:gone license.token line";
 
-    const moved = repo({ "docs/a.md": `intro\n${line}\n` }, `docs/a.md:1:${line}\n`);
-    expect(scan(moved, "--all").code).toBe(1);
+    it("accepts an exactly allowlisted line", () => {
+      const dir = repo(
+        { "docs/a.md": `${line}\n` },
+        `# comment\n\ndocs/a.md:${line}\n`,
+      );
+      const { code, err } = scan(dir, "--all");
+      expect(code).toBe(0);
+      expect(err).toBe("");
+    });
+
+    it("still accepts the line after edits above it shift it down", () => {
+      const dir = repo(
+        { "docs/a.md": `intro\nmore\n${line}\n` },
+        `docs/a.md:${line}\n`,
+      );
+      expect(scan(dir, "--all").code).toBe(0);
+    });
+
+    it("rejects the line once its text changes", () => {
+      const dir = repo({ "docs/a.md": `${line}!\n` }, `docs/a.md:${line}\n`);
+      const { code, err } = scan(dir, "--all");
+      expect(code).toBe(1);
+      expect(err).toContain("suspected secret in docs/a.md:1");
+    });
+
+    it("rejects a whitespace-only change to the line", () => {
+      const dir = repo({ "docs/a.md": `  ${line}\n` }, `docs/a.md:${line}\n`);
+      expect(scan(dir, "--all").code).toBe(1);
+    });
+
+    it("rejects the same text in a different path", () => {
+      const dir = repo({ "docs/b.md": `${line}\n` }, `docs/a.md:${line}\n`);
+      const { code, err } = scan(dir, "--all");
+      expect(code).toBe(1);
+      expect(err).toContain("suspected secret in docs/b.md:1");
+    });
+
+    it("accepts the deprecated path:lineno:text form, ignoring the number", () => {
+      const dir = repo(
+        { "docs/a.md": `intro\n${line}\n` },
+        `docs/a.md:1:${line}\n`,
+      );
+      expect(scan(dir, "--all").code).toBe(0);
+    });
+
+    it("rejects a deprecated entry whose text or path differs", () => {
+      const changed = repo(
+        { "docs/a.md": `${line}!\n` },
+        `docs/a.md:1:${line}\n`,
+      );
+      expect(scan(changed, "--all").code).toBe(1);
+      const elsewhere = repo(
+        { "docs/b.md": `${line}\n` },
+        `docs/a.md:1:${line}\n`,
+      );
+      expect(scan(elsewhere, "--all").code).toBe(1);
+    });
+
+    it("accepts old and new forms side by side", () => {
+      const other = "cat ~/.pgpass";
+      const dir = repo(
+        { "docs/a.md": `x\n${line}\n`, "src/b.ts": `${other}\n` },
+        `docs/a.md:7:${line}\nsrc/b.ts:${other}\n`,
+      );
+      expect(scan(dir, "--all").code).toBe(0);
+    });
+
+    it("warns about a stale entry without failing the scan", () => {
+      const dir = repo(
+        { "docs/a.md": `${line}\n` },
+        `docs/a.md:${line}\n${stale}\n`,
+      );
+      const { code, err } = scan(dir, "--all");
+      expect(code).toBe(0);
+      expect(err).toContain("stale allowlist entry");
+      expect(err).toContain(stale);
+      expect(err).not.toContain(`: docs/a.md:${line}`);
+    });
+
+    it("does not report stale entries on the staged-files path", () => {
+      const dir = repo({ "src/clean.ts": "ok\n" }, `${stale}\n`);
+      const { code, err } = scan(dir);
+      expect(code).toBe(0);
+      expect(err).toBe("");
+    });
   });
 
   it("scans staged files without --all (the pre-commit path)", () => {
     const dir = repo({ "src/clean.ts": "ok\n" });
-    git(dir, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "init");
+    git(
+      dir,
+      "-c",
+      "user.email=t@t",
+      "-c",
+      "user.name=t",
+      "commit",
+      "-qm",
+      "init",
+    );
     writeFileSync(join(dir, "src/leak.ts"), "postgres://u:p@h/d\n");
     git(dir, "add", "src/leak.ts");
     const { code, err } = scan(dir);
