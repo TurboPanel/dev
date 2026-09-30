@@ -54,7 +54,7 @@ on:
   workflow_call:
     inputs:
       version:
-        description: The build's version string without a leading v (e.g. 0.1.3-canary.412)
+        description: The build's version string without a leading v (e.g. 0.1.6-canary.3; the Version From Tags action, mode canary, works it out)
         required: true
         type: string
       commit:
@@ -308,8 +308,10 @@ jobs:
 
           # Every per-build file carries its build's version, `<X.Y.Z>-canary.<id>`:
           # `<pkg>-<version>-<arch>.tar.zst`, `<pkg>-<version>.tar.gz`, the pinned
-          # `manifest-<version>.json`. The id is the run counter (`0.1.3-canary.412`)
-          # or, for builds cut before 2026-09-28, a timestamp
+          # `manifest-<version>.json`. The id is the per-version counter
+          # (`0.1.6-canary.3`; builds cut before versions came from tags carry
+          # the workflow run number, `0.1.3-canary.412`) or, for builds cut
+          # before 2026-09-28, a timestamp
           # (`<yyyymmdd>-<hhmmss>-<sha7>`). The id ends at a `-` or `.` or the end
           # of the name. The timestamp form is tried first and a counter may not be
           # followed by `-<hhmmss>-`, so a counter never takes a timestamp's date.

@@ -8,10 +8,11 @@
 #                 and, unless repo-kind is notes-only, a canary manifest that
 #                 names exactly that commit is on the rolling `canary` release.
 #   base live     "Release x.y.z" (head staging). Merging runs
-#                 publish-release.yml, which releases the newest
-#                 v<version>-rc.N. Green only when that rc's GitHub release is
-#                 published and staging's head is exactly its content (the rc
-#                 commit is in staging and the trees match).
+#                 publish-release.yml, which releases the newest rc that has
+#                 not shipped (read from the tags — no version file). Green
+#                 only when that rc's GitHub release is published and
+#                 staging's head is exactly its content (the rc commit is in
+#                 staging and the trees match).
 #
 # It never re-runs tests and takes seconds. Red means "not yet" and says what
 # it is waiting for; gh-promote-ok-recheck.yml re-runs it when the missing
@@ -29,7 +30,7 @@
 #   jobs:
 #     evaluate:
 #       uses: TurboPanel/dev/.github/workflows/gh-promote-ok.yml@<sha>
-#       with: { repo-kind: …, ci-workflow: …, version-file: …, dev-ref: <sha>,
+#       with: { repo-kind: …, ci-workflow: …, dev-ref: <sha>,
 #               base: ${{ github.event.pull_request.base.ref }},
 #               head-sha: ${{ github.event.pull_request.head.sha }} }
 #     promote-ok:
@@ -50,8 +51,8 @@
 #     actions: read
 #     pull-requests: read
 #
-# contents: the canary release and its manifests, tags, releases, commits and
-# the version file. actions: the trunk CI run of the head commit.
+# contents: the canary release and its manifests, tags, releases and commits.
+# actions: the trunk CI run of the head commit.
 # pull-requests: only the dry run, which reads base and head from a PR number.
 # It writes nothing. A caller job that grants less than this workflow declares
 # fails before any step runs ("The nested job … is requesting …, but is only
@@ -68,10 +69,6 @@ on:
         type: string
       ci-workflow:
         description: The trunk CI workflow file whose green run a canary follows (publish-daemon-trunk.yml, build.yml, verify.yml)
-        required: true
-        type: string
-      version-file:
-        description: File whose top-level "version" is the repo's version (deno.json, package.json)
         required: true
         type: string
       dev-ref:
@@ -122,7 +119,6 @@ jobs:
           REPO: ${{ github.repository }}
           REPO_KIND: ${{ inputs.repo-kind }}
           CI_WORKFLOW: ${{ inputs.ci-workflow }}
-          VERSION_FILE: ${{ inputs.version-file }}
           BASE: ${{ inputs.base }}
           HEAD_SHA: ${{ inputs.head-sha }}
           PR_NUMBER: ${{ inputs.pr-number }}

@@ -1,0 +1,67 @@
+# Version From Tags — a repo's version numbers, worked out from its git tags and
+# its rolling canary release (Road to 0.2.x, versioning Phase 3: no version
+# file and no "Start x.y.z" PR decides them). Runs scripts/promote/version.sh
+# from this same TurboPanel/dev commit, so pinning this action by sha pins the
+# rules too.
+#
+#   mode: base        outputs release, base
+#   mode: canary      outputs base, number, version (<base>-canary.<N>, the next canary)
+#   mode: canary-of   outputs asset, version, base for the canary built from `commit`
+#                     (all empty when none is on the canary release)
+#   mode: release-rc  outputs rc-tag, version (the newest rc not yet released)
+#
+# Read-only: it lists tags and reads the canary release; it never creates a
+# tag or a release. The token needs contents: read on `repository`.
+
+name: Version From Tags
+description: Work out a TurboPanel repo's base version, next canary, canary of a commit, or unreleased rc from its tags
+
+inputs:
+  mode:
+    description: base | canary | canary-of | release-rc
+    required: true
+  commit:
+    description: The commit for mode canary-of
+    required: false
+    default: ""
+  repository:
+    description: owner/name of the repo to read (default the calling repo)
+    required: false
+    default: ${{ github.repository }}
+  github-token:
+    description: Token that can read the repo's tags and releases
+    required: false
+    default: ${{ github.token }}
+
+outputs:
+  release:
+    description: The newest release X.Y.Z (mode base)
+    value: ${{ steps.version.outputs.release }}
+  base:
+    description: The version trunk builds now (base, canary), or the canary's base (canary-of)
+    value: ${{ steps.version.outputs.base }}
+  number:
+    description: The next canary's counter (mode canary)
+    value: ${{ steps.version.outputs.number }}
+  version:
+    description: The next canary (canary), the canary of the commit (canary-of), or the rc's X.Y.Z (release-rc)
+    value: ${{ steps.version.outputs.version }}
+  asset:
+    description: The canary's manifest copy on the canary release (mode canary-of)
+    value: ${{ steps.version.outputs.asset }}
+  rc-tag:
+    description: The newest rc tag not yet released (mode release-rc)
+    value: ${{ steps.version.outputs.rc-tag }}
+
+runs:
+  using: composite
+  steps:
+    - name: Work out the version
+      id: version
+      shell: sh
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        REPO: ${{ inputs.repository }}
+        MODE: ${{ inputs.mode }}
+        COMMIT: ${{ inputs.commit }}
+      run: sh "$GITHUB_ACTION_PATH/../../../scripts/promote/version.sh" "$MODE" "$COMMIT"
