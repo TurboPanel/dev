@@ -1,0 +1,36 @@
+# Dependency Advisory Gate: installs the pinned osv-scanner and runs
+# scripts/osv/scan.sh from this same TurboPanel/dev commit, so pinning this
+# action by sha pins the scanner version and the gate rule together.
+#
+# Fails only for an advisory rated HIGH or CRITICAL that already has a fixed
+# version (Road to 0.2.x r2-osv-gate-policy, 2026-09-30); every other finding
+# is a warning annotation. Override for a blocking advisory that is verified
+# not exploitable: an [[IgnoredVulns]] entry (id, reason, ignoreUntil) in the
+# calling repo's osv-scanner.toml. Needs jq and curl (present on GitHub-hosted
+# runners); nothing needs a token.
+
+name: Dependency Advisory Gate
+description: Scan a TurboPanel repo with osv-scanner and fail only on HIGH/CRITICAL advisories that have a fix
+
+inputs:
+  path:
+    description: Directory to scan recursively (default the workspace)
+    required: false
+    default: .
+
+runs:
+  using: composite
+  steps:
+    - name: Install osv-scanner
+      shell: sh
+      run: |
+        curl -sSfL --proto "=https" --proto-redir "=https" --retry 3 --retry-connrefused --retry-delay 2 -o /usr/local/bin/osv-scanner \
+          https://github.com/google/osv-scanner/releases/download/v2.6.0/osv-scanner_linux_amd64
+        echo "ca69b3d3cd08f889a49dc0a383122f71cc528b83803671df5fd874d97485b108  /usr/local/bin/osv-scanner" | sha256sum -c -
+        chmod +x /usr/local/bin/osv-scanner
+
+    - name: Scan and gate
+      shell: sh
+      env:
+        SCAN_PATH: ${{ inputs.path }}
+      run: sh "$GITHUB_ACTION_PATH/../../../scripts/osv/scan.sh" "$SCAN_PATH"
