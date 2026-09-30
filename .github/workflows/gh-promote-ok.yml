@@ -1,0 +1,129 @@
+# Reusable "promote-ok" evaluation — a check on the two automatic promotion
+# PRs, so each is mergeable only once the thing its merge publishes exists.
+#
+#   base staging  "Release Candidate x.y.z-rc.N" (head trunk). Merging runs
+#                 publish-rc.yml, which publishes an rc from the canary built
+#                 from the head commit. Green only when that commit's trunk CI
+#                 run (`ci-workflow`, push or manual run on trunk) succeeded
+#                 and, unless repo-kind is notes-only, a canary manifest that
+#                 names exactly that commit is on the rolling `canary` release.
+#   base live     "Release x.y.z" (head staging). Merging runs
+#                 publish-release.yml, which releases the newest
+#                 v<version>-rc.N. Green only when that rc's GitHub release is
+#                 published and staging's head is exactly its content (the rc
+#                 commit is in staging and the trees match).
+#
+# It never re-runs tests and takes seconds. Red means "not yet" and says what
+# it is waiting for; gh-promote-ok-recheck.yml re-runs it when the missing
+# piece appears. The logic is scripts/promote/promote-ok.sh (unit tests in
+# src/lib/promote-ok-script.test.ts).
+#
+# The required check is the caller's own fan-in job named `promote-ok` (a job
+# inside a reusable workflow reports as "<caller job> / <job>", never as a bare
+# name). A caller looks like:
+#
+#   on:
+#     pull_request:
+#       types: [opened, synchronize, reopened]
+#       branches: [staging, live]
+#   jobs:
+#     evaluate:
+#       uses: TurboPanel/dev/.github/workflows/gh-promote-ok.yml@<sha>
+#       with: { repo-kind: …, ci-workflow: …, version-file: …, dev-ref: <sha>,
+#               base: ${{ github.event.pull_request.base.ref }},
+#               head-sha: ${{ github.event.pull_request.head.sha }} }
+#     promote-ok:
+#       name: promote-ok
+#       needs: [evaluate]
+#       if: always()
+#       … exit 1 unless needs.evaluate.result == 'success'
+#
+# Never add workflow_dispatch to that caller: a dispatch run on trunk would
+# put a `promote-ok` check (even a skipped one, which counts as passing) on
+# the trunk head, which IS the Release Candidate PR's head. The manual dry run
+# lives in the recheck caller and passes `pr-number` instead.
+
+# Permissions — the caller's job must grant at least:
+#
+#   permissions:
+#     contents: read
+#     actions: read
+#     pull-requests: read
+#
+# contents: the canary release and its manifests, tags, releases, commits and
+# the version file. actions: the trunk CI run of the head commit.
+# pull-requests: only the dry run, which reads base and head from a PR number.
+# It writes nothing. A caller job that grants less than this workflow declares
+# fails before any step runs ("The nested job … is requesting …, but is only
+# allowed …").
+
+name: Promote OK
+
+on:
+  workflow_call:
+    inputs:
+      repo-kind:
+        description: daemon | instance | ui | notes-only (notes-only has no canary to wait for)
+        required: true
+        type: string
+      ci-workflow:
+        description: The trunk CI workflow file whose green run a canary follows (publish-daemon-trunk.yml, build.yml, verify.yml)
+        required: true
+        type: string
+      version-file:
+        description: File whose top-level "version" is the repo's version (deno.json, package.json)
+        required: true
+        type: string
+      dev-ref:
+        description: The TurboPanel/dev commit this workflow was called at (must equal the `uses:` pin — the script lives there)
+        required: true
+        type: string
+      base:
+        description: The PR's base branch (staging or live); empty with pr-number
+        required: false
+        type: string
+        default: ""
+      head-sha:
+        description: The PR's head commit the check reports on; empty with pr-number
+        required: false
+        type: string
+        default: ""
+      pr-number:
+        description: Dry run — read base and head from this PR instead
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+
+jobs:
+  evaluate:
+    name: evaluate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out the promotion scripts (TurboPanel/dev)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: TurboPanel/dev
+          ref: ${{ inputs.dev-ref }}
+          path: .promote
+          fetch-depth: 1
+          persist-credentials: false
+          sparse-checkout: scripts/promote
+          sparse-checkout-cone-mode: false
+
+      - name: Check that what this PR publishes exists
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          REPO_KIND: ${{ inputs.repo-kind }}
+          CI_WORKFLOW: ${{ inputs.ci-workflow }}
+          VERSION_FILE: ${{ inputs.version-file }}
+          BASE: ${{ inputs.base }}
+          HEAD_SHA: ${{ inputs.head-sha }}
+          PR_NUMBER: ${{ inputs.pr-number }}
+        run: sh .promote/scripts/promote/promote-ok.sh
