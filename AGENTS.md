@@ -276,6 +276,25 @@ or no fix yet — is a warning annotation on the run, not a red X (owner decisio
 format). Bumping the scanner is one edit here plus a re-pin in the siblings.
 Tests: `src/lib/osv-scan-script.test.ts`.
 
+### No new Sonar issues (`.github/actions/sonar-new-issues`)
+
+Owner rule (2026-09-30): a pull request may not add a single Sonar issue. The
+built-in **Sonar way** gate fails only on ratings, so one new code smell (a
+nested ternary, say) still passes it, and custom gates need a paid SonarCloud
+plan. So every repo's `verify` runs this composite action (dev as
+`./.github/actions/sonar-new-issues`, the siblings pinned by sha) right after
+its pull-request **SonarQube Scan** step, which carries `id: sonar` and
+already waited for the gate. The step's condition is
+`github.event_name == 'pull_request' && steps.sonar.outcome == 'success'`, so it
+runs exactly where the PR scan ran and skips wherever the scan is skipped (no
+token, and the automatic promotion PRs into staging/live).
+`scripts/sonar/new-issues.sh` asks SonarCloud's public API for the PR's
+unresolved issues, annotates each one on its file and line, and fails when
+there are any. It fails closed when SonarCloud has no analysis for the PR or
+keeps erroring. `SONAR_TOKEN`, when set in the job, goes to curl through a
+config on stdin, never argv. Never NOSONAR to get past it; fix the issue.
+Tests: `src/lib/sonar-new-issues-script.test.ts`.
+
 ## Ansible dev overlay
 
 The **Ansible dev overlay** lives in `<dev checkout>/orchestration/` and overrides the daemon's production roles with dev-user parameters (the daemon still executes Ansible). Set `TURBOPANEL_MODE=development` during dev converge.

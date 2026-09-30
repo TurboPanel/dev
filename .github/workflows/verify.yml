@@ -124,6 +124,7 @@ jobs:
           retention-days: 7
 
       - name: SonarQube Scan
+        id: sonar
         # Skipped only when SONAR_TOKEN is empty (fork or Dependabot PR).
         if: env.SONAR_TOKEN != ''
         uses: SonarSource/sonarqube-scan-action@ba9859eae8dd6bd29e412f25ddbbef3d032000f4 # v8.2.2
@@ -132,6 +133,13 @@ jobs:
         with:
           args: >
             -Dsonar.qualitygate.wait=true
+
+      # The Sonar way gate fails only on ratings, so one new code smell passes
+      # it; this fails the PR on any new issue (owner rule, 2026-09-30). Runs
+      # only where the PR scan ran.
+      - name: No new Sonar issues
+        if: github.event_name == 'pull_request' && steps.sonar.outcome == 'success'
+        uses: ./.github/actions/sonar-new-issues
 
   # ClickHouse/Tabix metrics infrastructure is retired (DuckDB + Parquet /
   # Analytics Engine replaced it). The guard lives in TurboPanel/turbopaneld

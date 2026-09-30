@@ -1,0 +1,41 @@
+# No New Sonar Issues: fails a pull request that adds any SonarCloud issue, by
+# running scripts/sonar/new-issues.sh from this same TurboPanel/dev commit.
+#
+# Why: the built-in "Sonar way" gate fails only on ratings, so a single new
+# code smell passes it, and custom gates need a paid plan (owner rule
+# 2026-09-30: a pull request may not add a Sonar issue). Run it right after
+# the pull-request SonarQube Scan step (which waits for the gate), gated on
+# that step having run: `if: github.event_name == 'pull_request' &&
+# steps.sonar.outcome == 'success'`. That skips it everywhere the scan is
+# skipped, the automatic promotion PRs into staging/live included.
+#
+# Reads SONAR_TOKEN from the job environment when set; public projects work
+# without it. Needs curl and jq (present on GitHub-hosted runners).
+
+name: No New Sonar Issues
+description: Fail a pull request that adds any SonarCloud issue
+
+inputs:
+  project-key:
+    description: SonarCloud project key (default sonar.projectKey from sonar-project.properties)
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Check for new Sonar issues
+      shell: sh
+      env:
+        INPUT_PROJECT_KEY: ${{ inputs.project-key }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+      run: |
+        key="$INPUT_PROJECT_KEY"
+        if [ -z "$key" ]; then
+          key="$(sed -n 's/^sonar\.projectKey=//p' sonar-project.properties 2>/dev/null | head -n 1)"
+        fi
+        if [ -z "$key" ]; then
+          echo "::error title=No new Sonar issues::no project key: pass project-key or set sonar.projectKey in sonar-project.properties" >&2
+          exit 2
+        fi
+        sh "$GITHUB_ACTION_PATH/../../../scripts/sonar/new-issues.sh" "$key" "$PR_NUMBER"
