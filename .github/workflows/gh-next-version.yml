@@ -15,7 +15,17 @@
 # merges itself: the owner merges (squash). Idempotent — if trunk is already
 # past the released version, or the PR is open, it does nothing.
 
-name: Start the next version
+# Permissions — the caller's job must grant at least:
+#
+#   permissions:
+#     contents: read
+#
+# Every write (the branch push, the PR) uses the Release App token, so the
+# GITHUB_TOKEN only checks out TurboPanel/dev. A caller job that grants less
+# than this workflow declares fails before any step runs ("The nested job …
+# is requesting …, but is only allowed …").
+
+name: Start the Next Version
 
 on:
   workflow_call:

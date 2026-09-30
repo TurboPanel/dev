@@ -20,7 +20,17 @@
 # (scripts/promote/rerun-release-pr-checks.sh), best effort — re-running the
 # failed check by hand also works.
 
-name: Minor release gate
+# Permissions — the caller's job must grant at least:
+#
+#   permissions:
+#     contents: read
+#
+# The GITHUB_TOKEN reads the Release PR's version file; the other repos are
+# read with the Release App token. A caller job that grants less than this
+# workflow declares fails before any step runs ("The nested job … is
+# requesting …, but is only allowed …").
+
+name: Minor Release Gate
 
 on:
   workflow_call:

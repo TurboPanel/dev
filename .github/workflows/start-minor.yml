@@ -3,7 +3,7 @@
 # the manual twin of what gh-next-version.yml does by itself when a `minor`
 # label makes a repo's next number a new minor. Nothing merges itself.
 
-name: Start a minor
+name: Start a Minor
 
 on:
   workflow_dispatch:
@@ -13,6 +13,8 @@ on:
         required: true
         type: string
 
+# The GITHUB_TOKEN only checks this repo out; the Start PRs in the other repos
+# are opened with the Release App token.
 permissions:
   contents: read
 
