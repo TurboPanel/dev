@@ -5,8 +5,7 @@
 # renders turbopaneld orchestration/roles/instance-launch/templates/Caddyfile.j2
 # instead — never ship this file to managed hosts. This file has no
 # per-hostname sites, so instance Let's Encrypt is refused while it is loaded.
-# :8880 here is a plaintext mirror of :8443. On a managed host that port is
-# the HTTP-01 solver and other paths redirect to :8443.
+# There is no plaintext listener; :8443 is the only control-plane port.
 #
 #   /api/*, /ws/*, /webhook/*  -> Deno socket or wrangler dev
 #   UI                          -> Expo (:8081) when UI_MODE=dev, else static export

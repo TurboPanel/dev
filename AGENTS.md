@@ -272,10 +272,7 @@ Co-located hosts load **`orchestration/Caddyfile`** (not the managed
 `instance-launch` template) when `turbopanel_dev_user` is set — wired by the
 daemon `instance-launch` role via `turbopanel_caddyfile`. That file wins over
 the rendered production Caddyfile, so a development host has no per-hostname
-sites and refuses a Let's Encrypt hostname. `:8880` here is a full plaintext
-mirror of `:8443`, gated by `TURBOPANEL_DEV_HTTP_CONTROL_PLANE=1` (the instance
-answers **403** when the flag is off). On a managed host the same port is the
-HTTP-01 solver, and every other path redirects to `:8443`. That file owns:
+sites and refuses a Let's Encrypt hostname. That file owns:
 
 - HTTPS `:8443` (always on; Platform CA). There is no plaintext control-plane listener.
 - Expo reverse_proxy when `TURBOPANEL_UI_MODE=dev` (with `expo-loading.html` for cold-start 502s; `flush_interval -1` so Fast Refresh `/hot` is unbuffered). Host edits on VirtioFS/9p need Metro poll watch in the UI repo (`scripts/metro-virtfs-poll-watch.cjs`) — inotify does not cross the share.
