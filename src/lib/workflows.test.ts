@@ -116,7 +116,7 @@ describe(".github/workflows", () => {
   test("ci-ok is red on a cancelled pull request but not on a cancelled push", () => {
     const text = read("verify.yml");
     expect(text).toMatch(
-      /^ {2}ci-ok:\n {4}name: ci-ok\n {4}needs: \[[^\]]+\]\n {4}if: \$\{\{ \(github\.event_name == 'pull_request' && always\(\)\) \|\| !cancelled\(\) \}\}$/m,
+      /^ {2}ci-ok:\n {4}name: ci-ok\n {4}needs: \[[^\]]+\]\n {4}if: \$\{\{ \(github\.event_name == 'pull_request' && always\(\)\) \|\| \(!cancelled\(\) && !contains\(needs\.\*\.result, 'cancelled'\)\) \}\}$/m,
     );
     expect(text).not.toMatch(/^ {4}if: always\(\)$/m);
   });

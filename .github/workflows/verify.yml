@@ -158,13 +158,15 @@ jobs:
   # When it runs: on a pull request, always — a cancelled or skipped need is a
   # failure there (no job above is conditional on PR events, so "skipped" can
   # only mean a dependency failed), and the required check must never be left
-  # pending. On a push to trunk it is skipped when the run was cancelled — a
-  # newer push superseding this one is not a broken change, so it must not
-  # paint the commit red.
+  # pending. On a push to trunk it is skipped when the run was cancelled or
+  # when any need was cancelled: the jobs above sit in job-level concurrency
+  # groups, so a newer push cancels this run's still-pending job without
+  # cancelling the run itself. A superseded push is not a broken change, so it
+  # must not paint the commit red.
   ci-ok:
     name: ci-ok
     needs: [verify, metrics-legacy]
-    if: ${{ (github.event_name == 'pull_request' && always()) || !cancelled() }}
+    if: ${{ (github.event_name == 'pull_request' && always()) || (!cancelled() && !contains(needs.*.result, 'cancelled')) }}
     permissions: {}
     runs-on: ubuntu-latest
     timeout-minutes: 5
