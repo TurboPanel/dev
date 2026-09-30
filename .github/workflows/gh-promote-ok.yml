@@ -14,9 +14,12 @@
 #                 staging's head is exactly its content (the rc commit is in
 #                 staging and the trees match).
 #
-# It never re-runs tests and takes seconds. Red means "not yet" and says what
-# it is waiting for; gh-promote-ok-recheck.yml re-runs it when the missing
-# piece appears. The logic is scripts/promote/promote-ok.sh (unit tests in
+# It never re-runs tests. While what a PR would publish is still being built —
+# the trunk run, the canary, the rc — it polls in place (the check stays
+# running, not red) instead of failing and waiting for a later re-check; only
+# a real, permanent problem fails right away. gh-promote-ok-recheck.yml is
+# still wired up as a fallback (a run GitHub failed to re-evaluate on its own).
+# The logic is scripts/promote/promote-ok.sh (unit tests in
 # src/lib/promote-ok-script.test.ts).
 #
 # The required check is the caller's own fan-in job named `promote-ok` (a job
@@ -100,7 +103,9 @@ jobs:
   evaluate:
     name: evaluate
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    # promote-ok.sh polls in place for up to ~55 minutes (its own
+    # MAX_WAIT_SECONDS default) before giving up; this must stay above that.
+    timeout-minutes: 60
     steps:
       - name: Check out the promotion scripts (TurboPanel/dev)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

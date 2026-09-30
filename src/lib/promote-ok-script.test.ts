@@ -15,7 +15,10 @@ const START = join(ROOT, "scripts", "promote", "start-version.sh");
  * A route: the first whose pattern matches the joined `gh` arguments answers.
  * `body` is the raw API JSON (the fake applies `--jq` with the real jq, so the
  * script's filters are exercised); `file` is what `gh release download
- * --output` writes; `exit` fails the call.
+ * --output` writes; `exit` fails the call. `sequence`, when set, answers with
+ * `body` `sequence[0]`, then `sequence[1]`, … on each successive match of
+ * this route, holding on the last entry once exhausted — for proving a retry
+ * loop polls more than once before it settles.
  */
 type Route = {
   match: RegExp;
@@ -23,9 +26,12 @@ type Route = {
   file?: unknown;
   exit?: number;
   stderr?: string;
+  sequence?: unknown[];
 };
 
 // The fake gh (node, so it can apply --jq with the real jq and log each call).
+// FAKE_GH_STATE counts, per route index, how many times that route has
+// already answered — only read/written when the route carries a `sequence`.
 const FAKE_GH = `#!/usr/bin/env node
 const { appendFileSync, readFileSync, writeFileSync } = require("node:fs");
 const { spawnSync } = require("node:child_process");
@@ -33,15 +39,24 @@ const args = process.argv.slice(2);
 const line = args.join(" ");
 appendFileSync(process.env.FAKE_GH_LOG, line + "\\n");
 const routes = JSON.parse(readFileSync(process.env.FAKE_GH_ROUTES, "utf8"));
-const route = routes.find((r) => new RegExp(r.match).test(line));
-if (!route) { process.stderr.write("fake gh: no route for " + line + "\\n"); process.exit(1); }
+const idx = routes.findIndex((r) => new RegExp(r.match).test(line));
+if (idx < 0) { process.stderr.write("fake gh: no route for " + line + "\\n"); process.exit(1); }
+const route = routes[idx];
 if (route.exit) { process.stderr.write((route.stderr ?? "HTTP 404") + "\\n"); process.exit(route.exit); }
+let body = route.body;
+if (route.sequence) {
+  const state = JSON.parse(readFileSync(process.env.FAKE_GH_STATE, "utf8"));
+  const seen = state[idx] ?? 0;
+  body = route.sequence[Math.min(seen, route.sequence.length - 1)];
+  state[idx] = seen + 1;
+  writeFileSync(process.env.FAKE_GH_STATE, JSON.stringify(state));
+}
 const out = args.indexOf("--output");
 if (out >= 0) { writeFileSync(args[out + 1], JSON.stringify(route.file)); process.exit(0); }
 const jq = args.indexOf("--jq");
-const body = JSON.stringify(route.body ?? null);
-if (jq < 0) { if (route.body !== undefined) process.stdout.write(body + "\\n"); process.exit(0); }
-const r = spawnSync("jq", ["-r", args[jq + 1]], { input: body, encoding: "utf8" });
+const bodyStr = JSON.stringify(body ?? null);
+if (jq < 0) { if (body !== undefined) process.stdout.write(bodyStr + "\\n"); process.exit(0); }
+const r = spawnSync("jq", ["-r", args[jq + 1]], { input: bodyStr, encoding: "utf8" });
 process.stdout.write(r.stdout); process.stderr.write(r.stderr); process.exit(r.status ?? 1);
 `;
 
@@ -66,12 +81,15 @@ function run(
   );
   const log = join(dir, "calls.log");
   writeFileSync(log, "");
+  const state = join(dir, "state.json");
+  writeFileSync(state, "{}");
   const summary = join(dir, "summary.md");
   const r = spawnSync("/bin/sh", [script, ...args], {
     env: {
       PATH: `${dir}:${process.env.PATH ?? ""}`,
       FAKE_GH_ROUTES: routesFile,
       FAKE_GH_LOG: log,
+      FAKE_GH_STATE: state,
       GITHUB_STEP_SUMMARY: summary,
       ...env,
     },
@@ -92,12 +110,17 @@ const tags = (...names: string[]): Route => ({
   body: names.map((name) => ({ ref: `refs/tags/${name}` })),
 });
 
+// Every "not ready yet" case is a single check here: the deadline is already
+// past before the first look, so it fails on the same look it always did, and
+// the fail message — proven byte-identical to before the retry loop existed —
+// is the same one production would eventually give up with too.
 const checkEnv = (base: string, kind = "instance") => ({
   REPO: "o/r",
   REPO_KIND: kind,
   CI_WORKFLOW: "build.yml",
   BASE: base,
   HEAD_SHA: HEAD,
+  MAX_WAIT_SECONDS: "0",
 });
 
 const ciRuns = (...runs: Record<string, string>[]): Route => ({
@@ -186,6 +209,50 @@ describe("promote-ok.sh — Release Candidate PR (base staging)", () => {
     );
     expect(missing.status).toBe(1);
     expect(missing.out).toContain("none has started yet");
+  });
+
+  test("polls in place instead of failing once: a still-running trunk run that then succeeds", () => {
+    const runsRoute = {
+      match: /^api repos\/o\/r\/actions\/workflows\/build\.yml\/runs\?/,
+      sequence: [
+        { workflow_runs: [run1({ status: "in_progress", conclusion: "" })] },
+        { workflow_runs: [run1({ status: "in_progress", conclusion: "" })] },
+        { workflow_runs: [run1({})] },
+      ],
+    };
+    const r = run(CHECK, [runsRoute], {
+      ...checkEnv("staging", "notes-only"),
+      MAX_WAIT_SECONDS: "60",
+    });
+    expect(r.status).toBe(0);
+    expect(r.out).toContain("PASS");
+    // Never printed a red X while it was still waiting.
+    expect(r.out).not.toContain("::error");
+    const looks = r.calls.filter((c) =>
+      c.startsWith("api repos/o/r/actions/workflows"),
+    );
+    expect(looks.length).toBeGreaterThanOrEqual(3);
+  });
+
+  test("still red after really running out of time, not on the first look", () => {
+    const alwaysPending = {
+      match: /^api repos\/o\/r\/actions\/workflows\/build\.yml\/runs\?/,
+      sequence: [
+        { workflow_runs: [run1({ status: "in_progress", conclusion: "" })] },
+      ],
+    };
+    const r = run(CHECK, [alwaysPending], {
+      ...checkEnv("staging", "notes-only"),
+      MAX_WAIT_SECONDS: "1",
+    });
+    expect(r.status).toBe(1);
+    expect(r.out).toContain(
+      "waiting for the trunk build.yml run of aaaaaaa to finish; this re-checks automatically.",
+    );
+    const looks = r.calls.filter((c) =>
+      c.startsWith("api repos/o/r/actions/workflows"),
+    );
+    expect(looks.length).toBeGreaterThanOrEqual(1);
   });
 
   test("red, plainly, when the trunk run failed (no canary will ever come)", () => {
