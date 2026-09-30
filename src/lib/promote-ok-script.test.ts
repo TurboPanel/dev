@@ -9,6 +9,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const CHECK = join(ROOT, "scripts", "promote", "promote-ok.sh");
 const RECHECK = join(ROOT, "scripts", "promote", "promote-recheck.sh");
 const VERSION = join(ROOT, "scripts", "promote", "version.sh");
+const START = join(ROOT, "scripts", "promote", "start-version.sh");
 
 /**
  * A route: the first whose pattern matches the joined `gh` arguments answers.
@@ -576,5 +577,146 @@ describe("version.sh — numbers from tags, never a file", () => {
     const r = run(VERSION, [{ ...daemon, exit: 1 }], env, ["base"]);
     expect(r.status).toBe(1);
     expect(r.out).toContain("could not list o/r's tags");
+  });
+});
+
+describe("start-version.sh — Start Next Version", () => {
+  const repoTags = (repo: string, ...names: string[]): Route => ({
+    match: new RegExp(
+      `^api --paginate repos/o/${repo}/git/matching-refs/tags/ `,
+    ),
+    body: names.map((name) => ({ ref: `refs/tags/${name}` })),
+  });
+  const trunkHead = (repo: string): Route => ({
+    match: new RegExp(`^api repos/o/${repo}/commits/trunk `),
+    body: { sha: HEAD },
+  });
+  const tagObject = (repo: string): Route => ({
+    match: new RegExp(`^api --method POST repos/o/${repo}/git/tags `),
+    body: { sha: OTHER },
+  });
+  const tagRef = (repo: string): Route => ({
+    match: new RegExp(`^api --method POST repos/o/${repo}/git/refs `),
+    body: { ref: "refs/tags/start/v0.2.0" },
+  });
+  const dispatch: Route = { match: /^workflow run /, body: {} };
+  const env = { START_MESSAGE: "Started by the owner" };
+
+  test("pushes start/v<next minor> at each repo's trunk head, then rebuilds trunk", () => {
+    const r = run(
+      START,
+      [
+        repoTags("a", "v0.1.5", "v0.1.5-rc.2"),
+        repoTags("b", "v0.1.3"),
+        trunkHead("a"),
+        trunkHead("b"),
+        tagObject("a"),
+        tagObject("b"),
+        tagRef("a"),
+        tagRef("b"),
+        dispatch,
+      ],
+      env,
+      ["minor", "o/a:publish-daemon-trunk.yml", "o/b:promote-prs.yml"],
+    );
+    expect(r.status).toBe(0);
+    expect(r.calls).toContain(
+      `api --method POST repos/o/a/git/tags -f tag=start/v0.2.0 -f message=Started by the owner -f object=${HEAD} -f type=commit --jq .sha`,
+    );
+    expect(r.calls).toContain(
+      `api --method POST repos/o/a/git/refs -f ref=refs/tags/start/v0.2.0 -f sha=${OTHER}`,
+    );
+    expect(r.calls).toContain(
+      "workflow run publish-daemon-trunk.yml --repo o/a --ref trunk",
+    );
+    expect(r.calls).toContain(
+      "workflow run promote-prs.yml --repo o/b --ref trunk",
+    );
+    expect(r.out).toContain(
+      "o/a: started 0.2.0 (newest release 0.1.5): start/v0.2.0 at aaaaaaa",
+    );
+    expect(r.out).toContain("o/b: started 0.2.0 (newest release 0.1.3)");
+  });
+
+  test("a major goes to the next X.0.0 of each repo's own release", () => {
+    const r = run(
+      START,
+      [repoTags("a", "v0.1.5"), trunkHead("a")],
+      { ...env, DRY_RUN: "true" },
+      ["major", "o/a:build.yml"],
+    );
+    expect(r.status).toBe(0);
+    expect(r.out).toContain(
+      "o/a: would start 1.0.0 (newest release 0.1.5, building 0.1.6 now): start/v1.0.0 at aaaaaaa, then build.yml on trunk (dry run)",
+    );
+    expect(r.calls.some((c) => c.includes("--method POST"))).toBe(false);
+    expect(r.calls.some((c) => c.startsWith("workflow run"))).toBe(false);
+  });
+
+  test("pressing it twice is harmless: a repo already on the target is left alone", () => {
+    const r = run(START, [repoTags("a", "v0.1.5", "start/v0.2.0")], env, [
+      "minor",
+      "o/a:build.yml",
+    ]);
+    expect(r.status).toBe(0);
+    expect(r.out).toContain(
+      "o/a: already building 0.2.0, which is 0.2.0 or later; nothing to start",
+    );
+    expect(r.calls.some((c) => c.includes("--method POST"))).toBe(false);
+  });
+
+  test("a rebuild it cannot start is a warning with the manual step", () => {
+    const r = run(
+      START,
+      [
+        repoTags("a", "v0.1.5"),
+        trunkHead("a"),
+        tagObject("a"),
+        tagRef("a"),
+        { match: /^workflow run /, exit: 1, stderr: "HTTP 403" },
+      ],
+      env,
+      ["minor", "o/a:verify.yml"],
+    );
+    expect(r.status).toBe(0);
+    expect(r.out).toContain(
+      "o/a: could not start verify.yml; run it on trunk by hand",
+    );
+  });
+
+  test("a repo that cannot be marked fails the run, after the others are done", () => {
+    const r = run(
+      START,
+      [
+        repoTags("a", "v0.1.5"),
+        { match: /^api --paginate repos\/o\/b\//, exit: 1 },
+        trunkHead("a"),
+        tagObject("a"),
+        { match: /^api --method POST repos\/o\/a\/git\/refs /, exit: 1 },
+        repoTags("c", "v0.1.4"),
+        trunkHead("c"),
+        tagObject("c"),
+        tagRef("c"),
+        dispatch,
+      ],
+      env,
+      ["minor", "o/a:x.yml", "o/b:y.yml", "o/c:z.yml"],
+    );
+    expect(r.status).toBe(1);
+    expect(r.out).toContain("o/a: could not push start/v0.2.0");
+    expect(r.out).toContain("o/b: could not list its tags");
+    expect(r.out).toContain("o/c: started 0.2.0");
+  });
+
+  test("refuses anything but minor or major, and a malformed repo", () => {
+    const patch = run(START, [], env, ["patch", "o/a:x.yml"]);
+    expect(patch.status).toBe(1);
+    expect(patch.out).toContain("usage: start-version.sh <minor|major>");
+    expect(run(START, [], env, ["minor"]).out).toContain(
+      "name at least one <owner/repo>:<workflow>",
+    );
+    const bad = run(START, [], env, ["minor", "turbopanel"]);
+    expect(bad.status).toBe(1);
+    expect(bad.out).toContain("not <owner/repo>:<workflow>: 'turbopanel'");
   });
 });
