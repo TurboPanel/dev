@@ -288,6 +288,11 @@ jobs:
         if: steps.guard.outputs.proceed == 'true'
         # Only after a clean verify: a failed publish never deletes the
         # previous build's bytes, so the last good manifest keeps resolving.
+        env:
+          REPO: ${{ github.repository }}
+          KEEP: ${{ inputs.keep }}
+          MANIFEST_NAME: ${{ inputs.manifest-filename }}
+          CURRENT_VERSION: ${{ inputs.version }}
         run: |
           python3 <<'PY'
           import json
@@ -295,47 +300,92 @@ jobs:
           import re
           import subprocess
 
-          repo = "${{ github.repository }}"
+          repo = os.environ["REPO"]
           tag = os.environ["TAG"]
-          keep = int("${{ inputs.keep }}")
-          manifest_name = "${{ inputs.manifest-filename }}"
+          keep = int(os.environ["KEEP"])
+          manifest_name = os.environ["MANIFEST_NAME"]
+          current = os.environ["CURRENT_VERSION"]
 
-          out = subprocess.run(
-              ["gh", "release", "view", tag, "--repo", repo, "--json", "assets"],
-              check=True, capture_output=True, text=True,
-          ).stdout
-          assets = [a["name"] for a in json.loads(out)["assets"]]
+          # Every per-build file carries its build's version, `<X.Y.Z>-canary.<id>`:
+          # `<pkg>-<version>-<arch>.tar.zst`, `<pkg>-<version>.tar.gz`, the pinned
+          # `manifest-<version>.json`. The id is the run counter (`0.1.3-canary.412`)
+          # or, for builds cut before 2026-09-28, a timestamp
+          # (`<yyyymmdd>-<hhmmss>-<sha7>`). The id ends at a `-` or `.` or the end
+          # of the name. The timestamp form is tried first and a counter may not be
+          # followed by `-<hhmmss>-`, so a counter never takes a timestamp's date.
+          build_re = re.compile(
+              r"(?<![\d.])(\d+\.\d+\.\d+)-canary\."
+              r"(\d{8}-\d{6}-[0-9a-f]{7}|\d+(?!-\d{6}-))"
+              r"(?=[-.]|$)"
+          )
 
-          # The canary label is the run counter (`0.1.3-canary.412`); builds cut
-          # before 2026-09-28 carry a timestamped id (`-canary.<yyyymmdd>-<hhmmss>-<sha7>`).
-          # Counter builds are always newer than timestamped ones, and a counter
-          # sorts numerically, never as text.
-          build_re = re.compile(r"-canary\.(\d{8}-\d{6}-[0-9a-f]{7}|\d+)(?![0-9A-Za-z-])")
+
+          def label(build):
+              return f"{build[0]}-canary.{build[1]}"
+
+
           def order(build):
-              return (1, int(build), "") if build.isdigit() else (0, 0, build)
-          by_build = {}
-          for name in assets:
-              if name == manifest_name:
-                  continue
-              m = build_re.search(name)
-              if not m:
-                  print(f"::warning::asset {name} carries no canary buildId; left alone")
-                  continue
-              by_build.setdefault(m.group(1), []).append(name)
+              # Counter builds are always newer than timestamped ones. Counters
+              # sort numerically (never as text) within their version, and the
+              # version goes first so the order holds even if a counter restarts
+              # at a new version; timestamps sort as text.
+              version, build_id = build
+              if build_id.isdigit():
+                  return (1, tuple(int(p) for p in version.split(".")), int(build_id), "")
+              return (0, (), 0, build_id)
+
+
+          def list_assets():
+              out = subprocess.run(
+                  ["gh", "release", "view", tag, "--repo", repo, "--json", "assets"],
+                  check=True, capture_output=True, text=True,
+              ).stdout
+              return [a["name"] for a in json.loads(out)["assets"]]
+
+
+          def group(names):
+              # All files of one build share its (version, id), manifest or not:
+              # a build whose pinned manifest is already gone (left over by an
+              # older prune that only matched manifests) still ages out.
+              by_build = {}
+              unknown = []
+              for name in names:
+                  if name == manifest_name:
+                      continue
+                  m = build_re.search(name)
+                  if m:
+                      by_build.setdefault(m.groups(), []).append(name)
+                  else:
+                      unknown.append(name)
+              return by_build, unknown
+
+
+          def delete(name):
+              subprocess.run(
+                  ["gh", "release", "delete-asset", tag, name, "--repo", repo, "--yes"],
+                  check=True,
+              )
+              print(f"pruned {name}")
+
+
+          by_build, unknown = group(list_assets())
+          if unknown:
+              shown = ", ".join(sorted(unknown)[:10])
+              more = f" (+{len(unknown) - 10} more)" if len(unknown) > 10 else ""
+              print(f"::notice::{len(unknown)} asset(s) carry no <X.Y.Z>-canary.<id> and were left alone: {shown}{more}")
 
           builds = sorted(by_build, key=order, reverse=True)
-          stale = builds[keep:]
+          # The build this run just published is never pruned, whatever the order says.
+          stale = [b for b in builds[keep:] if label(b) != current]
           if not stale:
               print(f"{len(builds)} build(s) on the rolling release, keep={keep}: nothing to prune")
               raise SystemExit(0)
+          files = 0
           for build in stale:
-              for name in by_build[build]:
-                  subprocess.run(
-                      ["gh", "release", "delete-asset", tag, name, "--repo", repo, "--yes"],
-                      check=True,
-                  )
-                  print(f"pruned {name}")
-          print(f"kept {min(len(builds), keep)} build(s), pruned {len(stale)}")
+              for name in sorted(by_build[build]):
+                  delete(name)
+                  files += 1
+          print(f"kept {len(builds) - len(stale)} build(s), pruned {len(stale)} ({files} file(s))")
           PY
 
       - name: Move the canary tag to this build's commit and refresh the notes
