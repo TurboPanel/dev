@@ -154,7 +154,7 @@ describe("promote-ok.sh — Release Candidate PR (base staging)", () => {
     );
     expect(r.status).toBe(1);
     expect(r.out).toContain(
-      "waiting for the canary of aaaaaaa (no manifest-0.1.4-canary.N.json on the canary release names it yet); this re-checks automatically.",
+      "waiting for the canary of aaaaaaa (no manifest-0.1.4-canary.N.json on the canary release names it yet); this re-checks automatically. If the canary run for it failed, re-run that run.",
     );
     expect(r.out).toContain("::error title=promote-ok::");
   });

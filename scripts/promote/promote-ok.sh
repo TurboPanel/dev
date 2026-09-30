@@ -132,7 +132,7 @@ check_rc_pr() {
   _version="$(version_at "$HEAD_SHA")"
   _manifest="$(canary_manifest "$_version")"
   if [ -z "$_manifest" ]; then
-    fail "waiting for the canary of $SHORT (no manifest-$_version-canary.N.json on the canary release names it yet); this re-checks automatically."
+    fail "waiting for the canary of $SHORT (no manifest-$_version-canary.N.json on the canary release names it yet); this re-checks automatically. If the canary run for it failed, re-run that run."
   fi
   pass "canary $_manifest was built from $SHORT; merging publishes the next $_version rc from those bytes."
 }
