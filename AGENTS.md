@@ -260,6 +260,22 @@ The one-click promotion every repo runs (Testing Checklist `release` section, re
 
 **Coverage:** SonarCloud’s Sonar-way quality gate (CI scan in `.github/workflows/verify.yml` with `sonar.qualitygate.wait=true`) requires **≥ 80% coverage on new code**. CI uploads Vitest LCOV from `pnpm test:coverage` (`coverage/lcov.info`); `SONAR_TOKEN` is required on same-repo PRs and trunk pushes. After switching from Automatic Analysis, reset **New Code** (Administration → New Code) so the baseline is not months of uncovered history. Sibling repos (`turbopanel`, `ui`, `website`) use the same CI-based Sonar + LCOV pattern in their own `verify.yml` workflows.
 
+### Dependency advisories (`.github/actions/osv-scan`)
+
+Every repo's `verify` runs the **Dependency Advisory Gate** composite action
+(dev itself as `./.github/actions/osv-scan`, the siblings pinned by sha like
+the reusable workflows). It installs the pinned, checksum-verified osv-scanner
+and runs `scripts/osv/scan.sh`, which fails **only** for an advisory rated HIGH
+or CRITICAL (CVSS ≥ 7.0 or a HIGH/CRITICAL database label) that already has a
+fixed version (`scripts/osv/gate.jq`). Anything else — lower severity, unrated,
+or no fix yet — is a warning annotation on the run, not a red X (owner decision
+2026-09-30: a newly published advisory must not freeze every unrelated PR).
+**Override** for a blocking advisory verified not exploitable in that repo: an
+`[[IgnoredVulns]]` entry in the repo's `osv-scanner.toml` with `id`, a written
+`reason`, and `ignoreUntil` when a fix is expected (see ui/website for the
+format). Bumping the scanner is one edit here plus a re-pin in the siblings.
+Tests: `src/lib/osv-scan-script.test.ts`.
+
 ## Ansible dev overlay
 
 The **Ansible dev overlay** lives in `<dev checkout>/orchestration/` and overrides the daemon's production roles with dev-user parameters (the daemon still executes Ansible). Set `TURBOPANEL_MODE=development` during dev converge.
