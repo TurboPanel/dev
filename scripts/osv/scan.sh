@@ -35,7 +35,7 @@ set -e
 case "$code" in
   0 | 1) ;;
   *)
-    echo "::error title=Dependency advisory gate::osv-scanner failed (exit $code); no verdict"
+    echo "::error title=Dependency advisory gate::osv-scanner failed (exit $code); no verdict" >&2
     exit "$code"
     ;;
 esac
@@ -50,13 +50,13 @@ while IFS="$TAB" read -r verdict package ids severity fix; do
   case "$verdict" in
     BLOCK)
       blocking=$((blocking + 1))
-      echo "::error title=Dependency advisory (blocking)::$package $ids, severity $severity, $fix. Upgrade it, or add an [[IgnoredVulns]] entry with a reason to osv-scanner.toml if it is verified not exploitable here."
+      echo "::error title=Dependency advisory (blocking)::$package $ids, severity $severity, $fix. Upgrade it, or add an [[IgnoredVulns]] entry with a reason to osv-scanner.toml if it is verified not exploitable here." >&2
       ;;
     warn)
       echo "::warning title=Dependency advisory::$package $ids, severity $severity, $fix. Not blocking: below HIGH, or no fixed version yet."
       ;;
     *)
-      echo "::error title=Dependency advisory gate::unexpected verdict line: $verdict"
+      echo "::error title=Dependency advisory gate::unexpected verdict line: $verdict" >&2
       exit 1
       ;;
   esac
