@@ -134,6 +134,9 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: TurboPanel/turbopaneld
+          # Always the sibling's trunk: another repo's staging/live move on
+          # that repo's own release schedule.
+          ref: trunk
           path: turbopaneld
 
       - name: Install Deno
@@ -147,16 +150,23 @@ jobs:
         run: deno task check:metrics-legacy
 
   # Single aggregate check for the branch rulesets. It needs every job that
-  # runs on pull_request and fails unless all of them succeeded (a cancelled
-  # or skipped need is a failure too — no job above is conditional on PR
-  # events, so "skipped" can only mean a dependency failed). Required-check
+  # runs on pull_request and fails unless all of them succeeded. Required-check
   # contexts move from the individual job names to this one context so a job
   # rename or a new job never blocks merges on a name the ruleset still waits
   # for.
+  #
+  # When it runs: on a pull request, always — a cancelled or skipped need is a
+  # failure there (no job above is conditional on PR events, so "skipped" can
+  # only mean a dependency failed), and the required check must never be left
+  # pending. On a push to trunk it is skipped when the run was cancelled or
+  # when any need was cancelled: the jobs above sit in job-level concurrency
+  # groups, so a newer push cancels this run's still-pending job without
+  # cancelling the run itself. A superseded push is not a broken change, so it
+  # must not paint the commit red.
   ci-ok:
     name: ci-ok
     needs: [verify, metrics-legacy]
-    if: always()
+    if: ${{ (github.event_name == 'pull_request' && always()) || (!cancelled() && !contains(needs.*.result, 'cancelled')) }}
     permissions: {}
     runs-on: ubuntu-latest
     timeout-minutes: 5

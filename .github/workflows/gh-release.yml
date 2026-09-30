@@ -21,6 +21,17 @@
 # turbopaneld/.github/workflows/release.yml; this workflow only ever receives
 # already-built files via actions/upload-artifact from the calling job.
 
+# Permissions — the caller's job must grant at least:
+#
+#   permissions:
+#     contents: write
+#
+# The GITHUB_TOKEN (or the Release App token when its secrets are passed)
+# creates the release and uploads its assets. Downloading the caller's job
+# artifact from the same run needs no `actions` permission. A caller job that
+# grants less than this workflow declares fails before any step runs ("The
+# nested job … is requesting …, but is only allowed …").
+
 name: GitHub Release
 
 on:

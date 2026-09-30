@@ -36,7 +36,18 @@
 # RELEASE_APP_PRIVATE_KEY) are repo secrets reaching every step through the
 # caller's `secrets: inherit`.
 
-name: Promote (prepare)
+# Permissions — the caller's job must grant at least:
+#
+#   permissions:
+#     contents: write
+#
+# The GITHUB_TOKEN creates the rc tag and reads tags, releases and the
+# source commit; the bare release tag uses the Release App token. The
+# `release` environment gate needs no token permission. A caller job that
+# grants less than this workflow declares fails before any step runs ("The
+# nested job … is requesting …, but is only allowed …").
+
+name: Promote (Prepare)
 
 on:
   workflow_call:

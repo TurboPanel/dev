@@ -37,6 +37,17 @@
 # writes the manifest with ARTIFACT_BASE_URL set to this repo's
 # releases/download/canary path, then hands the files over as a job artifact.
 
+# Permissions — the caller's job must grant at least:
+#
+#   permissions:
+#     contents: write
+#
+# The GITHUB_TOKEN creates and edits the rolling `canary` release, uploads and
+# prunes its assets, and force-moves the `canary` tag. Downloading the
+# caller's job artifact from the same run needs no `actions` permission. A
+# caller job that grants less than this workflow declares fails before any
+# step runs ("The nested job … is requesting …, but is only allowed …").
+
 name: GitHub Canary
 
 on:

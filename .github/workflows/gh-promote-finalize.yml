@@ -20,7 +20,17 @@
 # PR into the deploy branch as the owner (a PR opened with GITHUB_TOKEN would
 # never start `ci-ok`), then merge it with a merge commit once `ci-ok` is green.
 
-name: Promote (finalize)
+# Permissions — the caller's job must grant at least:
+#
+#   permissions:
+#     contents: write
+#
+# The GITHUB_TOKEN edits and uploads to releases (`latest`, the rolling rc);
+# the deploy-branch push uses the Release App token. A caller job that grants
+# less than this workflow declares fails before any step runs ("The nested
+# job … is requesting …, but is only allowed …").
+
+name: Promote (Finalize)
 
 on:
   workflow_call:
