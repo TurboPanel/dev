@@ -1,0 +1,77 @@
+# Reusable "promote-ok" recheck — re-runs the red promote-ok check of the open
+# promotion PRs when what they were waiting for may now exist.
+#
+# The caller triggers it with `workflow_run` on whatever produces the missing
+# piece — the trunk CI, the canary publish, and Publish Release Candidate —
+# and this job re-runs the failed promote-ok run of the current head of the
+# open trunk -> staging and staging -> live PRs
+# (scripts/promote/promote-recheck.sh). A re-run reports on the same head
+# commit, under the same check name and app (GitHub Actions), so the ruleset
+# that requires `promote-ok` sees the new result. No Checks API, no commit
+# statuses: the PR's own run is the one source of the check.
+#
+# It never reports a check named promote-ok itself, and never fails its own
+# run (a warning says what it could not do). `dry-run: true` only reports.
+
+# Permissions — the caller's job must grant at least:
+#
+#   permissions:
+#     contents: read
+#     actions: write
+#     pull-requests: read
+#
+# actions: write re-runs the failed promote-ok run (GITHUB_TOKEN may re-run
+# runs in its own repository). pull-requests: read finds the open promotion
+# PRs. contents: read checks out nothing of the caller but is the floor every
+# job has. A caller job that grants less than this workflow declares fails
+# before any step runs.
+
+name: Promote OK Recheck
+
+on:
+  workflow_call:
+    inputs:
+      dev-ref:
+        description: The TurboPanel/dev commit this workflow was called at (must equal the `uses:` pin — the script lives there)
+        required: true
+        type: string
+      check-workflow:
+        description: The caller's promote-ok workflow file
+        required: false
+        type: string
+        default: promote-ok.yml
+      dry-run:
+        description: Report what would be re-run and change nothing
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  actions: write
+  pull-requests: read
+
+jobs:
+  recheck:
+    name: recheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out the promotion scripts (TurboPanel/dev)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: TurboPanel/dev
+          ref: ${{ inputs.dev-ref }}
+          path: .promote
+          fetch-depth: 1
+          persist-credentials: false
+          sparse-checkout: scripts/promote
+          sparse-checkout-cone-mode: false
+
+      - name: Re-run the red promote-ok check of the open promotion PRs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          WORKFLOW: ${{ inputs.check-workflow }}
+          DRY_RUN: ${{ inputs.dry-run }}
+        run: sh .promote/scripts/promote/promote-recheck.sh

@@ -107,6 +107,8 @@ describe(".github/workflows", () => {
       "gh-canary.yml": "GitHub Canary",
       "gh-minor-gate.yml": "Minor Release Gate",
       "gh-next-version.yml": "Start the Next Version",
+      "gh-promote-ok-recheck.yml": "Promote OK Recheck",
+      "gh-promote-ok.yml": "Promote OK",
       "gh-promote-finalize.yml": "Promote (Finalize)",
       "gh-promote.yml": "Promote (Prepare)",
       "gh-release.yml": "GitHub Release",
@@ -125,5 +127,29 @@ describe(".github/workflows", () => {
     expect(read("gh-minor-gate.yml")).toMatch(
       /^ {2}minor-gate:\n {4}name: minor-gate$/m,
     );
+  });
+
+  test("promote-ok only reads, and its recheck only re-runs runs", () => {
+    expect(topLevelPermissions(read("gh-promote-ok.yml"))).toEqual([
+      "contents: read",
+      "actions: read",
+      "pull-requests: read",
+    ]);
+    expect(read("gh-promote-ok.yml")).toMatch(
+      /run: sh \.promote\/scripts\/promote\/promote-ok\.sh$/m,
+    );
+    expect(
+      topLevelPermissions(read("gh-promote-ok-recheck.yml")).filter((p) =>
+        p.endsWith("write"),
+      ),
+    ).toEqual(["actions: write"]);
+  });
+
+  test("neither promote-ok workflow reports a check named promote-ok itself", () => {
+    // The required check is the caller's fan-in job; a job here would report
+    // as "<caller job> / <job>" anyway, and the recheck must never report one.
+    for (const file of ["gh-promote-ok.yml", "gh-promote-ok-recheck.yml"]) {
+      expect(read(file)).not.toMatch(/^ {4}name: promote-ok$/m);
+    }
   });
 });
