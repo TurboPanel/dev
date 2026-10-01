@@ -43,7 +43,11 @@
 #     contents: write
 #
 # The GITHUB_TOKEN creates and edits the rolling `canary` release, uploads and
-# prunes its assets, and force-moves the `canary` tag. Downloading the
+# prunes its assets, and force-moves the `canary` tag. A commit that changes
+# .github/workflows can only be tagged by a GitHub App token with the
+# Workflows permission, so a caller should also pass the optional
+# RELEASE_APP_ID / RELEASE_APP_PRIVATE_KEY secrets (without them the tag move
+# warns and the tag pointer lags; assets and manifests still publish). Downloading the
 # caller's job artifact from the same run needs no `actions` permission. A
 # caller job that grants less than this workflow declares fails before any
 # step runs ("The nested job … is requesting …, but is only allowed …").
@@ -75,6 +79,14 @@ on:
         required: false
         type: number
         default: 20
+
+    secrets:
+      RELEASE_APP_ID:
+        description: Optional — TurboPanel Release GitHub App id. Moving the `canary` tag to a commit that changes .github/workflows needs the App's Workflows permission, which GITHUB_TOKEN can never hold.
+        required: false
+      RELEASE_APP_PRIVATE_KEY:
+        description: Optional — the App's private key PEM.
+        required: false
 
 permissions:
   contents: write
@@ -390,13 +402,47 @@ jobs:
           print(f"kept {len(builds) - len(stale)} build(s), pruned {len(stale)} ({files} file(s))")
           PY
 
+      - name: Check for Release App credentials
+        if: steps.guard.outputs.proceed == 'true'
+        # secrets are not available in `if:` — resolve them into an output.
+        id: app-creds
+        env:
+          HAS_APP: ${{ secrets.RELEASE_APP_ID != '' && secrets.RELEASE_APP_PRIVATE_KEY != '' }}
+        run: echo "has-app=$HAS_APP" >> "$GITHUB_OUTPUT"
+
+      - name: Mint a Release App token for the tag move
+        if: steps.guard.outputs.proceed == 'true' && steps.app-creds.outputs.has-app == 'true'
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+
       - name: Move the canary tag to this build's commit and refresh the notes
         if: steps.guard.outputs.proceed == 'true'
+        env:
+          # GITHUB_TOKEN cannot move a ref to a commit that changes
+          # .github/workflows (HTTP 403, "Resource not accessible by
+          # integration"): that needs the `workflows` permission, which only a
+          # GitHub App token can hold. Use the App token when there is one.
+          TAG_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           set -eu
           _repo="${{ github.repository }}"
-          gh api --method PATCH "/repos/${_repo}/git/refs/tags/${TAG}" \
-            -f sha="${{ inputs.commit }}" -F force=true >/dev/null
+          _tag_ok=1
+          if ! GH_TOKEN="${TAG_TOKEN:-$GH_TOKEN}" gh api --method PATCH "/repos/${_repo}/git/refs/tags/${TAG}" \
+            -f sha="${{ inputs.commit }}" -F force=true >/dev/null; then
+            _tag_ok=0
+            if [ -n "${TAG_TOKEN:-}" ]; then
+              echo "::error::the Release App token could not move the ${TAG} tag (does the App have the Workflows permission?)"
+              exit 1
+            fi
+            echo "::warning::could not move the ${TAG} tag to ${{ inputs.commit }} with GITHUB_TOKEN (expected when the commit changes .github/workflows; pass RELEASE_APP_ID and RELEASE_APP_PRIVATE_KEY, with the App's Workflows permission). The assets and manifest are published; only the tag pointer lags."
+          fi
           gh release edit "$TAG" --repo "$_repo" --prerelease \
             --notes "Rolling canary channel — currently ${{ inputs.version }} (commit ${{ inputs.commit }}), replaced on every green trunk merge. Follow it with TURBOPANEL_UPDATE_CHANNEL=canary; pin one build with TURBOPANEL_MANIFEST_URL pointing at its manifest-<version>.json here. Not a release: the newest ${{ inputs.keep }} builds are kept, older ones are pruned."
-          echo "canary now serves ${{ inputs.version }} from ${{ inputs.commit }}"
+          if [ "$_tag_ok" = 1 ]; then
+            echo "canary now serves ${{ inputs.version }} from ${{ inputs.commit }}"
+          else
+            echo "canary serves ${{ inputs.version }}; the tag pointer is still on the previous commit"
+          fi
