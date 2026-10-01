@@ -6,7 +6,6 @@
 > **[Control plane deployment](https://turbopanel.io/docs/deployment/control-plane)**.
 
 [![Release](https://img.shields.io/github/v/release/TurboPanel/dev?label=release)](https://github.com/TurboPanel/dev/releases)
-[![Release candidate](https://img.shields.io/github/v/tag/TurboPanel/dev?filter=*-rc.*&sort=semver&include_prereleases&label=release%20candidate&color=orange)](https://github.com/TurboPanel/dev/releases)
 [![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=turbopanel_dev&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=turbopanel_dev)
 [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=turbopanel_dev&metric=coverage)](https://sonarcloud.io/component_measures?id=turbopanel_dev&metric=coverage)
 [![Code Smells](https://sonarcloud.io/api/project_badges/measure?project=turbopanel_dev&metric=code_smells)](https://sonarcloud.io/project/issues?id=turbopanel_dev&resolved=false&types=CODE_SMELL)
