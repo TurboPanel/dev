@@ -17,6 +17,10 @@ inputs:
     description: Directory to scan recursively (default the workspace)
     required: false
     default: .
+  mode:
+    description: "gate (default): fail on HIGH/CRITICAL with a fix. issue: weekly sweep that files or updates the 'Dependency advisories' issue (needs GH_TOKEN with issues write in the caller's env)"
+    required: false
+    default: gate
 
 runs:
   using: composite
@@ -33,4 +37,10 @@ runs:
       shell: sh
       env:
         SCAN_PATH: ${{ inputs.path }}
-      run: sh "$GITHUB_ACTION_PATH/../../../scripts/osv/scan.sh" "$SCAN_PATH"
+        SCAN_MODE: ${{ inputs.mode }}
+      run: |
+        case "$SCAN_MODE" in
+          issue) script=scheduled.sh ;;
+          *) script=scan.sh ;;
+        esac
+        sh "$GITHUB_ACTION_PATH/../../../scripts/osv/$script" "$SCAN_PATH"
