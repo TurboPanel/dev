@@ -37,8 +37,8 @@
 # this job once per promotion; publish and finalize run on without asking
 # again. TURBOPANEL_RELEASE_SIGNING_KEY is an ENVIRONMENT secret of the
 # caller's repo, read by the prepare job through its own `environment:`
-# (`release` when the approval gate is on, otherwise `canary`; a notes-only
-# repo needs none). RELEASE_APP_ID and RELEASE_APP_PRIVATE_KEY are org
+# (`rc` for to=rc, `release` for to=release, so the approval gate sits on the
+# release only; a notes-only repo needs none). RELEASE_APP_ID and RELEASE_APP_PRIVATE_KEY are org
 # secrets reaching every step through the caller's `secrets: inherit`.
 
 # Permissions — the caller's job must grant at least:
@@ -129,7 +129,7 @@ permissions:
 jobs:
   prepare:
     runs-on: ubuntu-latest
-    environment: ${{ inputs.approval-environment || (inputs.repo-kind != 'notes-only' && 'canary' || null) }}
+    environment: ${{ inputs.to == 'release' && 'release' || (inputs.repo-kind != 'notes-only' && 'rc' || null) }}
     concurrency:
       group: gh-promote-${{ github.repository }}
       cancel-in-progress: false
@@ -173,7 +173,7 @@ jobs:
             exit 1
           fi
           if [ "$HAS_KEY" != "true" ]; then
-            echo "::error::TURBOPANEL_RELEASE_SIGNING_KEY is not set in this job's environment secrets (release, or canary for the automatic rc path) — the promoted manifest cannot be signed"
+            echo "::error::TURBOPANEL_RELEASE_SIGNING_KEY is not set in this job's environment secrets (rc for to=rc, release for to=release) — the promoted manifest cannot be signed"
             exit 1
           fi
 

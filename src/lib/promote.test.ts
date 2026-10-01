@@ -536,7 +536,7 @@ describe("workflow shape", () => {
       /^      approval-environment:\n(?:        .*\n)*?        default: release$/m,
     );
     expect(text).toMatch(
-      /^    environment: \$\{\{ inputs\.approval-environment \|\| \(inputs\.repo-kind != 'notes-only' && 'canary' \|\| null\) \}\}$/m,
+      /^    environment: \$\{\{ inputs\.to == 'release' && 'release' \|\| \(inputs\.repo-kind != 'notes-only' && 'rc' \|\| null\) \}\}$/m,
     );
     // Every falsifiable check runs before the tag is created — a tag on a
     // build that then fails verification would burn the version.
