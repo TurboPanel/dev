@@ -505,11 +505,11 @@ describe("workflow shape", () => {
         new RegExp(`^      ${input}:$`, "m"),
       );
     }
-    for (const secret of [
-      "RELEASE_SIGNING_KEY",
-      "RELEASE_APP_ID",
-      "RELEASE_APP_PRIVATE_KEY",
-    ]) {
+    expect(text).not.toMatch(/^      RELEASE_SIGNING_KEY:$/m);
+    expect(text).toContain(
+      "RELEASE_SIGNING_KEY: ${{ secrets.TURBOPANEL_RELEASE_SIGNING_KEY }}",
+    );
+    for (const secret of ["RELEASE_APP_ID", "RELEASE_APP_PRIVATE_KEY"]) {
       expect(text, `secret ${secret}`).toMatch(
         new RegExp(`^      ${secret}:$`, "m"),
       );
@@ -536,7 +536,7 @@ describe("workflow shape", () => {
       /^      approval-environment:\n(?:        .*\n)*?        default: release$/m,
     );
     expect(text).toMatch(
-      /^    environment: \$\{\{ inputs\.approval-environment \|\| null \}\}$/m,
+      /^    environment: \$\{\{ inputs\.approval-environment \|\| \(inputs\.repo-kind != 'notes-only' && 'canary' \|\| null\) \}\}$/m,
     );
     // Every falsifiable check runs before the tag is created — a tag on a
     // build that then fails verification would burn the version.

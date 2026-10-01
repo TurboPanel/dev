@@ -35,9 +35,11 @@
 #
 # The `release` environment is the approval gate (D7): the owner approves
 # this job once per promotion; publish and finalize run on without asking
-# again. Secrets (RELEASE_SIGNING_KEY, RELEASE_APP_ID,
-# RELEASE_APP_PRIVATE_KEY) are repo secrets reaching every step through the
-# caller's `secrets: inherit`.
+# again. TURBOPANEL_RELEASE_SIGNING_KEY is an ENVIRONMENT secret of the
+# caller's repo, read by the prepare job through its own `environment:`
+# (`release` when the approval gate is on, otherwise `canary`; a notes-only
+# repo needs none). RELEASE_APP_ID and RELEASE_APP_PRIVATE_KEY are org
+# secrets reaching every step through the caller's `secrets: inherit`.
 
 # Permissions — the caller's job must grant at least:
 #
@@ -89,9 +91,6 @@ on:
         type: string
         default: release
     secrets:
-      RELEASE_SIGNING_KEY:
-        description: PKCS#8 PEM of the offline release key (required unless notes-only)
-        required: false
       RELEASE_APP_ID:
         description: TurboPanel Release GitHub App id (required for to=release)
         required: false
@@ -130,7 +129,7 @@ permissions:
 jobs:
   prepare:
     runs-on: ubuntu-latest
-    environment: ${{ inputs.approval-environment || null }}
+    environment: ${{ inputs.approval-environment || (inputs.repo-kind != 'notes-only' && 'canary' || null) }}
     concurrency:
       group: gh-promote-${{ github.repository }}
       cancel-in-progress: false
@@ -166,7 +165,7 @@ jobs:
         if: inputs.repo-kind != 'notes-only'
         env:
           SIGNER_REF: ${{ inputs.signer-ref }}
-          HAS_KEY: ${{ secrets.RELEASE_SIGNING_KEY != '' }}
+          HAS_KEY: ${{ secrets.TURBOPANEL_RELEASE_SIGNING_KEY != '' }}
         run: |
           set -eu
           if [ -z "$SIGNER_REF" ]; then
@@ -174,7 +173,7 @@ jobs:
             exit 1
           fi
           if [ "$HAS_KEY" != "true" ]; then
-            echo "::error::RELEASE_SIGNING_KEY is not set — the promoted manifest cannot be signed"
+            echo "::error::TURBOPANEL_RELEASE_SIGNING_KEY is not set in this job's environment secrets (release, or canary for the automatic rc path) — the promoted manifest cannot be signed"
             exit 1
           fi
 
@@ -333,7 +332,7 @@ jobs:
       - name: Sign the promoted manifest
         if: inputs.repo-kind != 'notes-only'
         env:
-          RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
+          RELEASE_SIGNING_KEY: ${{ secrets.TURBOPANEL_RELEASE_SIGNING_KEY }}
         run: |
           set -eu
           deno run --config .manifest-signer/deno.json \
