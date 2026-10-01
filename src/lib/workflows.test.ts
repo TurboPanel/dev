@@ -131,6 +131,23 @@ describe(".github/workflows", () => {
     },
   );
 
+  test("the canary tag move uses the Release App token when given, and only warns without it", () => {
+    const text = read("gh-canary.yml");
+    // GITHUB_TOKEN cannot move a ref to a commit that changes .github/workflows.
+    expect(text).toMatch(/^ {6}RELEASE_APP_ID:\n/m);
+    expect(text).toMatch(/^ {6}RELEASE_APP_PRIVATE_KEY:\n/m);
+    expect(text).toMatch(/create-github-app-token@[0-9a-f]{40}/);
+    const step = text.slice(text.indexOf("- name: Move the canary tag"));
+    expect(step).toContain(
+      'GH_TOKEN="${TAG_TOKEN:-$GH_TOKEN}" gh api --method PATCH',
+    );
+    expect(step).toContain("TAG_TOKEN: ${{ steps.app-token.outputs.token }}");
+    // An App token that still fails is an error; GITHUB_TOKEN failing is a warning.
+    expect(step).toMatch(
+      /if \[ -n "\$\{TAG_TOKEN:-\}" \]; then\n\s+echo "::error::[^\n]+\n\s+exit 1\n\s+fi\n\s+echo "::warning::/,
+    );
+  });
+
   test("promote-ok only reads, and its recheck only re-runs runs", () => {
     expect(topLevelPermissions(read("gh-promote-ok.yml"))).toEqual([
       "contents: read",
