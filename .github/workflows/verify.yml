@@ -10,6 +10,16 @@ on:
 permissions:
   contents: read
 
+# One run per event and ref at a time. A PR keeps only its newest commit (the
+# older run is cancelled). A push never cancels and never drops a run: `queue:
+# max` keeps up to 100 pending, so quick merges each get their own Verify. With
+# the default single-pending queue the middle run is replaced and concludes
+# cancelled, which paints a red mark on a commit that was never broken.
+concurrency:
+  group: dev-verify-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  queue: ${{ github.event_name == 'pull_request' && 'single' || 'max' }}
+
 jobs:
   # Typecheck + Vitest LCOV, then Sonar quality gate. If Sonar fails,
   # the workflow stops. Automatic Analysis must stay off
@@ -166,7 +176,31 @@ jobs:
           ref: trunk
           path: turbopaneld
 
+      # Three attempts, 15 s then 45 s apart: setup-deno has no retry input and
+      # a transient GitHub 5xx on the download must not turn the run red.
       - name: Install Deno
+        id: deno-try-1
+        continue-on-error: true
+        uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
+        with:
+          # Keep in step with DENO_VERSION / deno_version / TP_DENO_VERSION (2.9.7).
+          deno-version: "2.9.7"
+      - name: Wait before retrying the Deno download
+        if: steps.deno-try-1.outcome == 'failure'
+        run: sleep 15
+      - name: Install Deno (retry 1 of 2)
+        id: deno-try-2
+        if: steps.deno-try-1.outcome == 'failure'
+        continue-on-error: true
+        uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
+        with:
+          # Keep in step with DENO_VERSION / deno_version / TP_DENO_VERSION (2.9.7).
+          deno-version: "2.9.7"
+      - name: Wait before retrying the Deno download again
+        if: steps.deno-try-2.outcome == 'failure'
+        run: sleep 45
+      - name: Install Deno (retry 2 of 2)
+        if: steps.deno-try-2.outcome == 'failure'
         uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
         with:
           # Keep in step with DENO_VERSION / deno_version / TP_DENO_VERSION (2.9.7).
