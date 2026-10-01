@@ -335,7 +335,9 @@ describe(".github/actions/osv-scan", () => {
 
   test("runs scan.sh from the same dev commit", () => {
     expect(action).toContain(
-      'run: sh "$GITHUB_ACTION_PATH/../../../scripts/osv/scan.sh" "$SCAN_PATH"',
+      'sh "$GITHUB_ACTION_PATH/../../../scripts/osv/$script" "$SCAN_PATH"',
     );
+    expect(action).toContain("*) script=scan.sh ;;");
+    expect(action).toContain("issue) script=scheduled.sh ;;");
   });
 });
