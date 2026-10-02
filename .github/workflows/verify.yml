@@ -94,6 +94,20 @@ jobs:
         # The pre-commit hook scans staged files only; CI scans the whole tree.
         run: sh scripts/scan-secrets.sh --all
 
+      # The commits a PR adds, not just its final tree: a secret committed and
+      # removed again inside the PR still sits in the history that gets merged.
+      # PRs into staging/live carry trunk commits that were already scanned on
+      # their own PRs, so only PRs into trunk are scanned by range.
+      - name: Scan pull request commits for secrets
+        if: github.event_name == 'pull_request' && github.base_ref == 'trunk'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: sh scripts/scan-secrets.sh --range "$BASE_SHA..$HEAD_SHA"
+
+      - name: Secret scanner self-test
+        run: sh scripts/scan-secrets.selftest.sh
+
       - name: Check vocabulary
         run: pnpm check:vocabulary
 
@@ -107,14 +121,22 @@ jobs:
         uses: ./.github/actions/osv-scan
 
       - name: Check out sibling repos (cross-repo pin tests)
-        # Public repos, trunk. Cloned outside the workspace so osv-scanner,
-        # tsc and Sonar never see them. TURBOPANEL_REQUIRE_SIBLINGS makes a
-        # missing sibling an error, so the cross-repo tests cannot skip here.
+        # Public repos, trunk, or the same-named branch when a paired PR has
+        # one (the byte-identical scanner changes land in all five repos
+        # together). Cloned outside the workspace so osv-scanner, tsc and Sonar
+        # never see them. TURBOPANEL_REQUIRE_SIBLINGS makes a missing sibling
+        # an error, so the cross-repo tests cannot skip here.
+        env:
+          HEAD_REF: ${{ github.head_ref }}
         run: |
           mkdir -p "$RUNNER_TEMP/siblings"
           for repo in turbopanel turbopaneld ui website; do
-            git clone --quiet --depth 1 --branch trunk \
-              "https://github.com/TurboPanel/${repo}.git" "$RUNNER_TEMP/siblings/${repo}"
+            url="https://github.com/TurboPanel/${repo}.git"
+            ref=trunk
+            if [ -n "$HEAD_REF" ] && git ls-remote --exit-code --heads "$url" "$HEAD_REF" >/dev/null 2>&1; then
+              ref="$HEAD_REF"
+            fi
+            git clone --quiet --depth 1 --branch "$ref" "$url" "$RUNNER_TEMP/siblings/${repo}"
           done
           echo "TURBOPANEL_SIBLINGS_DIR=$RUNNER_TEMP/siblings" >> "$GITHUB_ENV"
           echo "TURBOPANEL_REQUIRE_SIBLINGS=1" >> "$GITHUB_ENV"
