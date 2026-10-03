@@ -5,7 +5,7 @@ This file is generated from the resolved dependency graph. Do not edit it by han
 Third-party components remain under their own copyright and license terms and are not relicensed by TurboPanel Development Environment's repository license (AGPL-3.0-only).
 
 <!-- lockfiles
-pnpm-lock.yaml sha256:24c1e760d270e1a23eba1319a98e46cad093e11ca59f40289e2b992bdf34c66b
+pnpm-lock.yaml sha256:a2dc26b960b286197a8f6267edd3265d12a728c2936ed7293f45343223483963
 -->
 
 ## Production dependencies
@@ -113,7 +113,7 @@ pnpm-lock.yaml sha256:24c1e760d270e1a23eba1319a98e46cad093e11ca59f40289e2b992bdf
 - Copyright: Sindre Sorhus
 - Homepage: https://github.com/sindresorhus/escape-string-regexp#readme
 
-### figlet@1.12.0
+### figlet@1.11.0
 
 - License: MIT
 - Copyright: Patrick Gillespie
@@ -466,7 +466,7 @@ These packages are used for development, test, or build tooling and are not bund
 - Copyright: Boshen and oxc contributors
 - Homepage: https://oxc.rs
 
-### @rolldown/binding-darwin-arm64@1.0.3
+### @rolldown/binding-linux-x64-gnu@1.0.3
 
 - License: MIT
 - Homepage: https://rolldown.rs/
@@ -689,11 +689,6 @@ These packages are used for development, test, or build tooling and are not bund
 - Copyright: thecodrr
 - Homepage: https://github.com/thecodrr/fdir#readme
 
-### fsevents@2.3.3
-
-- License: MIT
-- Homepage: https://github.com/fsevents/fsevents
-
 ### gensync@1.0.0-beta.2
 
 - License: MIT
@@ -759,7 +754,7 @@ These packages are used for development, test, or build tooling and are not bund
 - License: MPL-2.0
 - Homepage: https://github.com/parcel-bundler/lightningcss#readme
 
-### lightningcss-darwin-arm64@1.32.0
+### lightningcss-linux-x64-gnu@1.32.0
 
 - License: MPL-2.0
 - Homepage: https://github.com/parcel-bundler/lightningcss#readme
