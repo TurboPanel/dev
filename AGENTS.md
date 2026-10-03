@@ -219,7 +219,7 @@ often lack a usable Node/pnpm tree). CI `verify.yml` still gates PRs.
 | Stage | dev | daemon | Rationale |
 | ----- | --- | ------ | --------- |
 | pre-commit | scan-secrets only (tests deferred) | scan-secrets + `deno fmt` (lint/tests deferred) | secret scan always; daemon fmt via host Deno or `vagrant ssh`; suites in CI / guest |
-| PR → `trunk` | `verify.yml` (`ci-ok` needs `verify` + `metrics-legacy`) | `verify.yml` | blocks merge; `ci-ok` is the one context the rulesets will require — add any new PR-time job to its `needs:` |
+| PR → `trunk` | `verify.yml` (`ci-ok` needs `verify`) | `verify.yml` | blocks merge; `ci-ok` is the one context the rulesets will require — add any new PR-time job to its `needs:` |
 | push `trunk` | `verify.yml` | `verify.yml`; `publish` job `needs: verify` | nothing compiles from failing code |
 | promote → rc/release | the four shipping repos' `promote.yml` (dev has none: it is always run from trunk) | `promote.yml` → `gh-promote.yml` here: **signature + sha256/size of the tested build, re-signed manifest, same bytes** | no new code enters after publish |
 
