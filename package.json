@@ -20,7 +20,7 @@
     "notices:check": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/generate-notices.mjs --check"
   },
   "dependencies": {
-    "figlet": "^1.11.0",
+    "figlet": "^1.11.4",
     "ink": "^7.0.2",
     "ink-gradient": "^4.0.1",
     "ink-scroll-list": "^0.4.1",
