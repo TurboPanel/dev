@@ -5,7 +5,7 @@ This file is generated from the resolved dependency graph. Do not edit it by han
 Third-party components remain under their own copyright and license terms and are not relicensed by TurboPanel Development Environment's repository license (AGPL-3.0-only).
 
 <!-- lockfiles
-pnpm-lock.yaml sha256:a2dc26b960b286197a8f6267edd3265d12a728c2936ed7293f45343223483963
+pnpm-lock.yaml sha256:24c1e760d270e1a23eba1319a98e46cad093e11ca59f40289e2b992bdf34c66b
 -->
 
 ## Production dependencies
@@ -113,7 +113,7 @@ pnpm-lock.yaml sha256:a2dc26b960b286197a8f6267edd3265d12a728c2936ed7293f45343223
 - Copyright: Sindre Sorhus
 - Homepage: https://github.com/sindresorhus/escape-string-regexp#readme
 
-### figlet@1.11.0
+### figlet@1.12.0
 
 - License: MIT
 - Copyright: Patrick Gillespie
