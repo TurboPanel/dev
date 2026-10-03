@@ -39,7 +39,8 @@
 # caller's repo, read by the prepare job through its own `environment:`
 # (`rc` for to=rc, `release` for to=release, so the approval gate sits on the
 # release only; a notes-only repo needs none). RELEASE_APP_ID and RELEASE_APP_PRIVATE_KEY are org
-# secrets reaching every step through the caller's `secrets: inherit`.
+# secrets the caller passes explicitly (`secrets:` with those two names, never
+# `secrets: inherit`). There is no repo-level signing-key fallback.
 
 # Permissions — the caller's job must grant at least:
 #
