@@ -113,6 +113,41 @@ describe(".github/workflows", () => {
     });
   });
 
+  // A declared input nothing reads is a control that does not exist. The one
+  // exception is named here and says IGNORED in its own description.
+  const IGNORED_INPUTS: Record<string, string[]> = {
+    "gh-promote.yml": ["approval-environment"],
+  };
+
+  test.each(reusable)("%s reads every input it declares", (file) => {
+    const text = read(file);
+    const block = /^ {2}workflow_call:\n {4}inputs:\n((?: {6,}.*\n|\n)+)/m.exec(
+      text,
+    )?.[1];
+    if (block === undefined) return;
+    const declared = [...block.matchAll(/^ {6}([a-z][\w-]*):$/gm)].map(
+      (match) => match[1],
+    );
+    const ignored = IGNORED_INPUTS[file] ?? [];
+    for (const name of declared) {
+      if (ignored.includes(name)) {
+        expect(block, `${name} must say IGNORED`).toMatch(
+          new RegExp(
+            `^ {6}${name}:\\n {8}description: >-\\n {10}IGNORED\\.`,
+            "m",
+          ),
+        );
+        expect(text.replace(block, ""), `${name} is ignored`).not.toMatch(
+          new RegExp(`inputs\\.${name}\\b`),
+        );
+        continue;
+      }
+      expect(text.replace(block, ""), `input ${name}`).toMatch(
+        new RegExp(`inputs\\.${name}\\b`),
+      );
+    }
+  });
+
   test("ci-ok is red on a cancelled pull request but not on a cancelled push", () => {
     const text = read("verify.yml");
     expect(text).toMatch(

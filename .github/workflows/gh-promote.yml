@@ -84,13 +84,13 @@ on:
         default: ""
       approval-environment:
         description: >-
-          GitHub environment whose reviewers must approve this run before it does anything
-          (default `release`). Pass "" to run without an approval gate: a merged PR is
-          already a deliberate maintainer action (the automatic rc path uses this). An
-          `environment` expression that resolves to an empty string means no environment.
+          IGNORED. Kept only so callers that still pass it (publish-rc.yml passes "") keep
+          working. The prepare job's `environment:` is fixed by `to` and `repo-kind`: rc
+          runs in `rc` (no reviewer), release in `release` (the owner-approval gate), a
+          notes-only run in none. Passing a value here changes nothing.
         required: false
         type: string
-        default: release
+        default: ""
     secrets:
       RELEASE_APP_ID:
         description: TurboPanel Release GitHub App id (required for to=release)
