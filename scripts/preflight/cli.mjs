@@ -8,8 +8,8 @@
 //   node scripts/preflight/cli.mjs [--hosted] [--strict] [--no-color]
 //
 // Exit code: 0 when nothing is red, 1 when something is red (with --strict,
-// also when something is amber), 2 when GitHub could not be read at all. A GitHub token is taken from GH_TOKEN or
-// GITHUB_TOKEN, else from `gh auth token`; with none, the calls are anonymous
+// also when something is amber), 2 when GitHub could not be read at all.
+// A GitHub token is taken from GH_TOKEN or GITHUB_TOKEN, else from `gh auth token`; with none, the calls are anonymous
 // (rate-limited, and the environments check will say it cannot see them).
 import { execFileSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
@@ -49,6 +49,12 @@ export function makeIo(token, doFetch = fetch) {
   };
 }
 
+function verdictLine({ ok, goForMerge }) {
+  if (goForMerge) return "READY: nothing red, nothing waiting.";
+  if (ok) return "NOT YET: nothing red, but something is waiting or unknown (amber).";
+  return "STOP: fix the red rows first.";
+}
+
 export async function main(argv, out = console.log, io = makeIo(findToken())) {
   const flags = new Set(argv);
   const colour = process.stdout.isTTY === true && !flags.has("--no-color");
@@ -63,7 +69,7 @@ export async function main(argv, out = console.log, io = makeIo(findToken())) {
   const { counts, ok, goForMerge } = summarise(rows);
   out("");
   out(`green ${counts.green}, amber ${counts.amber}, red ${counts.red}, info ${counts.info}`);
-  out(goForMerge ? "READY: nothing red, nothing waiting." : ok ? "NOT YET: nothing red, but something is waiting or unknown (amber)." : "STOP: fix the red rows first.");
+  out(verdictLine({ ok, goForMerge }));
   return ok && (goForMerge || !flags.has("--strict")) ? 0 : 1;
 }
 

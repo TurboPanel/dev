@@ -41,7 +41,7 @@ export function parseReleasePrTitle(title) {
 
 /** "0.1.8-rc.1" -> "0.1.8". */
 export function baseVersion(version) {
-  return String(version).replace(/-.*$/, "");
+  return String(version).split("-")[0];
 }
 
 /** Open PRs -> the one release-candidate PR (trunk into staging), or the release PR (staging into live). */
@@ -112,12 +112,16 @@ export function canaryManifests(assetNames) {
  * The canary rail and a release candidate. `manifests` carries each canary's
  * name and the commit it was built from ({ name, base, number, commit }).
  * publish-rc needs a canary built from exactly the merged commit, and the
- * rail keeps only the newest 20.
+ * rail keeps only the newest 20. While that commit's Build is still running
+ * (`buildPending`) a missing canary is only a wait.
  */
-export function canaryRow(id, subject, { headSha, rcVersion, manifests }) {
+export function canaryRow(id, subject, { headSha, rcVersion, manifests, buildPending = false }) {
   if (manifests.length === 0) return row(id, "red", `${subject}: the canary rail has no manifest at all`);
   const hit = manifests.find((m) => m.commit === headSha);
   const newest = manifests[0];
+  if (hit === undefined && buildPending) {
+    return row(id, "amber", `${subject}: no canary yet for ${short(headSha)}; the Build of that commit is still running, and the canary follows it`);
+  }
   if (hit === undefined) {
     return row(
       id,
@@ -137,12 +141,16 @@ export function short(sha) {
   return String(sha ?? "").slice(0, 8);
 }
 
-/** Pull request details -> row about whether GitHub will let it merge. */
-export function prStateRow(id, subject, pr) {
+/**
+ * Pull request details -> row about whether GitHub will let it merge. GitHub
+ * calls a PR "blocked" while required checks are still running, so with
+ * `checksPending` that is a wait, not a stop.
+ */
+export function prStateRow(id, subject, pr, checksPending = false) {
   if (pr.draft) return row(id, "red", `${subject}: is a draft`);
   const state = pr.mergeable_state ?? "unknown";
   if (state === "clean") return row(id, "green", `${subject}: GitHub says it is clean to merge`);
-  if (state === "unknown" || state === "unstable") {
+  if (state === "unknown" || state === "unstable" || (state === "blocked" && checksPending)) {
     return row(id, "amber", `${subject}: merge state is ${state} (GitHub may still be computing or a check is pending)`);
   }
   return row(id, "red", `${subject}: merge state is ${state}`);
@@ -178,30 +186,29 @@ export function environmentRows(repo, envs, releaseRules, kind = "instance") {
   if (envs === null) {
     return [row(`${repo}/environments`, "amber", `${repo}: this token cannot read the environments, so signing setup is unchecked`)];
   }
-  const rows = [];
   const notesOnly = kind === "notes-only";
-  for (const name of notesOnly ? ["release"] : ["canary", "rc", "release"]) {
-    rows.push(
-      envs.includes(name)
-        ? row(`${repo}/env-${name}`, "green", `${repo}: signing environment "${name}" exists`)
-        : row(`${repo}/env-${name}`, "red", `${repo}: signing environment "${name}" is missing`),
-    );
-  }
-  if (envs.includes("release") && releaseRules === null) {
-    rows.push(row(`${repo}/env-release-gate`, "amber", `${repo}: this token cannot read the "release" approver rule, so the live approval is unchecked`));
-  }
-  if (envs.includes("release") && releaseRules !== null) {
-    rows.push(
-      releaseRules.includes("required_reviewers")
-        ? row(`${repo}/env-release-gate`, "green", `${repo}: "release" needs a named approver (the live promotion waits for you)`)
-        : row(
-            `${repo}/env-release-gate`,
-            notesOnly ? "amber" : "red",
-            `${repo}: "release" has no required approver, so a Release PR would publish unattended${notesOnly ? " (notes only: a GitHub release page, no package; confirm that is what you want)" : ""}`,
-          ),
-    );
-  }
+  const rows = (notesOnly ? ["release"] : ["canary", "rc", "release"]).map((name) => environmentRow(repo, name, envs));
+  if (envs.includes("release")) rows.push(approverRow(repo, releaseRules, notesOnly));
   return rows;
+}
+
+function environmentRow(repo, name, envs) {
+  const id = `${repo}/env-${name}`;
+  if (envs.includes(name)) return row(id, "green", `${repo}: signing environment "${name}" exists`);
+  return row(id, "red", `${repo}: signing environment "${name}" is missing`);
+}
+
+function approverRow(repo, releaseRules, notesOnly) {
+  const id = `${repo}/env-release-gate`;
+  if (releaseRules === null) {
+    return row(id, "amber", `${repo}: this token cannot read the "release" approver rule, so the live approval is unchecked`);
+  }
+  if (releaseRules.includes("required_reviewers")) {
+    return row(id, "green", `${repo}: "release" needs a named approver (the live promotion waits for you)`);
+  }
+  const text = `${repo}: "release" has no required approver, so a Release PR would publish unattended`;
+  if (!notesOnly) return row(id, "red", text);
+  return row(id, "amber", `${text} (notes only: a GitHub release page, no package; confirm that is what you want)`);
 }
 
 /** Version agreement across repos. `rc` maps repo name -> RC PR version (or missing). */

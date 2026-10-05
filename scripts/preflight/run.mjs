@@ -66,7 +66,7 @@ async function optionalApi(io, path) {
   }
 }
 
-async function canaryRows(io, repo, label, rcPr, trunkSha) {
+async function canaryRows(io, repo, label, rcPr, trunkSha, trunkSummary) {
   const rail = await optionalApi(io, `/repos/${ORG}/${repo}/releases/tags/canary`);
   const names = canaryManifests((rail?.assets ?? []).map((asset) => asset.name));
   const rows = [];
@@ -83,7 +83,12 @@ async function canaryRows(io, repo, label, rcPr, trunkSha) {
   }
   if (rcPr !== null) {
     const manifests = await canaryCommits(io, repo, names, rcPr.head.sha);
-    rows.push(canaryRow(`${repo}/canary-for-rc`, `${label} Release Candidate`, { headSha: rcPr.head.sha, rcVersion: rcPr.version, manifests }));
+    rows.push(canaryRow(`${repo}/canary-for-rc`, `${label} Release Candidate`, {
+        headSha: rcPr.head.sha,
+        rcVersion: rcPr.version,
+        manifests,
+        buildPending: rcPr.head.sha === trunkSha && trunkSummary.verdict === "waiting",
+      }));
   }
   return rows;
 }
@@ -93,8 +98,10 @@ async function manifestRows(io, repo, label, latest) {
   const base = `https://github.com/${ORG}/${repo}/releases`;
   const rc = await io.download(`${base}/download/rc/manifest.json`);
   const release = await io.download(`${base}/latest/download/manifest.json`);
-  rows.push(manifestRow(`${repo}/manifest-rc`, `${label} rc channel`, rc));
-  rows.push(manifestRow(`${repo}/manifest-release`, `${label} release channel`, release));
+  rows.push(
+    manifestRow(`${repo}/manifest-rc`, `${label} rc channel`, rc),
+    manifestRow(`${repo}/manifest-release`, `${label} release channel`, release),
+  );
   if (rc !== null && release !== null && rc.version === release.version) {
     rows.push(row(`${repo}/rc-is-release`, "info", `${label}: the rc pointer names ${rc.version}, the same as the release channel (normal until a new RC publishes)`));
   }
@@ -128,16 +135,19 @@ async function repoRows(io, { name, kind, label }) {
     rows.push(row(`${name}/rc-pr`, "amber", `${label}: no Release Candidate PR is open (already merged, or the bot has not opened the next one)`));
   } else {
     const detail = await io.api(`/repos/${ORG}/${name}/pulls/${rcPr.number}`);
-    rows.push(row(`${name}/rc-pr`, "info", `${label}: ${name}#${rcPr.number} "${rcPr.title}"`));
-    rows.push(prStateRow(`${name}/rc-state`, `${label} ${name}#${rcPr.number}`, detail));
-    rows.push(prFreshRow(`${name}/rc-fresh`, `${label} ${name}#${rcPr.number}`, rcPr, trunkSha));
+    const subject = `${label} ${name}#${rcPr.number}`;
     rcSummary = await checkRuns(io, name, rcPr.head.sha);
-    rows.push(checksRow(`${name}/rc-checks`, `${label} ${name}#${rcPr.number}`, rcSummary));
+    rows.push(
+      row(`${name}/rc-pr`, "info", `${label}: ${name}#${rcPr.number} "${rcPr.title}"`),
+      prStateRow(`${name}/rc-state`, subject, detail, rcSummary.verdict === "waiting"),
+      prFreshRow(`${name}/rc-fresh`, subject, rcPr, trunkSha),
+      checksRow(`${name}/rc-checks`, subject, rcSummary),
+    );
   }
   const trunkSummary = rcPr?.head.sha === trunkSha && rcSummary !== null ? rcSummary : await checkRuns(io, name, trunkSha);
   rows.push(checksRow(`${name}/trunk-checks`, `${label} trunk ${short(trunkSha)}`, trunkSummary));
 
-  if (kind !== "notes-only") rows.push(...(await canaryRows(io, name, label, rcPr, trunkSha)));
+  if (kind !== "notes-only") rows.push(...(await canaryRows(io, name, label, rcPr, trunkSha, trunkSummary)));
 
   const releases = await io.api(`/repos/${ORG}/${name}/releases?per_page=30`);
   const latest = latestReleaseVersion(releases);
@@ -151,13 +161,13 @@ async function repoRows(io, { name, kind, label }) {
   return { rows, rcVersion: rcPr?.version ?? null, latest };
 }
 
-async function hostedRows(io) {
-  const rows = [];
-  for (const target of HOSTED) {
-    const branch = await io.api(`/repos/${ORG}/turbopanel/commits/${target.branch}`);
-    rows.push(hostedRow(target.id, target.label, await io.download(target.url), branch.sha));
-  }
-  return rows;
+function hostedRows(io) {
+  return Promise.all(
+    HOSTED.map(async (target) => {
+      const branch = await io.api(`/repos/${ORG}/turbopanel/commits/${target.branch}`);
+      return hostedRow(target.id, target.label, await io.download(target.url), branch.sha);
+    }),
+  );
 }
 
 /**
@@ -165,17 +175,15 @@ async function hostedRows(io) {
  * itself cannot be reached (a failed read of a core fact is not a verdict).
  */
 export async function runPreflight(io, { hosted = false } = {}) {
-  const rows = [];
+  const results = await Promise.all(REPOS.map((repo) => repoRows(io, repo)));
+  const rows = results.flatMap((result) => result.rows);
   const rc = {};
   const latest = {};
-  for (const repo of REPOS) {
-    const result = await repoRows(io, repo);
-    rows.push(...result.rows);
-    rc[repo.name] = result.rcVersion;
-    latest[repo.name] = result.latest;
-  }
-  const present = Object.fromEntries(Object.entries(rc).filter(([, version]) => version !== null));
-  rows.push(...versionRows(present, latest));
+  REPOS.forEach((repo, index) => {
+    if (results[index].rcVersion !== null) rc[repo.name] = results[index].rcVersion;
+    latest[repo.name] = results[index].latest;
+  });
+  rows.push(...versionRows(rc, latest));
   if (hosted) rows.push(...(await hostedRows(io)));
   return rows;
 }

@@ -135,6 +135,12 @@ describe("canary rail", () => {
     expect(result.text).toContain("canary 3 is newer");
   });
 
+  test("amber, not red, while the Build of that commit is still running", () => {
+    const input = { headSha: "c".repeat(40), rcVersion: "0.1.8-rc.1", manifests };
+    expect(canaryRow("c", "cp", { ...input, buildPending: true }).level).toBe("amber");
+    expect(canaryRow("c", "cp", { ...input, buildPending: false }).level).toBe("red");
+  });
+
   test("red when no canary has the commit, when the rail is empty, or when the version differs", () => {
     expect(canaryRow("c", "cp", { headSha: "c".repeat(40), rcVersion: "0.1.8-rc.1", manifests }).level).toBe("red");
     expect(canaryRow("c", "cp", { headSha: SHA, rcVersion: "0.1.8-rc.1", manifests: [] }).level).toBe("red");
@@ -150,6 +156,7 @@ describe("pull request rows", () => {
     expect(prStateRow("s", "pr", { title: "", head, mergeable_state: "unknown" }).level).toBe("amber");
     expect(prStateRow("s", "pr", { title: "", head, mergeable_state: "blocked" }).level).toBe("red");
     expect(prStateRow("s", "pr", { title: "", head }).level).toBe("amber");
+    expect(prStateRow("s", "pr", { title: "", head, mergeable_state: "blocked" }, true).level).toBe("amber");
   });
 
   test("freshness against trunk", () => {

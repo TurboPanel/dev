@@ -53,10 +53,10 @@ export function canaryManifests(assetNames: readonly string[]): CanaryManifest[]
 export function canaryRow(
   id: string,
   subject: string,
-  input: { headSha: string; rcVersion: string; manifests: readonly CanaryManifest[] },
+  input: { headSha: string; rcVersion: string; manifests: readonly CanaryManifest[]; buildPending?: boolean },
 ): Row;
 export function short(sha: string | undefined): string;
-export function prStateRow(id: string, subject: string, pr: PrLike): Row;
+export function prStateRow(id: string, subject: string, pr: PrLike, checksPending?: boolean): Row;
 export function prFreshRow(id: string, subject: string, pr: PrLike, trunkSha: string): Row;
 export function manifestRow(
   id: string,
