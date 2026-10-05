@@ -3,9 +3,9 @@
 # release rail's pointer move.
 #
 # This is not part of the normal flow. Normally merging the "Release X.Y.Z" PR
-# runs the repo's `cut-release.yml`, and `gh-promote-finalize.yml` makes the release the
-# latest one. Reach for this script only when that automation cannot run and
-# you need to move the pointer yourself.
+# runs the repo's `publish-release.yml`, and `gh-promote-finalize.yml` makes the
+# release the latest one. Reach for this script only when that automation
+# cannot run and you need to move the pointer yourself.
 #
 # On GitHub Releases the promotion is `gh release edit vX.Y.Z
 # --prerelease=false`: `releases/latest` moves, no compiler runs, the bytes
