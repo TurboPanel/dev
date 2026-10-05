@@ -244,7 +244,8 @@ jobs:
         # the pointer. Created on first use, then the manifest is replaced
         # in place. Only runs when the release verified clean, and only for
         # the rc channel: a release channel is `releases/latest`, which is
-        # GitHub's own pointer (moved by scripts/promote-release.sh).
+        # GitHub's own pointer (moved by gh-promote-finalize.yml; by hand only
+        # with scripts/promote-release.sh).
         if: inputs.manifest-filename != '' && inputs.channel == 'rc'
         run: |
           set -eu
