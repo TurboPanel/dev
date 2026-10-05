@@ -28,6 +28,18 @@ const OK_CONCLUSIONS = new Set(["success", "skipped", "neutral"]);
 // A cancelled run was superseded or stopped by hand: not a failure, but not a pass either.
 const WAITING_CONCLUSIONS = new Set(["cancelled", "stale"]);
 
+/** A full commit id from GitHub, or an error: it ends up inside request paths. */
+export function safeSha(value) {
+  if (typeof value !== "string" || !/^[0-9a-f]{40}$/.test(value)) throw new Error("GitHub returned something that is not a commit id");
+  return value;
+}
+
+/** A pull request number from GitHub, or an error: it ends up inside request paths. */
+export function safeNumber(value) {
+  if (!Number.isSafeInteger(value) || value < 1) throw new Error("GitHub returned something that is not a pull request number");
+  return value;
+}
+
 export function row(id, level, text) {
   return { id, level, text };
 }

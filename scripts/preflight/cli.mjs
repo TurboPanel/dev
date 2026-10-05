@@ -17,6 +17,9 @@ import { formatRow, summarise } from "./lib.mjs";
 import { runPreflight } from "./run.mjs";
 
 const API = "https://api.github.com";
+// The only paths and hosts this tool may read. Anything else is refused before a request is made.
+const API_PATH = /^\/repos\/TurboPanel\/[A-Za-z0-9._-]+\/[A-Za-z0-9._\-/?=&]*$/;
+const READABLE_URL = /^https:\/\/(github\.com\/TurboPanel\/|staging\.turbopanel\.dev\/api\/health$|turbopanel\.app\/api\/health$)/;
 
 function findToken(env = process.env, run = execFileSync) {
   const fromEnv = env.GH_TOKEN || env.GITHUB_TOKEN;
@@ -34,11 +37,13 @@ export function makeIo(token, doFetch = fetch) {
   if (token) headers.authorization = `Bearer ${token}`;
   return {
     async api(path) {
+      if (!API_PATH.test(path) || path.includes("..")) throw new Error("refused: not a TurboPanel repository path");
       const res = await doFetch(`${API}${path}`, { method: "GET", headers });
-      if (!res.ok) throw Object.assign(new Error(`GET ${path}: HTTP ${res.status}`), { status: res.status });
+      if (!res.ok) throw Object.assign(new Error(`GitHub answered HTTP ${Number(res.status)}`), { status: Number(res.status) });
       return res.json();
     },
     async download(url) {
+      if (!READABLE_URL.test(url) || url.includes("..")) throw new Error("refused: not a TurboPanel download");
       try {
         const res = await doFetch(url, { method: "GET", redirect: "follow", headers: { "user-agent": headers["user-agent"] } });
         return res.ok ? await res.json() : null;
@@ -47,6 +52,12 @@ export function makeIo(token, doFetch = fetch) {
       }
     },
   };
+}
+
+/** Only a number or a fixed phrase: nothing from the network is echoed. */
+function describeFailure(error) {
+  if (Number.isInteger(error?.status)) return `HTTP ${error.status}`;
+  return "no usable answer";
 }
 
 function verdictLine({ ok, goForMerge }) {
@@ -62,7 +73,7 @@ export async function main(argv, out = console.log, io = makeIo(findToken())) {
   try {
     rows = await runPreflight(io, { hosted: flags.has("--hosted") });
   } catch (error) {
-    out(`Preflight could not read GitHub: ${error.message}`);
+    out(`Preflight could not read GitHub (${describeFailure(error)}).`);
     return 2;
   }
   for (const r of rows) out(formatRow(r, colour));

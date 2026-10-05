@@ -43,6 +43,8 @@ export interface PrLike {
 export const ORG: string;
 export const LEVELS: readonly Level[];
 export const REPOS: readonly RepoInfo[];
+export function safeSha(value: unknown): string;
+export function safeNumber(value: unknown): number;
 export function row(id: string, level: Level, text: string): Row;
 export function parseReleasePrTitle(title: string): { kind: "rc" | "release"; version: string } | null;
 export function baseVersion(version: string): string;

@@ -18,6 +18,8 @@ import {
   prFreshRow,
   prStateRow,
   row,
+  safeNumber,
+  safeSha,
   summarise,
   summariseChecks,
   versionRows,
@@ -329,10 +331,10 @@ describe("read-only guarantee", () => {
       Response.json({ ok: true }, { status: String(_url).includes("missing") ? 404 : 200, headers: init?.headers }),
     );
     const io = makeIo("token", doFetch as unknown as typeof fetch);
-    await expect(io.api("/repos/x")).resolves.toEqual({ ok: true });
-    await expect(io.download("https://example.com/a")).resolves.toEqual({ ok: true });
-    await expect(io.download("https://example.com/missing")).resolves.toBeNull();
-    await expect(io.api("/missing")).rejects.toMatchObject({ status: 404 });
+    await expect(io.api("/repos/TurboPanel/dev/pulls?state=open")).resolves.toEqual({ ok: true });
+    await expect(io.download("https://github.com/TurboPanel/dev/releases/download/rc/manifest.json")).resolves.toEqual({ ok: true });
+    await expect(io.download("https://github.com/TurboPanel/dev/releases/download/missing/manifest.json")).resolves.toBeNull();
+    await expect(io.api("/repos/TurboPanel/missing/pulls")).rejects.toMatchObject({ status: 404 });
     for (const [, init] of doFetch.mock.calls) expect(init?.method).toBe("GET");
     const auth = (doFetch.mock.calls[0][1]?.headers as Record<string, string>).authorization;
     expect(auth).toBe("Bearer token");
@@ -342,7 +344,28 @@ describe("read-only guarantee", () => {
     const io = makeIo("", (async () => {
       throw new Error("offline");
     }) as unknown as typeof fetch);
-    await expect(io.download("https://example.com/a")).resolves.toBeNull();
+    await expect(io.download("https://github.com/TurboPanel/dev/releases/latest/download/manifest.json")).resolves.toBeNull();
+  });
+
+  test("refuses any path or address outside the TurboPanel reads", async () => {
+    const doFetch = vi.fn();
+    const io = makeIo("token", doFetch as unknown as typeof fetch);
+    for (const path of ["/user", "/repos/other/x", "/repos/TurboPanel/dev/../../user", "/repos/TurboPanel/dev/x#frag"]) {
+      await expect(io.api(path)).rejects.toThrow("refused");
+    }
+    for (const url of ["https://example.com/a", "http://github.com/TurboPanel/x", "https://github.com/TurboPanel/../x", "https://turbopanel.app/other"]) {
+      await expect(io.download(url)).rejects.toThrow("refused");
+    }
+    expect(doFetch).not.toHaveBeenCalled();
+  });
+
+  test("values taken from GitHub answers must look like a commit id and a PR number", () => {
+    expect(safeSha(SHA)).toBe(SHA);
+    expect(() => safeSha("../x")).toThrow("commit id");
+    expect(() => safeSha(undefined)).toThrow("commit id");
+    expect(safeNumber(7)).toBe(7);
+    expect(() => safeNumber("7/../x")).toThrow("pull request number");
+    expect(() => safeNumber(0)).toThrow("pull request number");
   });
 
   test("no preflight source file names a writing HTTP method or a GraphQL command", () => {
@@ -384,8 +407,7 @@ describe("main", () => {
     const out: string[] = [];
     const io = makeIo("secret-token", (async () => new Response("{}", { status: 500 })) as unknown as typeof fetch);
     expect(await main(["--no-color"], (line: string) => out.push(line), io)).toBe(2);
-    expect(out).toHaveLength(1);
-    expect(out[0]).toContain("could not read GitHub");
+    expect(out).toEqual(["Preflight could not read GitHub (HTTP 500)."]);
     expect(out.join("\n")).not.toContain("secret-token");
   });
 });

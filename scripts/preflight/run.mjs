@@ -21,6 +21,8 @@ import {
   prStateRow,
   REPOS,
   row,
+  safeNumber,
+  safeSha,
   short,
   summariseChecks,
   versionRows,
@@ -37,7 +39,7 @@ export const HOSTED = [
 async function checkRuns(io, repo, sha) {
   const runs = [];
   for (let page = 1; page <= 3; page += 1) {
-    const body = await io.api(`/repos/${ORG}/${repo}/commits/${sha}/check-runs?per_page=100&page=${page}`);
+    const body = await io.api(`/repos/${ORG}/${repo}/commits/${safeSha(sha)}/check-runs?per_page=100&page=${page}`);
     runs.push(...body.check_runs);
     if (runs.length >= body.total_count) break;
   }
@@ -48,7 +50,7 @@ async function checkRuns(io, repo, sha) {
 async function canaryCommits(io, repo, names, headSha) {
   const found = [];
   for (const entry of names.slice(0, CANARY_RAIL)) {
-    const manifest = await io.download(`https://github.com/${ORG}/${repo}/releases/download/canary/${entry.name}`);
+    const manifest = await io.download(`https://github.com/${ORG}/${repo}/releases/download/canary/${encodeURIComponent(entry.name)}`);
     found.push({ ...entry, commit: manifest?.commit ?? "" });
     if (manifest?.commit === headSha) break;
   }
@@ -128,13 +130,13 @@ async function repoRows(io, { name, kind, label }) {
   const rcPr = findReleasePr(prs, "rc");
   const releasePr = findReleasePr(prs, "release");
   const trunk = await io.api(`/repos/${ORG}/${name}/commits/trunk`);
-  const trunkSha = trunk.sha;
+  const trunkSha = safeSha(trunk.sha);
 
   let rcSummary = null;
   if (rcPr === null) {
     rows.push(row(`${name}/rc-pr`, "amber", `${label}: no Release Candidate PR is open (already merged, or the bot has not opened the next one)`));
   } else {
-    const detail = await io.api(`/repos/${ORG}/${name}/pulls/${rcPr.number}`);
+    const detail = await io.api(`/repos/${ORG}/${name}/pulls/${safeNumber(rcPr.number)}`);
     const subject = `${label} ${name}#${rcPr.number}`;
     rcSummary = await checkRuns(io, name, rcPr.head.sha);
     rows.push(
