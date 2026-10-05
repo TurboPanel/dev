@@ -531,9 +531,9 @@ describe("workflow shape", () => {
         ),
       );
     }
-    // The approval gate defaults to `release` and a caller can pass "" to drop it.
+    // approval-environment is accepted for old callers and ignored; it says so.
     expect(text).toMatch(
-      /^      approval-environment:\n(?:        .*\n)*?        default: release$/m,
+      /^      approval-environment:\n        description: >-\n          IGNORED\./m,
     );
     expect(text).toMatch(
       /^    environment: \$\{\{ inputs\.to == 'release' && 'release' \|\| \(inputs\.repo-kind != 'notes-only' && 'rc' \|\| null\) \}\}$/m,
