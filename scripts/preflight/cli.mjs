@@ -43,7 +43,7 @@ export function makeIo(token, doFetch = fetch) {
       return res.json();
     },
     async download(url) {
-      if (!READABLE_URL.test(url) || url.includes("..")) throw new Error("refused: not a TurboPanel download");
+      if (!READABLE_URL.test(url) || /[%\\]|\.\./.test(url)) throw new Error("refused: not a TurboPanel download");
       try {
         const res = await doFetch(url, { method: "GET", redirect: "follow", headers: { "user-agent": headers["user-agent"] } });
         return res.ok ? await res.json() : null;

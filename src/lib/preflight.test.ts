@@ -353,7 +353,7 @@ describe("read-only guarantee", () => {
     for (const path of ["/user", "/repos/other/x", "/repos/TurboPanel/dev/../../user", "/repos/TurboPanel/dev/x#frag"]) {
       await expect(io.api(path)).rejects.toThrow("refused");
     }
-    for (const url of ["https://example.com/a", "http://github.com/TurboPanel/x", "https://github.com/TurboPanel/../x", "https://turbopanel.app/other"]) {
+    for (const url of ["https://example.com/a", "http://github.com/TurboPanel/x", "https://github.com/TurboPanel/../x", "https://turbopanel.app/other", "https://github.com/TurboPanel/x/%2e%2e/%2e%2e/evil/r"]) {
       await expect(io.download(url)).rejects.toThrow("refused");
     }
     expect(doFetch).not.toHaveBeenCalled();
