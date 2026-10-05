@@ -1,9 +1,15 @@
 #!/usr/bin/env sh
-# Promote a soaked pre-release to `latest` — the release rail's pointer move.
+# Promote a soaked pre-release to `latest` by hand — the manual override of the
+# release rail's pointer move.
+#
+# This is not part of the normal flow. Normally merging the "Release X.Y.Z" PR
+# runs the repo's `publish-release.yml`, and `gh-promote-finalize.yml` makes the
+# release the latest one. Reach for this script only when that automation
+# cannot run and you need to move the pointer yourself.
 #
 # On GitHub Releases the promotion is `gh release edit vX.Y.Z
 # --prerelease=false`: `releases/latest` moves, no compiler runs, the bytes
-# are the ones that soaked on the internal fleet. This wrapper adds the two
+# are the ones that soaked on the testing servers. This wrapper adds the two
 # refusals the Road to 0.1.x page asks for (`promotion`):
 #
 #   - it refuses to *build*: no release for that tag is a failure, never a
