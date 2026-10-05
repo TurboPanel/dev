@@ -78,7 +78,8 @@ export function summariseChecks(runs) {
   if (names.failed.length > 0) verdict = "failed";
   else if (names.waiting.length > 0) verdict = "waiting";
   else if (newest.size === 0) verdict = "none";
-  return { verdict, total: newest.size, ...names, hasCiOk: names.green.includes("ci-ok") };
+  // A skipped or neutral "ci-ok" is not the gate passing: only success counts.
+  return { verdict, total: newest.size, ...names, hasCiOk: newest.get("ci-ok")?.conclusion === "success" };
 }
 
 /** A checks summary as a result row. */
@@ -164,7 +165,7 @@ export function manifestRow(id, subject, manifest) {
   if (sig?.alg !== "ed25519" || !sig.keyId || !sig.value) {
     return row(id, "red", `${subject}: manifest ${manifest.version} is not signed with ed25519`);
   }
-  return row(id, "green", `${subject}: manifest ${manifest.version} resolves, signed (ed25519, key ${short(sig.keyId)})`);
+  return row(id, "green", `${subject}: manifest ${manifest.version} resolves and carries an ed25519 signature (key ${short(sig.keyId)}); the installer verifies it, this check does not`);
 }
 
 /**
@@ -185,6 +186,9 @@ export function environmentRows(repo, envs, releaseRules, kind = "instance") {
         ? row(`${repo}/env-${name}`, "green", `${repo}: signing environment "${name}" exists`)
         : row(`${repo}/env-${name}`, "red", `${repo}: signing environment "${name}" is missing`),
     );
+  }
+  if (envs.includes("release") && releaseRules === null) {
+    rows.push(row(`${repo}/env-release-gate`, "amber", `${repo}: this token cannot read the "release" approver rule, so the live approval is unchecked`));
   }
   if (envs.includes("release") && releaseRules !== null) {
     rows.push(
@@ -236,6 +240,7 @@ export function latestReleaseVersion(releases) {
   let best = null;
   for (const rel of releases) {
     const m = /^v(\d+\.\d+\.\d+)$/.exec(rel.tag_name ?? "");
+    if (rel.draft || rel.prerelease) continue;
     if (m !== null && (best === null || compareVersions(m[1], best) > 0)) best = m[1];
   }
   return best;

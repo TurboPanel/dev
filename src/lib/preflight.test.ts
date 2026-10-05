@@ -63,6 +63,7 @@ describe("titles and versions", () => {
     const releases = [{ tag_name: "canary" }, { tag_name: "v0.1.7-rc.1" }, { tag_name: "v0.1.10" }, { tag_name: "v0.1.9" }, {}];
     expect(latestReleaseVersion(releases)).toBe("0.1.10");
     expect(latestReleaseVersion([{ tag_name: "canary" }])).toBeNull();
+    expect(latestReleaseVersion([{ tag_name: "v0.2.0", draft: true }, { tag_name: "v0.1.9", prerelease: true }, { tag_name: "v0.1.8" }])).toBe("0.1.8");
   });
 });
 
@@ -90,6 +91,16 @@ describe("checks", () => {
     const none = summariseChecks([]);
     expect(none.verdict).toBe("none");
     expect(checksRow("x", "PR", none).level).toBe("amber");
+  });
+
+  test("a skipped ci-ok does not count as the gate passing", () => {
+    const summary = summariseChecks([run(1, "ci-ok", "completed", "skipped"), run(2, "build", "completed", "success")]);
+    expect(summary.hasCiOk).toBe(false);
+    expect(checksRow("x", "PR", summary).level).toBe("amber");
+  });
+
+  test("the newest run wins even when listed first", () => {
+    expect(summariseChecks([run(9, "build", "completed", "failure"), run(3, "build", "completed", "success")]).verdict).toBe("failed");
   });
 
   test("green checks without ci-ok are amber", () => {
@@ -166,7 +177,8 @@ describe("manifests, environments, versions", () => {
   test("environments: unreadable is one amber row, release rules unreadable adds nothing", () => {
     expect(environmentRows("r", null, null)).toHaveLength(1);
     expect(environmentRows("r", null, null)[0].level).toBe("amber");
-    expect(environmentRows("r", ["canary", "rc", "release"], null)).toHaveLength(3);
+    const unchecked = environmentRows("r", ["canary", "rc", "release"], null);
+    expect(unchecked.map((r) => r.level)).toEqual(["green", "green", "green", "amber"]);
   });
 
   test("environments: a notes-only repo needs no signing environments and only warns about the approver", () => {
@@ -210,7 +222,7 @@ describe("summary and output", () => {
 });
 
 // A whole fake GitHub: four repos, one clean Release Candidate each.
-function fakeIo(overrides: { missingCanary?: boolean; hosted?: boolean } = {}) {
+function fakeIo(overrides: { missingCanary?: boolean; hosted?: boolean; denyCanary?: boolean; denyReleaseEnv?: boolean } = {}) {
   const calls: string[] = [];
   const names: Record<string, { version: string; kind: string; released: string }> = {
     turbopanel: { version: "0.1.8-rc.1", kind: "instance", released: "0.1.7" },
@@ -233,11 +245,17 @@ function fakeIo(overrides: { missingCanary?: boolean; hosted?: boolean } = {}) {
       if (kind === "commits") {
         return { total_count: 2, check_runs: [run(1, "ci-ok", "completed", "success"), run(2, "build", "completed", "success")] };
       }
+      if (kind === "releases" && rest === "tags" && overrides.denyCanary) {
+        throw Object.assign(new Error("forbidden"), { status: 403 });
+      }
       if (kind === "releases" && rest === "tags") {
         const commit = overrides.missingCanary ? OTHER : SHA;
         return { assets: [{ name: `manifest-${baseVersion(info.version)}-canary.2.json` }, { name: `x-${commit}` }] };
       }
       if (kind === "releases") return [{ tag_name: `v${info.released}` }, { tag_name: "canary" }];
+      if (kind === "environments" && rest === "release" && overrides.denyReleaseEnv) {
+        throw Object.assign(new Error("forbidden"), { status: 403 });
+      }
       if (kind === "environments" && rest === "release") return { protection_rules: [{ type: "required_reviewers" }] };
       if (kind === "environments") return { environments: [{ name: "canary" }, { name: "rc" }, { name: "release" }] };
       throw new Error(`unexpected ${path}`);
@@ -260,6 +278,13 @@ describe("runPreflight", () => {
     expect(rows.filter((r) => r.level === "red")).toEqual([]);
     expect(rows.filter((r) => r.level === "amber")).toEqual([]);
     expect(summarise(rows).goForMerge).toBe(true);
+  });
+
+  test("a forbidden read is amber, never a false red or a silent gap", async () => {
+    const denied = await runPreflight(fakeIo({ denyCanary: true, denyReleaseEnv: true }).io);
+    expect(denied.filter((r) => r.level === "red")).toEqual([]);
+    expect(denied.filter((r) => r.id === "turbopanel/canary-latest").map((r) => r.level)).toEqual(["amber"]);
+    expect(denied.filter((r) => r.id === "turbopanel/env-release-gate").map((r) => r.level)).toEqual(["amber"]);
   });
 
   test("a missing canary for the merged commit is red", async () => {
@@ -323,15 +348,37 @@ describe("read-only guarantee", () => {
 });
 
 describe("main", () => {
-  test("prints rows and returns 0 when nothing is red", async () => {
+  async function exitFor(argv: string[], overrides: Parameters<typeof fakeIo>[0] = {}) {
     const out: string[] = [];
-    const doFetch = async () => new Response("{}", { status: 500 });
-    // Unreachable GitHub: exit 2 with one plain line.
-    vi.stubGlobal("fetch", doFetch);
-    vi.stubEnv("GH_TOKEN", "t");
-    expect(await main(["--no-color"], (line: string) => out.push(line))).toBe(2);
+    const code = await main(argv, (line: string) => out.push(line), fakeIo(overrides).io);
+    return { code, out };
+  }
+
+  test("exit 0 and READY when nothing is red or amber", async () => {
+    const { code, out } = await exitFor(["--no-color", "--strict"]);
+    expect(code).toBe(0);
+    expect(out.at(-1)).toContain("READY");
+  });
+
+  test("exit 1 and STOP when something is red", async () => {
+    const { code, out } = await exitFor(["--no-color"], { missingCanary: true });
+    expect(code).toBe(1);
+    expect(out.at(-1)).toContain("STOP");
+  });
+
+  test("amber exits 0 normally and 1 with --strict", async () => {
+    expect((await exitFor([], { denyReleaseEnv: true })).code).toBe(0);
+    const strict = await exitFor(["--strict"], { denyReleaseEnv: true });
+    expect(strict.code).toBe(1);
+    expect(strict.out.at(-1)).toContain("NOT YET");
+  });
+
+  test("exit 2 with one plain line when GitHub cannot be read, and the token never shows", async () => {
+    const out: string[] = [];
+    const io = makeIo("secret-token", (async () => new Response("{}", { status: 500 })) as unknown as typeof fetch);
+    expect(await main(["--no-color"], (line: string) => out.push(line), io)).toBe(2);
+    expect(out).toHaveLength(1);
     expect(out[0]).toContain("could not read GitHub");
-    vi.unstubAllGlobals();
-    vi.unstubAllEnvs();
+    expect(out.join("\n")).not.toContain("secret-token");
   });
 });

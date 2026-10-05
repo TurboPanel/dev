@@ -5,10 +5,10 @@
 // unless you ask for --hosted, which does one public GET of each hosted
 // /api/health (the same page anyone can open in a browser).
 //
-//   node scripts/preflight/cli.mjs [--hosted] [--no-color]
+//   node scripts/preflight/cli.mjs [--hosted] [--strict] [--no-color]
 //
-// Exit code: 0 when nothing is red, 1 when something is red, 2 when GitHub
-// could not be read at all. A GitHub token is taken from GH_TOKEN or
+// Exit code: 0 when nothing is red, 1 when something is red (with --strict,
+// also when something is amber), 2 when GitHub could not be read at all. A GitHub token is taken from GH_TOKEN or
 // GITHUB_TOKEN, else from `gh auth token`; with none, the calls are anonymous
 // (rate-limited, and the environments check will say it cannot see them).
 import { execFileSync } from "node:child_process";
@@ -49,12 +49,12 @@ export function makeIo(token, doFetch = fetch) {
   };
 }
 
-export async function main(argv, out = console.log) {
+export async function main(argv, out = console.log, io = makeIo(findToken())) {
   const flags = new Set(argv);
   const colour = process.stdout.isTTY === true && !flags.has("--no-color");
   let rows;
   try {
-    rows = await runPreflight(makeIo(findToken()), { hosted: flags.has("--hosted") });
+    rows = await runPreflight(io, { hosted: flags.has("--hosted") });
   } catch (error) {
     out(`Preflight could not read GitHub: ${error.message}`);
     return 2;
@@ -64,7 +64,7 @@ export async function main(argv, out = console.log) {
   out("");
   out(`green ${counts.green}, amber ${counts.amber}, red ${counts.red}, info ${counts.info}`);
   out(goForMerge ? "READY: nothing red, nothing waiting." : ok ? "NOT YET: nothing red, but something is waiting or unknown (amber)." : "STOP: fix the red rows first.");
-  return ok ? 0 : 1;
+  return ok && (goForMerge || !flags.has("--strict")) ? 0 : 1;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

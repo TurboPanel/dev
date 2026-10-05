@@ -65,7 +65,7 @@ export function manifestRow(
 ): Row;
 export function environmentRows(repo: string, envs: readonly string[] | null, releaseRules: readonly string[] | null, kind?: string): Row[];
 export function versionRows(rc: Record<string, string>, latest: Record<string, string | null>): Row[];
-export function latestReleaseVersion(releases: readonly { tag_name?: string }[]): string | null;
+export function latestReleaseVersion(releases: readonly { tag_name?: string; draft?: boolean; prerelease?: boolean }[]): string | null;
 export function hostedRow(
   id: string,
   subject: string,

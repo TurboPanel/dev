@@ -55,11 +55,13 @@ async function canaryCommits(io, repo, names, headSha) {
   return found;
 }
 
+/** null when the thing is absent (404); undefined when this token may not read it (401, 403). */
 async function optionalApi(io, path) {
   try {
     return await io.api(path);
   } catch (error) {
-    if ([401, 403, 404].includes(error?.status)) return null;
+    if (error?.status === 404) return null;
+    if (error?.status === 401 || error?.status === 403) return undefined;
     throw error;
   }
 }
@@ -68,6 +70,9 @@ async function canaryRows(io, repo, label, rcPr, trunkSha) {
   const rail = await optionalApi(io, `/repos/${ORG}/${repo}/releases/tags/canary`);
   const names = canaryManifests((rail?.assets ?? []).map((asset) => asset.name));
   const rows = [];
+  if (rail === undefined) {
+    return [row(`${repo}/canary-latest`, "amber", `${label}: this token cannot read the canary release, so the canary checks are skipped`)];
+  }
   const newest = await canaryCommits(io, repo, names.slice(0, 1), trunkSha);
   if (newest.length === 0) {
     rows.push(row(`${repo}/canary-latest`, "red", `${label}: no canary published yet`));
@@ -101,11 +106,11 @@ async function manifestRows(io, repo, label, latest) {
 
 async function environmentRowsFor(io, repo, kind) {
   const body = await optionalApi(io, `/repos/${ORG}/${repo}/environments`);
-  const envs = body === null ? null : body.environments.map((env) => env.name);
+  const envs = body ? body.environments.map((env) => env.name) : null;
   let releaseRules = null;
   if (envs?.includes("release")) {
     const release = await optionalApi(io, `/repos/${ORG}/${repo}/environments/release`);
-    releaseRules = release === null ? null : release.protection_rules.map((rule) => rule.type);
+    releaseRules = release ? release.protection_rules.map((rule) => rule.type) : null;
   }
   return environmentRows(repo, envs, releaseRules, kind);
 }
