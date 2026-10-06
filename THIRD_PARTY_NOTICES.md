@@ -5,7 +5,7 @@ This file is generated from the resolved dependency graph. Do not edit it by han
 Third-party components remain under their own copyright and license terms and are not relicensed by TurboPanel Development Environment's repository license (AGPL-3.0-only).
 
 <!-- lockfiles
-pnpm-lock.yaml sha256:24c1e760d270e1a23eba1319a98e46cad093e11ca59f40289e2b992bdf34c66b
+pnpm-lock.yaml sha256:4f2061a292f5dfd47f550d37dd8a2366389dea09989053aa5b897d339eb6f517
 -->
 
 ## Production dependencies
@@ -856,7 +856,7 @@ These packages are used for development, test, or build tooling and are not bund
 - Copyright: Emil Bay
 - Homepage: https://github.com/emilbayes/siginfo#readme
 
-### source-map-js@1.2.1
+### source-map-js@1.2.2
 
 - License: BSD-3-Clause
 - Copyright: Valentin 7rulnik Semirulnik
