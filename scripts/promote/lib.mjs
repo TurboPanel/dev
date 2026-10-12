@@ -316,8 +316,10 @@ export function outputLines(plan) {
 }
 
 // ---------------------------------------------------------------------------
-// Versions from tags (Road to 0.2.x, versioning Phase 3). No file and no
-// "Start x.y.z" PR decides a repo's next number: its git tags do.
+// Versions from tags (Road to 0.2.x, versioning Phase 3). A repo's git tags
+// work out what its next number should be. The committed version files must
+// say the same: each canary build checks them, and the "chore: start x.y.z"
+// PR (version-pr.sh) is how they are moved.
 //
 //   release  the highest bare `vX.Y.Z` tag (R).
 //   base     the number trunk is building now: R's next patch, unless an

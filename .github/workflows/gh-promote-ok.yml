@@ -9,7 +9,7 @@
 #                 names exactly that commit is on the rolling `canary` release.
 #   base live     "Release x.y.z" (head staging). Merging runs
 #                 publish-release.yml, which releases the newest rc that has
-#                 not shipped (read from the tags — no version file). Green
+#                 not shipped (read from the tags). Green
 #                 only when that rc's GitHub release is published and
 #                 staging's head is exactly its content (the rc commit is in
 #                 staging and the trees match).

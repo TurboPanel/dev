@@ -3,28 +3,37 @@
 # logic behind the daemon repo's "Start Next Version" workflow
 # (turbopaneld .github/workflows/start-next-version.yml).
 #
-#   GH_TOKEN=<Release App token> start-version.sh <minor|major> <owner/repo>:<trunk build workflow> ...
+#   GH_TOKEN=<Release App token> start-version.sh <minor|major> <owner/repo>[:<workflow>] ...
 #
 # For each repo, the target is the next minor (X.Y+1.0) or major (X+1.0.0)
 # after that repo's OWN newest release (cli.mjs start; repos release
-# independently). A repo already building the target or later is left alone,
-# so pressing the button twice is harmless. Otherwise it:
+# independently). Pressing the button twice is harmless: a repo already
+# building a later version is left alone, and one already building exactly
+# the target only gets step 2 again (which retries a PR that failed to open,
+# and does nothing when the PR is open or merged). Otherwise it:
 #
 #   1. pushes the annotated tag start/v<target> at the repo's trunk head. That
-#      marker is the whole signal: the repo's base becomes <target>
-#      (lib.mjs nextBase) and no file changes. It matches no release-tag
-#      ruleset and no tag-push trigger (those match v[0-9]*).
-#   2. runs <trunk build workflow> on trunk, so the next canary (and the
-#      Release Candidate PR) carries the new number without waiting for the
-#      next merge. A failure here is a warning with the manual step: the
-#      marker is already in place and the next merge picks it up anyway.
+#      marker moves the repo's base to <target> (lib.mjs nextBase). It matches
+#      no release-tag ruleset and no tag-push trigger (those match v[0-9]*).
+#   2. opens the "chore: start <target>" PR that moves the repo's committed
+#      version numbers to <target> (version-pr.sh, the same steps as the
+#      Start Version PR action). Until the owner merges it, the repo's canary
+#      build refuses to run (its committed numbers disagree with the tags), so
+#      the trunk build is no longer re-run here: it would only be refused.
+#
+# The :<workflow> part of each argument is accepted and ignored. It named the
+# trunk build this script used to re-run; it stays so the daemon repo's
+# start-next-version.yml keeps working at its current pin.
 #
 # DRY_RUN=true reports what would happen and changes nothing. START_MESSAGE is
-# the tag message. One line per repo goes to stdout and to GITHUB_STEP_SUMMARY.
-# Exits 1 when any repo could not be read or marked (the others still are).
+# the tag message. VERSION_PR points at version-pr.sh (defaults to the one
+# next to this script). One line per repo goes to stdout and to
+# GITHUB_STEP_SUMMARY. Exits 1 when any repo could not be read, marked or
+# given its PR (the others still are).
 set -eu
 
 CLI="${CLI:-$(dirname "$0")/cli.mjs}"
+VERSION_PR="${VERSION_PR:-$(dirname "$0")/version-pr.sh}"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
@@ -50,24 +59,19 @@ plan_value() {
   return 0
 }
 
-# Run the repo's trunk build so a canary with the new number follows at once.
-rebuild() {
+# Open the "chore: start <target>" PR; version-pr.sh reports its own line.
+open_version_pr() {
   _repo="$1"
-  _workflow="$2"
-  if gh workflow run "$_workflow" --repo "$_repo" --ref trunk > "$WORK/run.log" 2>&1; then
-    report "$_repo: $_workflow started on trunk; its canary and the Release Candidate PR will carry the new number"
-  else
-    cat "$WORK/run.log" >&2
-    echo "::warning::$_repo: could not start $_workflow; run it on trunk by hand (Actions, $_workflow, Run workflow)" >&2
-    report "$_repo: could not start $_workflow; run it on trunk by hand, or the next merge picks the new number up"
-  fi
+  _target="$2"
+  GITHUB_OUTPUT="" REASON="It was opened by Start Next Version, which started $_target." \
+    sh "$VERSION_PR" "$_repo" "$_target" \
+    || { problem "$_repo: start/v$_target is pushed but its \"chore: start $_target\" PR is not open; canaries are refused until trunk's version files say $_target: run node scripts/set-version.mjs $_target in a PR"; return 1; }
   return 0
 }
 
 start_repo() {
   _spec="$1"
   _repo="${_spec%%:*}"
-  _workflow="${_spec#*:}"
   gh api --paginate "repos/$_repo/git/matching-refs/tags/" --jq '.[].ref' > "$WORK/tags" \
     || { problem "$_repo: could not list its tags"; return 1; }
   GITHUB_OUTPUT="" node "$CLI" start --bump "$BUMP" --tags "$WORK/tags" > "$WORK/plan" \
@@ -76,15 +80,27 @@ start_repo() {
   _base="$(plan_value base)"
   _released="$(plan_value released)"
   if [ "$(plan_value started)" = "true" ]; then
-    report "$_repo: already building $_base, which is $_target or later; nothing to start"
-    return 0
+    if [ "$_base" != "$_target" ]; then
+      report "$_repo: already building $_base, which is $_target or later; nothing to start"
+      return 0
+    fi
+    # Already started (pressed before): make sure its PR is open, so pressing
+    # again retries a PR that failed to open. version-pr.sh does nothing when
+    # the repo is already at the target or the PR is already open.
+    if [ "$DRY_RUN" = "true" ]; then
+      report "$_repo: already building $_target; would make sure \"chore: start $_target\" (version/$_target into trunk) is open or merged (dry run)"
+      return 0
+    fi
+    report "$_repo: already building $_target; making sure its \"chore: start $_target\" PR is open"
+    open_version_pr "$_repo" "$_target"
+    return
   fi
   _tag="start/v$_target"
   _head="$(gh api "repos/$_repo/commits/trunk" --jq .sha)" \
     || { problem "$_repo: could not read trunk's head"; return 1; }
   _short="$(printf '%s' "$_head" | cut -c1-7)"
   if [ "$DRY_RUN" = "true" ]; then
-    report "$_repo: would start $_target (newest release ${_released:-none}, building $_base now): $_tag at $_short, then $_workflow on trunk (dry run)"
+    report "$_repo: would start $_target (newest release ${_released:-none}, building $_base now): $_tag at $_short, then open \"chore: start $_target\" (version/$_target into trunk) (dry run)"
     return 0
   fi
   _object="$(gh api --method POST "repos/$_repo/git/tags" -f "tag=$_tag" -f "message=$START_MESSAGE" \
@@ -93,24 +109,24 @@ start_repo() {
   gh api --method POST "repos/$_repo/git/refs" -f "ref=refs/tags/$_tag" -f "sha=$_object" > /dev/null \
     || { problem "$_repo: could not push $_tag (does it already exist?)"; return 1; }
   report "$_repo: started $_target (newest release ${_released:-none}): $_tag at $_short"
-  rebuild "$_repo" "$_workflow"
+  open_version_pr "$_repo" "$_target"
 }
 
 main() {
   BUMP="${1:-}"
   case "$BUMP" in
     minor|major) ;;
-    *) echo "::error::usage: start-version.sh <minor|major> <owner/repo>:<workflow> ... (got '$BUMP')" >&2; exit 1 ;;
+    *) echo "::error::usage: start-version.sh <minor|major> <owner/repo>[:<workflow>] ... (got '$BUMP')" >&2; exit 1 ;;
   esac
   shift
-  [ "$#" -gt 0 ] || { echo "::error::start-version.sh: name at least one <owner/repo>:<workflow>" >&2; exit 1; }
+  [ "$#" -gt 0 ] || { echo "::error::start-version.sh: name at least one <owner/repo>[:<workflow>]" >&2; exit 1; }
   DRY_RUN="${DRY_RUN:-false}"
   START_MESSAGE="${START_MESSAGE:-Start the next $BUMP}"
   _failed=0
   for _spec in "$@"; do
     case "$_spec" in
-      */*:*) start_repo "$_spec" || _failed=1 ;;
-      *) problem "not <owner/repo>:<workflow>: '$_spec'" || _failed=1 ;;
+      */*) start_repo "$_spec" || _failed=1 ;;
+      *) problem "not <owner/repo>[:<workflow>]: '$_spec'" || _failed=1 ;;
     esac
   done
   exit "$_failed"

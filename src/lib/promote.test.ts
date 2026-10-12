@@ -738,8 +738,8 @@ describe("versions from tags", () => {
   });
 });
 
-describe("no Start PR, no minor gate", () => {
-  test("the Start-PR and minor-gate machinery is gone for good", () => {
+describe("no minor gate, no old Start PR machinery", () => {
+  test("the old Start-PR and minor-gate machinery is gone for good", () => {
     for (const gone of [
       ".github/workflows/gh-next-version.yml",
       ".github/workflows/gh-minor-gate.yml",
@@ -781,6 +781,44 @@ describe("no Start PR, no minor gate", () => {
         ),
       );
     }
+  });
+
+  test("the Start Version PR action runs version-pr.sh from its own commit", () => {
+    const action = readFileSync(
+      join(REPO_ROOT, ".github/actions/start-version-pr/action.yml"),
+      "utf8",
+    );
+    expect(action).toMatch(/^name: Start Version PR$/m);
+    expect(action).toMatch(/^ {2}using: composite$/m);
+    expect(action).toMatch(
+      /run: sh "\$GITHUB_ACTION_PATH\/\.\.\/\.\.\/\.\.\/scripts\/promote\/version-pr\.sh" "\$REPO" "\$VERSION"/,
+    );
+    for (const input of [
+      "version",
+      "github-token",
+      "repository",
+      "set-version",
+      "reason",
+    ]) {
+      expect(action, input).toMatch(new RegExp(`^ {2}${input}:\\n`, "m"));
+    }
+    expect(action).toMatch(
+      /^ {2}set-version:\n(?: {4}.*\n)* {4}default: node scripts\/set-version\.mjs$/m,
+    );
+    expect(action).toMatch(
+      /^ {2}pr-url:\n {4}description: .*\n {4}value: \$\{\{ steps\.pr\.outputs\.pr-url \}\}$/m,
+    );
+    // The commit is made by GitHub (createCommitOnBranch), never pushed.
+    const script = readFileSync(
+      join(REPO_ROOT, "scripts/promote/version-pr.sh"),
+      "utf8",
+    );
+    expect(script).toMatch(/createCommitOnBranch/);
+    const code = script
+      .split("\n")
+      .filter((line) => !line.trimStart().startsWith("#"))
+      .join("\n");
+    expect(code).not.toMatch(/git (?:-C \S+ )?(?:push|commit)\b/);
   });
 });
 

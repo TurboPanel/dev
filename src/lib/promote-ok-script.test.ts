@@ -32,12 +32,18 @@ type Route = {
 // The fake gh (node, so it can apply --jq with the real jq and log each call).
 // FAKE_GH_STATE counts, per route index, how many times that route has
 // already answered — only read/written when the route carries a `sequence`.
+// Every file a call sends (`--input <file>`, `-F key=@<file>`) is appended,
+// as one JSON string per line, to <FAKE_GH_LOG>.files.
 const FAKE_GH = `#!/usr/bin/env node
 const { appendFileSync, readFileSync, writeFileSync } = require("node:fs");
 const { spawnSync } = require("node:child_process");
 const args = process.argv.slice(2);
 const line = args.join(" ");
 appendFileSync(process.env.FAKE_GH_LOG, line + "\\n");
+for (let i = 0; i < args.length; i++) {
+  const sent = args[i] === "--input" ? args[i + 1] : /^[\\w-]+=@(.+)$/.exec(args[i])?.[1];
+  if (sent) appendFileSync(process.env.FAKE_GH_LOG + ".files", JSON.stringify(readFileSync(sent, "utf8")) + "\\n");
+}
 const routes = JSON.parse(readFileSync(process.env.FAKE_GH_ROUTES, "utf8"));
 const idx = routes.findIndex((r) => new RegExp(r.match).test(line));
 if (idx < 0) { process.stderr.write("fake gh: no route for " + line + "\\n"); process.exit(1); }
@@ -60,7 +66,7 @@ const r = spawnSync("jq", ["-r", args[jq + 1]], { input: bodyStr, encoding: "utf
 process.stdout.write(r.stdout); process.stderr.write(r.stderr); process.exit(r.status ?? 1);
 `;
 
-type Result = { status: number; out: string; calls: string[] };
+type Result = { status: number; out: string; calls: string[]; sent: string[] };
 
 function run(
   script: string,
@@ -81,6 +87,7 @@ function run(
   );
   const log = join(dir, "calls.log");
   writeFileSync(log, "");
+  writeFileSync(`${log}.files`, "");
   const state = join(dir, "state.json");
   writeFileSync(state, "{}");
   const summary = join(dir, "summary.md");
@@ -99,6 +106,10 @@ function run(
     status: r.status ?? -1,
     out: `${r.stdout}${r.stderr}`,
     calls: readFileSync(log, "utf8").split("\n").filter(Boolean),
+    sent: readFileSync(`${log}.files`, "utf8")
+      .split("\n")
+      .filter(Boolean)
+      .map((l) => JSON.parse(l) as string),
   };
 }
 
@@ -666,10 +677,27 @@ describe("start-version.sh — Start Next Version", () => {
     match: new RegExp(`^api --method POST repos/o/${repo}/git/refs `),
     body: { ref: "refs/tags/start/v0.2.0" },
   });
-  const dispatch: Route = { match: /^workflow run /, body: {} };
-  const env = { START_MESSAGE: "Started by the owner" };
 
-  test("pushes start/v<next minor> at each repo's trunk head, then rebuilds trunk", () => {
+  /** A stand-in for version-pr.sh: logs its arguments and REASON, or fails. */
+  function stubVersionPr(failFor = ""): { env: Record<string, string>; log: string } {
+    const dir = mkdtempSync(join(tmpdir(), "start-version-"));
+    const log = join(dir, "version-pr.log");
+    writeFileSync(log, "");
+    const stub = join(dir, "version-pr.sh");
+    writeFileSync(
+      stub,
+      `#!/bin/sh\nprintf '%s %s | %s\\n' "$1" "$2" "$REASON" >> "${log}"\n[ "$1" != "${failFor}" ] || exit 1\necho "$1: opened chore: start $2"\n`,
+    );
+    return {
+      env: { START_MESSAGE: "Started by the owner", VERSION_PR: stub },
+      log,
+    };
+  }
+  const prCalls = (log: string) =>
+    readFileSync(log, "utf8").split("\n").filter(Boolean);
+
+  test("pushes start/v<next minor> at each repo's trunk head, then opens its version PR", () => {
+    const stub = stubVersionPr();
     const r = run(
       START,
       [
@@ -681,10 +709,9 @@ describe("start-version.sh — Start Next Version", () => {
         tagObject("b"),
         tagRef("a"),
         tagRef("b"),
-        dispatch,
       ],
-      env,
-      ["minor", "o/a:publish-daemon-trunk.yml", "o/b:promote-prs.yml"],
+      stub.env,
+      ["minor", "o/a:publish-daemon-trunk.yml", "o/b"],
     );
     expect(r.status).toBe(0);
     expect(r.calls).toContain(
@@ -693,65 +720,106 @@ describe("start-version.sh — Start Next Version", () => {
     expect(r.calls).toContain(
       `api --method POST repos/o/a/git/refs -f ref=refs/tags/start/v0.2.0 -f sha=${OTHER}`,
     );
-    expect(r.calls).toContain(
-      "workflow run publish-daemon-trunk.yml --repo o/a --ref trunk",
-    );
-    expect(r.calls).toContain(
-      "workflow run promote-prs.yml --repo o/b --ref trunk",
-    );
+    // The trunk build is no longer re-run: the canary check would refuse it.
+    expect(r.calls.some((c) => c.startsWith("workflow run"))).toBe(false);
+    expect(prCalls(stub.log)).toEqual([
+      "o/a 0.2.0 | It was opened by Start Next Version, which started 0.2.0.",
+      "o/b 0.2.0 | It was opened by Start Next Version, which started 0.2.0.",
+    ]);
     expect(r.out).toContain(
       "o/a: started 0.2.0 (newest release 0.1.5): start/v0.2.0 at aaaaaaa",
     );
+    expect(r.out).toContain("o/a: opened chore: start 0.2.0");
     expect(r.out).toContain("o/b: started 0.2.0 (newest release 0.1.3)");
   });
 
-  test("a major goes to the next X.0.0 of each repo's own release", () => {
+  test("a dry run names the marker and the PR it would open, and changes nothing", () => {
+    const stub = stubVersionPr();
     const r = run(
       START,
       [repoTags("a", "v0.1.5"), trunkHead("a")],
-      { ...env, DRY_RUN: "true" },
+      { ...stub.env, DRY_RUN: "true" },
       ["major", "o/a:build.yml"],
     );
     expect(r.status).toBe(0);
     expect(r.out).toContain(
-      "o/a: would start 1.0.0 (newest release 0.1.5, building 0.1.6 now): start/v1.0.0 at aaaaaaa, then build.yml on trunk (dry run)",
+      'o/a: would start 1.0.0 (newest release 0.1.5, building 0.1.6 now): start/v1.0.0 at aaaaaaa, then open "chore: start 1.0.0" (version/1.0.0 into trunk) (dry run)',
     );
     expect(r.calls.some((c) => c.includes("--method POST"))).toBe(false);
-    expect(r.calls.some((c) => c.startsWith("workflow run"))).toBe(false);
+    expect(prCalls(stub.log)).toEqual([]);
   });
 
-  test("pressing it twice is harmless: a repo already on the target is left alone", () => {
-    const r = run(START, [repoTags("a", "v0.1.5", "start/v0.2.0")], env, [
+  test("pressing it twice retries the version PR and pushes no second marker", () => {
+    const stub = stubVersionPr();
+    const r = run(START, [repoTags("a", "v0.1.5", "start/v0.2.0")], stub.env, [
       "minor",
       "o/a:build.yml",
     ]);
     expect(r.status).toBe(0);
     expect(r.out).toContain(
-      "o/a: already building 0.2.0, which is 0.2.0 or later; nothing to start",
+      'o/a: already building 0.2.0; making sure its "chore: start 0.2.0" PR is open',
     );
     expect(r.calls.some((c) => c.includes("--method POST"))).toBe(false);
+    expect(prCalls(stub.log)).toEqual([
+      "o/a 0.2.0 | It was opened by Start Next Version, which started 0.2.0.",
+    ]);
   });
 
-  test("a rebuild it cannot start is a warning with the manual step", () => {
+  test("a dry run on a repo already on the target names the PR check", () => {
+    const stub = stubVersionPr();
     const r = run(
       START,
-      [
-        repoTags("a", "v0.1.5"),
-        trunkHead("a"),
-        tagObject("a"),
-        tagRef("a"),
-        { match: /^workflow run /, exit: 1, stderr: "HTTP 403" },
-      ],
-      env,
-      ["minor", "o/a:verify.yml"],
+      [repoTags("a", "v0.1.5", "start/v0.2.0")],
+      { ...stub.env, DRY_RUN: "true" },
+      ["minor", "o/a"],
     );
     expect(r.status).toBe(0);
     expect(r.out).toContain(
-      "o/a: could not start verify.yml; run it on trunk by hand",
+      'o/a: already building 0.2.0; would make sure "chore: start 0.2.0" (version/0.2.0 into trunk) is open or merged (dry run)',
+    );
+    expect(prCalls(stub.log)).toEqual([]);
+  });
+
+  test("a retried version PR that still cannot open fails the run", () => {
+    const stub = stubVersionPr("o/a");
+    const r = run(START, [repoTags("a", "v0.1.5", "start/v0.2.0")], stub.env, [
+      "minor",
+      "o/a",
+    ]);
+    expect(r.status).toBe(1);
+    expect(r.out).toContain('its "chore: start 0.2.0" PR is not open');
+  });
+
+  test("a repo already building a later version is left alone", () => {
+    const stub = stubVersionPr();
+    const r = run(START, [repoTags("a", "v0.1.5", "start/v0.3.0")], stub.env, [
+      "minor",
+      "o/a:build.yml",
+    ]);
+    expect(r.status).toBe(0);
+    expect(r.out).toContain(
+      "o/a: already building 0.3.0, which is 0.2.0 or later; nothing to start",
+    );
+    expect(r.calls.some((c) => c.includes("--method POST"))).toBe(false);
+    expect(prCalls(stub.log)).toEqual([]);
+  });
+
+  test("a version PR it cannot open fails the run with the manual step", () => {
+    const stub = stubVersionPr("o/a");
+    const r = run(
+      START,
+      [repoTags("a", "v0.1.5"), trunkHead("a"), tagObject("a"), tagRef("a")],
+      stub.env,
+      ["minor", "o/a:verify.yml"],
+    );
+    expect(r.status).toBe(1);
+    expect(r.out).toContain(
+      `::error::o/a: start/v0.2.0 is pushed but its "chore: start 0.2.0" PR is not open; canaries are refused until trunk's version files say 0.2.0: run node scripts/set-version.mjs 0.2.0 in a PR`,
     );
   });
 
   test("a repo that cannot be marked fails the run, after the others are done", () => {
+    const stub = stubVersionPr();
     const r = run(
       START,
       [
@@ -764,26 +832,298 @@ describe("start-version.sh — Start Next Version", () => {
         trunkHead("c"),
         tagObject("c"),
         tagRef("c"),
-        dispatch,
       ],
-      env,
+      stub.env,
       ["minor", "o/a:x.yml", "o/b:y.yml", "o/c:z.yml"],
     );
     expect(r.status).toBe(1);
     expect(r.out).toContain("o/a: could not push start/v0.2.0");
     expect(r.out).toContain("o/b: could not list its tags");
     expect(r.out).toContain("o/c: started 0.2.0");
+    expect(prCalls(stub.log)).toEqual([
+      "o/c 0.2.0 | It was opened by Start Next Version, which started 0.2.0.",
+    ]);
   });
 
   test("refuses anything but minor or major, and a malformed repo", () => {
+    const { env } = stubVersionPr();
     const patch = run(START, [], env, ["patch", "o/a:x.yml"]);
     expect(patch.status).toBe(1);
     expect(patch.out).toContain("usage: start-version.sh <minor|major>");
     expect(run(START, [], env, ["minor"]).out).toContain(
-      "name at least one <owner/repo>:<workflow>",
+      "name at least one <owner/repo>[:<workflow>]",
     );
     const bad = run(START, [], env, ["minor", "turbopanel"]);
     expect(bad.status).toBe(1);
-    expect(bad.out).toContain("not <owner/repo>:<workflow>: 'turbopanel'");
+    expect(bad.out).toContain("not <owner/repo>[:<workflow>]: 'turbopanel'");
+  });
+});
+
+describe("version-pr.sh — the chore: start x.y.z PR", () => {
+  const PR_URL = "https://github.com/o/r/pull/7";
+  const COMMIT = "c".repeat(40);
+
+  /** git with no user or system config (so no signing), for the fixture only. */
+  function git(cwd: string, ...args: string[]): string {
+    const r = spawnSync("git", args, {
+      cwd,
+      encoding: "utf8",
+      env: {
+        PATH: process.env.PATH ?? "",
+        GIT_CONFIG_GLOBAL: "/dev/null",
+        GIT_CONFIG_NOSYSTEM: "1",
+        GIT_AUTHOR_NAME: "fixture",
+        GIT_AUTHOR_EMAIL: "fixture@example.invalid",
+        GIT_COMMITTER_NAME: "fixture",
+        GIT_COMMITTER_EMAIL: "fixture@example.invalid",
+      },
+    });
+    if (r.status !== 0) throw new Error(`git ${args.join(" ")}: ${r.stderr}`);
+    return r.stdout.trim();
+  }
+
+  /**
+   * A bare o/r.git whose trunk holds package.json at `version`, and a
+   * set-version stand-in that rewrites it. GIT_BASE points the script at it.
+   */
+  function fixture(version = "0.1.5", withSetVersion = true) {
+    const dir = mkdtempSync(join(tmpdir(), "version-pr-"));
+    const src = join(dir, "src");
+    git(dir, "init", "-q", "-b", "trunk", src);
+    writeFileSync(
+      join(src, "package.json"),
+      `{\n  "name": "r",\n  "version": "${version}"\n}\n`,
+    );
+    writeFileSync(join(src, "README.md"), "r\n");
+    git(src, "add", "-A");
+    git(src, "commit", "-q", "-m", "init");
+    const head = git(src, "rev-parse", "HEAD");
+    git(dir, "clone", "-q", "--bare", src, join(dir, "o", "r.git"));
+    const set = join(dir, "set.mjs");
+    writeFileSync(
+      set,
+      `import { readFileSync, writeFileSync } from "node:fs";\nconst t = readFileSync("package.json", "utf8");\nwriteFileSync("package.json", t.replace(/"version": "[^"]*"/, '"version": "' + process.argv[2] + '"'));\n`,
+    );
+    const output = join(dir, "output");
+    writeFileSync(output, "");
+    const env: Record<string, string> = {
+      GIT_BASE: `file://${dir}`,
+      GITHUB_OUTPUT: output,
+      GH_TOKEN: "fixture-token",
+    };
+    if (withSetVersion) env.SET_VERSION = `node ${set}`;
+    return { head, env, output };
+  }
+
+  const noOpenPr: Route = { match: /^api repos\/o\/r\/pulls\?/, body: [] };
+  const noBranch: Route = {
+    match: /^api repos\/o\/r\/git\/ref\/heads\/version\//,
+    exit: 1,
+  };
+  const createRef: Route = {
+    match: /^api --method POST repos\/o\/r\/git\/refs /,
+    body: {},
+  };
+  const commit: Route = {
+    match: /^api graphql --input /,
+    body: { data: { createCommitOnBranch: { commit: { oid: COMMIT } } } },
+  };
+  const openPr: Route = {
+    match: /^api --method POST repos\/o\/r\/pulls /,
+    body: { html_url: PR_URL },
+  };
+  const VPR = join(ROOT, "scripts", "promote", "version-pr.sh");
+
+  test("opens the PR through createCommitOnBranch, with no author and trunk's head expected", () => {
+    const f = fixture();
+    const r = run(
+      VPR,
+      [noOpenPr, noBranch, createRef, commit, openPr],
+      { ...f.env, REASON: "It was opened after v0.1.9 was released." },
+      ["o/r", "0.2.0"],
+    );
+    expect(r.status).toBe(0);
+    expect(r.calls).toContain(
+      "api repos/o/r/pulls?state=open&base=trunk&head=o:version/0.2.0 --jq .[0].html_url // empty",
+    );
+    expect(r.calls).toContain(
+      `api --method POST repos/o/r/git/refs -f ref=refs/heads/version/0.2.0 -f sha=${f.head}`,
+    );
+    expect(r.calls.some((c) => c.startsWith("api --method PATCH"))).toBe(false);
+    const request = JSON.parse(r.sent[0] ?? "{}") as {
+      query: string;
+      variables: { input: Record<string, unknown> };
+    };
+    expect(request.query).toContain("createCommitOnBranch");
+    const input = request.variables.input;
+    expect(Object.keys(input).sort((a, b) => a.localeCompare(b))).toEqual([
+      "branch",
+      "expectedHeadOid",
+      "fileChanges",
+      "message",
+    ]);
+    expect(r.sent[0]).not.toMatch(/author|committer|signature/i);
+    expect(input.branch).toEqual({
+      repositoryNameWithOwner: "o/r",
+      branchName: "version/0.2.0",
+    });
+    expect(input.expectedHeadOid).toBe(f.head);
+    expect(input.message).toMatchObject({ headline: "chore: start 0.2.0" });
+    const changes = input.fileChanges as {
+      additions: { path: string; contents: string }[];
+      deletions: unknown[];
+    };
+    expect(changes.deletions).toEqual([]);
+    expect(changes.additions.map((a) => a.path)).toEqual(["package.json"]);
+    expect(
+      Buffer.from(changes.additions[0]?.contents ?? "", "base64").toString(),
+    ).toBe('{\n  "name": "r",\n  "version": "0.2.0"\n}\n');
+    expect(r.calls).toContainEqual(
+      expect.stringMatching(
+        /^api --method POST repos\/o\/r\/pulls -f title=chore: start 0\.2\.0 -f head=version\/0\.2\.0 -f base=trunk -F body=@/,
+      ),
+    );
+    expect(r.sent[1]).toContain("It was opened after v0.1.9 was released.");
+    expect(r.sent[1]).toContain("canary builds are refused");
+    expect(r.sent[1]).toContain("- `package.json`");
+    expect(r.out).toContain(
+      `o/r: opened "chore: start 0.2.0" (package.json): ${PR_URL}`,
+    );
+    expect(readFileSync(f.output, "utf8")).toBe(`pr-url=${PR_URL}\n`);
+    // The token never reaches argv.
+    expect(r.calls.join("\n")).not.toContain("fixture-token");
+  });
+
+  test("a repo already at the version needs no PR and touches nothing on GitHub", () => {
+    const f = fixture("0.2.0");
+    const r = run(VPR, [], f.env, ["o/r", "0.2.0"]);
+    expect(r.status).toBe(0);
+    expect(r.out).toContain("o/r: already at 0.2.0 on trunk");
+    expect(r.calls).toEqual([]);
+    expect(readFileSync(f.output, "utf8")).toBe("pr-url=\n");
+  });
+
+  test("a PR already open is reported and nothing changes", () => {
+    const f = fixture();
+    const r = run(
+      VPR,
+      [{ match: /^api repos\/o\/r\/pulls\?/, body: [{ html_url: PR_URL }] }],
+      f.env,
+      ["o/r", "0.2.0"],
+    );
+    expect(r.status).toBe(0);
+    expect(r.out).toContain(`o/r: "chore: start 0.2.0" is already open: ${PR_URL}`);
+    expect(r.calls.some((c) => /--method|graphql/.test(c))).toBe(false);
+    expect(readFileSync(f.output, "utf8")).toBe(`pr-url=${PR_URL}\n`);
+  });
+
+  test("a branch left over without a PR is reset to trunk's head", () => {
+    const f = fixture();
+    const r = run(
+      VPR,
+      [
+        noOpenPr,
+        {
+          match: /^api repos\/o\/r\/git\/ref\/heads\/version\//,
+          body: { object: { sha: OTHER } },
+        },
+        { match: /^api --method PATCH /, body: {} },
+        commit,
+        openPr,
+      ],
+      f.env,
+      ["o/r", "0.2.0"],
+    );
+    expect(r.status).toBe(0);
+    expect(r.calls).toContain(
+      `api --method PATCH repos/o/r/git/refs/heads/version/0.2.0 -f sha=${f.head} -F force=true`,
+    );
+    expect(r.calls.some((c) => c.includes("POST repos/o/r/git/refs"))).toBe(
+      false,
+    );
+  });
+
+  test("a failed commit is an error and opens no PR", () => {
+    const f = fixture();
+    const r = run(
+      VPR,
+      [
+        noOpenPr,
+        noBranch,
+        createRef,
+        {
+          match: /^api graphql /,
+          exit: 1,
+          stderr: "GraphQL: Expected branch to point to x",
+        },
+      ],
+      f.env,
+      ["o/r", "0.2.0"],
+    );
+    expect(r.status).toBe(1);
+    expect(r.out).toContain("GraphQL: Expected branch to point to x");
+    expect(r.out).toContain(
+      "::error::o/r: createCommitOnBranch failed on version/0.2.0",
+    );
+    expect(r.calls.some((c) => c.includes("POST repos/o/r/pulls"))).toBe(false);
+  });
+
+  test("a PR it cannot open is an error that says the commit is on the branch", () => {
+    const f = fixture();
+    const r = run(
+      VPR,
+      [
+        noOpenPr,
+        noBranch,
+        createRef,
+        commit,
+        { match: /^api --method POST repos\/o\/r\/pulls /, exit: 1 },
+      ],
+      f.env,
+      ["o/r", "0.2.0"],
+    );
+    expect(r.status).toBe(1);
+    expect(r.out).toContain(
+      "::error::o/r: could not open the PR from version/0.2.0",
+    );
+  });
+
+  test("a dry run reports the PR it would open and changes nothing", () => {
+    const f = fixture();
+    const r = run(VPR, [noOpenPr], { ...f.env, DRY_RUN: "true" }, [
+      "o/r",
+      "0.2.0",
+    ]);
+    expect(r.status).toBe(0);
+    expect(r.out).toContain(
+      'o/r: would open "chore: start 0.2.0" (version/0.2.0 at ',
+    );
+    expect(r.out).toContain("into trunk) changing package.json (dry run)");
+    expect(r.calls.some((c) => /--method|graphql/.test(c))).toBe(false);
+  });
+
+  test("a trunk without scripts/set-version.mjs is a clear error", () => {
+    const f = fixture("0.1.5", false);
+    const r = run(VPR, [], f.env, ["o/r", "0.2.0"]);
+    expect(r.status).toBe(1);
+    expect(r.out).toContain(
+      "::error::o/r: trunk has no scripts/set-version.mjs; merge the change that adds it first",
+    );
+  });
+
+  test("a clone that fails is an error", () => {
+    const f = fixture();
+    const r = run(VPR, [], f.env, ["o/missing", "0.2.0"]);
+    expect(r.status).toBe(1);
+    expect(r.out).toContain("::error::o/missing: could not clone trunk");
+  });
+
+  test("refuses a malformed repo or version", () => {
+    expect(run(VPR, [], {}, ["turbopanel", "0.2.0"]).out).toContain(
+      "usage: version-pr.sh <owner/repo> <X.Y.Z> (got repo 'turbopanel')",
+    );
+    const rc = run(VPR, [], {}, ["o/r", "0.2.0-rc.1"]);
+    expect(rc.status).toBe(1);
+    expect(rc.out).toContain("(got version '0.2.0-rc.1')");
   });
 });

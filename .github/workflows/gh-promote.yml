@@ -16,7 +16,8 @@
 # deploy branch. Callers chain the three `uses:` jobs (a reusable workflow
 # cannot call another at a parameterised ref).
 #
-# Version model (versions from tags, no version file): a canary is
+# Version model (numbers worked out from tags; the committed files must agree,
+# which the canary build checks): a canary is
 # `<base>-canary.<N>` (N restarts at 1 for each base; older builds carry the
 # workflow run number or a timestamped id), its rc is `<base>-rc.<N>` (N = one
 # past the highest existing rc tag for that base), the release is `<base>` cut
@@ -205,7 +206,7 @@ jobs:
             fi
           elif [ "$TO" = "rc" ]; then
             # Notes-only rc: the source is a commit-ish; the number is the
-            # repo's base, worked out from its tags (no version file).
+            # repo's base, worked out from its tags.
             _commit="$(gh api "repos/$REPO/commits/$SOURCE" --jq .sha)"
             _version="$(GITHUB_OUTPUT="" node "$CLI" base --tags existing-tags.txt | sed -n 's/^base=//p')"
             [ -n "$_version" ] || { echo "::error::could not work out $REPO's version from its tags"; exit 1; }
