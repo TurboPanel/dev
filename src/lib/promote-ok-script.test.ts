@@ -392,6 +392,80 @@ describe("promote-ok.sh — Release PR (base live)", () => {
     );
   });
 
+  // 2026-10-12: the Release PR's head moved when the RC PR merged, before
+  // Publish Release Candidate had pushed the new rc tag. A check that read
+  // the newest rc once locked onto the previous one and waited out the hour.
+  test("re-reads the newest rc while it waits: an rc published after the check started", () => {
+    const tagRefs = (...names: string[]) =>
+      names.map((name) => ({ ref: `refs/tags/${name}` }));
+    const r = run(
+      CHECK,
+      [
+        {
+          match: /^api --paginate repos\/o\/r\/git\/matching-refs\/tags\/ /,
+          sequence: [
+            tagRefs(...released, "v0.1.4-rc.2"),
+            tagRefs(...released, "v0.1.4-rc.2", "v0.1.4-rc.3"),
+          ],
+        },
+        {
+          match: /^api repos\/o\/r\/releases\/tags\/v0\.1\.4-rc\.[23] /,
+          body: { draft: false },
+        },
+        {
+          match: /^api repos\/o\/r\/compare\/v0\.1\.4-rc\.2\.\.\./,
+          body: {
+            behind_by: 0,
+            base_commit: { sha: RC, commit: { tree: { sha: "tree-0" } } },
+          },
+        },
+        {
+          match: /^api repos\/o\/r\/compare\/v0\.1\.4-rc\.3\.\.\./,
+          body: {
+            behind_by: 0,
+            base_commit: { sha: RC, commit: { tree: { sha: "tree-1" } } },
+          },
+        },
+        headTree,
+      ],
+      { ...checkEnv("live"), MAX_WAIT_SECONDS: "60" },
+    );
+    expect(r.status).toBe(0);
+    expect(r.out).toContain(
+      "v0.1.4-rc.3 is published and staging (aaaaaaa) is exactly its content; merging releases v0.1.4 from it.",
+    );
+    expect(r.out).not.toContain("::error");
+    const compared = r.calls.filter((c) => c.startsWith("api repos/o/r/compare/"));
+    expect(compared[0]).toContain("v0.1.4-rc.2...");
+    expect(compared.at(-1)).toContain("v0.1.4-rc.3...");
+  });
+
+  test("a tag listing that fails while it waits is retried, not fatal", () => {
+    const r = run(
+      CHECK,
+      [
+        {
+          // A string cannot be iterated by `.[].ref`, so the first listing fails.
+          match: /^api --paginate repos\/o\/r\/git\/matching-refs\/tags\/ /,
+          sequence: [
+            "not a tag list",
+            [...released, "v0.1.4-rc.10"].map((name) => ({
+              ref: `refs/tags/${name}`,
+            })),
+          ],
+        },
+        published,
+        compare(0, "tree-1"),
+        headTree,
+      ],
+      { ...checkEnv("live"), MAX_WAIT_SECONDS: "60" },
+    );
+    expect(r.status).toBe(0);
+    expect(r.out).toContain("v0.1.4-rc.10 is published");
+    const listed = r.calls.filter((c) => c.includes("matching-refs/tags/"));
+    expect(listed.length).toBeGreaterThanOrEqual(2);
+  });
+
   test("red when the tags cannot be listed", () => {
     const r = run(CHECK, [{ ...tags(), exit: 1 }], checkEnv("live"));
     expect(r.status).toBe(1);

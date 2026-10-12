@@ -12,6 +12,8 @@
 #       file). Green only when that rc has a published GitHub release and
 #       staging's head holds exactly its content (the rc commit is in staging
 #       and the trees are identical).
+#       The newest rc is re-read on every look while it waits: Publish
+#       Release Candidate can still be pushing the next rc when this starts.
 #
 # Read-only and fast: it looks at runs, releases, tags and commits; it never
 # re-runs tests. Red means "not yet" (or "cannot ever", said plainly); the
@@ -35,7 +37,10 @@ VERSION_SH="$(dirname "$0")/version.sh"
 # ("in progress" on the PR) instead of reporting a red X and waiting for the
 # caller's recheck workflow to try again later. Only a real, permanent problem
 # (a failed trunk run, an rc that will never exist for this base, a listing
-# call that errors) fails immediately, on the first look. Default 55 minutes:
+# call that errors) fails immediately, on the first look. One exception: on a
+# Release PR the tag listing behind "which rc is newest" is re-read on every
+# look, and a failed read there is retried until the deadline (see
+# check_release_pr). Default 55 minutes:
 # a few minutes past publish-rc.yml's own 45-minute canary wait. Tests set
 # MAX_WAIT_SECONDS=0 so every case is still a single, instant check.
 MAX_WAIT_SECONDS=${MAX_WAIT_SECONDS:-3300}
@@ -148,32 +153,49 @@ check_rc_pr() {
   done
 }
 
+# One look at whether $_rc is ready to release: sets _ready=1, or _msg to why
+# not. Reads _rc and HEAD_SHA; runs in the caller's shell (no subshell), so
+# the caller sees both.
+check_rc_release() {
+  _msg="waiting for the $_rc GitHub release to be published; this re-checks automatically."
+  _draft="$(gh api "repos/$REPO/releases/tags/$_rc" --jq .draft 2>/dev/null || echo missing)"
+  [ "$_draft" = "false" ] || return 0
+  _cmp="$(gh api "repos/$REPO/compare/$_rc...$HEAD_SHA" --jq '"\(.behind_by) \(.base_commit.commit.tree.sha)"')"
+  _behind="${_cmp%% *}"
+  _rc_tree="${_cmp#* }"
+  _head_tree="$(gh api "repos/$REPO/git/commits/$HEAD_SHA" --jq .tree.sha)"
+  if [ "$_behind" != "0" ]; then
+    _msg="staging ($SHORT) does not contain $_rc (the newest rc), so merging would release bytes that are not on staging. Waiting for staging to be moved to $_rc; this re-checks automatically."
+  elif [ "$_rc_tree" != "$_head_tree" ]; then
+    _msg="staging ($SHORT) has changes that are not in $_rc (the newest rc). Waiting for Publish Release Candidate to publish the next rc; this re-checks automatically."
+  else
+    _ready=1
+  fi
+  return 0
+}
+
 # Every readiness condition here (the rc's release published, staging holding
-# exactly its bytes) can still be settling while `publish-rc.yml` finishes —
-# only "no rc for this base exists at all" cannot resolve on its own, so it
-# alone is checked once, outside the loop, and fails immediately.
+# exactly its bytes) can still be settling while `publish-rc.yml` finishes.
+# Which rc is "the newest" can too: merging the Release Candidate PR moves
+# staging (and so this PR's head) before Publish Release Candidate has pushed
+# the new rc tag, so a check that read the newest rc once, up front, locked
+# onto the previous rc and waited out the whole deadline comparing staging
+# with the wrong one (2026-10-12, twice). So every pass re-reads the newest rc
+# from the tags. A version.sh call that fails is retried like any other "not
+# yet" until the deadline. Only "no rc newer than the latest release exists at
+# all" cannot resolve on its own (an rc comes from merging the Release
+# Candidate PR, which this check does not wait for), so it fails at once.
 check_release_pr() {
-  _answer="$(GITHUB_OUTPUT="" sh "$VERSION_SH" release-rc)" || fail "could not work out the newest rc from $REPO's tags"
-  _rc="$(version_key rc-tag "$_answer")"
-  _version="$(version_key version "$_answer")"
-  [ -n "$_rc" ] || fail "no rc newer than the latest release exists yet; merge the Release Candidate PR first. This re-checks automatically."
   _deadline=$(($(now_s) + MAX_WAIT_SECONDS))
   while :; do
-    _draft="$(gh api "repos/$REPO/releases/tags/$_rc" --jq .draft 2>/dev/null || echo missing)"
     _ready=0
-    _msg="waiting for the $_rc GitHub release to be published; this re-checks automatically."
-    if [ "$_draft" = "false" ]; then
-      _cmp="$(gh api "repos/$REPO/compare/$_rc...$HEAD_SHA" --jq '"\(.behind_by) \(.base_commit.commit.tree.sha)"')"
-      _behind="${_cmp%% *}"
-      _rc_tree="${_cmp#* }"
-      _head_tree="$(gh api "repos/$REPO/git/commits/$HEAD_SHA" --jq .tree.sha)"
-      if [ "$_behind" != "0" ]; then
-        _msg="staging ($SHORT) does not contain $_rc (the newest rc), so merging would release bytes that are not on staging. Waiting for staging to be moved to $_rc; this re-checks automatically."
-      elif [ "$_rc_tree" != "$_head_tree" ]; then
-        _msg="staging ($SHORT) has changes that are not in $_rc (the newest rc). Waiting for Publish Release Candidate to publish the next rc; this re-checks automatically."
-      else
-        _ready=1
-      fi
+    if _answer="$(GITHUB_OUTPUT="" sh "$VERSION_SH" release-rc)"; then
+      _rc="$(version_key rc-tag "$_answer")"
+      _version="$(version_key version "$_answer")"
+      [ -n "$_rc" ] || fail "no rc newer than the latest release exists yet; merge the Release Candidate PR first. This re-checks automatically."
+      check_rc_release
+    else
+      _msg="could not work out the newest rc from $REPO's tags (version.sh release-rc was still failing at the deadline); this re-checks automatically."
     fi
     if [ "$_ready" = 1 ]; then
       pass "$_rc is published and staging ($SHORT) is exactly its content; merging releases v$_version from it."
