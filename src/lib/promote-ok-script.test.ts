@@ -749,7 +749,7 @@ describe("start-version.sh — Start Next Version", () => {
     expect(prCalls(stub.log)).toEqual([]);
   });
 
-  test("pressing it twice is harmless: a repo already on the target is left alone", () => {
+  test("pressing it twice retries the version PR and pushes no second marker", () => {
     const stub = stubVersionPr();
     const r = run(START, [repoTags("a", "v0.1.5", "start/v0.2.0")], stub.env, [
       "minor",
@@ -757,7 +757,48 @@ describe("start-version.sh — Start Next Version", () => {
     ]);
     expect(r.status).toBe(0);
     expect(r.out).toContain(
-      "o/a: already building 0.2.0, which is 0.2.0 or later; nothing to start",
+      'o/a: already building 0.2.0; making sure its "chore: start 0.2.0" PR is open',
+    );
+    expect(r.calls.some((c) => c.includes("--method POST"))).toBe(false);
+    expect(prCalls(stub.log)).toEqual([
+      "o/a 0.2.0 | It was opened by Start Next Version, which started 0.2.0.",
+    ]);
+  });
+
+  test("a dry run on a repo already on the target names the PR check", () => {
+    const stub = stubVersionPr();
+    const r = run(
+      START,
+      [repoTags("a", "v0.1.5", "start/v0.2.0")],
+      { ...stub.env, DRY_RUN: "true" },
+      ["minor", "o/a"],
+    );
+    expect(r.status).toBe(0);
+    expect(r.out).toContain(
+      'o/a: already building 0.2.0; would make sure "chore: start 0.2.0" (version/0.2.0 into trunk) is open or merged (dry run)',
+    );
+    expect(prCalls(stub.log)).toEqual([]);
+  });
+
+  test("a retried version PR that still cannot open fails the run", () => {
+    const stub = stubVersionPr("o/a");
+    const r = run(START, [repoTags("a", "v0.1.5", "start/v0.2.0")], stub.env, [
+      "minor",
+      "o/a",
+    ]);
+    expect(r.status).toBe(1);
+    expect(r.out).toContain('its "chore: start 0.2.0" PR is not open');
+  });
+
+  test("a repo already building a later version is left alone", () => {
+    const stub = stubVersionPr();
+    const r = run(START, [repoTags("a", "v0.1.5", "start/v0.3.0")], stub.env, [
+      "minor",
+      "o/a:build.yml",
+    ]);
+    expect(r.status).toBe(0);
+    expect(r.out).toContain(
+      "o/a: already building 0.3.0, which is 0.2.0 or later; nothing to start",
     );
     expect(r.calls.some((c) => c.includes("--method POST"))).toBe(false);
     expect(prCalls(stub.log)).toEqual([]);

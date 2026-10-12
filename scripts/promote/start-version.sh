@@ -7,8 +7,10 @@
 #
 # For each repo, the target is the next minor (X.Y+1.0) or major (X+1.0.0)
 # after that repo's OWN newest release (cli.mjs start; repos release
-# independently). A repo already building the target or later is left alone,
-# so pressing the button twice is harmless. Otherwise it:
+# independently). Pressing the button twice is harmless: a repo already
+# building a later version is left alone, and one already building exactly
+# the target only gets step 2 again (which retries a PR that failed to open,
+# and does nothing when the PR is open or merged). Otherwise it:
 #
 #   1. pushes the annotated tag start/v<target> at the repo's trunk head. That
 #      marker moves the repo's base to <target> (lib.mjs nextBase). It matches
@@ -78,8 +80,20 @@ start_repo() {
   _base="$(plan_value base)"
   _released="$(plan_value released)"
   if [ "$(plan_value started)" = "true" ]; then
-    report "$_repo: already building $_base, which is $_target or later; nothing to start"
-    return 0
+    if [ "$_base" != "$_target" ]; then
+      report "$_repo: already building $_base, which is $_target or later; nothing to start"
+      return 0
+    fi
+    # Already started (pressed before): make sure its PR is open, so pressing
+    # again retries a PR that failed to open. version-pr.sh does nothing when
+    # the repo is already at the target or the PR is already open.
+    if [ "$DRY_RUN" = "true" ]; then
+      report "$_repo: already building $_target; would make sure \"chore: start $_target\" (version/$_target into trunk) is open or merged (dry run)"
+      return 0
+    fi
+    report "$_repo: already building $_target; making sure its \"chore: start $_target\" PR is open"
+    open_version_pr "$_repo" "$_target"
+    return
   fi
   _tag="start/v$_target"
   _head="$(gh api "repos/$_repo/commits/trunk" --jq .sha)" \
