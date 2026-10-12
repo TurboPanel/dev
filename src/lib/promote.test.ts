@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
@@ -781,6 +781,29 @@ describe("no minor gate, no old Start PR machinery", () => {
         ),
       );
     }
+  });
+
+  // A plain YAML value may not contain ": " (the runner refuses to load the
+  // file: "Mapping values are not allowed in this context"). Text checks on the
+  // file cannot see that, so every action and workflow is scanned for it.
+  test("no action or workflow has an unquoted value containing ': '", () => {
+    const files = [
+      ...readdirSync(join(REPO_ROOT, ".github/actions")).map((name) =>
+        join(REPO_ROOT, ".github/actions", name, "action.yml")
+      ),
+      ...readdirSync(join(REPO_ROOT, ".github/workflows"))
+        .filter((name) => name.endsWith(".yml"))
+        .map((name) => join(REPO_ROOT, ".github/workflows", name)),
+    ];
+    const plainValueWithColon = /^\s*(?:- )?[\w.-]+: (?!["'|>[{&*!#])[^#\n]*: /;
+    const bad = files.flatMap((file) =>
+      readFileSync(file, "utf8")
+        .split("\n")
+        .map((line, i) => ({ line, i }))
+        .filter(({ line }) => plainValueWithColon.test(line))
+        .map(({ i }) => `${file.slice(REPO_ROOT.length + 1)}:${i + 1}`)
+    );
+    expect(bad).toEqual([]);
   });
 
   test("the Start Version PR action runs version-pr.sh from its own commit", () => {

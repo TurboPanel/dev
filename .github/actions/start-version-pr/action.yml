@@ -18,7 +18,7 @@
 # The token needs contents: write and pull-requests: write on `repository`.
 
 name: Start Version PR
-description: Open the "chore: start X.Y.Z" PR that moves a TurboPanel repo's committed version numbers to X.Y.Z
+description: 'Open the "chore: start X.Y.Z" PR that moves a TurboPanel repo''s committed version numbers to X.Y.Z'
 
 inputs:
   version:
