@@ -5,8 +5,8 @@
 # each repo's canary build refuses to run while they do not
 # (node scripts/set-version.mjs --check). This PR is how they come to agree:
 # the Release App opens it right after each release (the next patch), and
-# Start Next Version opens it for a new minor or major (start-version.sh). The
-# owner merges it.
+# Start Next Version opens it for a new minor or major (start-version.sh). With
+# AUTO_MERGE=true it merges itself once its checks pass.
 #
 #   GH_TOKEN=<Release App token> version-pr.sh <owner/repo> <X.Y.Z>
 #
@@ -20,11 +20,16 @@
 #   5. makes the commit with the GraphQL createCommitOnBranch mutation, which
 #      takes no author: GitHub makes and signs the commit for the token's
 #      owner, so it shows as Verified. Nothing is ever `git push`ed;
-#   6. opens the PR into trunk.
+#   6. opens the PR into trunk;
+#   7. with AUTO_MERGE=true, turns on auto-merge (squash) for the new PR or the
+#      one already open, so the PR merges itself once its checks pass. The
+#      merge title is the PR title. A refusal is a warning: the PR stays open
+#      for a person to merge.
 #
 # Environment: GH_TOKEN for gh and the clone; SET_VERSION (default
 # `node scripts/set-version.mjs`); REASON, one sentence for the PR body on why
-# it was opened (default: after the newest release); DRY_RUN=true clones and
+# it was opened (default: after the newest release); AUTO_MERGE=true turns on
+# auto-merge (step 7); DRY_RUN=true clones and
 # runs SET_VERSION but changes nothing on GitHub; GIT_BASE (default
 # https://github.com) is where `<owner/repo>.git` is cloned from.
 # Prints one report line to stdout and GITHUB_STEP_SUMMARY, and `pr-url=<url>`
@@ -132,6 +137,22 @@ point_branch() {
   return 0
 }
 
+# Turn on auto-merge (squash, titled by the PR) when AUTO_MERGE=true. Never
+# fails the run: a PR that cannot merge itself is still open for a person.
+auto_merge() {
+  _url="$1"
+  [ "${AUTO_MERGE:-false}" = "true" ] || return 0
+  [ "${DRY_RUN:-false}" != "true" ] || return 0
+  if gh pr merge "$_url" --auto --squash > "$WORK/merge.log" 2>&1; then
+    report "$REPO: auto-merge is on for $_url; it merges itself once its checks pass"
+  else
+    cat "$WORK/merge.log" >&2
+    echo "::warning::$REPO: could not turn on auto-merge for $_url; merge it by hand once its checks pass" >&2
+    report "$REPO: could not turn on auto-merge for $_url; merge it by hand once its checks pass"
+  fi
+  return 0
+}
+
 pr_body() {
   printf '%s\n\n' "${REASON:-It was opened after the newest release.}"
   printf '%s\n\n' "The git tags say the next version is $VERSION, and canary builds are refused until the committed version numbers say the same. Merging this PR moves them to $VERSION; nothing else changes."
@@ -170,6 +191,7 @@ main() {
     || die "could not look for an open $BRANCH PR"
   if [ -n "$_open" ]; then
     report "$REPO: \"$TITLE\" is already open: $_open"
+    auto_merge "$_open"
     output_url "$_open"
     return 0
   fi
@@ -190,6 +212,7 @@ main() {
     -F "body=@$WORK/pr.md" --jq .html_url)" \
     || die "could not open the PR from $BRANCH (the commit is on the branch: open it by hand)"
   report "$REPO: opened \"$TITLE\" ($_files): $_url"
+  auto_merge "$_url"
   output_url "$_url"
   return 0
 }

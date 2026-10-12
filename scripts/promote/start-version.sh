@@ -17,9 +17,10 @@
 #      no release-tag ruleset and no tag-push trigger (those match v[0-9]*).
 #   2. opens the "chore: start <target>" PR that moves the repo's committed
 #      version numbers to <target> (version-pr.sh, the same steps as the
-#      Start Version PR action). Until the owner merges it, the repo's canary
+#      Start Version PR action). Until it merges, the repo's canary
 #      build refuses to run (its committed numbers disagree with the tags), so
 #      the trunk build is no longer re-run here: it would only be refused.
+#      Auto-merge is turned on, so the PR merges itself once its checks pass.
 #
 # The :<workflow> part of each argument is accepted and ignored. It named the
 # trunk build this script used to re-run; it stays so the daemon repo's
@@ -63,7 +64,7 @@ plan_value() {
 open_version_pr() {
   _repo="$1"
   _target="$2"
-  GITHUB_OUTPUT="" REASON="It was opened by Start Next Version, which started $_target." \
+  GITHUB_OUTPUT="" AUTO_MERGE=true REASON="It was opened by Start Next Version, which started $_target." \
     sh "$VERSION_PR" "$_repo" "$_target" \
     || { problem "$_repo: start/v$_target is pushed but its \"chore: start $_target\" PR is not open; canaries are refused until trunk's version files say $_target: run node scripts/set-version.mjs $_target in a PR"; return 1; }
   return 0
