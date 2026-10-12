@@ -157,7 +157,7 @@ describe(".github/workflows", () => {
   });
 
   test.each(files)(
-    "%s opens no Start PR and has no minor gate (versions come from tags)",
+    "%s has no minor gate and no old Start PR step (version PRs come from start-version-pr)",
     (file) => {
       const text = read(file);
       expect(text).not.toMatch(/gh-next-version|gh-minor-gate|minor-gate/);

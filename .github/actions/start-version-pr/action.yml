@@ -1,0 +1,58 @@
+# Start Version PR — open the "chore: start X.Y.Z" pull request that moves a
+# TurboPanel repo's committed version numbers to X.Y.Z. Each repo's canary
+# build refuses to run while those numbers disagree with what the tags say
+# (Version From Tags, `node scripts/set-version.mjs --check`), so this PR is
+# opened right after each release (the next patch, from publish-release.yml)
+# and by Start Next Version for a new minor or major. The owner merges it.
+# Runs scripts/promote/version-pr.sh from this same TurboPanel/dev commit, so
+# pinning this action by sha pins the steps too.
+#
+# The commit is made through the GraphQL createCommitOnBranch mutation with
+# no author: GitHub makes and signs it for the token's owner (the TurboPanel
+# Release App), so it shows as Verified. Nothing is pushed with git.
+#
+# Nothing to do (already at X.Y.Z): `pr-url` is empty. A PR from
+# version/<X.Y.Z> already open: `pr-url` is that PR and nothing changes.
+# The token needs contents: write and pull-requests: write on `repository`.
+
+name: Start Version PR
+description: Open the "chore: start X.Y.Z" PR that moves a TurboPanel repo's committed version numbers to X.Y.Z
+
+inputs:
+  version:
+    description: The version to start, plain X.Y.Z
+    required: true
+  github-token:
+    description: Release App token with contents and pull-requests write on the repo
+    required: true
+  repository:
+    description: owner/name of the repo (default the calling repo)
+    required: false
+    default: ${{ github.repository }}
+  set-version:
+    description: The command that rewrites the repo's version files, run in its trunk with the version appended
+    required: false
+    default: node scripts/set-version.mjs
+  reason:
+    description: One sentence for the PR body on why it was opened, e.g. "It was opened after v0.1.9 was released."
+    required: false
+    default: ""
+
+outputs:
+  pr-url:
+    description: The PR opened, or the one already open; empty when the repo is already at the version
+    value: ${{ steps.pr.outputs.pr-url }}
+
+runs:
+  using: composite
+  steps:
+    - name: Open the version PR
+      id: pr
+      shell: sh
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        REPO: ${{ inputs.repository }}
+        VERSION: ${{ inputs.version }}
+        SET_VERSION: ${{ inputs.set-version }}
+        REASON: ${{ inputs.reason }}
+      run: sh "$GITHUB_ACTION_PATH/../../../scripts/promote/version-pr.sh" "$REPO" "$VERSION"

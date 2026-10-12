@@ -1,6 +1,9 @@
 # Version From Tags — a repo's version numbers, worked out from its git tags and
-# its rolling canary release (Road to 0.2.x, versioning Phase 3: no version
-# file and no "Start x.y.z" PR decides them). Runs scripts/promote/version.sh
+# its rolling canary release (Road to 0.2.x, versioning Phase 3). The tags say
+# what the version should be; the committed version files must agree (each
+# repo's canary build runs `node scripts/set-version.mjs --check <base>` right
+# after this action) and the "chore: start x.y.z" PR opened by Start Version
+# PR (.github/actions/start-version-pr) moves them. Runs scripts/promote/version.sh
 # from this same TurboPanel/dev commit, so pinning this action by sha pins the
 # rules too.
 #

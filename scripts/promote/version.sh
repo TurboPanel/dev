@@ -1,7 +1,9 @@
 #!/bin/sh
 # version.sh: a repo's version numbers, worked out from its git tags and its
-# rolling canary release. No file and no "Start x.y.z" PR decides them (Road
-# to 0.2.x, versioning Phase 3); the rules live in lib.mjs (nextBase,
+# rolling canary release (Road to 0.2.x, versioning Phase 3). The committed
+# version files must agree with the base: each repo's canary build checks
+# them, and the "chore: start x.y.z" PR (version-pr.sh) moves them. The rules
+# live in lib.mjs (nextBase,
 # nextCanaryNumber, newestUnreleasedRc) and are run through cli.mjs.
 #
 #   version.sh base              release=<newest release>  base=<version trunk builds now>
