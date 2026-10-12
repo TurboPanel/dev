@@ -799,12 +799,17 @@ describe("no minor gate, no old Start PR machinery", () => {
       "repository",
       "set-version",
       "reason",
+      "auto-merge",
     ]) {
       expect(action, input).toMatch(new RegExp(`^ {2}${input}:\\n`, "m"));
     }
     expect(action).toMatch(
       /^ {2}set-version:\n(?: {4}.*\n)* {4}default: node scripts\/set-version\.mjs$/m,
     );
+    expect(action).toMatch(
+      /^ {2}auto-merge:\n(?: {4}.*\n)* {4}default: "false"$/m,
+    );
+    expect(action).toMatch(/^ {8}AUTO_MERGE: \$\{\{ inputs\.auto-merge \}\}$/m);
     expect(action).toMatch(
       /^ {2}pr-url:\n {4}description: .*\n {4}value: \$\{\{ steps\.pr\.outputs\.pr-url \}\}$/m,
     );

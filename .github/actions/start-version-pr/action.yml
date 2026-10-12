@@ -3,7 +3,9 @@
 # build refuses to run while those numbers disagree with what the tags say
 # (Version From Tags, `node scripts/set-version.mjs --check`), so this PR is
 # opened right after each release (the next patch, from publish-release.yml)
-# and by Start Next Version for a new minor or major. The owner merges it.
+# and by Start Next Version for a new minor or major. With `auto-merge: "true"`
+# the PR merges itself once its checks pass (squash, titled by the PR); if
+# GitHub refuses that, the step only warns and the PR waits for a person.
 # Runs scripts/promote/version-pr.sh from this same TurboPanel/dev commit, so
 # pinning this action by sha pins the steps too.
 #
@@ -33,6 +35,10 @@ inputs:
     description: The command that rewrites the repo's version files, run in its trunk with the version appended
     required: false
     default: node scripts/set-version.mjs
+  auto-merge:
+    description: '"true" turns on auto-merge (squash) for the PR, so it merges itself once its checks pass'
+    required: false
+    default: "false"
   reason:
     description: One sentence for the PR body on why it was opened, e.g. "It was opened after v0.1.9 was released."
     required: false
@@ -55,4 +61,5 @@ runs:
         VERSION: ${{ inputs.version }}
         SET_VERSION: ${{ inputs.set-version }}
         REASON: ${{ inputs.reason }}
+        AUTO_MERGE: ${{ inputs.auto-merge }}
       run: sh "$GITHUB_ACTION_PATH/../../../scripts/promote/version-pr.sh" "$REPO" "$VERSION"

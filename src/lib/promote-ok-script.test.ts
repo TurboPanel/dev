@@ -686,7 +686,7 @@ describe("start-version.sh — Start Next Version", () => {
     const stub = join(dir, "version-pr.sh");
     writeFileSync(
       stub,
-      `#!/bin/sh\nprintf '%s %s | %s\\n' "$1" "$2" "$REASON" >> "${log}"\n[ "$1" != "${failFor}" ] || exit 1\necho "$1: opened chore: start $2"\n`,
+      `#!/bin/sh\nprintf '%s %s | %s | auto-merge=%s\\n' "$1" "$2" "$REASON" "$AUTO_MERGE" >> "${log}"\n[ "$1" != "${failFor}" ] || exit 1\necho "$1: opened chore: start $2"\n`,
     );
     return {
       env: { START_MESSAGE: "Started by the owner", VERSION_PR: stub },
@@ -723,8 +723,8 @@ describe("start-version.sh — Start Next Version", () => {
     // The trunk build is no longer re-run: the canary check would refuse it.
     expect(r.calls.some((c) => c.startsWith("workflow run"))).toBe(false);
     expect(prCalls(stub.log)).toEqual([
-      "o/a 0.2.0 | It was opened by Start Next Version, which started 0.2.0.",
-      "o/b 0.2.0 | It was opened by Start Next Version, which started 0.2.0.",
+      "o/a 0.2.0 | It was opened by Start Next Version, which started 0.2.0. | auto-merge=true",
+      "o/b 0.2.0 | It was opened by Start Next Version, which started 0.2.0. | auto-merge=true",
     ]);
     expect(r.out).toContain(
       "o/a: started 0.2.0 (newest release 0.1.5): start/v0.2.0 at aaaaaaa",
@@ -761,7 +761,7 @@ describe("start-version.sh — Start Next Version", () => {
     );
     expect(r.calls.some((c) => c.includes("--method POST"))).toBe(false);
     expect(prCalls(stub.log)).toEqual([
-      "o/a 0.2.0 | It was opened by Start Next Version, which started 0.2.0.",
+      "o/a 0.2.0 | It was opened by Start Next Version, which started 0.2.0. | auto-merge=true",
     ]);
   });
 
@@ -841,7 +841,7 @@ describe("start-version.sh — Start Next Version", () => {
     expect(r.out).toContain("o/b: could not list its tags");
     expect(r.out).toContain("o/c: started 0.2.0");
     expect(prCalls(stub.log)).toEqual([
-      "o/c 0.2.0 | It was opened by Start Next Version, which started 0.2.0.",
+      "o/c 0.2.0 | It was opened by Start Next Version, which started 0.2.0. | auto-merge=true",
     ]);
   });
 
@@ -990,6 +990,8 @@ describe("version-pr.sh — the chore: start x.y.z PR", () => {
       `o/r: opened "chore: start 0.2.0" (package.json): ${PR_URL}`,
     );
     expect(readFileSync(f.output, "utf8")).toBe(`pr-url=${PR_URL}\n`);
+    // Auto-merge is off unless asked for.
+    expect(r.calls.some((c) => c.startsWith("pr merge"))).toBe(false);
     // The token never reaches argv.
     expect(r.calls.join("\n")).not.toContain("fixture-token");
   });
@@ -1014,7 +1016,73 @@ describe("version-pr.sh — the chore: start x.y.z PR", () => {
     expect(r.status).toBe(0);
     expect(r.out).toContain(`o/r: "chore: start 0.2.0" is already open: ${PR_URL}`);
     expect(r.calls.some((c) => /--method|graphql/.test(c))).toBe(false);
+    expect(r.calls.some((c) => c.startsWith("pr merge"))).toBe(false);
     expect(readFileSync(f.output, "utf8")).toBe(`pr-url=${PR_URL}\n`);
+  });
+
+  const alreadyOpen: Route = {
+    match: /^api repos\/o\/r\/pulls\?/,
+    body: [{ html_url: PR_URL }],
+  };
+  const merge: Route = { match: /^pr merge /, body: {} };
+
+  test("AUTO_MERGE=true turns on squash auto-merge for the new PR, titled by the PR", () => {
+    const f = fixture();
+    const r = run(
+      VPR,
+      [noOpenPr, noBranch, createRef, commit, openPr, merge],
+      { ...f.env, AUTO_MERGE: "true" },
+      ["o/r", "0.2.0"],
+    );
+    expect(r.status).toBe(0);
+    const merges = r.calls.filter((c) => c.startsWith("pr merge"));
+    expect(merges).toEqual([`pr merge ${PR_URL} --auto --squash`]);
+    expect(r.out).toContain(
+      `o/r: auto-merge is on for ${PR_URL}; it merges itself once its checks pass`,
+    );
+    expect(readFileSync(f.output, "utf8")).toBe(`pr-url=${PR_URL}\n`);
+  });
+
+  test("AUTO_MERGE=true also turns it on for a PR already open", () => {
+    const f = fixture();
+    const r = run(VPR, [alreadyOpen, merge], { ...f.env, AUTO_MERGE: "true" }, [
+      "o/r",
+      "0.2.0",
+    ]);
+    expect(r.status).toBe(0);
+    expect(r.calls).toContain(`pr merge ${PR_URL} --auto --squash`);
+    expect(r.calls.some((c) => /--method|graphql/.test(c))).toBe(false);
+  });
+
+  test("auto-merge GitHub refuses is a warning; the PR stays open and the run passes", () => {
+    const f = fixture();
+    const r = run(
+      VPR,
+      [
+        alreadyOpen,
+        { match: /^pr merge /, exit: 1, stderr: "auto-merge is not allowed" },
+      ],
+      { ...f.env, AUTO_MERGE: "true" },
+      ["o/r", "0.2.0"],
+    );
+    expect(r.status).toBe(0);
+    expect(r.out).toContain("auto-merge is not allowed");
+    expect(r.out).toContain(
+      `::warning::o/r: could not turn on auto-merge for ${PR_URL}; merge it by hand once its checks pass`,
+    );
+    expect(readFileSync(f.output, "utf8")).toBe(`pr-url=${PR_URL}\n`);
+  });
+
+  test("a dry run never turns on auto-merge", () => {
+    const f = fixture();
+    const r = run(
+      VPR,
+      [alreadyOpen, merge],
+      { ...f.env, AUTO_MERGE: "true", DRY_RUN: "true" },
+      ["o/r", "0.2.0"],
+    );
+    expect(r.status).toBe(0);
+    expect(r.calls.some((c) => c.startsWith("pr merge"))).toBe(false);
   });
 
   test("a branch left over without a PR is reset to trunk's head", () => {
