@@ -466,7 +466,7 @@ These packages are used for development, test, or build tooling and are not bund
 - Copyright: Boshen and oxc contributors
 - Homepage: https://oxc.rs
 
-### @rolldown/binding-darwin-arm64@1.2.14
+### @rolldown/binding-linux-x64-gnu@1.2.14
 
 - License: MIT
 - Homepage: https://rolldown.rs/
@@ -689,11 +689,6 @@ These packages are used for development, test, or build tooling and are not bund
 - Copyright: thecodrr
 - Homepage: https://github.com/thecodrr/fdir#readme
 
-### fsevents@2.3.3
-
-- License: MIT
-- Homepage: https://github.com/fsevents/fsevents
-
 ### gensync@1.0.0-beta.2
 
 - License: MIT
@@ -759,7 +754,7 @@ These packages are used for development, test, or build tooling and are not bund
 - License: MPL-2.0
 - Homepage: https://github.com/parcel-bundler/lightningcss#readme
 
-### lightningcss-darwin-arm64@1.33.0
+### lightningcss-linux-x64-gnu@1.33.0
 
 - License: MPL-2.0
 - Homepage: https://github.com/parcel-bundler/lightningcss#readme
