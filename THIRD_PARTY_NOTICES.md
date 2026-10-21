@@ -5,7 +5,7 @@ This file is generated from the resolved dependency graph. Do not edit it by han
 Third-party components remain under their own copyright and license terms and are not relicensed by TurboPanel Development Environment's repository license (AGPL-3.0-only).
 
 <!-- lockfiles
-pnpm-lock.yaml sha256:4f2061a292f5dfd47f550d37dd8a2366389dea09989053aa5b897d339eb6f517
+pnpm-lock.yaml sha256:964d572b762e1f34e3f4c7ba572e3bc6a0fceba62ddd6d803d1c2a157a18bf80
 -->
 
 ## Production dependencies
@@ -460,13 +460,13 @@ These packages are used for development, test, or build tooling and are not bund
 - Copyright: Justin Ridgewell
 - Homepage: https://github.com/jridgewell/sourcemaps/tree/main/packages/trace-mapping
 
-### @oxc-project/types@0.133.0
+### @oxc-project/types@0.154.0
 
 - License: MIT
 - Copyright: Boshen and oxc contributors
 - Homepage: https://oxc.rs
 
-### @rolldown/binding-linux-x64-gnu@1.0.3
+### @rolldown/binding-darwin-arm64@1.2.14
 
 - License: MIT
 - Homepage: https://rolldown.rs/
@@ -689,6 +689,11 @@ These packages are used for development, test, or build tooling and are not bund
 - Copyright: thecodrr
 - Homepage: https://github.com/thecodrr/fdir#readme
 
+### fsevents@2.3.3
+
+- License: MIT
+- Homepage: https://github.com/fsevents/fsevents
+
 ### gensync@1.0.0-beta.2
 
 - License: MIT
@@ -749,12 +754,12 @@ These packages are used for development, test, or build tooling and are not bund
 - Copyright: Aseem Kishore
 - Homepage: http://json5.org/
 
-### lightningcss@1.32.0
+### lightningcss@1.33.0
 
 - License: MPL-2.0
 - Homepage: https://github.com/parcel-bundler/lightningcss#readme
 
-### lightningcss-linux-x64-gnu@1.32.0
+### lightningcss-darwin-arm64@1.33.0
 
 - License: MPL-2.0
 - Homepage: https://github.com/parcel-bundler/lightningcss#readme
@@ -822,6 +827,12 @@ These packages are used for development, test, or build tooling and are not bund
 - Copyright: Jon Schlinkert
 - Homepage: https://github.com/micromatch/picomatch
 
+### picomatch@4.0.7
+
+- License: MIT
+- Copyright: Jon Schlinkert
+- Homepage: https://github.com/micromatch/picomatch
+
 ### postcss@8.5.28
 
 - License: MIT
@@ -833,7 +844,7 @@ These packages are used for development, test, or build tooling and are not bund
 - License: MIT
 - Homepage: https://react.dev/
 
-### rolldown@1.0.3
+### rolldown@1.2.14
 
 - License: MIT
 - Homepage: https://rolldown.rs/
@@ -918,7 +929,7 @@ These packages are used for development, test, or build tooling and are not bund
 - Copyright: Andrey Sitnik
 - Homepage: https://github.com/browserslist/update-db#readme
 
-### vite@8.0.16
+### vite@8.3.4
 
 - License: MIT
 - Copyright: Evan You
