@@ -37,6 +37,17 @@ function roleDefault(daemon: string, role: string, key: string): string {
   return match[1]!;
 }
 
+// Images are pinned in orchestration/image-pins.json (the role defaults only
+// point at it), so read the image reference from there.
+function imagePinRef(daemon: string, image: string): string {
+  const pins = JSON.parse(
+    readFileSync(join(daemon, "orchestration/image-pins.json"), "utf8"),
+  ) as { images: Record<string, { ref: string }> };
+  const entry = pins.images[image];
+  if (!entry) throw new TypeError(`${image} not found in image-pins.json`);
+  return entry.ref;
+}
+
 const daemon = siblingCheckout("turbopaneld");
 const instance = siblingCheckout("turbopanel");
 const ui = siblingCheckout("ui");
@@ -59,9 +70,9 @@ describe("stack badge versions match the sibling pins", () => {
     expect(CADDY_VERSION).toBe(roleDefault(daemon!, "caddy", "caddy_version"));
     expect(REDIS_VERSION).toBe(roleDefault(daemon!, "redis", "redis_version"));
     expect(`postgres:${POSTGRES_VERSION}`).toBe(
-      roleDefault(daemon!, "postgres", "postgres_image"),
+      imagePinRef(daemon!, "postgres"),
     );
-    expect(roleDefault(daemon!, "rabbitmq", "rabbitmq_image")).toMatch(
+    expect(imagePinRef(daemon!, "rabbitmq")).toMatch(
       new RegExp(`^rabbitmq:${RABBITMQ_VERSION}(-|$)`),
     );
   });
