@@ -27,6 +27,10 @@
 #   PR_NUMBER      a PR to read them from (the manual dry run)
 #   GITHUB_STEP_SUMMARY  optional; the verdict is appended to it
 #   MAX_WAIT_SECONDS, POLL_INTERVAL_SECONDS  optional; see below
+#   PROGRESS_INTERVAL_SECONDS  optional; how often a waiting check says what it
+#                  is waiting for (default 60)
+#   CANARY_WORKFLOW  optional; the workflow file whose run builds the canary
+#                  (default: canary.yml for instance repos, CI_WORKFLOW for daemon)
 set -eu
 
 # Versions come from tags and the canary release, never a file (version.sh).
@@ -45,6 +49,9 @@ VERSION_SH="$(dirname "$0")/version.sh"
 # MAX_WAIT_SECONDS=0 so every case is still a single, instant check.
 MAX_WAIT_SECONDS=${MAX_WAIT_SECONDS:-3300}
 POLL_INTERVAL_SECONDS=${POLL_INTERVAL_SECONDS:-30}
+PROGRESS_INTERVAL_SECONDS=${PROGRESS_INTERVAL_SECONDS:-60}
+_started=0
+_last_progress=0
 
 now_s() {
   date +%s
@@ -106,6 +113,50 @@ trunk_ci_state() {
   return 0
 }
 
+# What the canary build of HEAD_SHA is doing, as plain lines. Best effort: any
+# lookup that fails prints a short note and never changes the verdict.
+canary_status() {
+  _wf="${CANARY_WORKFLOW:-}"
+  if [ -z "$_wf" ]; then
+    case "$REPO_KIND" in
+      instance) _wf="canary.yml" ;;
+      daemon) _wf="$CI_WORKFLOW" ;;
+    esac
+  fi
+  [ -n "$_wf" ] || return 0
+  _mine="$(gh api "repos/$REPO/actions/workflows/$_wf/runs?head_sha=$HEAD_SHA&per_page=20" \
+    --jq '.workflow_runs | sort_by(.created_at) | last
+          | if . == null then "none" else "\(.id) \(.status) \(.conclusion // "-") \(.html_url)" end' 2>/dev/null)" || _mine="unreadable"
+  case "$_mine" in
+    none) echo "  $_wf run for $SHORT: none found yet (it starts after the trunk build is green)" ;;
+    unreadable) echo "  $_wf run for $SHORT: could not be read" ;;
+    *)
+      set -- $_mine
+      echo "  $_wf run for $SHORT: run $1 is $2 (conclusion $3) $4"
+      ;;
+  esac
+  _group="$(gh api "repos/$REPO/actions/workflows/$_wf/runs?per_page=30" \
+    --jq '[.workflow_runs[] | select(.status != "completed")] | sort_by(.created_at)
+          | if length == 0 then "nothing else is running or queued"
+            else map("run \(.id) \(.status) for \((now - (.created_at | fromdateiso8601)) / 60 | floor) min") | join("; ") end' 2>/dev/null)" || _group="could not be read"
+  echo "  $_wf runs not finished (oldest first): $_group"
+  return 0
+}
+
+# Say, about once a minute, exactly what this check is waiting for. $1 is the
+# thing waited for; the canary run state is added for an rc check.
+progress() {
+  _t="$(now_s)"
+  [ "$_started" -gt 0 ] || _started="$_t"
+  if [ "$_last_progress" -gt 0 ] && [ $((_t - _last_progress)) -lt "$PROGRESS_INTERVAL_SECONDS" ]; then
+    return 0
+  fi
+  _last_progress="$_t"
+  echo "promote-ok: still waiting ($(((_t - _started) / 60)) min of $((MAX_WAIT_SECONDS / 60)) so far): $1"
+  [ "${2:-}" = "canary" ] && canary_status
+  return 0
+}
+
 # One key of a version.sh answer (key=value lines).
 version_key() {
   _key="$1"
@@ -125,10 +176,11 @@ check_trunk_ci() {
     esac
     if [ "$(now_s)" -ge "$_deadline" ]; then
       case "$_state" in
-        missing) fail "waiting for a trunk $CI_WORKFLOW run of $SHORT (none has started yet); this re-checks automatically." ;;
-        *) fail "waiting for the trunk $CI_WORKFLOW run of $SHORT to finish; this re-checks automatically." ;;
+        missing) fail "timed out after $((MAX_WAIT_SECONDS / 60)) min waiting for a trunk $CI_WORKFLOW run of $SHORT (none has started yet); this re-checks automatically." ;;
+        *) fail "timed out after $((MAX_WAIT_SECONDS / 60)) min waiting for the trunk $CI_WORKFLOW run of $SHORT to finish (state: $_state); this re-checks automatically." ;;
       esac
     fi
+    progress "the trunk $CI_WORKFLOW run of $SHORT to finish (state: $_state)"
     sleep "$POLL_INTERVAL_SECONDS"
   done
 }
@@ -147,8 +199,11 @@ check_rc_pr() {
       pass "canary $_manifest was built from $SHORT; merging publishes the next $_version rc from those bytes."
     fi
     if [ "$(now_s)" -ge "$_deadline" ]; then
-      fail "waiting for the canary of $SHORT (no manifest-X.Y.Z-canary.N.json on the canary release names it yet); this re-checks automatically. If the canary run for it failed, re-run that run."
+      echo "promote-ok: gave up after $((MAX_WAIT_SECONDS / 60)) min waiting for the canary of $SHORT:"
+      canary_status
+      fail "timed out after $((MAX_WAIT_SECONDS / 60)) min waiting for the canary of $SHORT (no manifest-X.Y.Z-canary.N.json on the canary release names it yet). Its build run may be missing, queued behind a stuck run, or failed; see the run lines above. Re-run or cancel the stuck canary run; this re-checks automatically."
     fi
+    progress "the canary of $SHORT (a manifest-X.Y.Z-canary.N.json on the canary release naming commit $HEAD_SHA)" canary
     sleep "$POLL_INTERVAL_SECONDS"
   done
 }
@@ -201,8 +256,9 @@ check_release_pr() {
       pass "$_rc is published and staging ($SHORT) is exactly its content; merging releases v$_version from it."
     fi
     if [ "$(now_s)" -ge "$_deadline" ]; then
-      fail "$_msg"
+      fail "timed out after $((MAX_WAIT_SECONDS / 60)) min: $_msg"
     fi
+    progress "${_rc:-the newest rc}: $_msg"
     sleep "$POLL_INTERVAL_SECONDS"
   done
 }

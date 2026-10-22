@@ -198,7 +198,7 @@ describe("promote-ok.sh — Release Candidate PR (base staging)", () => {
     );
     expect(r.status).toBe(1);
     expect(r.out).toContain(
-      "waiting for the canary of aaaaaaa (no manifest-X.Y.Z-canary.N.json on the canary release names it yet); this re-checks automatically. If the canary run for it failed, re-run that run.",
+      "timed out after 0 min waiting for the canary of aaaaaaa (no manifest-X.Y.Z-canary.N.json on the canary release names it yet). Its build run may be missing, queued behind a stuck run, or failed; see the run lines above. Re-run or cancel the stuck canary run; this re-checks automatically.",
     );
     expect(r.out).toContain("::error title=promote-ok::");
   });
@@ -211,7 +211,7 @@ describe("promote-ok.sh — Release Candidate PR (base staging)", () => {
     );
     expect(pending.status).toBe(1);
     expect(pending.out).toContain(
-      "waiting for the trunk build.yml run of aaaaaaa to finish; this re-checks automatically.",
+      "waiting for the trunk build.yml run of aaaaaaa to finish (state: pending); this re-checks automatically.",
     );
     const missing = run(
       CHECK,
@@ -220,6 +220,55 @@ describe("promote-ok.sh — Release Candidate PR (base staging)", () => {
     );
     expect(missing.status).toBe(1);
     expect(missing.out).toContain("none has started yet");
+  });
+
+  test("says what it waits for while polling, and names the canary run on timeout", () => {
+    const canaryRuns = {
+      match: /^api repos\/o\/r\/actions\/workflows\/canary\.yml\/runs\?head_sha=/,
+      body: {
+        workflow_runs: [
+          {
+            id: 77,
+            status: "queued",
+            conclusion: null,
+            created_at: "2026-10-22T00:00:00Z",
+            html_url: "https://github.com/o/r/actions/runs/77",
+          },
+        ],
+      },
+    };
+    const groupRuns = {
+      match: /^api repos\/o\/r\/actions\/workflows\/canary\.yml\/runs\?per_page=30/,
+      body: {
+        workflow_runs: [
+          {
+            id: 70,
+            status: "in_progress",
+            created_at: "2026-10-22T00:00:00Z",
+          },
+        ],
+      },
+    };
+    const r = run(
+      CHECK,
+      [
+        ciRuns(run1({})),
+        canaryAssets(),
+        canaryRuns,
+        groupRuns,
+      ],
+      {
+        ...checkEnv("staging"),
+        MAX_WAIT_SECONDS: "2",
+        PROGRESS_INTERVAL_SECONDS: "0",
+      },
+    );
+    expect(r.status).toBe(1);
+    expect(r.out).toContain("promote-ok: still waiting");
+    expect(r.out).toContain("canary.yml run for aaaaaaa: run 77 is queued");
+    expect(r.out).toContain("https://github.com/o/r/actions/runs/77");
+    expect(r.out).toContain("run 70 in_progress");
+    expect(r.out).toContain("timed out after 0 min waiting for the canary");
   });
 
   test("polls in place instead of failing once: a still-running trunk run that then succeeds", () => {
@@ -258,7 +307,7 @@ describe("promote-ok.sh — Release Candidate PR (base staging)", () => {
     });
     expect(r.status).toBe(1);
     expect(r.out).toContain(
-      "waiting for the trunk build.yml run of aaaaaaa to finish; this re-checks automatically.",
+      "waiting for the trunk build.yml run of aaaaaaa to finish (state: pending); this re-checks automatically.",
     );
     const looks = r.calls.filter((c) =>
       c.startsWith("api repos/o/r/actions/workflows"),

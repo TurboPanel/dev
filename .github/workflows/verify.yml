@@ -26,6 +26,7 @@ jobs:
   # (Administration → Analysis Method).
   verify:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     concurrency:
       group: dev-sonar-${{ github.event_name }}-${{ github.ref }}
       cancel-in-progress: ${{ github.event_name == 'pull_request' }}

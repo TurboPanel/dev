@@ -94,6 +94,7 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     concurrency:
       # One canary publish at a time per repo: two runs uploading and
       # pruning the same rolling release would race each other's manifest.

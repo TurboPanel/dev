@@ -131,6 +131,7 @@ permissions:
 jobs:
   prepare:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     environment: ${{ inputs.to == 'release' && 'release' || (inputs.repo-kind != 'notes-only' && 'rc' || null) }}
     concurrency:
       group: gh-promote-${{ github.repository }}
