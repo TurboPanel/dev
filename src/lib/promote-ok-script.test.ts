@@ -271,6 +271,20 @@ describe("promote-ok.sh — Release Candidate PR (base staging)", () => {
     expect(r.out).toContain("timed out after 0 min waiting for the canary");
   });
 
+  test("a canary run lookup that fails gives the plain note and the same verdict", () => {
+    const r = run(CHECK, [ciRuns(run1({})), canaryAssets()], {
+      ...checkEnv("staging"),
+      MAX_WAIT_SECONDS: "2",
+      PROGRESS_INTERVAL_SECONDS: "0",
+    });
+    expect(r.status).toBe(1);
+    expect(r.out).toContain("canary.yml run for aaaaaaa: could not be read");
+    expect(r.out).toContain(
+      "runs not finished (oldest first): could not be read",
+    );
+    expect(r.out).toContain("timed out after 0 min waiting for the canary");
+  });
+
   test("polls in place instead of failing once: a still-running trunk run that then succeeds", () => {
     const runsRoute = {
       match: /^api repos\/o\/r\/actions\/workflows\/build\.yml\/runs\?/,

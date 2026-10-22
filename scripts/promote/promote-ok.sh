@@ -121,6 +121,7 @@ canary_status() {
     case "$REPO_KIND" in
       instance) _wf="canary.yml" ;;
       daemon) _wf="$CI_WORKFLOW" ;;
+      *) _wf="" ;;
     esac
   fi
   [ -n "$_wf" ] || return 0
@@ -131,8 +132,10 @@ canary_status() {
     none) echo "  $_wf run for $SHORT: none found yet (it starts after the trunk build is green)" ;;
     unreadable) echo "  $_wf run for $SHORT: could not be read" ;;
     *)
-      set -- $_mine
-      echo "  $_wf run for $SHORT: run $1 is $2 (conclusion $3) $4"
+      read -r _run_id _run_status _run_conclusion _run_url <<EOF2
+$_mine
+EOF2
+      echo "  $_wf run for $SHORT: run $_run_id is $_run_status (conclusion $_run_conclusion) $_run_url"
       ;;
   esac
   _group="$(gh api "repos/$REPO/actions/workflows/$_wf/runs?per_page=30" \
