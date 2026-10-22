@@ -114,6 +114,18 @@ version_key() {
   return 0
 }
 
+# Where the canary of HEAD_SHA stands, for the waiting message: "run <url> is
+# <status>" or "no Canary run has started for it". Best effort: if the lookup
+# fails the old wording is used, so a read error never changes the verdict.
+canary_run_hint() {
+  _hint="$(gh api "repos/$REPO/actions/workflows/${CANARY_WORKFLOW:-canary.yml}/runs?head_sha=$HEAD_SHA&per_page=20" \
+    --jq '[.workflow_runs[]] | sort_by(.created_at) | last
+          | if . == null then "no Canary run has started for it"
+            else "run \(.html_url) is \(if .status == "completed" then "finished (\(.conclusion))" else .status end)" end' 2>/dev/null)" || _hint=""
+  printf '%s' "$_hint"
+  return 0
+}
+
 check_trunk_ci() {
   _deadline=$(($(now_s) + MAX_WAIT_SECONDS))
   while :; do
@@ -147,6 +159,10 @@ check_rc_pr() {
       pass "canary $_manifest was built from $SHORT; merging publishes the next $_version rc from those bytes."
     fi
     if [ "$(now_s)" -ge "$_deadline" ]; then
+      _hint="$(canary_run_hint)"
+      if [ -n "$_hint" ]; then
+        fail "waiting for the canary of $SHORT ($_hint; no manifest-X.Y.Z-canary.N.json on the canary release names it yet); this re-checks automatically. If the canary run for it failed, re-run that run."
+      fi
       fail "waiting for the canary of $SHORT (no manifest-X.Y.Z-canary.N.json on the canary release names it yet); this re-checks automatically. If the canary run for it failed, re-run that run."
     fi
     sleep "$POLL_INTERVAL_SECONDS"

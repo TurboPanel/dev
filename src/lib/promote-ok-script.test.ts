@@ -203,6 +203,34 @@ describe("promote-ok.sh — Release Candidate PR (base staging)", () => {
     expect(r.out).toContain("::error title=promote-ok::");
   });
 
+  test("red, waiting, names the Canary run of the head commit and its state", () => {
+    const r = run(
+      CHECK,
+      [
+        ciRuns(run1({})),
+        canaryAssets("manifest-0.1.4-canary.9.json"),
+        manifest("manifest-0.1.4-canary.9.json", OTHER),
+        {
+          match: /^api repos\/o\/r\/actions\/workflows\/canary\.yml\/runs\?/,
+          body: {
+            workflow_runs: [
+              {
+                html_url: "https://github.com/o/r/actions/runs/42",
+                status: "queued",
+                created_at: "2026-09-29T10:00:00Z",
+              },
+            ],
+          },
+        },
+      ],
+      checkEnv("staging"),
+    );
+    expect(r.status).toBe(1);
+    expect(r.out).toContain(
+      "waiting for the canary of aaaaaaa (run https://github.com/o/r/actions/runs/42 is queued; no manifest-X.Y.Z-canary.N.json",
+    );
+  });
+
   test("red, waiting, while the trunk run is still going or has not started", () => {
     const pending = run(
       CHECK,
