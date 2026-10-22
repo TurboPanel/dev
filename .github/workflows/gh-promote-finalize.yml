@@ -69,6 +69,7 @@ permissions:
 jobs:
   finalize:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     # No environment here: the owner approved this run once, at prepare
     # (owner decision 2026-09-26 — one approval per promotion). The App's
     # credentials are repo secrets, reachable only by workflows on trunk,

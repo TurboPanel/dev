@@ -15,6 +15,7 @@ jobs:
   pr-title:
     name: pr-title
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Check the title shape
         env:

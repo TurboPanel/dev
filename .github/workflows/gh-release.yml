@@ -79,6 +79,7 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     concurrency:
       # One release publish at a time per repo — gh release create on a tag
       # that's mid-publish from a concurrent run would race.
