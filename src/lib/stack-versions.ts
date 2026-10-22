@@ -7,7 +7,7 @@ export { NODE_VERSION };
 export const CADDY_VERSION = "2.11.4";
 
 /** instance/package.json devDependencies.wrangler */
-export const WRANGLER_VERSION = "4.124.0";
+export const WRANGLER_VERSION = "4.151.3";
 
 /** website/package.json dependencies.next */
 export const NEXT_VERSION = "16.3.8";
@@ -19,7 +19,7 @@ export const EXPO_SDK_VERSION = "57.0.14";
 export const POSTGRES_VERSION = "18";
 
 /** daemon orchestration/roles/redis/defaults/main.yml */
-export const REDIS_VERSION = "8.0.2";
+export const REDIS_VERSION = "8.0.6";
 
 /** daemon orchestration/roles/rabbitmq/defaults/main.yml rabbitmq_image */
 export const RABBITMQ_VERSION = "4";
