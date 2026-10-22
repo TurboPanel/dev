@@ -19,7 +19,7 @@ export const EXPO_SDK_VERSION = "57.0.14";
 export const POSTGRES_VERSION = "18";
 
 /** daemon orchestration/roles/redis/defaults/main.yml */
-export const REDIS_VERSION = "8.0.2";
+export const REDIS_VERSION = "8.0.6";
 
 /** daemon orchestration/roles/rabbitmq/defaults/main.yml rabbitmq_image */
 export const RABBITMQ_VERSION = "4";
