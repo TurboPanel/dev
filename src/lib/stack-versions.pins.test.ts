@@ -42,8 +42,8 @@ function roleDefault(daemon: string, role: string, key: string): string {
 function imagePinRef(daemon: string, image: string): string {
   const pins = JSON.parse(
     readFileSync(join(daemon, "orchestration/image-pins.json"), "utf8"),
-  ) as { images: Record<string, { ref: string }> };
-  const entry = pins.images[image];
+  ) as { images?: Record<string, { ref: string }> };
+  const entry = pins.images?.[image];
   if (!entry) throw new TypeError(`${image} not found in image-pins.json`);
   return entry.ref;
 }
