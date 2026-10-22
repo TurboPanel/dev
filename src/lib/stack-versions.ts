@@ -7,7 +7,7 @@ export { NODE_VERSION };
 export const CADDY_VERSION = "2.11.4";
 
 /** instance/package.json devDependencies.wrangler */
-export const WRANGLER_VERSION = "4.124.0";
+export const WRANGLER_VERSION = "4.151.3";
 
 /** website/package.json dependencies.next */
 export const NEXT_VERSION = "16.3.8";
