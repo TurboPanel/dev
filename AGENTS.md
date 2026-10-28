@@ -6,6 +6,17 @@ The **dev** repository ([TurboPanel/dev](https://github.com/TurboPanel/dev)) is 
 
 **License:** AGPL-3.0-only. Trademarks are not granted by the software license ([`TRADEMARKS.md`](./TRADEMARKS.md)). Third-party components keep their own licenses ([`THIRD_PARTY_NOTICES.md`](./THIRD_PARTY_NOTICES.md)). Published story: `../website` `/open-source` and `docs/getting-started/licensing.mdx`. Contributions require the [CLA](https://github.com/TurboPanel/.github/blob/trunk/CLA.md). **Maturity:** **Private alpha**. README is product-facing; AGENTS.md is maintainer-facing.
 
+## Nested Guides
+
+The nearest `AGENTS.md` to the file you edit applies on top of this one:
+
+- [`src/AGENTS.md`](./src/AGENTS.md) — editing the console app: entry points, hot reload, `src/lib/` helper contracts, TypeScript style.
+- [`scripts/AGENTS.md`](./scripts/AGENTS.md) — editing shell scripts: the shell libraries and POSIX `sh` rules.
+- [`orchestration/AGENTS.md`](./orchestration/AGENTS.md) — editing the Ansible dev overlay or the development Caddyfile.
+- [`.github/AGENTS.md`](./.github/AGENTS.md) — editing workflows, composite actions or rulesets: release promotion (including the break-glass ruleset route), Sonar, dependency advisories.
+- [`docs/dev-environment.md`](./docs/dev-environment.md) — the Vagrant guest, filesystem layout, fresh-clone steps and Vagrantfile provisioning.
+- [`docs/testing.md`](./docs/testing.md) — test details: cross-repo pin tests, secret scan, command table, pre-commit hook, gate matrix.
+
 **This repo runs on Node, not Deno.** In dev the console bootstraps
 orchestration and runs the **daemon from the dev user's home checkout**
 (`~/turbopaneld`, derived from `TURBOPANEL_DEV_ROOT`; `TURBOPANEL_DAEMON_REPO` is an optional override) via Deno (`deno run main.ts`) — host Deno is
@@ -28,87 +39,7 @@ contributors** use **Vagrant + UTM** with guest box **`utm/bookworm`** (Debian
 
 Canonical docs: https://turbopanel.io/docs/getting-started/development
 
-**Vagrant:** root [`Vagrantfile`](./Vagrantfile). Plain `vagrant up`
-auto-selects **libvirt** on Linux (`vagrant-libvirt`, Debian 13
-`debian/trixie64`) and **UTM** on macOS (`vagrant_utm`, Debian 12
-`utm/bookworm`); `VAGRANT_DEFAULT_PROVIDER` still permits an explicit
-override. Linux shares use bidirectional VirtioFS with explicit **memfd**
-shared-memory backing; do not leave only `access mode=shared`, because libvirt
-then file-backs all guest RAM under `/var/lib/libvirt/qemu/ram` and guest
-memory churn causes severe host disk writeback/I/O pressure.
-UTM uses VirtFS. Synced folders map host siblings
-`../{turbopaneld,turbopanel,ui,website}` and this repo (`.`) to guest
-`$HOME/{dev,turbopaneld,turbopanel,ui,website}` so default
-`TURBOPANEL_DEV_ROOT=$HOME` matches bare metal — confirmed against the daemon's
-Ansible roles (`daemon-launch`, `instance-launch`, etc.): source always
-resolves to `<dev_root>/<repo>` when `turbopanel_dev_user` is set, and
-`/opt/turbopanel` in dev holds **only** vendored runtimes, the production
-binary, and the built static UI — never source checkouts. `../.github`
-(community health files) mounts to `$HOME/.github` when present on the host;
-otherwise the `github-repo` Ansible role clones it inside the guest via HTTPS.
-FHS trees stay **guest-local**. Ports `80` / `443` (hosting Caddy) / `8443` / `8081` / `8088` / `19820` forward
-to the host on `0.0.0.0` (LAN-reachable, not localhost-only). Drizzle Studio
-`4983`, Mailpit `8025`, Redis Insight `5540`, and the DuckDB UI `4213` are loopback-only
-on both sides of the forward (`127.0.0.1` host and guest): those APIs are
-unauthenticated. The hosted HTTPS Studio UI must use `?host=localhost` rather
-than a private hostname such as `studio.lan`. All forwards target **guest
-loopback** so they still work when the libvirt DHCP address changes. The
-`dev-forward-hosts` provisioner (`run: always`) writes the host's LAN
-addresses, `Socket.gethostname` when it is a dotted FQDN, and any extra
-LAN aliases to `/etc/turbopanel/dev-forward-hosts` so the Platform CA leaf
-covers the name Add Server dials through the 8443 forward. Aliases are
-not discovered from a NIC: set `TURBOPANEL_DEV_LAN_ALIASES` (comma or
-whitespace separated) or list one name per line in gitignored
-`local/lan-aliases` (see `local/lan-aliases.example`). Re-provision that
-step, then converge, before dialing the alias. A name that is still not a
-SAN is refused when the install command is minted.
-
 The current entrypoint is a minimal launcher only (full multi-screen console was removed during a rewrite).
-
-## Filesystem layout
-
-```
-~/dev/                    # turbopanel/dev checkout (Vagrant mounts host sibling here)
-├── Vagrantfile           # libvirt/UTM guest: mounts + port forwards + light provision
-├── console               # ensure Node, pnpm install, launch the TUI via vite-node
-├── orchestration/        # Ansible dev overlay + development Caddyfile
-│   ├── Caddyfile         # co-located control-plane proxy (Expo, :8443, wrangler)
-│   └── expo-loading.html # Expo cold-start page served by the development Caddyfile
-├── package.json          # Node project (pnpm, pinned via packageManager); ink + react + vite
-├── src/tui.tsx           # Ink entrypoint
-├── scripts/guest/        # Vagrant SSH MOTD (T-mark banner + ~/dev/console)
-└── …
-
-~/turbopaneld/                 # $TURBOPANEL_DEV_ROOT/turbopaneld (optional override: TURBOPANEL_DAEMON_REPO)
-~/turbopanel/               # $TURBOPANEL_DEV_ROOT/turbopanel (optional override: TURBOPANEL_INSTANCE_REPO)
-~/ui/                     # $TURBOPANEL_DEV_ROOT/ui (optional override: TURBOPANEL_UI_REPO)
-~/website/                # $TURBOPANEL_DEV_ROOT/website (optional override: TURBOPANEL_WEBSITE_REPO)
-~/.github/                # turbopanel_github_dir (github-repo Ansible role; not a TURBOPANEL_*_REPO var)
-
-/opt/turbopanel/vendor/
-├── node/current/bin/node   # pinned Node (installed by ./console + node-runtime role)
-├── node/current/bin/pnpm   # pnpm shim (Corepack)
-├── deno/current/deno       # pinned Deno (deno-runtime role / console bootstrap)
-├── caddy/current/caddy     # …
-└── …                       # uv/python/ansible (orchestration bootstrap)
-
-/etc/turbopanel/          # config (dev-user-owned): daemon.env, instance/, rabbitmq/, …
-/var/lib/turbopanel/      # persistent state (dev-user-owned)
-/var/log/turbopanel/      # service logs (dev-user-owned)
-/run/turbopanel/          # runtime sockets (dev-user-owned)
-/opt/turbopanel/share/ui/ # static UI export (production build mode)
-~/.local/console/         # console converge logs (consoleLogDir())
-```
-
-Node is a pinned `nodejs.org` tarball vendored under `/opt/turbopanel/vendor/node/<version>/` with a `current` symlink (same layout as deno/caddy). pnpm is provisioned via Corepack and pinned by the `packageManager` field in `package.json`. **Node 25+ no longer ships Corepack**, so `./console` (and the daemon `node-runtime` role) install it with the vendored `npm install -g corepack` into that prefix, then Corepack still activates the hashed pnpm pin. Deno is **host-provided in development** (preferred) or bootstrap-installed to `/opt/turbopanel/vendor/deno/current/deno` when host Deno is absent; the dev console always runs the daemon and orchestration **from the source checkout** via Deno. Production daemon installs use native `/opt/turbopanel/bin/turbopaneld` or, when that binary cannot execute on the host, `turbopaneld.js` via vendored Deno — driven by `run.sh` + Ansible, never by this console.
-
-## Fresh-clone → working dev
-
-1. Clone (or fork) the six sibling repos under one parent directory on the host (`dev`, `turbopaneld`, `turbopanel`, `ui`, `website`, `.github`).
-2. From the host `dev` checkout: `vagrant up` then `vagrant ssh`.
-3. Inside the guest: `dev/console` → prereqs, pinned Node, `pnpm install`, TUI launch (exports `TURBOPANEL_MODE=development` and `TURBOPANEL_DEV_ROOT`; a `TURBOPANEL_<DIR>_REPO` override is forwarded only when you set one).
-4. **Bootstrap / converge** → the console uses `resolveDevEnvStartupPlan` (`src/lib/dev-env-readiness.ts`) on launch: **auto-bootstraps** (daemon install → systemd unit) when prerequisites are missing; after bootstrap finishes it opens the **optional services** picker then converges (`if-needed`). When the host is already installed, launch sits **idle** — no auto-converge (use Developer → **Converge / re-converge**). The converge picker defaults to UI + website + Mailpit + Drizzle Studio on (Redis Insight and the Stripe CLI forwarder off); idle for 5s continues with the current selection. The Stripe CLI service (`turbopanel-stripe-listen`, daemon role `stripe-listen`, Workers runtime only — wrangler reads secrets from `.dev.vars`) forwards sandbox events to `/webhook/stripe`; it needs a test-mode `TURBOPANEL_STRIPE_SECRET_KEY` written by hand into `/etc/turbopanel/stripe-listen/stripe.env` (never generated or committed) and exits with a pointer to that file otherwise. On the Workers runtime, Developer → **Save tier catalogue** writes the billing tiers a superadmin bound to payment-provider products (Admin → Tiers) to the gitignored `local/tiers.json`, and the dev overlay role `dev-tier-catalogue` restores them on converge when the database holds no **priced** tier row (the unpriced `SX` row a deno-mode instance creates for its licence grant does not count, and a label already present is skipped); the instance and daemon repos know nothing of it (see `local/README.md`). Drizzle Studio and Mailpit stay listed on the Services screen in gray when not enabled — select the row and press **E**, or use Developer → **Optional services…**. That menu also starts/stops optional units anytime without a full converge. Daemon bootstrap (`installDaemon` in `src/lib/platform-install.ts`) **uses an existing usable checkout** when `~/turbopaneld` already has `main.ts` or `orchestration/ansible.cfg` (Vagrant VirtFS mounts and pre-cloned siblings — no guest-side clone/pull; Git may also refuse mounted trees via `safe.directory`); it only **clones** when that path is missing. Bootstrap then writes `/etc/turbopanel/daemon.env`, runs the `dev/orchestration` overlay (runtimes into `/opt/turbopanel/vendor`, systemd units + Docker (postgres/redis/rabbitmq/mailpit) as the dev user, mutable data under FHS trees dev-user-owned; no `tp` / `tpctrl` / `tpcache` accounts created).
-5. On the **host**, open `https://localhost:8443`; edit source in the host sibling checkouts (mounted into the guest). Prefer a LAN hostname when attaching remote test machines.
 
 ## Entry points
 
@@ -135,8 +66,6 @@ dev/console
 
 ## Responsibilities
 
-- **`Vagrantfile`** — host-aware libvirt/UTM provider config, bidirectional VirtioFS/VirtFS mounts of the five workspace repos plus optional `.github`, SSH agent forwarding, port forwards `80`/`443` (hosting Caddy) / `8443`/`8081`/`8088`/`19820` (LAN `0.0.0.0`) plus loopback-only `4983`/`8025`/`5540`/`4213`, all with `guest_ip: 127.0.0.1`, and idempotent shell
-provision split as `system-upgrade` → `turbopanel_reboot_if_needed` → `guest-setup` → `sshd-port-forward-keepalives` (`run: always`) → `guest-motd` (`run: always`) → `turbopanel_ensure_libvirt_port_forwards` (`run: always`). Upgrades run `apt-get update` + `upgrade` + `autoremove` + `curl` and set the `vagrant` login password; when Debian leaves `/var/run/reboot-required` or the running kernel differs from the newest `/boot/vmlinuz-*`, the reboot provisioner prints that SSH will drop for about a minute, reboots via the guest reboot capability (Vagrant waits for SSH), **remounts VirtioFS synced folders** (mid-provision reboot otherwise leaves empty `~/dev` mount-point dirs — Vagrant only mounts shares on `up`/`reload`), then `guest-setup` finishes (passwordless sudo, `/etc/profile.d/turbopanel-vagrant.sh`, pnpm's `~/.config/pnpm/config.yaml` pointing `storeDir` at guest-local `/var/lib/pnpm/store`, per-repo `node_modules` **bind mounts** from `/var/lib/turbopanel-dev/node_modules/<repo>/node_modules` (systemd `turbopanel-virtfs-node-modules.service` at boot), 8 GiB `/swapfile`). **Libvirt port forwards are SSH `-L` tunnels** (not QEMU `hostfwd`); guest reboot / sshd restart / OpenSSH 9.8+ `UnusedConnectionTimeout` drop idle one-shot vagrant-libvirt `ssh -N` sessions. `sshd-port-forward-keepalives` writes `/etc/ssh/sshd_config.d/turbopanel-vagrant.conf` (`UnusedConnectionTimeout 0` when the guest sshd supports it; `PrintMotd no` so PAM owns the banner). `guest-motd` replaces Debian's default login MOTD with the official T-mark banner from `scripts/guest/motd.sh` (`/etc/motd.d/10-turbopanel`, empty `/etc/motd`, stock `update-motd.d` fragments chmod `-x`) — safe while `./console` is up. `turbopanel_ensure_libvirt_port_forwards` then replaces those one-shot tunnels with a restarting `ssh_forward_supervisor.sh` per port (health = host TCP listen plus our supervisor pid, not leftover libvirt ssh; host **80**/**443** wrap the supervisor in `sudo -n` when `net.ipv4.ip_unprivileged_port_start` still blocks the bind). Heal without a full reload: `vagrant provision --provision-with sshd-port-forward-keepalives,guest-motd,turbopanel_ensure_libvirt_port_forwards` (do not run a full `vagrant provision` while `./console` is up — that re-runs guest-setup). Linux defaults to libvirt + `debian/trixie64`; macOS defaults to UTM + `utm/bookworm`. Does not clone platform repos or run `./console`. Why bind-mount `node_modules`: on ARM64, FUSE-backed filesystems (9p/virtiofs, which is how UTM VirtFS is implemented) don't invalidate the instruction cache for pages faulted in from mmap'd executable files, so native Node addons (esbuild, `@rolldown/binding-*`, lightningcss, ...) crash with `SIGSEGV`/`SIGILL` when `node_modules` lives directly on the VirtFS mount — the pnpm store already being local isn't enough, since `packageImportMethod: copy` still writes the actual files into `node_modules` on the mount. A **symlink** is not enough: Next.js Turbopack rejects `node_modules` that points outside the project (`Symlink [project]/node_modules is invalid, it points out of the filesystem root`), and Node ESM/CJS realpath walks miss packages unless the physical path ends in a directory named `node_modules` (flat `<repo>/drizzle-orm` makes `drizzle-kit` fail with "Please install latest version of drizzle-orm"; Tamagui fails with `Cannot find module 'typescript'`). The provisioner runs for every mounted repo with a `package.json` (`dev`, `turbopanel`, `ui`, `website`; `turbopaneld` has none) and is idempotent across `vagrant provision` re-runs. On boot, its helper waits for all four Vagrant shares to expose `package.json` before binding—the shares are mounted over SSH after userspace starts, so an immediate check can otherwise exit successfully without mounting anything—and dbstudio/UI/website/instance units are ordered after it. Ansible `instance-repo` / `ui-repo` / `website-repo` must probe a nested package (`drizzle-kit`, `expo`, `next`) before skipping `pnpm install` — the mount point exists while the guest tree is still empty. A provisioner layout change wipes a flat tree; the next `pnpm install` (console for `dev`, converge for the others) refills it from the guest pnpm store. Do not `vagrant provision` while `./console` is running if that would rebuild the `dev` tree.
 - **`console`** — runs the prerequisite check, ensures pinned **Node** (`/opt/turbopanel/vendor/node/current/bin/node`, runs this repo) is installed, installs Corepack via vendored npm when Node did not ship it (25+), enables Corepack/pnpm, runs `pnpm install`, and launches the Ink TUI via `vite-node`. Add `--watch` to use `scripts/hot-reload.tsx`, which keeps the Ink process alive and rerenders when imported `src/` modules change. When stdin/stdout/stderr are not TTYs, reattaches stdio to `/dev/tty` when `tp_is_interactive()` succeeds. Does **not** install Deno via `./console` itself (Deno bootstrap is via `ensureBootstrapDeno` during daemon install).
 - **`src/tui.tsx`** — minimal Ink app: full-height shell with a one-row `MenuBar`, a bordered `MainPanel`, and a one-row `StatusBar`. `← →` switches areas; Ctrl-C exits. Uses `alternateScreen`. No stack orchestration or platform install yet — rebuild features in `src/` incrementally.
 
@@ -171,209 +100,18 @@ vagrant ssh -c 'export PATH="/opt/turbopanel/vendor/node/current/bin:/opt/turbop
 vagrant ssh -c 'export PATH="/opt/turbopanel/vendor/node/current/bin:/opt/turbopanel/vendor/deno/current:$PATH"; cd ~/website && pnpm typecheck'
 ```
 
-**Cross-repo pin tests** (`dev-converge-email-settings.test.ts`,
-`paths.test.ts` Deno pin, `stack-versions.pins.test.ts`) read sibling
-checkouts through `siblingCheckout()` (`src/lib/sibling-checkout.ts`):
-`<dev>/../<repo>` locally, `TURBOPANEL_SIBLINGS_DIR/<repo>` in CI. They skip
-when a sibling is absent, except where `TURBOPANEL_REQUIRE_SIBLINGS=1` —
-`verify.yml` clones the four siblings at trunk into `$RUNNER_TEMP/siblings`
-and sets both, so in CI a missing sibling fails instead of skipping. CI also
-runs `sh scripts/scan-secrets.sh --all` (every tracked file; the pre-commit
-hook scans staged files only). There is no linter configured in this repo.
-`scripts/scan-secrets.sh`, `scripts/scan-secrets.patterns` and `scripts/scan-secrets.selftest.sh` are byte-identical in turbopanel, turbopaneld, ui, website and dev: change all five together (each repo keeps a copy because the pre-commit hook runs it locally). The rules in the patterns file cover private key blocks, vendor tokens, JWTs, connection URLs with credentials, secret-looking assignments and forbidden file names (dotenv files, `*.pem`, `*.key`, daemon identity files, …); the scanner reports the rule id and location, never the matching text. `--all` scans the tree; `--range BASE..HEAD` scans every line the PR's commits added, so a secret added and removed inside a PR is still caught (CI runs it on PRs into trunk). Allowlist entries in `.secretscan-allowlist` are `path:full line text` (or `@path exact/file` for a forbidden file name), each needs a `# reason:` comment above it, and wildcards are rejected. The self-test builds its fixtures at run time from fragments; dev's `src/lib/scan-secrets.test.ts` runs it and, with the siblings checked out in dev CI, fails if any copy drifts.
-
-Interactive: `vagrant ssh`, then `cd ~/dev` (or `~/turbopaneld` /
-`~/turbopanel` / `~/ui` / `~/website`) and the same commands. The TUI
-also runs suites in-guest: Developer → **Run tests…**, or on Services
-select instance / daemon / caddy / ui / website and press **T**.
-
 Do not run `pnpm test` / `deno task test` against the host sibling trees.
-
-Guest commands:
-
-| Command | Purpose |
-| ------- | ------- |
-| `pnpm test` | Vitest once (`vitest run`) |
-| `pnpm test:watch` | Vitest watch mode |
-| `pnpm test:coverage` | Vitest + LCOV (`coverage/lcov.info`) |
-| `pnpm verify:ci` | GitHub Actions `verify.yml` minus Sonar upload (vocabulary + notices + typecheck + LCOV) |
-| `./scripts/ci-verify.sh` | Same job for every sibling checkout (guest; re-execs via `vagrant ssh` from the host) |
-| `pnpm typecheck` | `tsc --noEmit` |
-| `pnpm notices:generate` | Write `THIRD_PARTY_NOTICES.md` from the resolved pnpm graph |
-| `pnpm notices:check` | Fail when notices are stale vs the lockfile, or a production dependency has an unreviewed license class |
-| `pnpm check:vocabulary` | Reject daemon-as-agent and marketing-phrase copy (`scripts/check-vocabulary.mjs`; same phrase list as the sibling repos) |
 
 **Vitest convention:** place suites at `src/**/*.test.ts` / `src/**/*.test.tsx`. Use the `node` environment (Ink TUI, not a browser). Import `describe` / `it` / `expect` from `vitest` — do not use `node:test` + `node:assert/strict`. Assert shapes with `new TypeError()` per `typescript:S7786`.
 
-**Shared test helpers:** this repo has no local shared test-helper module. Daemon test authors must use the shared doubles in `../turbopaneld/src/testing/` instead of hand-rolled ones (see that repo’s Testing section).
-
-**Pre-commit** (`.githooks/pre-commit`): runs `scripts/scan-secrets.sh` only
-(never skippable). Typecheck/tests are **temporarily disabled** in the hook
-until the toolchain can run inside the Vagrant guest (host VirtFS checkouts
-often lack a usable Node/pnpm tree). CI `verify.yml` still gates PRs.
-`./console` idempotently sets `core.hooksPath=.githooks` via
-`tp_ensure_git_hooks_path` in `scripts/lib/git-github-ssh.sh`.
-
-**Gate matrix** (one policy with the daemon repo):
-
-| Stage | dev | daemon | Rationale |
-| ----- | --- | ------ | --------- |
-| pre-commit | scan-secrets only (tests deferred) | scan-secrets + `deno fmt` (lint/tests deferred) | secret scan always; daemon fmt via host Deno or `vagrant ssh`; suites in CI / guest |
-| PR → `trunk` | `verify.yml` (`ci-ok` needs `verify`) | `verify.yml` | blocks merge; `ci-ok` is the one context the rulesets will require — add any new PR-time job to its `needs:` |
-| push `trunk` | `verify.yml` | `verify.yml`; `publish` job `needs: verify` | nothing compiles from failing code |
-| promote → rc/release | the four shipping repos' `promote.yml` (dev has none: it is always run from trunk) | `promote.yml` → `gh-promote.yml` here: **signature + sha256/size of the tested build, re-signed manifest, same bytes** | no new code enters after publish |
-
-## Release promotion (`gh-promote.yml`, `gh-release.yml`, `gh-promote-finalize.yml`)
-
-The one-click promotion every repo runs (Testing Checklist `release` section, rel-s19..s21) lives here as three reusable workflows; each sibling's `.github/workflows/promote.yml` (`workflow_dispatch`, inputs `to` = `rc|release`, `source`) chains them as three `uses:` jobs pinned to one `TurboPanel/dev@<sha>` and passes that same sha as `dev-ref` (a reusable workflow cannot call another at a parameterised ref, and it runs on the caller's runner with nothing checked out — `dev-ref` is how it finds `scripts/promote/`). Repos release independently: no release waits on a matching release in another repo. dev itself has no rc or release: the consoles run trunk, and the sibling repos pin `TurboPanel/dev@<sha>`, never a release tag (its `promote.yml` / `release.yml` were removed 2026-09-29).
-
-- **Version model** (decisions D8, 2026-09-28, amended 2026-09-29; Phase 3 "versions from tags", 2026-09-30; committed version files again, 2026-10-12): **git tags work out every number, and the committed version files must agree.** A repo's base is its newest release tag's next patch (`v0.1.5` → `0.1.6`), unless an unreleased `v<B>-rc.N` tag or a `start/v<B>` marker names a higher B (then that B). A canary is `<base>-canary.<N>`, N one past the highest `manifest-<base>-canary.*.json` on the rolling canary release, so N restarts at 1 for each base (builds cut before Phase 3 carry the workflow run number; the version in flight when Phase 3 landed continues from it). Only the base is stamped into the binaries (deno.json / package.json / app.json are overwritten in the CI workspace before the build). The committed numbers are kept current too: each shipping repo has `scripts/set-version.mjs` (`node scripts/set-version.mjs X.Y.Z` rewrites them, `--check X.Y.Z` lists the files that disagree), and its canary build runs the check right after Version From Tags and is refused while trunk's files disagree with the base. Who moves them: right after each release, the repo's `publish-release.yml` has the TurboPanel Release App open a **"chore: start X.Y.Z"** PR (the next patch) through the **Start Version PR** action (`.github/actions/start-version-pr`, core `scripts/promote/version-pr.sh`; inputs `version`, `github-token`, `repository`, `set-version`, `reason`, `auto-merge` (default `"false"`); output `pr-url`, empty when the repo is already at X.Y.Z, the open PR's url when one is already open). Its commit is made with the GraphQL `createCommitOnBranch` mutation, which takes no author, so GitHub signs it and it shows as Verified; nothing is `git push`ed. The branch is `version/X.Y.Z` off trunk's head (reset when it was left over without an open PR). With `auto-merge: "true"` the PR merges itself once its checks pass (GitHub auto-merge, squash, titled by the PR; if GitHub refuses, the step only warns and a person merges it); Start Next Version always turns it on. Until it merges, that repo's canaries are refused. `to=rc` makes `<base>-rc.<N>` where `<N>` is one past the highest existing `v<base>-rc.*` tag (a bad rc is fixed on trunk and the next promotion cuts rc.N+1 — the number stays until it ships); `to=release` makes `<base>` from the newest rc that has not shipped. The rules are `nextBase` / `nextCanaryNumber` / `newestUnreleasedRc` / `startTarget` in `scripts/promote/lib.mjs`; `scripts/promote/version.sh` runs them against a repo's tags and canary release, and the composite action `.github/actions/version` (**Version From Tags**, pinned by sha like the reusable workflows) is how the sibling repos call it. Builds cut before 2026-09-28 keep their old timestamped canary spelling and are still read: `to=rc` accepts either canary spelling as `source`, and the canary prune orders counter builds numerically after all timestamped ones.
-- **`gh-promote.yml` (prepare, `environment: ${{ inputs.to == 'release' && 'release' || (inputs.repo-kind != 'notes-only' && 'rc' || null) }}`)** — inputs `repo-kind` (`daemon|instance|ui|notes-only`), `to`, `source` (rc: canary version or `manifest-<version>.json` — a bare build number is ambiguous once N restarts per base; notes-only: a commit-ish, versioned with the repo's base; release: the rc tag), `dev-ref`, `signer-ref` (turbopaneld commit with `scripts/sign-manifest.ts` + the key pin), `approval-environment` (ignored, kept so old callers that pass it keep working; the environment follows `to`: rc runs in `rc` — no reviewer, branch `staging` — and release in `release`, the owner-approval gate on `live`); secrets `RELEASE_APP_ID`, `RELEASE_APP_PRIVATE_KEY`; outputs `version`, `tag`, `commit`, `source-version`, `branch`, `assets-artifact-name`, `manifest-filename`, `release-notes`. It downloads the source build (rc: the assets the canary `manifest-<version>.json` copy names; release: the rc release), verifies the manifest's Ed25519 signature with the signer checkout's own `verifyManifestSignature` (`scripts/promote/verify-signature.ts`) and every asset's sha256/size, refuses an rc while `.changeset/*.md` are pending at the source commit (no `.changeset/` → notice + skip), renames the assets to the target version, rewrites the manifest (version, channel, tag-pinned urls; commit/buildId/builtAt/sha256 untouched; signature dropped), signs it with `sign-manifest.ts`, creates the tag at the source commit (idempotent — an existing tag on another commit is a burned version and fails), and uploads the assets. `to=release` refuses to start without the App secrets: bare `v<base>` tags and `staging`/`live` pushes need the **TurboPanel Release** GitHub App as ruleset bypass actor; `v<base>-rc.1` is created with `GITHUB_TOKEN` (fires no workflows). Every falsifiable check runs before the tag step (`src/lib/promote.test.ts` asserts the order).
-- **`gh-release.yml`** — unchanged behaviour plus `target-commit` (tag commit when the tag does not exist; default `github.sha`) and optional App secrets (release created with an App token when set).
-- **`gh-promote-finalize.yml` (no environment — the one approval is at prepare)** — release: `gh release edit --prerelease=false --latest`, then the signed release `manifest.json` is uploaded as the rolling `rc` pointer (consumers do not enforce `manifest.channel`; no second signing). Both hops: fast-forward `staging` (rc) / `live` (release) to the tag commit; a diverged branch gets a `--no-ff` merge commit (never squash, never force) and the run summary says so; without the App the push step fails and its run summary prints the manual route — push `promote/v<version>` at the tag commit, open a PR into the branch as the owner (a GITHUB_TOKEN PR never starts `ci-ok`), merge it with a merge commit once `ci-ok` is green (direct pushes to staging/live are refused for everyone).
-- **`scripts/promote-release.sh`** — the manual override, kept on purpose: it re-verifies a pre-release's assets against its own `manifest.json` and then runs `gh release edit --prerelease=false`. The normal flow never calls it (`gh-promote-finalize.yml` does the same move); use it only when that automation cannot run.
-- **Pure logic** is `scripts/promote/lib.mjs` (+ `lib.d.mts`, `cli.mjs`), tested by `src/lib/promote.test.ts`, which also pins the workflow shapes.
-- **`scripts/promote/changelog.sh`** — the credit list: one markdown line per commit between two refs (`<owner/repo> <base> <head>`), the squash-merge title (with its PR number), then the author's avatar and name (no `@`, linked to their profile) after the text, then a "Thanks to" line crediting each contributor once. `gh-promote.yml` appends it to the release notes (since the last non-pre-release release, under "What changed"); the repos' candidate and release pull-request bodies use the same shape. Notes reach `gh release create` through the `RELEASE_NOTES` environment variable, never pasted into shell text (commit titles and HTML must not be parsed as shell).
-- **Starting a minor or major** — the daemon repo's **Start Next Version** workflow (`turbopaneld/.github/workflows/start-next-version.yml`, `workflow_dispatch`, inputs `bump` = `minor|major` and `dry-run`; the logic is `scripts/promote/start-version.sh` here) pushes an annotated `start/v<X.Y.0>` marker tag (Release App token) at trunk's head in turbopaneld, turbopanel, ui and website — each repo's target is the next minor/major after *its own* newest release; a repo already building a later version is skipped, and one already building exactly the target only gets its PR retried — and then opens that repo's "chore: start X.Y.0" PR with the same `version-pr.sh` (it no longer re-runs the trunk build: the canary check would refuse it until the PR merges). The `<owner/repo>:<workflow>` arguments still work; the workflow part is now ignored. Only people with write access can run a `workflow_dispatch`. Repos still release independently: nothing waits on another repo's release (the old `minor-gate` check, the `minor` label and the old "Start <next>" PR workflows are gone; `src/lib/workflows.test.ts` fails if a workflow brings them back; the "chore: start X.Y.Z" PR above replaces them). Once a marker is pushed, every later release of that repo — a hotfix included — carries the new number.
-- **Owner-side setup**: a `release` environment (required reviewer = owner, prevent-self-review off) in every calling repo as the one approval gate; `TURBOPANEL_RELEASE_SIGNING_KEY` as an ENVIRONMENT secret holding the same value in the `canary` (branch trunk, no reviewer), `rc` (branch staging, no reviewer) and `release` (branch live, owner reviewer) environments of each signing repo (no repo-level copy; break-glass `promote.yml` is dispatched from staging for to=rc and live for to=release), and `RELEASE_APP_ID` / `RELEASE_APP_PRIVATE_KEY` (org secrets, all repos) as plain Actions secrets (one approval per promotion); the App as bypass actor on the tag ruleset and `staging & live: review and CI` (`RELEASE_APP_BYPASS` in `scripts/enable-trunk-branch-protection.sh`). One approval per promotion (prepare).
-
-### SonarQube (CI-based analysis)
-
-- Analysis runs in GitHub Actions (`.github/workflows/verify.yml`) with
-  `SONAR_TOKEN` and `sonar-project.properties`
-  (`sonar.projectKey=turbopanel_dev`, `sonar.organization=turbopanel`). The job
-  runs `check:vocabulary`, `notices:check`, typecheck, and **`pnpm test:coverage`** (Vitest v8 LCOV at
-  `coverage/lcov.info`), then scans with
-  `sonar.javascript.lcov.reportPaths=coverage/lcov.info`. The scan waits on the
-  quality gate (`sonar.qualitygate.wait=true`); if the gate fails, the workflow
-  stops.
-- Vitest coverage `include` is `src/lib/**/*.ts` and `src/hooks/**/*.ts`
-  (`vitest.config.ts`). `sonar.coverage.exclusions` keeps Ink chrome
-  (`src/components/**`, `**/*.tsx`), entrypoints, and spawn/integration helpers
-  out of the coverage denominator so untested TUI surfaces do not fail Sonar-way
-  **Coverage on New Code ≥ 80%**.
-- **`sonar.sources` / `sonar.tests` / `sonar.test.inclusions`** must stay set in
-  `sonar-project.properties` (and mirrored in vestigial
-  `.sonarcloud.properties`). Tests are co-located (`**/*.test.ts` under `src`).
-- **Automatic Analysis must stay off** for `turbopanel_dev` (SonarCloud →
-  project **Administration → Analysis Method**). CI and Automatic Analysis
-  cannot run together — Automatic Analysis enabled makes the CI scanner fail.
-
-**Coverage:** SonarCloud’s Sonar-way quality gate (CI scan in `.github/workflows/verify.yml` with `sonar.qualitygate.wait=true`) requires **≥ 80% coverage on new code**. CI uploads Vitest LCOV from `pnpm test:coverage` (`coverage/lcov.info`); `SONAR_TOKEN` is required on same-repo PRs and trunk pushes. After switching from Automatic Analysis, reset **New Code** (Administration → New Code) so the baseline is not months of uncovered history. Sibling repos (`turbopanel`, `ui`, `website`) use the same CI-based Sonar + LCOV pattern in their own `verify.yml` workflows.
-
-### Dependency advisories (`.github/actions/osv-scan`)
-
-Every repo's `verify` runs the **Dependency Advisory Gate** composite action
-(dev itself as `./.github/actions/osv-scan`, the siblings pinned by sha like
-the reusable workflows). It installs the pinned, checksum-verified osv-scanner
-and runs `scripts/osv/scan.sh`, which fails **only** for an advisory rated HIGH
-or CRITICAL (CVSS ≥ 7.0 or a HIGH/CRITICAL database label) that already has a
-fixed version (`scripts/osv/gate.jq`). Anything else — lower severity, unrated,
-or no fix yet — is a warning annotation on the run, not a red X (owner decision
-2026-09-30: a newly published advisory must not freeze every unrelated PR).
-**Override** for a blocking advisory verified not exploitable in that repo: an
-`[[IgnoredVulns]]` entry in the repo's `osv-scanner.toml` with `id`, a written
-`reason`, and `ignoreUntil` when a fix is expected (see ui/website for the
-format). Bumping the scanner is one edit here plus a re-pin in the siblings.
-Tests: `src/lib/osv-scan-script.test.ts`.
-
-### No new Sonar issues (`.github/actions/sonar-new-issues`)
-
-Owner rule (2026-09-30): a pull request may not add a single Sonar issue. The
-built-in **Sonar way** gate fails only on ratings, so one new code smell (a
-nested ternary, say) still passes it, and custom gates need a paid SonarCloud
-plan. So every repo's `verify` runs this composite action (dev as
-`./.github/actions/sonar-new-issues`, the siblings pinned by sha) right after
-its pull-request **SonarQube Scan** step, which carries `id: sonar` and
-already waited for the gate. The step's condition is
-`github.event_name == 'pull_request' && steps.sonar.outcome == 'success'`, so it
-runs exactly where the PR scan ran and skips wherever the scan is skipped (no
-token, and the automatic promotion PRs into staging/live).
-`scripts/sonar/new-issues.sh` asks SonarCloud's public API for the PR's
-unresolved issues, annotates each one on its file and line, and fails when
-there are any. It fails closed when SonarCloud has no analysis for the PR or
-keeps erroring. `SONAR_TOKEN`, when set in the job, goes to curl through a
-config on stdin, never argv. Never NOSONAR to get past it; fix the issue.
-Tests: `src/lib/sonar-new-issues-script.test.ts`.
-
-## Ansible dev overlay
-
-The **Ansible dev overlay** lives in `<dev checkout>/orchestration/` and overrides the daemon's production roles with dev-user parameters (the daemon still executes Ansible). Set `TURBOPANEL_MODE=development` during dev converge.
-
-The **`dev-shell-path`** role (dev-only) always installs `/etc/profile.d/turbopanel-dev-deno.sh` (bash/login `sh`). When **zsh is installed** (`/usr/bin/zsh`), it also installs `/etc/zsh/zshenv.d/turbopanel-dev-deno` plus a guarded block in `/etc/zsh/zshenv` so **zsh invocations for the dest user** (including Oh My Zsh interactive shells — Debian does not source `/etc/zsh/zshrc.d`) prepend **`/opt/turbopanel/vendor/deno/current`** to `PATH`. Drop-ins are `root:<dev user>` mode `0640` (directory `0750`) so the dest login shell can source them without world-readable bits (`ansible:S2612`); Debian `/etc/profile` skips unreadable `profile.d` files. The role does not chmod Debian's `/etc/zsh/zshenv` conffile. Minimal Debian/Vagrant images ship bash only — zsh tasks are skipped rather than failing on a missing `/etc/zsh/zshenv` (do not create it on zsh-less hosts). That directory is the `deno-runtime` `current` symlink — version bumps only require updating the pin in the daemon role and `DENO_VERSION` in `scripts/lib/paths.sh` / `src/lib/paths.ts`, then re-converging. If a host later gains zsh, re-converge to wire the drop-ins.
-
-### Development Caddyfile
-
-Co-located hosts load **`orchestration/Caddyfile`** (not the managed
-`instance-launch` template) when `turbopanel_dev_user` is set — wired by the
-daemon `instance-launch` role via `turbopanel_caddyfile`. That file wins over
-the rendered production Caddyfile, so a development host has no per-hostname
-sites and refuses a Let's Encrypt hostname. That file owns:
-
-- HTTPS `:8443` (always on; Platform CA). There is no plaintext control-plane listener.
-- Expo reverse_proxy when `TURBOPANEL_UI_MODE=dev` (with `expo-loading.html` for cold-start 502s; `flush_interval -1` so Fast Refresh `/hot` is unbuffered). Host edits on VirtioFS/9p need Metro poll watch in the UI repo (`scripts/metro-virtfs-poll-watch.cjs`) — inotify does not cross the share.
-- Optional wrangler upstream when `TURBOPANEL_INSTANCE_RUNTIME=workers`
-- `/downloads/daemon/*` (always — overlay catalog + artifacts; not gated on `TURBOPANEL_UI_MODE`) and the install script at **`/run.sh`** from the daemon checkout (`dist/` after Developer → **Rebuild daemon and upgrade connected servers** / `deno task release:dev`)
-
-- Stripping `CF-Connecting-IP` / `True-Client-IP` / `X-Forwarded-For` from non-loopback peers, so only a connector on this host can present them
-
-The instance repo's `Caddyfile` stays production-only (HTTPS + Deno socket + static UI). See **`../turbopanel/AGENTS.md`** (Caddy) and **`../turbopaneld/src/instance/AGENTS.md`** (daemon TLS trust).
-
-**Server addresses in development.** Vagrant forwards `8443` **over SSH**, so a daemon anywhere on the LAN reaches Caddy from `127.0.0.1` — the header-stripping matcher above never fires for it, and the peer address on the wire is `127.0.0.1` for every server. That is why the instance falls back to the interface addresses the daemon reports rather than trusting the wire (`src/lib/peer-address.ts` → `resolveServerAddress`, documented in **`../turbopanel/AGENTS.md`** → Caddy → Server addresses). A Cloudflare Tunnel pointed at this guest still resolves correctly: `cloudflared` is a loopback peer, so its `CF-Connecting-IP` is believed. Mixing LAN servers, tunnelled servers, and the co-located guest daemon in one fleet is the case this is built for.
-
-## Repository rulesets
-
-`scripts/enable-trunk-branch-protection.sh` is the source of truth for every
-GitHub ruleset on the five repos (upsert by name; re-run to change). It makes
-`trunk`, `staging` and `live` PR-only for everyone — no human bypass, zero
-required approvals, one required check `ci-ok` pinned to the GitHub Actions
-app (integration id 15368), squash-only on trunk and merge-commits-only on
-staging/live, `require_extra_approval_for_unattributed_changes` explicitly
-false. Break-glass is flipping a ruleset's enforcement to Disabled in the repo
-settings, pushing, and re-enabling. The "TurboPanel Release" GitHub App
-(App ID 5089081, `RELEASE_APP_BYPASS`) is the only bypass: on `staging & live:
-review and CI` (promotion fast-forwards) and, next to repository admins, on
-bare `vX.Y.Z` tag creation. Do not apply a version that requires `ci-ok` before
-that job runs on trunk in every repo, or every PR blocks.
-`src/lib/branch-protection-script.test.ts` runs the script against a stub `gh`
-and asserts the JSON it would send.
-
-## Shell libraries
-
-- **`scripts/lib/privileges.sh`** — POSIX sudo re-exec helpers (`tp_ensure_privileges`), logging helpers, `tp_is_interactive()` (stdin TTY or readable/writable `/dev/tty`).
-- **`scripts/lib/paths.sh`** — `/opt/turbopanel` path constants; pinned `NODE_VERSION` + vendored `NODE_BIN`/`PNPM_BIN` under `vendor/node/current/bin/`; pinned `DENO_VERSION` + `VENDORED_DENO_BIN` (`vendor/deno/current/deno`).
-- **`scripts/lib/packages.sh`** — apt prerequisite checks: `tp_require_host_commands` (curl/tar/sha256sum).
-- **`scripts/lib/runtime.sh`** — pinned **Node** install from the `nodejs.org` tarball into `/opt/turbopanel/vendor/node/<version>/` plus Corepack/pnpm (`tp_ensure_node_runtime` / `tp_ensure_corepack_pnpm`; Corepack is `npm install -g` on Node 25+); `tp_export_deno_path` prepends vendored Deno for hooks/child shells.
-- **`scripts/lib/dev-identity.sh`** — resolve dev user from process UID (`tp_resolve_dev_identity`).
-- **`scripts/lib/dev-prerequisites.sh`** — curl/sudo/dev-user checks for `./console`. When sudo still requires a password, optionally prompts to install `/etc/sudoers.d/turbopanel-dev-nopasswd` (full `NOPASSWD` for the dev user on local dev hosts). Set `TURBOPANEL_DEV_SKIP_NOPASSWD_SUDO=1` to skip the prompt.
-- **`scripts/lib/git-github-ssh.sh`** — git identity prompts, SSH key generation, GitHub verification (used by `./console` when needed).
+Test details (pin tests, secret scan, command table, pre-commit hook, gate matrix) are in [`docs/testing.md`](./docs/testing.md).
 
 ## Key conventions
 
-### TypeScript style (SonarQube)
-
-- Prefer **`String#replaceAll()`** over **`String#replace()` with a global regex** when replacing every occurrence of a substring (`typescript:S7781`).
-- Use **`String.raw`** for string literals that contain backslashes so escapes stay readable and correct (`typescript:S7780`). Example: POSIX shell single-quote escaping is `String.raw`'\''` plus `replaceAll("'", …)`, not `"\'\\''"` with `replace(/'/g, …)`.
-- Import **`shellQuote`** from `src/lib/shell-quote.ts` for shell argument quoting — do not copy inline `shellQuote` helpers.
-- Prefer **optional chaining** (`obj?.prop`) over `!obj || obj.prop` (`typescript:S6582`).
-- Use **`new TypeError()`** (not `new Error()`) when asserting types/shapes in tests (`typescript:S7786`).
-- Avoid **nested ternaries** — use `if`/`switch` or small helpers (`typescript:S3358`).
-- Extract helpers when **cognitive complexity** exceeds 15 (`typescript:S3776`).
-- Sort strings with **`.sort((a, b) => a.localeCompare(b))`** (`typescript:S2871`).
-- Do not leave **`TODO`** in code — use `Future:` in a normal comment (`typescript:S1135`).
-- Use **`RegExp.exec()`** instead of `String.match()` when extracting a single match (`typescript:S6594`).
-
-### Ansible style (SonarQube)
-
-- Prefer **`mode: "0640"`** / **`0750"`** over world-readable **`0644"`** / **`0755"`** for scripts and systemd units; set explicit **`owner`** / **`group`** (`ansible:S2612`).
-
 - Default git branch is **`trunk`** everywhere.
-- Shell scripts are **POSIX `sh`** — no bashisms. Sonar `shelldre:S7688` (`[[` vs `[`) and `shelldre:S7682` (explicit `return`) are ignored in `sonar-project.properties` / `.sonarcloud.properties` for that reason.
 - Git clones use **SSH** (`git@github.com:TurboPanel/...`), not HTTPS.
 - **`console` owns the Node runtime** (for this repo) and starting the TUI. It does **not** install Deno or other platform runtimes.
 - Contributors clone the six sibling repos on the host; Vagrant mounts them into the guest under `$HOME`.
-- Developer identity (`TURBOPANEL_DEV_USER`, `TURBOPANEL_DEV_UID`, `TURBOPANEL_DEV_GID`) is resolved from the **process UID** via `getent passwd` (`tp_resolve_dev_identity()` in `scripts/lib/dev-identity.sh`). **`USER` / `LOGNAME` are never trusted.** Unresolved identities and `root` are rejected; the only root exception is a validated `SUDO_USER` passwd entry when the console runs under `sudo`.
-- Node is pinned in `scripts/lib/paths.sh` (`NODE_VERSION` **`26.7.0`**), downloaded from `nodejs.org`, vendored to `/opt/turbopanel/vendor/node/<version>/` with a `current` symlink. pnpm is pinned solely by `packageManager` in `package.json` and provisioned via Corepack. Node 25+ dropped the bundled `corepack` binary, so `tp_ensure_corepack` installs the standalone package with vendored npm into that prefix before `corepack enable` / `prepare`. `tp_corepack_env` sets `COREPACK_DEFAULT_TO_LATEST=0` and `COREPACK_ENABLE_AUTO_PIN=0` so `pnpm --version` after `corepack prepare --activate` stays on that pin (Corepack otherwise reports the newest npm release when `./console` is launched from `$HOME`, which produced `expected vX, got Y` on every bump). The version check runs from the checkout so Corepack reads that `package.json`.
 - **`TURBOPANEL_MODE=development`** during dev converge. Source repos live under `TURBOPANEL_DEV_ROOT` (default `$HOME`); every consumer derives `<dev_root>/<repo>` itself. Per-repo `TURBOPANEL_<DIR>_REPO` keys are **optional overrides only** — `buildPlatformRepoEntries()` writes one into `daemon.env` only when it is set and differs from the derived default, and `writeDaemonBaseEnv` / `writeDaemonInstanceEnv` remove any stale per-repo key on every write.
 - Daemon bootstrap, systemd units, and Docker containers run as the **current dev user** — no `tp` / `tpctrl` / `tpcache` service accounts are created in dev.
 - Purge/reset stops and removes the daemon systemd unit **`turbopaneld.service`**, dev FHS state under `/etc/turbopanel`, `/var/lib/turbopanel`, `/var/log/turbopanel`, `/run/turbopanel`, and runtimes under `/opt/turbopanel/vendor`.
