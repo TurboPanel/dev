@@ -4,7 +4,7 @@ Maintainer reference moved out of the root `AGENTS.md`.
 
 ## Vagrant Guest
 
-**Vagrant:** root [`Vagrantfile`](./Vagrantfile). Plain `vagrant up`
+**Vagrant:** root [`Vagrantfile`](../Vagrantfile). Plain `vagrant up`
 auto-selects **libvirt** on Linux (`vagrant-libvirt`, Debian 13
 `debian/trixie64`) and **UTM** on macOS (`vagrant_utm`, Debian 12
 `utm/bookworm`); `VAGRANT_DEFAULT_PROVIDER` still permits an explicit
