@@ -5,7 +5,7 @@ This file is generated from the resolved dependency graph. Do not edit it by han
 Third-party components remain under their own copyright and license terms and are not relicensed by TurboPanel Development Environment's repository license (AGPL-3.0-only).
 
 <!-- lockfiles
-pnpm-lock.yaml sha256:33ef20be80f982fbbf5ba6e74c29e410ff0c7a70859bd173ef637b4f88b60d6d
+pnpm-lock.yaml sha256:af8f014eab649d3f161edd9d27786506d5524eb3a35bc63ef5e961de50ab4b6f
 -->
 
 ## Production dependencies
@@ -833,6 +833,12 @@ These packages are used for development, test, or build tooling and are not bund
 - License: MIT
 - Copyright: Andrey Sitnik
 - Homepage: https://postcss.org/
+
+### prettier@3.9.9
+
+- License: MIT
+- Copyright: James Long
+- Homepage: https://prettier.io
 
 ### react-refresh@0.18.0
 

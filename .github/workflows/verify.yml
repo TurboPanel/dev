@@ -91,6 +91,11 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
 
+      # Prettier (.prettierrc) is canonical, but most of the tree predates the
+      # gate, so only files this change adds or modifies are checked.
+      - name: Format check (changed files, Prettier)
+        run: sh scripts/check-format-changed.sh "${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}"
+
       - name: Secret scan (every tracked file)
         # The pre-commit hook scans staged files only; CI scans the whole tree.
         run: sh scripts/scan-secrets.sh --all
