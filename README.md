@@ -184,7 +184,7 @@ runs as the guest user.
 
 See [CONTRIBUTING.md](https://github.com/TurboPanel/.github/blob/trunk/CONTRIBUTING.md). Default branch: **`trunk`**. Feature branch + PR only. Pull requests are accepted under the [Contributor License Agreement](https://github.com/TurboPanel/.github/blob/trunk/CLA.md).
 
-Agent conventions: [AGENTS.md](./AGENTS.md).
+Agent conventions: [AGENTS.md](./AGENTS.md), plus the nested `AGENTS.md` files it lists.
 
 ## License
 
