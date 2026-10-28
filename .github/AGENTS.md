@@ -2,7 +2,7 @@
 
 Repo context: `../AGENTS.md`.
 
-## Release promotion (`gh-promote.yml`, `gh-release.yml`, `gh-promote-finalize.yml`)
+## Release Promotion (`gh-promote.yml`, `gh-release.yml`, `gh-promote-finalize.yml`)
 
 The one-click promotion every repo runs (Testing Checklist `release` section, rel-s19..s21) lives here as three reusable workflows; each sibling's `.github/workflows/promote.yml` (`workflow_dispatch`, inputs `to` = `rc|release`, `source`) chains them as three `uses:` jobs pinned to one `TurboPanel/dev@<sha>` and passes that same sha as `dev-ref` (a reusable workflow cannot call another at a parameterised ref, and it runs on the caller's runner with nothing checked out — `dev-ref` is how it finds `scripts/promote/`). Repos release independently: no release waits on a matching release in another repo. dev itself has no rc or release: the consoles run trunk, and the sibling repos pin `TurboPanel/dev@<sha>`, never a release tag (its `promote.yml` / `release.yml` were removed 2026-09-29).
 
@@ -18,7 +18,7 @@ The one-click promotion every repo runs (Testing Checklist `release` section, re
 
 ## CI Gates
 
-### SonarQube (CI-based analysis)
+### SonarQube (CI-Based Analysis)
 
 - Analysis runs in GitHub Actions (`.github/workflows/verify.yml`) with
   `SONAR_TOKEN` and `sonar-project.properties`
@@ -42,7 +42,7 @@ The one-click promotion every repo runs (Testing Checklist `release` section, re
 
 **Coverage:** SonarCloud’s Sonar-way quality gate (CI scan in `.github/workflows/verify.yml` with `sonar.qualitygate.wait=true`) requires **≥ 80% coverage on new code**. CI uploads Vitest LCOV from `pnpm test:coverage` (`coverage/lcov.info`); `SONAR_TOKEN` is required on same-repo PRs and trunk pushes. After switching from Automatic Analysis, reset **New Code** (Administration → New Code) so the baseline is not months of uncovered history. Sibling repos (`turbopanel`, `ui`, `website`) use the same CI-based Sonar + LCOV pattern in their own `verify.yml` workflows.
 
-### Dependency advisories (`.github/actions/osv-scan`)
+### Dependency Advisories (`.github/actions/osv-scan`)
 
 Every repo's `verify` runs the **Dependency Advisory Gate** composite action
 (dev itself as `./.github/actions/osv-scan`, the siblings pinned by sha like
@@ -58,7 +58,7 @@ or no fix yet — is a warning annotation on the run, not a red X (owner decisio
 format). Bumping the scanner is one edit here plus a re-pin in the siblings.
 Tests: `src/lib/osv-scan-script.test.ts`.
 
-### No new Sonar issues (`.github/actions/sonar-new-issues`)
+### No New Sonar Issues (`.github/actions/sonar-new-issues`)
 
 Owner rule (2026-09-30): a pull request may not add a single Sonar issue. The
 built-in **Sonar way** gate fails only on ratings, so one new code smell (a
@@ -77,7 +77,7 @@ keeps erroring. `SONAR_TOKEN`, when set in the job, goes to curl through a
 config on stdin, never argv. Never NOSONAR to get past it; fix the issue.
 Tests: `src/lib/sonar-new-issues-script.test.ts`.
 
-## Repository rulesets
+## Repository Rulesets
 
 `scripts/enable-trunk-branch-protection.sh` is the source of truth for every
 GitHub ruleset on the five repos (upsert by name; re-run to change). It makes
