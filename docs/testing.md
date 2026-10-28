@@ -14,9 +14,7 @@ hook scans staged files only). There is no linter configured in this repo.
 `scripts/scan-secrets.sh`, `scripts/scan-secrets.patterns` and `scripts/scan-secrets.selftest.sh` are byte-identical in turbopanel, turbopaneld, ui, website and dev: change all five together (each repo keeps a copy because the pre-commit hook runs it locally). The rules in the patterns file cover private key blocks, vendor tokens, JWTs, connection URLs with credentials, secret-looking assignments and forbidden file names (dotenv files, `*.pem`, `*.key`, daemon identity files, …); the scanner reports the rule id and location, never the matching text. `--all` scans the tree; `--range BASE..HEAD` scans every line the PR's commits added, so a secret added and removed inside a PR is still caught (CI runs it on PRs into trunk). Allowlist entries in `.secretscan-allowlist` are `path:full line text` (or `@path exact/file` for a forbidden file name), each needs a `# reason:` comment above it, and wildcards are rejected. The self-test builds its fixtures at run time from fragments; dev's `src/lib/scan-secrets.test.ts` runs it and, with the siblings checked out in dev CI, fails if any copy drifts.
 
 Interactive: `vagrant ssh`, then `cd ~/dev` (or `~/turbopaneld` /
-`~/turbopanel` / `~/ui` / `~/website`) and the same commands. The TUI
-also runs suites in-guest: Developer → **Run tests…**, or on Services
-select instance / daemon / caddy / ui / website and press **T**.
+`~/turbopanel` / `~/ui` / `~/website`) and the same commands.
 
 Guest commands:
 
