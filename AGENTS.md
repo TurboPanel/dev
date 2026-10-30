@@ -39,7 +39,7 @@ contributors** use **Vagrant + UTM** with guest box **`utm/bookworm`** (Debian
 
 Canonical docs: https://turbopanel.io/docs/getting-started/development
 
-The current entrypoint is a minimal launcher only (full multi-screen console was removed during a rewrite).
+`./console` launches the Developer Console, an Ink TUI with a **Services** area (service list, logs, per-service actions) and a **Developer** area (converge, optional services, run tests, cell trace, daemon rebuild). `src/tui.tsx` is a thin launcher that lazy-loads `src/console-app.tsx`; the screens live in `src/` (see [`src/AGENTS.md`](./src/AGENTS.md)). It is used occasionally, so keep it working and keep these guides accurate.
 
 ## Entry points
 
@@ -67,7 +67,7 @@ dev/console
 ## Responsibilities
 
 - **`console`** — runs the prerequisite check, ensures pinned **Node** (`/opt/turbopanel/vendor/node/current/bin/node`, runs this repo) is installed, installs Corepack via vendored npm when Node did not ship it (25+), enables Corepack/pnpm, runs `pnpm install`, and launches the Ink TUI via `vite-node`. Add `--watch` to use `scripts/hot-reload.tsx`, which keeps the Ink process alive and rerenders when imported `src/` modules change. When stdin/stdout/stderr are not TTYs, reattaches stdio to `/dev/tty` when `tp_is_interactive()` succeeds. Does **not** install Deno via `./console` itself (Deno bootstrap is via `ensureBootstrapDeno` during daemon install).
-- **`src/tui.tsx`** — minimal Ink app: full-height shell with a one-row `MenuBar`, a bordered `MainPanel`, and a one-row `StatusBar`. `← →` switches areas; Ctrl-C exits. Uses `alternateScreen`. No stack orchestration or platform install yet — rebuild features in `src/` incrementally.
+- **`src/tui.tsx`** — Ink entrypoint (uses `alternateScreen`): shows a boot screen, then lazy-loads `src/console-app.tsx`, whose `AppView` (`src/app.tsx`) renders the one-row `MenuBar` (`← →` switches the **Services** and **Developer** areas), the bordered main panel and the one-row `StatusBar`. Ctrl-C exits. Platform install, service monitoring and stack actions live in `src/lib/` and `src/hooks/use-console-app.ts`.
 
 ## Node app
 
@@ -122,11 +122,11 @@ Test details (pin tests, secret scan, command table, pre-commit hook, gate matri
 - Do not reintroduce `deno.json`/`deno.lock` to this repo or use Deno to run the console — this repo is Node/pnpm/Vite.
 - Do not add Deno installation or upgrade logic to `./console` or `scripts/lib/runtime.sh` — development Deno is resolved from host PATH when present and otherwise auto-vendored by the orchestration path (`ensureBootstrapDeno` / `ensureOrchestrationDenoBin`); production Deno remains platform-managed. Keep `./console` and `scripts/lib/runtime.sh` Node-only.
 - Do not reintroduce a host-side clone/bootstrap installer or a Workers Static Assets host for contributor setup — use Vagrant + pre-cloned sibling repos; docs live at turbopanel.io.
-- Do not add platform repo cloning to shell scripts — that belongs in the TUI when rebuilt.
+- Do not add platform repo cloning to shell scripts — that belongs in the TUI (`src/lib/platform-install.ts`).
 - Do not hardcode developer UID/GID — always read from `tp_resolve_dev_identity()` / `tp_require_dev_identity()` in shell scripts.
 - Do not reintroduce `pull.sh`.
 - Platform repos live under **`$HOME`** (via `TURBOPANEL_DEV_ROOT`; `TURBOPANEL_<DIR>_REPO` only as an explicit override) — do not clone into `/opt/turbopanel/platform`.
 - Do not bump the pinned Node version without updating `scripts/lib/paths.sh` and docs. Bump pnpm by updating `packageManager` in `package.json` only (keep the hashed Corepack pin), then run `pnpm install` so each sibling `pnpm-lock.yaml` records the `packageManagerDependencies` catalog — `--frozen-lockfile` (CI and Cloudflare) fails without it. Each pnpm checkout needs `pnpm-workspace.yaml` `allowBuilds` for packages whose postinstalls must run (`esbuild` / `workerd` for wrangler; this repo at least `esbuild`). pnpm 12 `strictDepBuilds` otherwise fails the install with `ERR_PNPM_IGNORED_BUILDS`. CI `pnpm/action-setup` must stay at **v6.1.0+** — v4 cannot install pnpm 12's native binary.
 - Do not commit directly to `trunk` — use a feature branch and open a PR.
-- Do not run unit tests, typecheck, or lint on the **host** checkout — use `vagrant ssh`. Host VirtFS trees lack a usable Node/pnpm/Deno `node_modules`.
-- Do not update `AGENTS.md` to describe deleted multi-screen features as if they still exist — document the minimal `src/tui.tsx` flow until those features are reintroduced.
+- Do not run unit tests, typecheck, or lint on the **host** checkout — use `vagrant ssh` (or the TUI Run tests / Services **T**). Host VirtFS trees lack a usable Node/pnpm/Deno `node_modules`.
+- Do not describe the Developer Console as removed or minimal: the Services and Developer areas exist, so update the guides when those screens change.
