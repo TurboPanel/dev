@@ -28,7 +28,7 @@ this console) run **`turbopaneld.service`** on the FHS tree
 `/run/turbopanel`): native **`/opt/turbopanel/bin/turbopaneld`** when that binary
 executes, otherwise **`turbopaneld.js`** via vendored Deno — the supported path
 on hosts where the native binary cannot load (e.g. some Raspberry Pi kernels with
-16 KiB pages; see the daemon repo's `AGENTS.md` → "Filesystem layout & path
+16 KiB pages; see the daemon repo's `src/paths/AGENTS.md` → "Filesystem layout & path
 model"). Deno is still installed for the **instance** stack (and mailer) via the
 `deno-runtime` Ansible role during dev converge.
 
