@@ -1,5 +1,3 @@
-import { accessSync, constants, statSync } from 'node:fs'
-import { dirname } from 'node:path'
 import { resolveDevRoot } from './paths.ts'
 import { spawnSyncTrustedText } from './spawn-trusted.ts'
 
@@ -12,29 +10,12 @@ import { spawnSyncTrustedText } from './spawn-trusted.ts'
  */
 const SAFE_PATH_CHARS = /^[A-Za-z0-9._@+/-]+$/
 
-function nearestExistingDir(path: string): string | null {
-  let current = path
-  for (;;) {
-    try {
-      return statSync(current).isDirectory() ? current : null
-    } catch {
-      const parent = dirname(current)
-      if (parent === current) return null
-      current = parent
-    }
-  }
-}
-
-function canAccess(path: string, mode: number): boolean {
-  try {
-    accessSync(path, mode)
-    return true
-  } catch {
-    return false
-  }
-}
-
-/** Syntax rules only (no filesystem access); `null` when the value is usable. */
+/**
+ * Character and shape rules for `TURBOPANEL_DEV_ROOT`; `null` when the value is
+ * usable. No filesystem access: `tp_validate_dev_root` in `scripts/lib/paths.sh`
+ * (run by `./console`) and the dev playbook check that the folder is readable or
+ * creatable by the developer.
+ */
 export function devRootSyntaxError(value: string): string | null {
   if (!value.startsWith('/')) return 'must be an absolute path'
   if (value === '/') return 'must not be the filesystem root'
@@ -48,26 +29,6 @@ export function devRootSyntaxError(value: string): string | null {
   return null
 }
 
-/**
- * Check a development source-repo root. It must pass {@link devRootSyntaxError}
- * and either be a directory the current user can read and enter, or be
- * creatable (its nearest existing parent is writable). `null` when usable.
- */
-export function validateDevRoot(value: string): string | null {
-  const syntax = devRootSyntaxError(value)
-  if (syntax) return syntax
-  const existing = nearestExistingDir(value)
-  if (existing === null) return 'is not a directory and cannot be created'
-  if (existing === value) {
-    return canAccess(value, constants.R_OK | constants.X_OK)
-      ? null
-      : 'is not readable by the current user'
-  }
-  return canAccess(existing, constants.W_OK | constants.X_OK)
-    ? null
-    : `cannot be created: ${existing} is not writable by the current user`
-}
-
 export class DevRootError extends Error {
   constructor(message: string) {
     super(message)
@@ -78,8 +39,7 @@ export class DevRootError extends Error {
 /**
  * Resolve the development source-repo root and refuse a value that would break
  * the files it is written into. Syntax only, so it is safe to call anywhere;
- * `./console` (`tp_validate_dev_root`) and the dev playbook also check that the
- * folder is readable or creatable by the dev user.
+ * See {@link devRootSyntaxError} for where the folder itself is checked.
  */
 export function resolveCheckedDevRoot(): string {
   const root = resolveDevRoot()

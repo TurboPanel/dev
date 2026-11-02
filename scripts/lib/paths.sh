@@ -7,7 +7,8 @@ TURBOPANEL_ROOT=/opt/turbopanel
 TURBOPANEL_DEV_ROOT=${TURBOPANEL_DEV_ROOT:-$HOME}
 # Check TURBOPANEL_DEV_ROOT (or $1) before anything uses it; prints the problem
 # and returns 1 when it is unusable. Without $1 it also drops trailing slashes
-# from TURBOPANEL_DEV_ROOT, matching the daemon's resolver. Mirrors src/lib/dev-root.ts. The value is
+# from TURBOPANEL_DEV_ROOT, matching the daemon's resolver. The character rules
+# match devRootSyntaxError in src/lib/dev-root.ts. The value is
 # written unquoted into systemd Environment= lines, KEY=VALUE env files, a YAML
 # vars file, Caddyfile placeholders and Ansible `-e key=value` pairs, so it must
 # be an absolute path of plain characters (no spaces or shell/YAML characters),

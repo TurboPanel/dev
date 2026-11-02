@@ -10,7 +10,6 @@ import {
   devRootSyntaxError,
   resolveCheckedDevRoot,
   resolveDevHome,
-  validateDevRoot,
 } from './dev-root.ts'
 import { platformRepoPath, resolveDevRoot } from './paths.ts'
 
@@ -89,35 +88,6 @@ describe('devRootSyntaxError', () => {
   )
 })
 
-describe('validateDevRoot', () => {
-  test('accepts an existing readable directory', () => {
-    expect(validateDevRoot(scratch)).toBeNull()
-  })
-
-  test('accepts a folder that can be created under a writable parent', () => {
-    expect(validateDevRoot(join(scratch, 'work', 'turbopanel'))).toBeNull()
-  })
-
-  test('rejects a path that is a file or sits under a file', () => {
-    const file = join(scratch, 'file')
-    writeFileSync(file, 'x')
-    expect(validateDevRoot(file)).toContain('not a directory')
-    expect(validateDevRoot(join(file, 'turbopanel'))).toContain('not a directory')
-  })
-
-  test.skipIf(process.getuid?.() === 0)('rejects a folder the user cannot read or create', () => {
-    const locked = join(scratch, 'locked')
-    mkdirSync(locked)
-    chmodSync(locked, 0o000)
-    try {
-      expect(validateDevRoot(locked)).toContain('not readable')
-      expect(validateDevRoot(join(locked, 'turbopanel'))).toContain('cannot be created')
-    } finally {
-      chmodSync(locked, 0o755)
-    }
-  })
-})
-
 describe('resolveCheckedDevRoot', () => {
   test('returns the root when it is usable', () => {
     vi.stubEnv('TURBOPANEL_DEV_ROOT', '/home/pat/work/turbopanel')
@@ -181,6 +151,21 @@ describe('tp_validate_dev_root (scripts/lib/paths.sh)', () => {
     expect(stderr).toContain(fragment)
     expect(devRootSyntaxError(value)).toContain(fragment)
   })
+
+  test.skipIf(process.getuid?.() === 0)(
+    'rejects a folder the user cannot read or create in',
+    () => {
+      const locked = join(scratch, 'locked')
+      mkdirSync(locked)
+      chmodSync(locked, 0o000)
+      try {
+        expect(runShell(locked).stderr).toContain('not readable')
+        expect(runShell(join(locked, 'turbopanel')).stderr).toContain('cannot be created')
+      } finally {
+        chmodSync(locked, 0o755)
+      }
+    }
+  )
 
   test('rejects a path under a file', () => {
     const file = join(scratch, 'file')
