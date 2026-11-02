@@ -2,7 +2,8 @@
 # Boot the TurboPanel UTM guest (vagrant up) and land in the Ink console over SSH.
 #
 # Host prerequisites: Vagrant, UTM, vagrant_utm plugin; sibling repos next to this
-# checkout (../turbopaneld, ../turbopanel, ../ui, ../website; ../.github is optional).
+# checkout, as listed in repos.list (../.github is optional); ./scripts/setup.sh
+# clones them all.
 # Prefer SSH agent with a GitHub key loaded (agent is forwarded into the guest).
 #
 # Usage (from the dev repo root or any cwd):
@@ -77,20 +78,28 @@ warn_missing_ssh_agent() {
   fi
 }
 
+# repos.list names every repo; lines marked "optional" (.github) may be absent.
 require_sibling_repos() {
   _missing=
-  for _dir in turbopaneld turbopanel ui website; do
-    if [ ! -d "$REPO_ROOT/../$_dir" ]; then
+  _optional_missing=
+  while read -r _dir _ _flag; do
+    # dev is this checkout; the Vagrantfile mounts it whatever its folder is called.
+    case "$_dir" in '' | '#'* | dev) continue ;; *) ;; esac
+    [ ! -d "$REPO_ROOT/../$_dir" ] || continue
+    if [ "${_flag:-}" = optional ]; then
+      _optional_missing="${_optional_missing} ../${_dir}"
+    else
       _missing="${_missing} ../${_dir}"
     fi
-  done
+  done <"$REPO_ROOT/repos.list"
   if [ -n "$_missing" ]; then
     tp_error "Expected sibling checkout directories next to this repo:${_missing}"
-    echo "  Layout: …/turbopanel/{dev,turbopaneld,turbopanel,ui,website}" >&2
+    echo "  Layout: …/turbopanel/{dev,turbopanel,turbopaneld,ui,website,.github} (.github optional)" >&2
+    echo "  ./scripts/setup.sh clones them all." >&2
     exit 1
   fi
-  if [ ! -d "$REPO_ROOT/../.github" ]; then
-    tp_warn "No ../.github sibling checkout — Ansible will clone it inside the guest instead."
+  if [ -n "$_optional_missing" ]; then
+    tp_warn "No${_optional_missing} sibling checkout — Ansible will clone it inside the guest instead."
   fi
 }
 

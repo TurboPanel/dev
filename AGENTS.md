@@ -45,6 +45,9 @@ Canonical docs: https://turbopanel.io/docs/getting-started/development
 
 | Script | Purpose |
 |--------|---------|
+| `./scripts/setup.sh` | **Start here.** Clone or update all six repos into one `turbopanel` folder, pick each repo's layout from your GitHub push access (maintainer: `origin` = TurboPanel repo; contributor: `origin` = your fork, `upstream` = TurboPanel repo; read-only when not logged in), ask Vagrant or direct, set `core.hooksPath`, write `<folder>/.turbopanel-dev-mode`. Flags: `--dir`, `--mode direct\|vagrant`, `--fork`, `--yes`, `--dry-run`. Details: [`scripts/AGENTS.md`](./scripts/AGENTS.md). |
+| `./scripts/setup.sh doctor` | Read-only report: host, Debian `VERSION_ID`, tools, GitHub login, remotes and role per repo, hooks path, signing, mode file agreement. |
+| `./scripts/setup.sh status` | Read-only table: role, branch, ahead/behind trunk, uncommitted files and open pull request per repo, plus a warning for same-named branches across repos. |
 | `vagrant up` / `vagrant ssh` | **Canonical:** boot guest from `dev/`, then SSH in and run `dev/console`. |
 | `./console` | Ensure pinned Node (sudo on first run), `pnpm install`, launch `src/tui.tsx` via `vite-node` (run **inside the guest**; from `$HOME` that is `dev/console`). |
 | `./console --watch` | Same, but use `scripts/hot-reload.tsx` for live reload on `src/` changes. |
@@ -56,8 +59,10 @@ Canonical docs: https://turbopanel.io/docs/getting-started/development
 **Typical flow:**
 
 ```bash
+mkdir turbopanel && cd turbopanel
+git clone https://github.com/TurboPanel/dev.git && ./dev/scripts/setup.sh
 # siblings: …/turbopanel/{dev,turbopaneld,turbopanel,ui,website,.github}
-cd …/turbopanel/dev
+cd dev
 vagrant up
 vagrant ssh
 # inside guest:
@@ -109,9 +114,9 @@ Test details (pin tests, secret scan, command table, pre-commit hook, gate matri
 ## Key conventions
 
 - Default git branch is **`trunk`** everywhere.
-- Git clones use **SSH** (`git@github.com:TurboPanel/...`), not HTTPS.
+- `scripts/setup.sh` clones over **HTTPS** with `gh` as the credential helper (`gh auth setup-git`), and over **SSH** when your `gh` `git_protocol` or a `url.<ssh>.insteadOf https://github.com/` rule says so. The guest's daemon fallback clone (`platform-install.ts`) still uses SSH.
 - **`console` owns the Node runtime** (for this repo) and starting the TUI. It does **not** install Deno or other platform runtimes.
-- Contributors clone the six sibling repos on the host; Vagrant mounts them into the guest under `$HOME`.
+- Contributors get the six sibling repos with `scripts/setup.sh` on the machine where they edit (the host in Vagrant mode); Vagrant mounts them into the guest under `$HOME`. The repo list lives in `repos.list` (`.github` is optional for `vagrant-up.sh` and the Vagrantfile).
 - **`TURBOPANEL_MODE=development`** during dev converge. Source repos live under `TURBOPANEL_DEV_ROOT` (default `$HOME`); every consumer derives `<dev_root>/<repo>` itself. Per-repo `TURBOPANEL_<DIR>_REPO` keys are **optional overrides only** — `buildPlatformRepoEntries()` writes one into `daemon.env` only when it is set and differs from the derived default, and `writeDaemonBaseEnv` / `writeDaemonInstanceEnv` remove any stale per-repo key on every write.
 - Daemon bootstrap, systemd units, and Docker containers run as the **current dev user** — no `tp` / `tpctrl` / `tpcache` service accounts are created in dev.
 - Purge/reset stops and removes the daemon systemd unit **`turbopaneld.service`**, dev FHS state under `/etc/turbopanel`, `/var/lib/turbopanel`, `/var/log/turbopanel`, `/run/turbopanel`, and runtimes under `/opt/turbopanel/vendor`.
@@ -121,8 +126,8 @@ Test details (pin tests, secret scan, command table, pre-commit hook, gate matri
 
 - Do not reintroduce `deno.json`/`deno.lock` to this repo or use Deno to run the console — this repo is Node/pnpm/Vite.
 - Do not add Deno installation or upgrade logic to `./console` or `scripts/lib/runtime.sh` — development Deno is resolved from host PATH when present and otherwise auto-vendored by the orchestration path (`ensureBootstrapDeno` / `ensureOrchestrationDenoBin`); production Deno remains platform-managed. Keep `./console` and `scripts/lib/runtime.sh` Node-only.
-- Do not reintroduce a host-side clone/bootstrap installer or a Workers Static Assets host for contributor setup — use Vagrant + pre-cloned sibling repos; docs live at turbopanel.io.
-- Do not add platform repo cloning to shell scripts — that belongs in the TUI (`src/lib/platform-install.ts`).
+- Contributor setup is `scripts/setup.sh`, fetched by cloning `dev` and reading it first. Do not add a `curl | sh` installer or a hosted installer page for it; docs live at turbopanel.io.
+- Repo cloning on the editing machine belongs in `scripts/setup.sh`. The one stated exception is `scripts/vm-bootstrap.sh --clone` (root-run, SSH, for a direct VM prepared on its own); inside the guest the TUI (`src/lib/platform-install.ts`) clones nothing but a missing daemon checkout.
 - Do not hardcode developer UID/GID — always read from `tp_resolve_dev_identity()` / `tp_require_dev_identity()` in shell scripts.
 - Do not reintroduce `pull.sh`.
 - Platform repos live under **`$HOME`** (via `TURBOPANEL_DEV_ROOT`; `TURBOPANEL_<DIR>_REPO` only as an explicit override) — do not clone into `/opt/turbopanel/platform`.
