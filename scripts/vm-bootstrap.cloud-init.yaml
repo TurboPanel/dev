@@ -1,0 +1,22 @@
+#cloud-config
+# Example user-data for a new Debian 13 VM (Proxmox, bare metal installers that
+# support cloud-init, or any cloud image). Replace the user name and key, then
+# the first boot prepares the machine. Run ~/dev/console after logging in.
+users:
+  - name: dev
+    groups: [sudo]
+    shell: /bin/bash
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    ssh_authorized_keys:
+      - <your public key>
+package_update: true
+packages:
+  - sudo
+  - git
+  - curl
+  - ca-certificates
+runcmd:
+  # Fetch the script over HTTPS; the repos are cloned later over SSH once the
+  # VM has a GitHub key (see docs/dev-environment.md).
+  - curl -fsSL https://raw.githubusercontent.com/TurboPanel/dev/trunk/scripts/vm-bootstrap.sh -o /root/vm-bootstrap.sh
+  - sh /root/vm-bootstrap.sh dev
