@@ -7,7 +7,13 @@ export const BOOTSTRAP_STDERR_TAIL_LINES = 20
 
 const FAILURE_PREFIXES = ['✗', '[bootstrap]']
 
-/** The message after a failure prefix, or null when the line has none. */
+/**
+ * The message after a failure prefix, or null when the line has none.
+ *
+ * The daemon's failure line ("✗ Command failed (exit N): <command line>")
+ * carries the whole command line, and it is shown here and written to the
+ * bootstrap log, so bootstrap command lines must never carry secrets.
+ */
 function failureText(line: string): string | null {
   for (const prefix of FAILURE_PREFIXES) {
     if (!line.startsWith(prefix)) continue
@@ -89,14 +95,21 @@ export async function writeBootstrapLog(
   now: Date = new Date()
 ): Promise<string | null> {
   const body = [`time=${now.toISOString()}`, '', ...lines, ''].join('\n')
-  for (const target of [path, join(tmpdir(), 'turbopanel-bootstrap-orchestration.log')]) {
-    try {
-      await fs.mkdir(dirname(target), { recursive: true })
-      await fs.writeFile(target, body, { mode: 0o640 })
-      return target
-    } catch {
-      // try the next place
-    }
+  try {
+    await fs.mkdir(dirname(path), { recursive: true })
+    await fs.writeFile(path, body, { mode: 0o600 })
+    return path
+  } catch {
+    // fall back to a fresh private folder in the temp folder
   }
-  return null
+  try {
+    // A new folder (mode 0700) and a new file ('wx' refuses anything already
+    // there), so another user cannot plant a file or symlink in our way.
+    const dir = await fs.mkdtemp(join(tmpdir(), 'turbopanel-bootstrap-'))
+    const target = join(dir, 'bootstrap-orchestration.log')
+    await fs.writeFile(target, body, { mode: 0o600, flag: 'wx' })
+    return target
+  } catch {
+    return null
+  }
 }

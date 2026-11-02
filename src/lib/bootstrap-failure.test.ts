@@ -1,6 +1,6 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   BOOTSTRAP_STDERR_TAIL_LINES,
@@ -28,7 +28,6 @@ function ownerRun(): BootstrapOutputCollector {
 const dirs: string[] = []
 afterEach(() => {
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true })
-  rmSync(join(tmpdir(), 'turbopanel-bootstrap-orchestration.log'), { force: true })
 })
 
 describe('BootstrapOutputCollector', () => {
@@ -109,7 +108,16 @@ describe('writeBootstrapLog', () => {
     const blocker = join(dir, 'not-a-folder')
     writeFileSync(blocker, '')
     const written = await writeBootstrapLog(join(blocker, 'boot.log'), ['out| hi'])
-    expect(written).toBe(join(tmpdir(), 'turbopanel-bootstrap-orchestration.log'))
+    expect(written).not.toBeNull()
+    dirs.push(dirname(written!))
+    expect(dirname(dirname(written!))).toBe(tmpdir())
+    expect(basename(dirname(written!)).startsWith('turbopanel-bootstrap-')).toBe(true)
     expect(readFileSync(written!, 'utf8')).toContain('out| hi')
+    expect(statSync(written!).mode & 0o777).toBe(0o600)
+    expect(statSync(dirname(written!)).mode & 0o777).toBe(0o700)
+
+    const again = await writeBootstrapLog(join(blocker, 'boot.log'), ['out| again'])
+    dirs.push(dirname(again!))
+    expect(again).not.toBe(written)
   })
 })
