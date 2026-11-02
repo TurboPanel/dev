@@ -28,6 +28,7 @@ function ownerRun(): BootstrapOutputCollector {
 const dirs: string[] = []
 afterEach(() => {
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true })
+  rmSync(join(tmpdir(), 'turbopanel-bootstrap-orchestration.log'), { force: true })
 })
 
 describe('BootstrapOutputCollector', () => {
