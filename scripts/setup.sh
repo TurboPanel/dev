@@ -498,14 +498,13 @@ tp_offer_gh_login() {
   fi
   GH_CHANGED=1
   _gl_proto=https
-  _gl_extra=
+  _gl_ssh=
   if [ "$(gh config get git_protocol -h github.com 2>/dev/null || true)" = ssh ]; then
     # Keep an ssh choice made before; never generate or upload a key here.
     _gl_proto=ssh
-    _gl_extra=--skip-ssh-key
+    _gl_ssh=1
   fi
-  # shellcheck disable=SC2086 # _gl_extra is one flag or empty
-  if ! GH_PROMPT_DISABLED=1 gh auth login --hostname github.com --git-protocol "$_gl_proto" --web $_gl_extra </dev/tty >/dev/tty 2>&1; then
+  if ! GH_PROMPT_DISABLED=1 gh auth login --hostname github.com --git-protocol "$_gl_proto" --web ${_gl_ssh:+"--skip-ssh-key"} </dev/tty >/dev/tty 2>&1; then
     tp_warn "gh auth login did not finish; setup goes on with read-only clones."
     tp_gh_login_hint
   fi
