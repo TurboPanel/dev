@@ -632,7 +632,8 @@ tp_twin_branches() {
     tp_is_checkout "$_tb_path" || continue
     _tb_default=$(tp_repo_branch "$_tb_name")
     for _tb_branch in $(git -C "$_tb_path" for-each-ref --format='%(refname:short)' refs/heads 2>/dev/null); do
-      [ "$_tb_branch" != "$_tb_default" ] || continue
+      # The default branch and the long-lived release branches are not twins.
+      case "$_tb_branch" in "$_tb_default" | staging | live) continue ;; *) ;; esac
       _tb_all="${_tb_all}${_tb_branch} ${_tb_name}
 "
     done
@@ -666,7 +667,8 @@ tp_next_steps() {
     if [ "$HOST_KERNEL" = Darwin ]; then
       echo "  cd $(tp_sq "$DIR/dev") && ./scripts/vagrant-up.sh"
     else
-      echo "  cd $(tp_sq "$DIR/dev") && vagrant up && vagrant ssh -c 'dev/console'"
+      echo "  cd $(tp_sq "$DIR/dev") && vagrant up && vagrant ssh"
+      echo "  Then, inside the guest: dev/console"
     fi
     echo "  Edit and commit on this machine; the guest only runs the stack. Hooks here run the secret scan."
   elif [ "$MODE" = direct ]; then

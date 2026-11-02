@@ -400,6 +400,7 @@ describe('setup.sh status and doctor', () => {
   test('status shows one row per repo, the open PR and the twin-branch order', () => {
     setup()
     for (const repo of ['turbopanel', 'turbopaneld']) {
+      git(join(work, repo), 'branch', 'staging')
       git(join(work, repo), 'switch', '--quiet', '-c', 'feat/wire')
     }
     const { status, out } = run(['status', '--dir', work], { FAKE_GH_PR: '42' })
@@ -410,6 +411,7 @@ describe('setup.sh status and doctor', () => {
     expect(out).toContain(
       'merge the control plane (turbopanel) pull request before the daemon (turbopaneld) one'
     )
+    expect(out).not.toContain('Branch staging')
     expect(ghLog()).toContain('pr list -R TurboPanel/turbopanel --head feat/wire')
   })
 
