@@ -160,16 +160,28 @@ function withoutGh(): Env {
   }
   rmSync(join(bin, 'gh'))
   stub('apt-get', 'echo "apt-get $*" >> "$FAKE_GH_LOG.apt"; exit 0')
-  stub('dpkg', 'echo amd64')
+  stub('dpkg', 'printf "%s" "$FAKE_DPKG_ARCH"')
   stub(
     'curl',
     'echo "curl $*" >> "$FAKE_GH_LOG.apt"; while [ $# -gt 0 ]; do [ "$1" != -o ] || echo keyring > "$2"; shift; done'
   )
   stub(
     'gpg',
-    'printf "pub:-:4096:1:X:1:::-:::scESC:\\nfpr:::::::::%s:\\nsub:-:4096:1:Y:1::::::e:\\nfpr:::::::::SUBKEY:\\n" "$FAKE_GPG_FPR"'
+    [
+      '[ -z "$FAKE_GPG_EMPTY" ] || exit 0',
+      'printf "pub:-:4096:1:X:1:::-:::scESC:\\nfpr:::::::::%s:\\nsub:-:4096:1:Y:1::::::e:\\nfpr:::::::::SUBKEY:\\n" "$FAKE_GPG_FPR"',
+      'printf "%b" "$FAKE_GPG_EXTRA"',
+    ].join('\n')
   )
-  return { PATH: `${bin}:${sys}`, FAKE_GPG_FPR: GH_KEY_FPR }
+  mkdirSync(join(root, 'tmp'))
+  return {
+    PATH: `${bin}:${sys}`,
+    TMPDIR: join(root, 'tmp'),
+    FAKE_GPG_FPR: GH_KEY_FPR,
+    FAKE_GPG_EXTRA: '',
+    FAKE_GPG_EMPTY: '',
+    FAKE_DPKG_ARCH: 'amd64',
+  }
 }
 
 const sudoLog = () =>
@@ -607,6 +619,7 @@ describe('setup.sh GitHub CLI', () => {
       sudo.indexOf('sudo apt-get install -y gh')
     )
     expect(out).toContain('Installed gh version 9.9.9')
+    expect(readdirSync(join(root, 'tmp'))).toEqual([])
     expect(ghLog()).not.toContain('auth login')
     expect(out).toContain("Run 'gh auth login'")
   })
@@ -619,6 +632,39 @@ describe('setup.sh GitHub CLI', () => {
     expect(sudoLog()).not.toContain('apt-get install -y gh')
     expect(sudoLog()).not.toContain('github-cli.list')
     expect(out).toContain('gh is still not installed')
+  })
+
+  test.each([
+    [
+      'an extra primary key',
+      {
+        FAKE_GPG_EXTRA:
+          'pub:-:4096:1:Z:1:::-:::scESC:\\nfpr:::::::::0123456789ABCDEF0123456789ABCDEF01234567:\\n',
+      },
+      'unexpected GitHub CLI signing key 0123456789ABCDEF',
+    ],
+    [
+      'a primary key without a fingerprint line',
+      { FAKE_GPG_EXTRA: 'pub:-:4096:1:Z:1:::-:::scESC:\\nuid:-::::1::A::B:\\n' },
+      'not a plain set of public keys',
+    ],
+    [
+      'a secret key next to the good one',
+      {
+        FAKE_GPG_EXTRA: `sec:u:4096:1:Z:1:::u:::scESC:\\nfpr:::::::::${GH_KEY_FPR}:\\nssb:u:4096:1:W:1::::::e:\\n`,
+      },
+      'not a plain set of public keys',
+    ],
+    ['no keys at all', { FAKE_GPG_EMPTY: '1' }, 'not a plain set of public keys'],
+    ['an empty architecture', { FAKE_DPKG_ARCH: '' }, 'did not report this machine'],
+  ])('%s stops the install before apt changes', (_name, extra: Env, message) => {
+    const { status, out } = setup({ ...withoutGh(), ...extra })
+    expect(status, out).toBe(0)
+    expect(out).toContain(message)
+    expect(sudoLog()).not.toContain('githubcli-archive-keyring.gpg')
+    expect(sudoLog()).not.toContain('apt-get install -y gh')
+    expect(out).toContain('gh is still not installed')
+    expect(readdirSync(join(root, 'tmp'))).toEqual([])
   })
 
   test.each([

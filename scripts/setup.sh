@@ -329,15 +329,24 @@ tp_gh_fetch_key() {
   fi
 }
 
-# True when the downloaded keyring holds at least one primary key and every
-# primary key is one of the published fingerprints. Uses a throwaway GNUPGHOME
-# so the user's own keyring is never read or written.
+# True only when the downloaded keyring is public keys alone, holds at least one
+# primary key, every primary key has its fingerprint line and every one of those
+# is a published fingerprint. Fails closed: any record a public key listing does
+# not carry (a secret key lists as sec/ssb) rejects the whole file. Uses a
+# throwaway GNUPGHOME so the user's own keyring is never read or written.
 tp_gh_key_ok() {
   _gk_dir=$1
   mkdir -m 700 "$_gk_dir/gnupg" || return 1
   _gk_fprs=$(GNUPGHOME="$_gk_dir/gnupg" gpg --batch --show-keys --with-colons "$_gk_dir/keyring.gpg" 2>/dev/null |
-    awk -F: '$1 == "pub" {want = 1; next} want && $1 == "fpr" {print $10} {want = 0}') || return 1
-  [ -n "$_gk_fprs" ] || return 1
+    awk -F: '
+      $1 !~ /^(pub|sub|fpr|fp2|grp|uid|uat|sig|rev|rvk|rvs|spk|tru|cfg)$/ {bad = 1}
+      $1 == "pub" {pubs++; want = 1; next}
+      want && $1 == "fpr" && $10 != "" {print $10; fprs++}
+      {want = 0}
+      END {if (bad || pubs == 0 || pubs != fprs) exit 1}') || {
+    tp_error "the GitHub CLI keyring is not a plain set of public keys with fingerprints."
+    return 1
+  }
   for _gk_fpr in $_gk_fprs; do
     case " ${GH_KEY_FINGERPRINTS} " in
       *" ${_gk_fpr} "*) ;;
@@ -366,27 +375,42 @@ tp_install_gh_apt() {
     return 1
   fi
   _ig_dir=$(mktemp -d) || return 1
-  if ! tp_gh_fetch_key "$_ig_dir/keyring.gpg"; then
+  # tp_cleanup removes CURRENT_TMP, also on an early exit or Ctrl-C.
+  CURRENT_TMP=$_ig_dir
+  trap tp_cleanup EXIT
+  trap 'tp_cleanup; exit 130' INT TERM
+  _ig_ok=0
+  if tp_install_gh_from "$_ig_dir"; then
+    _ig_ok=1
+  fi
+  tp_cleanup
+  CURRENT_TMP=
+  [ "$_ig_ok" -eq 1 ]
+}
+
+tp_install_gh_from() {
+  _if_dir=$1
+  if ! tp_gh_fetch_key "$_if_dir/keyring.gpg"; then
     tp_error "could not download ${GH_KEY_URL}."
-    rm -rf "$_ig_dir"
     return 1
   fi
-  if ! tp_gh_key_ok "$_ig_dir"; then
+  if ! tp_gh_key_ok "$_if_dir"; then
     tp_error "the GitHub CLI signing key does not match the published fingerprints; nothing was installed."
-    rm -rf "$_ig_dir"
     return 1
   fi
-  _ig_arch=$(dpkg --print-architecture)
+  _if_arch=$(dpkg --print-architecture 2>/dev/null || true)
+  if [ -z "$_if_arch" ]; then
+    tp_error "dpkg did not report this machine's architecture; nothing was installed."
+    return 1
+  fi
   if sudo install -d -m 0755 /etc/apt/keyrings &&
-    sudo install -m 0644 "$_ig_dir/keyring.gpg" "$GH_KEYRING" &&
-    printf 'deb [arch=%s signed-by=%s] %s stable main\n' "$_ig_arch" "$GH_KEYRING" "$GH_APT_URL" |
+    sudo install -m 0644 "$_if_dir/keyring.gpg" "$GH_KEYRING" &&
+    printf 'deb [arch=%s signed-by=%s] %s stable main\n' "$_if_arch" "$GH_KEYRING" "$GH_APT_URL" |
     sudo tee "$GH_APT_LIST" >/dev/null &&
     sudo apt-get update &&
     sudo apt-get install -y gh; then
-    rm -rf "$_ig_dir"
     return 0
   fi
-  rm -rf "$_ig_dir"
   tp_error "installing gh with apt failed."
   return 1
 }
