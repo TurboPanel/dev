@@ -1,14 +1,14 @@
-import { CONFIG_DIR, LOG_DIR, RUNTIMES_DIR, TURBOPANEL_ROOT } from "./paths.ts";
-import { tryResolveDevIdentity } from "./dev-identity.ts";
-import { type InstallOutputHandler, runCaptured } from "./install-output.ts";
-import { shellQuote } from "./shell-quote.ts";
-import { spawnSyncTrusted, spawnSyncTrustedText } from "./spawn-trusted.ts";
+import { CONFIG_DIR, LOG_DIR, RUNTIMES_DIR, TURBOPANEL_ROOT } from './paths.ts'
+import { tryResolveDevIdentity } from './dev-identity.ts'
+import { type InstallOutputHandler, runCaptured } from './install-output.ts'
+import { shellQuote } from './shell-quote.ts'
+import { spawnSyncTrusted, spawnSyncTrustedText } from './spawn-trusted.ts'
 
 /** Persistent state dir (FHS); dev-owned at runtime like the other trees. */
-const STATE_DIR = "/var/lib/turbopanel";
+const STATE_DIR = '/var/lib/turbopanel'
 
 /** FHS trees the dev user should own on co-located dev hosts. */
-const FHS_TREES = [TURBOPANEL_ROOT, CONFIG_DIR, STATE_DIR, LOG_DIR] as const;
+const FHS_TREES = [TURBOPANEL_ROOT, CONFIG_DIR, STATE_DIR, LOG_DIR] as const
 
 /**
  * Dev-only gate. The whole dev stack runs as the single invoking dev user; this
@@ -16,30 +16,24 @@ const FHS_TREES = [TURBOPANEL_ROOT, CONFIG_DIR, STATE_DIR, LOG_DIR] as const;
  * managed hosts (which are provisioned entirely by Ansible).
  */
 export function isDevEnvironment(): boolean {
-  if (process.env.TURBOPANEL_RUNTIME === "production") {
-    return false;
+  if (process.env.TURBOPANEL_RUNTIME === 'production') {
+    return false
   }
-  return tryResolveDevIdentity() !== null;
+  return tryResolveDevIdentity() !== null
 }
 
 function dockerIsPresent(): boolean {
-  if (
-    spawnSyncTrusted("getent", ["group", "docker"], { stdio: "ignore" }).status ===
-    0
-  ) {
-    return true;
+  if (spawnSyncTrusted('getent', ['group', 'docker'], { stdio: 'ignore' }).status === 0) {
+    return true
   }
-  if (
-    spawnSyncTrusted("test", ["-S", "/var/run/docker.sock"], { stdio: "ignore" })
-      .status === 0
-  ) {
-    return true;
+  if (spawnSyncTrusted('test', ['-S', '/var/run/docker.sock'], { stdio: 'ignore' }).status === 0) {
+    return true
   }
   return (
-    spawnSyncTrusted("sh", ["-c", "command -v docker >/dev/null 2>&1"], {
-      stdio: "ignore",
+    spawnSyncTrusted('sh', ['-c', 'command -v docker >/dev/null 2>&1'], {
+      stdio: 'ignore',
     }).status === 0
-  );
+  )
 }
 
 /**
@@ -54,22 +48,20 @@ function dockerIsPresent(): boolean {
  * - **Production:** Ansible `turbopanel-user` owns the install root and vendor
  *   tree as `tp:tp` (uid/gid 9999). This helper never runs there.
  */
-export async function ensureFhsTreeOwnership(
-  onOutput?: InstallOutputHandler,
-): Promise<void> {
+export async function ensureFhsTreeOwnership(onOutput?: InstallOutputHandler): Promise<void> {
   if (!isDevEnvironment()) {
-    return;
+    return
   }
 
-  const dev = tryResolveDevIdentity();
+  const dev = tryResolveDevIdentity()
   if (!dev) {
-    return;
+    return
   }
 
-  const treePaths = FHS_TREES.map(shellQuote).join(" ");
-  const installRoot = shellQuote(TURBOPANEL_ROOT);
+  const treePaths = FHS_TREES.map(shellQuote).join(' ')
+  const installRoot = shellQuote(TURBOPANEL_ROOT)
   const script = [
-    "set -eu",
+    'set -eu',
     `dev=${shellQuote(dev.user)}`,
     `group=${shellQuote(String(dev.gid))}`,
     `for dir in ${treePaths}; do`,
@@ -77,23 +69,23 @@ export async function ensureFhsTreeOwnership(
     // under /etc, /var or /opt; the daemon's Ansible probes need the state dir.
     '  if [ ! -e "$dir" ]; then',
     '    install -d -o "$dev" -g "$group" -m 0755 "$dir"',
-    "    continue",
-    "  fi",
+    '    continue',
+    '  fi',
     '  owner="$(stat -c %U "$dir" 2>/dev/null || true)"',
     '  [ "$owner" = "$dev" ] && continue',
     '  chown "$dev:$group" "$dir" 2>/dev/null || true',
-    "done",
+    'done',
     // Sudo runtime installers create root-owned subtrees under /opt/turbopanel;
     // bootstrap and uv/python/ansible writes run as the dev user.
     `if [ -e ${installRoot} ]; then`,
     `  vendor_owner="$(stat -c %U ${shellQuote(RUNTIMES_DIR)} 2>/dev/null || true)"`,
     `  if [ -n "$vendor_owner" ] && [ "$vendor_owner" != "$dev" ]; then`,
     `    chown -R "$dev:$group" ${installRoot}`,
-    "  fi",
-    "fi",
-  ].join("\n");
+    '  fi',
+    'fi',
+  ].join('\n')
 
-  await runCaptured(["sudo", "-n", "bash", "-c", script], onOutput);
+  await runCaptured(['sudo', '-n', 'bash', '-c', script], onOutput)
 }
 
 /**
@@ -101,63 +93,61 @@ export async function ensureFhsTreeOwnership(
  * installed. The Ansible `docker` role does this on every converge; this is only
  * a pre-first-converge convenience so early docker calls can reach the socket.
  */
-export function ensureDevUserDockerAccess(
-  onOutput?: InstallOutputHandler,
-): Promise<boolean> {
+export function ensureDevUserDockerAccess(onOutput?: InstallOutputHandler): Promise<boolean> {
   // The work is synchronous and starts immediately. A failure still surfaces
   // as a rejected promise (as it did when this was an async function) rather
   // than a synchronous throw.
   try {
-    return Promise.resolve(addDevUserToDockerGroup(onOutput));
+    return Promise.resolve(addDevUserToDockerGroup(onOutput))
   } catch (error) {
-    return Promise.reject(error);
+    return Promise.reject(error)
   }
 }
 
 function addDevUserToDockerGroup(onOutput?: InstallOutputHandler): boolean {
-  const dev = tryResolveDevIdentity();
+  const dev = tryResolveDevIdentity()
   if (!dev || !dockerIsPresent()) {
-    return false;
+    return false
   }
 
   const script = [
-    "set -eu",
+    'set -eu',
     `dev=${shellQuote(dev.user)}`,
     'getent group docker >/dev/null 2>&1 || exit 0',
     'members="$(getent group docker | cut -d: -f4 | tr "," " ")"',
-    "for member in $members; do",
+    'for member in $members; do',
     '  [ "$member" = "$dev" ] && { echo unchanged; exit 0; }',
-    "done",
+    'done',
     'usermod -aG docker "$dev"',
-    "echo changed",
-  ].join("\n");
+    'echo changed',
+  ].join('\n')
 
-  const result = spawnSyncTrustedText("sudo", ["-n", "bash", "-c", script], {
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  const output = (result.stdout ?? "").trim();
+  const result = spawnSyncTrustedText('sudo', ['-n', 'bash', '-c', script], {
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  const output = (result.stdout ?? '').trim()
 
   if (result.status !== 0) {
-    onOutput?.((result.stderr ?? "").trim());
-    throw new Error("Failed to add dev user to docker group");
+    onOutput?.((result.stderr ?? '').trim())
+    throw new Error('Failed to add dev user to docker group')
   }
 
-  return output === "changed";
+  return output === 'changed'
 }
 
 /** Best-effort filesystem ownership/docker refresh on console launch; never blocks the TUI. */
 export function refreshDevPermissionsQuietly(): void {
   // Dev-only: skip entirely on production hosts (Ansible owns provisioning there).
   if (!isDevEnvironment()) {
-    return;
+    return
   }
 
   void (async () => {
     try {
-      await ensureFhsTreeOwnership();
-      await ensureDevUserDockerAccess();
+      await ensureFhsTreeOwnership()
+      await ensureDevUserDockerAccess()
     } catch {
       // Best-effort refresh; never block the TUI.
     }
-  })();
+  })()
 }
