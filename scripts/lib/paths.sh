@@ -3,24 +3,21 @@
 
 TURBOPANEL_ROOT=/opt/turbopanel
 # The Vagrant guest is recognised by the profile file its provisioner writes.
-# TURBOPANEL_VAGRANT_GUEST_MARKER only exists so tests can point it elsewhere.
+# It only picks the message for a guest that still mounts the repos at
+# ~/<repo> (made before they moved to ~/turbopanel/<repo>). The
+# TURBOPANEL_VAGRANT_GUEST_MARKER override exists only for tests.
 TP_VAGRANT_GUEST_MARKER=${TURBOPANEL_VAGRANT_GUEST_MARKER:-/etc/profile.d/turbopanel-vagrant.sh}
 tp_in_vagrant_guest() {
   [ -f "$TP_VAGRANT_GUEST_MARKER" ]
 }
 
-# Development source-repo root: the folder that holds the repos. Everywhere but
-# the Vagrant guest it must be named `turbopanel` (default $HOME/turbopanel);
-# the guest mounts the host repos at $HOME/<repo>, so there it is $HOME.
-# Override with TURBOPANEL_DEV_ROOT, or let ./console read it from the mode
-# file setup.sh writes next to the repos (tp_load_dev_root_mode_file). An
-# explicit TURBOPANEL_DEV_ROOT always wins.
+# Development source-repo root: the folder that holds the repos. It is always a
+# folder named `turbopanel`, on a direct machine and in the Vagrant guest alike
+# (default $HOME/turbopanel). Override with TURBOPANEL_DEV_ROOT, or let
+# ./console read it from the mode file setup.sh writes next to the repos
+# (tp_load_dev_root_mode_file). An explicit TURBOPANEL_DEV_ROOT always wins.
 tp_default_dev_root() {
-  if tp_in_vagrant_guest; then
-    printf '%s' "$HOME"
-  else
-    printf '%s/turbopanel' "$HOME"
-  fi
+  printf '%s/turbopanel' "$HOME"
 }
 TP_DEV_ROOT_FROM_ENV=${TURBOPANEL_DEV_ROOT:+1}
 TURBOPANEL_DEV_ROOT=${TURBOPANEL_DEV_ROOT:-$(tp_default_dev_root)}
@@ -41,9 +38,9 @@ tp_physical_dir() {
 #     holds the file wins, with a warning.
 #   * no mode file: the folder holding dev when it is named turbopanel
 #     (e.g. ~/work/turbopanel/dev), else the default (tp_default_dev_root).
-# The resolved root must be the folder that holds the dev checkout. Inside the
-# Vagrant guest both are $HOME. Outside it, an old layout with the repos
-# directly in the home folder would otherwise send the console to an empty
+# The resolved root must be the folder that holds the dev checkout. An old
+# layout with the repos directly in the home folder (or an old Vagrant guest
+# that mounts them there) would otherwise send the console to an empty
 # ~/turbopanel and clone a second set of repos there, so it is refused.
 #   tp_load_dev_root_mode_file <dev checkout dir>
 tp_load_dev_root_mode_file() {
@@ -73,15 +70,25 @@ tp_load_dev_root_mode_file() {
   return 0
 }
 
-# Explain how to move repos that sit in a folder not named turbopanel.
+# Explain how to move repos that sit in a folder not named turbopanel. In an
+# old Vagrant guest the repos are host mounts at ~/<repo>: nothing to move on
+# the guest, the Vagrantfile now mounts them at ~/turbopanel/<repo>.
 #   tp_print_move_repos_hint <folder that holds the repos now>
 tp_print_move_repos_hint() {
   _tp_mh_from=$1
-  printf 'TurboPanel: the repos sit in %s, which is not a folder named turbopanel. Outside the Vagrant guest they belong in one, e.g. ~/turbopanel/<repo>.\n' "$_tp_mh_from" >&2
+  if tp_in_vagrant_guest; then
+    printf 'TurboPanel: this Vagrant guest still mounts the repos at %s/<repo>; they now belong at ~/turbopanel/<repo>.\n' "$_tp_mh_from" >&2
+    printf '  On the host, in the dev checkout:  vagrant reload --provision   (or: vagrant destroy -f && vagrant up)\n' >&2
+    printf '  Then, in the guest:  ~/turbopanel/dev/console\n' >&2
+    printf '  The old ~/<repo> folders left in the guest are empty mount points; your checkouts stay on the host.\n' >&2
+    return 0
+  fi
+  printf 'TurboPanel: the repos sit in %s, which is not a folder named turbopanel. They belong in one, e.g. ~/turbopanel/<repo>.\n' "$_tp_mh_from" >&2
+  printf '  Stop the daemon first:  sudo systemctl stop turbopaneld\n' >&2
   # In the old home layout ~/turbopanel is the control plane checkout itself, so
   # gather the repos in a new folder first and rename it last.
   printf '  Move them:  cd %s && mkdir tp-move && for r in dev turbopaneld turbopanel ui website .github; do [ ! -e "$r" ] || mv "$r" tp-move/; done && mv tp-move turbopanel\n' "$_tp_mh_from" >&2
-  printf '  Then run:   %s/turbopanel/dev/scripts/setup.sh\n' "$_tp_mh_from" >&2
+  printf '  Then run:   %s/turbopanel/dev/scripts/setup.sh, then %s/turbopanel/dev/console (it rewrites the service units for the new paths)\n' "$_tp_mh_from" "$_tp_mh_from" >&2
 }
 
 # Check TURBOPANEL_DEV_ROOT (or $1) before anything uses it; prints the problem
@@ -91,8 +98,9 @@ tp_print_move_repos_hint() {
 # written unquoted into systemd Environment= lines, KEY=VALUE env files, a YAML
 # vars file, Caddyfile placeholders and Ansible `-e key=value` pairs, so it must
 # be an absolute path of plain characters (no spaces or shell/YAML characters),
-# named turbopanel outside the Vagrant guest, and either a directory the user
-# can read or one it can create.
+# a folder named turbopanel that is not itself a git checkout (in the old home
+# layout ~/turbopanel is the control plane repo), and either a directory the
+# user can read or one it can create.
 tp_validate_dev_root() {
   _tp_vdr=${1-$TURBOPANEL_DEV_ROOT}
   while [ "${#_tp_vdr}" -gt 1 ] && [ "${_tp_vdr%/}" != "$_tp_vdr" ]; do
@@ -116,8 +124,11 @@ tp_validate_dev_root() {
       *) ;;
     esac
   fi
-  if [ -z "$_tp_vdr_err" ] && [ "${_tp_vdr##*/}" != turbopanel ] && ! tp_in_vagrant_guest; then
+  if [ -z "$_tp_vdr_err" ] && [ "${_tp_vdr##*/}" != turbopanel ]; then
     _tp_vdr_err='is not a folder named turbopanel; the repos belong in one, e.g. ~/turbopanel/<repo> (run dev/scripts/setup.sh to set it up)'
+  fi
+  if [ -z "$_tp_vdr_err" ] && [ -e "$_tp_vdr/.git" ]; then
+    _tp_vdr_err='is a git checkout, not the folder that holds the repos (in the old home-folder layout ~/turbopanel is the control plane repo; move the repos into a new folder named turbopanel first)'
   fi
   if [ -z "$_tp_vdr_err" ]; then
     if [ -d "$_tp_vdr" ]; then

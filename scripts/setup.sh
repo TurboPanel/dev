@@ -145,8 +145,9 @@ tp_resolve_dir() {
     if [ -f "$_parent/$MODE_FILE_NAME" ] || [ "$(basename "$_parent")" = turbopanel ]; then
       DIR=$_parent
     elif [ -f /etc/profile.d/turbopanel-vagrant.sh ]; then
-      # Inside the Vagrant guest the repos are mounted at $HOME/<repo>.
-      DIR=$HOME
+      # The guest mounts the host repos at ~/turbopanel/<repo>; a dev checkout
+      # anywhere else is an old guest that still mounts them at ~/<repo>.
+      tp_die "this Vagrant guest still mounts the repos at ~/<repo>; they now belong at ~/turbopanel/<repo>. On the host, in the dev checkout, run: vagrant reload --provision (or vagrant destroy -f && vagrant up)."
     else
       DIR="$(tp_abs_path "$PWD")/turbopanel"
       # Run from inside a dev checkout: put the folder next to it, not in it.
@@ -830,7 +831,7 @@ tp_write_mode_file() {
     echo "# TurboPanel development setup, written by dev/scripts/setup.sh. Safe to source."
     echo "# dev_root is the folder that holds the repos on the machine where you edit."
     if [ "$MODE" = vagrant ]; then
-      echo "# In the Vagrant guest the same repos are mounted at \$HOME/<repo>."
+      echo "# In the Vagrant guest the same repos are mounted at ~/turbopanel/<repo>."
     fi
     echo "TURBOPANEL_DEV_ENV=$(tp_sq "$MODE")"
     echo "dev_root=$(tp_sq "$DIR")"
@@ -879,8 +880,8 @@ tp_choose_mode() {
     direct)
       [ "$DIRECT_OK" -eq 1 ] || tp_die "direct mode is not available: ${DIRECT_WHY}."
       # The console, vm-bootstrap.sh and the dev playbook refuse any other
-      # folder name outside the Vagrant guest (where the repos sit in $HOME).
-      if [ "${DIR##*/}" != turbopanel ] && [ ! -f /etc/profile.d/turbopanel-vagrant.sh ]; then
+      # folder name.
+      if [ "${DIR##*/}" != turbopanel ]; then
         tp_die "direct mode keeps the repos in a folder named turbopanel (e.g. ~/turbopanel/<repo>), not ${DIR}; rerun with --dir \"\$HOME/turbopanel\" or another folder named turbopanel."
       fi
       ;;
@@ -1002,7 +1003,7 @@ tp_next_steps() {
       echo "  cd $(tp_sq "$DIR/dev") && ./scripts/vagrant-up.sh"
     else
       echo "  cd $(tp_sq "$DIR/dev") && vagrant up && vagrant ssh"
-      echo "  Then, inside the guest: dev/console"
+      echo "  Then, inside the guest: turbopanel/dev/console"
     fi
     echo "  Edit and commit on this machine; the guest only runs the stack. Hooks here run the secret scan."
   elif [ "$MODE" = direct ]; then

@@ -118,4 +118,4 @@ vagrant up --provider=utm
 
 tp_success "Guest ready — attaching to developer console"
 # Force a TTY so Ink alternate-screen works over SSH.
-exec vagrant ssh -- -t 'cd "$HOME/dev" && exec ./console'
+exec vagrant ssh -- -t 'cd "$HOME/turbopanel/dev" && exec ./console'

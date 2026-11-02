@@ -116,8 +116,14 @@ fi
 if [ -z "${TURBOPANEL_DEV_ROOT:-}" ] && [ ! -e "${DEV_ROOT}/dev" ] &&
   { [ -f "${DEV_HOME}/dev/Vagrantfile" ] || [ -d "${DEV_HOME}/turbopaneld" ]; }; then
   printf 'vm-bootstrap: the repos sit in %s, which is not a folder named turbopanel; they belong in one, e.g. ~/turbopanel/<repo>.\n' "$DEV_HOME" >&2
+  printf '  Stop the daemon first:  systemctl stop turbopaneld\n' >&2
   printf '  Move them, as %s:  cd %s && mkdir tp-move && for r in dev turbopaneld turbopanel ui website .github; do [ ! -e "$r" ] || mv "$r" tp-move/; done && mv tp-move turbopanel\n' "$DEV_USER" "$DEV_HOME" >&2
   printf '  Then run:  %s/turbopanel/dev/scripts/setup.sh\n' "$DEV_HOME" >&2
+  exit 1
+fi
+
+if [ -e "${DEV_ROOT}/.git" ]; then
+  printf 'vm-bootstrap: TURBOPANEL_DEV_ROOT=%s is a git checkout, not the folder that holds the repos (in the old home-folder layout ~/turbopanel is the control plane repo); move the repos into a new folder named turbopanel first.\n' "$DEV_ROOT" >&2
   exit 1
 fi
 

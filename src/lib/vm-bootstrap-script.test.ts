@@ -176,7 +176,17 @@ describe('vm-bootstrap.sh', () => {
     expect(status).toBe(1)
     expect(stderr).toContain('which is not a folder named turbopanel')
     expect(stderr).toContain('mv tp-move turbopanel')
+    expect(stderr).toContain('systemctl stop turbopaneld')
     expect(stderr).toContain(`${home}/turbopanel/dev/scripts/setup.sh`)
+    expect(changed).toBe(false)
+  })
+
+  test('refuses a folder named turbopanel that is itself a git checkout', () => {
+    const root = join(mkdtempSync(join(tmpdir(), 'vmb-root-')), 'turbopanel')
+    mkdirSync(join(root, '.git'), { recursive: true })
+    const { status, stderr, changed } = runStubbed({}, { TURBOPANEL_DEV_ROOT: root })
+    expect(status).toBe(1)
+    expect(stderr).toContain('is a git checkout, not the folder that holds the repos')
     expect(changed).toBe(false)
   })
 

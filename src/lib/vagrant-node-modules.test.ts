@@ -17,11 +17,26 @@ describe('Vagrant node_modules layout', () => {
     expect(VAGRANTFILE).toContain('mount --bind')
     expect(VAGRANTFILE).toContain('tp-bind-node-modules')
     expect(VAGRANTFILE).toContain('turbopanel-virtfs-node-modules.service 2>&1')
+    // Restart, not `enable --now`: an existing guest must rerun the rewritten
+    // script after the mounts moved to ~/turbopanel/<repo>.
+    expect(VAGRANTFILE).toContain('systemctl restart turbopanel-virtfs-node-modules.service')
+    expect(VAGRANTFILE).not.toContain('enable --now turbopanel-virtfs-node-modules')
+  })
+
+  test('mounts every repo at ~/turbopanel/<repo> in a folder the dev user owns', () => {
+    expect(VAGRANTFILE).toContain('GUEST_REPOS_DIR = "/home/vagrant/turbopanel"')
+    for (const repo of ['dev', 'turbopaneld', 'turbopanel', 'ui', 'website', '.github']) {
+      expect(VAGRANTFILE).toContain(`"#{GUEST_REPOS_DIR}/${repo}", **SYNCED_FOLDER_OPTIONS`)
+    }
+    expect(VAGRANTFILE).not.toMatch(
+      /synced_folder "[^"]+", "\/home\/vagrant\/(dev|turbopaneld|ui|website)"/
+    )
+    expect(VAGRANTFILE).toContain('chown vagrant:vagrant #{GUEST_REPOS_DIR}')
   })
 
   test('waits for Vagrant shares before binding dependencies and starting services', () => {
     expect(VAGRANTFILE).toContain('while [ "$attempt" -lt 120 ]')
-    expect(VAGRANTFILE).toContain('"/home/vagrant/${repo}/package.json"')
+    expect(VAGRANTFILE).toContain('"#{GUEST_REPOS_DIR}/${repo}/package.json"')
     expect(VAGRANTFILE).toContain(
       'Before=turbopanel-ui.service turbopanel-website.service turbopanel-instance.service turbopanel-dbstudio.service'
     )

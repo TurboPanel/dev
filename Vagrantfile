@@ -6,10 +6,9 @@
 # start the Ink console from the guest home: `dev/console`.
 #
 # Mounts sibling checkouts from the host workspace (parent of this repo) into the
-# guest home, so inside the guest TURBOPANEL_DEV_ROOT defaults to $HOME (the
-# guest is recognised by /etc/profile.d/turbopanel-vagrant.sh, written below).
-# Everywhere else the repos sit in a folder named turbopanel (~/turbopanel by
-# default). The daemon's Ansible roles put source at "<dev_root>/<repo>"
+# guest at ~/turbopanel/<repo>, the same folder named turbopanel that every
+# other dev machine uses, so TURBOPANEL_DEV_ROOT defaults to ~/turbopanel here
+# too. The daemon's Ansible roles put source at "<dev_root>/<repo>"
 # whenever turbopanel_dev_user is set; /opt/turbopanel is vendor/bin/share
 # only, never source.
 # Guest-only FHS paths (/etc|/var|/run|/opt/turbopanel) stay on the VM disk.
@@ -38,6 +37,8 @@ HOST_BOX = HOST_PROVIDER == "libvirt" ? "debian/trixie64" : "utm/bookworm"
 SYNCED_FOLDER_OPTIONS = HOST_PROVIDER == "libvirt" ? { type: "virtiofs" } : {}
 
 GITHUB_HOST_DIR = File.join(__dir__, "..", ".github")
+# Guest folder that holds the repos (the dev root), like ~/turbopanel elsewhere.
+GUEST_REPOS_DIR = "/home/vagrant/turbopanel"
 LAN_ALIAS_TOKEN = /\A[A-Za-z0-9.:_-]+\z/
 LAN_ALIAS_MAX = 253
 
@@ -87,7 +88,7 @@ end
 #
 # VirtioFS mounts are applied once during `vagrant up` / `reload` and are NOT
 # restored automatically after a mid-provision reboot — without remounting,
-# ~/dev (and siblings) stay as empty guest-local mount-point directories.
+# ~/turbopanel/dev (and siblings) stay as empty guest-local mount-point directories.
 #
 # Libvirt `forwarded_port` is implemented as host-side SSH `-L` tunnels.
 # Guest sshd (OpenSSH 9.8+) closes idle `-N` sessions via UnusedConnectionTimeout,
@@ -485,20 +486,23 @@ Vagrant.configure("2") do |config|
 
   config.ssh.forward_agent = true
 
-  # Avoid a second mount of this repo at /vagrant; we sync into ~/dev instead.
+  # Avoid a second mount of this repo at /vagrant; we sync into ~/turbopanel/dev instead.
   config.vm.synced_folder ".", "/vagrant", disabled: true
 
-  config.vm.synced_folder ".", "/home/vagrant/dev", **SYNCED_FOLDER_OPTIONS
-  config.vm.synced_folder "../turbopaneld", "/home/vagrant/turbopaneld", **SYNCED_FOLDER_OPTIONS
-  config.vm.synced_folder "../turbopanel", "/home/vagrant/turbopanel", **SYNCED_FOLDER_OPTIONS
-  config.vm.synced_folder "../ui", "/home/vagrant/ui", **SYNCED_FOLDER_OPTIONS
-  config.vm.synced_folder "../website", "/home/vagrant/website", **SYNCED_FOLDER_OPTIONS
+  # Every repo sits in ~/turbopanel/<repo> in the guest, like on any other dev
+  # machine. Guests created before this change mounted them at ~/<repo>; they
+  # need `vagrant reload --provision` (the console says so).
+  config.vm.synced_folder ".", "#{GUEST_REPOS_DIR}/dev", **SYNCED_FOLDER_OPTIONS
+  config.vm.synced_folder "../turbopaneld", "#{GUEST_REPOS_DIR}/turbopaneld", **SYNCED_FOLDER_OPTIONS
+  config.vm.synced_folder "../turbopanel", "#{GUEST_REPOS_DIR}/turbopanel", **SYNCED_FOLDER_OPTIONS
+  config.vm.synced_folder "../ui", "#{GUEST_REPOS_DIR}/ui", **SYNCED_FOLDER_OPTIONS
+  config.vm.synced_folder "../website", "#{GUEST_REPOS_DIR}/website", **SYNCED_FOLDER_OPTIONS
 
   # Optional: turbopanel/.github (community health files). Ansible's github-repo
-  # role auto-clones this to $HOME/.github via HTTPS when absent, so only mount
-  # it when you already have a sibling checkout to keep local edits in sync.
+  # role auto-clones this to ~/turbopanel/.github via HTTPS when absent, so only
+  # mount it when you already have a sibling checkout to keep local edits in sync.
   if Dir.exist?(GITHUB_HOST_DIR)
-    config.vm.synced_folder "../.github", "/home/vagrant/.github", **SYNCED_FOLDER_OPTIONS
+    config.vm.synced_folder "../.github", "#{GUEST_REPOS_DIR}/.github", **SYNCED_FOLDER_OPTIONS
   end
 
   # Bind 0.0.0.0 so the libvirt/UTM host's LAN IP can reach Caddy / website —
@@ -646,10 +650,19 @@ EOF
       chmod 440 "$SUDOERS"
     fi
 
+    # Vagrant creates missing mount points as root; the folder that holds the
+    # repos must belong to the dev user (the github-repo role clones .github
+    # into it, and setup.sh writes the mode file there). Not recursive: the
+    # repos themselves are host mounts.
+    install -d -m 0755 #{GUEST_REPOS_DIR}
+    chown vagrant:vagrant #{GUEST_REPOS_DIR}
+
+    # Also tells dev tooling it runs in this guest (setup.sh, and the console's
+    # message for a guest still mounting the repos at ~/<repo>).
     PROFILE=/etc/profile.d/turbopanel-vagrant.sh
     cat >"$PROFILE" <<'EOF'
 # TurboPanel Vagrant guest defaults (sourced for login shells).
-# ./console also exports TURBOPANEL_MODE=development and repo paths under $HOME.
+# ./console also exports TURBOPANEL_MODE=development and repo paths under ~/turbopanel.
 export TURBOPANEL_MODE="${TURBOPANEL_MODE:-development}"
 # Apple Silicon hypervisors (UTM) often advertise SVE2 without implementing it;
 # cryptography 47+ / OpenSSL then SIGILL on ansible-playbook. Harmless elsewhere.
@@ -659,8 +672,9 @@ EOF
 
     # pnpm 11's content-addressable store is SQLite-backed (WAL mode) and, with no
     # explicit storeDir, is auto-placed inside whichever filesystem the project sits
-    # on — here that is a VirtFS/9p mount from the Mac host (~/dev, ~/turbopaneld, ~/turbopanel,
-    # ~/ui, ~/website are each their own 9p mount). SQLite's WAL requires shared-memory
+    # on — here that is a VirtFS/9p mount from the Mac host (~/turbopanel/dev,
+    # ~/turbopanel/turbopaneld, ~/turbopanel/turbopanel, ~/turbopanel/ui and
+    # ~/turbopanel/website are each their own 9p mount). SQLite's WAL requires shared-memory
     # mmap that 9p/virtiofs doesn't support across the VM boundary, so installs fail
     # with "[ERR_SQLITE_ERROR] disk I/O error". Force a guest-local (ext4) store instead.
     #
@@ -701,7 +715,7 @@ attempt=0
 while [ "$attempt" -lt 120 ]; do
   mounts_ready=1
   for repo in dev turbopanel ui website; do
-    if [ ! -f "/home/vagrant/${repo}/package.json" ]; then
+    if [ ! -f "#{GUEST_REPOS_DIR}/${repo}/package.json" ]; then
       mounts_ready=0
       break
     fi
@@ -712,7 +726,7 @@ while [ "$attempt" -lt 120 ]; do
 done
 
 for repo in dev turbopanel ui website; do
-  repo_dir="/home/vagrant/${repo}"
+  repo_dir="#{GUEST_REPOS_DIR}/${repo}"
   [ -f "${repo_dir}/package.json" ] || continue
   store="${NODE_MODULES_BASE}/${repo}"
   target="${store}/node_modules"
@@ -759,8 +773,11 @@ UNIT
     chmod 0640 /etc/systemd/system/turbopanel-virtfs-node-modules.service
     systemctl daemon-reload
     # `enable` prints "Created symlink …" on stderr; Vagrant colors all
-    # provisioner stderr red even when the command succeeded.
-    systemctl enable --now turbopanel-virtfs-node-modules.service 2>&1
+    # provisioner stderr red even when the command succeeded. Restart (not
+    # `enable --now`) so an already-active oneshot reruns the rewritten script,
+    # e.g. after the repo mounts moved to ~/turbopanel/<repo>.
+    systemctl enable turbopanel-virtfs-node-modules.service 2>&1
+    systemctl restart turbopanel-virtfs-node-modules.service
 
     # 8 GiB swapfile when the root disk has room. Bookworm cloud images can be
     # small; filling the disk with swap makes pnpm report "disk I/O error" from
@@ -839,10 +856,10 @@ EOF
   # Replace Debian's default SSH/login MOTD with the TurboPanel T-mark banner.
   # `run: "always"` so existing guests pick it up without a reload; safe while
   # ./console is up (does not touch node_modules or guest-setup). Source is
-  # ~/dev/scripts/guest/motd.sh when the checkout is mounted.
+  # ~/turbopanel/dev/scripts/guest/motd.sh when the checkout is mounted.
   config.vm.provision "shell", name: "guest-motd", run: "always", inline: <<~SHELL
     set -eu
-    INSTALL=/home/vagrant/dev/scripts/guest/install-motd.sh
+    INSTALL=#{GUEST_REPOS_DIR}/dev/scripts/guest/install-motd.sh
     if [ -f "$INSTALL" ]; then
       /bin/sh "$INSTALL"
     else

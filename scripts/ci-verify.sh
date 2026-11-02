@@ -10,9 +10,9 @@
 # node_modules). From the host `dev` checkout this script re-execs via
 # `vagrant ssh`. From the guest:
 #
-#   ~/dev/scripts/ci-verify.sh
-#   ~/dev/scripts/ci-verify.sh ui website
-#   ~/dev/scripts/ci-verify.sh --coverage-only turbopanel
+#   ~/turbopanel/dev/scripts/ci-verify.sh
+#   ~/turbopanel/dev/scripts/ci-verify.sh ui website
+#   ~/turbopanel/dev/scripts/ci-verify.sh --coverage-only turbopanel
 #
 # Repos: dev turbopaneld turbopanel ui website  (default: all)
 
@@ -57,7 +57,7 @@ if ! tp_in_guest; then
   fi
   if ! command -v vagrant >/dev/null 2>&1; then
     echo "ci-verify: run inside the Vagrant guest (or install vagrant on the host)." >&2
-    echo "  From the host dev checkout: vagrant ssh -c '\$HOME/dev/scripts/ci-verify.sh'" >&2
+    echo "  From the host dev checkout: vagrant ssh -c '\$HOME/turbopanel/dev/scripts/ci-verify.sh'" >&2
     exit 1
   fi
   cd "$REPO_ROOT"
@@ -67,7 +67,7 @@ if ! tp_in_guest; then
   done
   echo "ci-verify: re-exec inside the Vagrant guest" >&2
   # shellcheck disable=SC2086
-  exec vagrant ssh -c "export PATH=\"$GUEST_PATH_PREFIX:\$PATH\"; \$HOME/dev/scripts/ci-verify.sh$quoted"
+  exec vagrant ssh -c "export PATH=\"$GUEST_PATH_PREFIX:\$PATH\"; \$HOME/turbopanel/dev/scripts/ci-verify.sh$quoted"
 fi
 
 COVERAGE_ONLY=0
