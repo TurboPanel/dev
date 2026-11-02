@@ -67,7 +67,8 @@ tp_die() {
 
 # Single-quote a value for a shell-sourceable file.
 tp_sq() {
-  printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"
+  _sq_value=$1
+  printf "'%s'" "$(printf '%s' "$_sq_value" | sed "s/'/'\\\\''/g")"
 }
 
 # ---------------------------------------------------------------- repos.list
@@ -77,13 +78,15 @@ tp_repo_names() {
 }
 
 tp_repo_branch() {
-  _rb=$(sed -e 's/#.*//' "$REPOS_LIST" | awk -v n="$1" '$1 == n {print $2}')
+  _rb_name=$1
+  _rb=$(sed -e 's/#.*//' "$REPOS_LIST" | awk -v n="$_rb_name" '$1 == n {print $2}')
   printf '%s' "${_rb:-trunk}"
 }
 
 # Mode file key for a repo: .github -> role_github.
 tp_role_key() {
-  printf 'role_%s' "$(printf '%s' "$1" | sed -e 's/^\.//' -e 's/[^A-Za-z0-9_]/_/g')"
+  _rk_repo=$1
+  printf 'role_%s' "$(printf '%s' "$_rk_repo" | sed -e 's/^\.//' -e 's/[^A-Za-z0-9_]/_/g')"
 }
 
 # ---------------------------------------------------------------- mode file
@@ -94,9 +97,10 @@ tp_mode_file() {
 
 # Read one key from the mode file without sourcing it.
 tp_mode_get() {
+  _mg_key=$1
   _mf=$(tp_mode_file)
   [ -f "$_mf" ] || return 0
-  sed -n "s/^$1='\\(.*\\)'\$/\\1/p" "$_mf" | tail -n 1
+  sed -n "s/^${_mg_key}='\\(.*\\)'\$/\\1/p" "$_mf" | tail -n 1
 }
 
 # ---------------------------------------------------------------- folder
@@ -139,8 +143,9 @@ PROVIDER=
 PROVIDER_PLUGIN=
 
 tp_os_value() {
+  _ov_key=$1
   [ -r "$OS_RELEASE" ] || return 0
-  sed -n "s/^$1=//p" "$OS_RELEASE" | tail -n 1 | sed -e 's/^"//' -e 's/"$//'
+  sed -n "s/^${_ov_key}=//p" "$OS_RELEASE" | tail -n 1 | sed -e 's/^"//' -e 's/"$//'
 }
 
 tp_detect_host() {
@@ -219,27 +224,34 @@ tp_detect_protocol() {
 }
 
 tp_url() {
+  _url_owner=$1
+  _url_repo=$2
   if [ -n "$REMOTE_BASE" ]; then
-    printf '%s/%s/%s.git' "$REMOTE_BASE" "$1" "$2"
+    printf '%s/%s/%s.git' "$REMOTE_BASE" "$_url_owner" "$_url_repo"
   elif [ "$CLONE_PROTOCOL" = ssh ] && [ -n "$GH_LOGIN" ]; then
-    printf 'git@github.com:%s/%s.git' "$1" "$2"
+    printf 'git@github.com:%s/%s.git' "$_url_owner" "$_url_repo"
   else
-    printf 'https://github.com/%s/%s.git' "$1" "$2"
+    printf 'https://github.com/%s/%s.git' "$_url_owner" "$_url_repo"
   fi
 }
 
 # owner/repo from any remote URL form.
 tp_url_slug() {
-  printf '%s' "$1" | sed -e 's#\.git$##' -e 's#/*$##' | awk -F'[/:]' '{print $(NF-1) "/" $NF}'
+  _us_url=$1
+  printf '%s' "$_us_url" | sed -e 's#\.git$##' -e 's#/*$##' | awk -F'[/:]' '{print $(NF-1) "/" $NF}'
 }
 
 tp_remote_slug() {
-  _ru=$(git -C "$1" remote get-url "$2" 2>/dev/null) || return 0
+  _rs_path=$1
+  _rs_remote=$2
+  _ru=$(git -C "$_rs_path" remote get-url "$_rs_remote" 2>/dev/null) || return 0
   tp_url_slug "$_ru"
 }
 
 tp_has_remote() {
-  git -C "$1" remote get-url "$2" >/dev/null 2>&1
+  _hr_path=$1
+  _hr_remote=$2
+  git -C "$_hr_path" remote get-url "$_hr_remote" >/dev/null 2>&1
 }
 
 # maintainer: push access, origin = TurboPanel repo, no upstream.
@@ -305,12 +317,14 @@ tp_ensure_fork() {
 # ---------------------------------------------------------------- repo facts
 
 tp_is_checkout() {
-  [ -d "$1" ] && git -C "$1" rev-parse --is-inside-work-tree >/dev/null 2>&1 &&
-    [ "$(git -C "$1" rev-parse --show-toplevel 2>/dev/null)" = "$(CDPATH='' cd -- "$1" && pwd -P)" ]
+  _ic_path=$1
+  [ -d "$_ic_path" ] && git -C "$_ic_path" rev-parse --is-inside-work-tree >/dev/null 2>&1 &&
+    [ "$(git -C "$_ic_path" rev-parse --show-toplevel 2>/dev/null)" = "$(CDPATH='' cd -- "$_ic_path" && pwd -P)" ]
 }
 
 tp_base_remote() {
-  if tp_has_remote "$1" upstream; then
+  _br_path=$1
+  if tp_has_remote "$_br_path" upstream; then
     printf upstream
   else
     printf origin
@@ -318,30 +332,37 @@ tp_base_remote() {
 }
 
 tp_current_branch() {
-  git -C "$1" symbolic-ref --short -q HEAD 2>/dev/null || printf '(detached)'
+  _cb_path=$1
+  git -C "$_cb_path" symbolic-ref --short -q HEAD 2>/dev/null || printf '(detached)'
 }
 
 tp_dirty_count() {
-  git --no-optional-locks -C "$1" status --porcelain 2>/dev/null | wc -l | tr -d ' '
+  _dc_path=$1
+  git --no-optional-locks -C "$_dc_path" status --porcelain 2>/dev/null | wc -l | tr -d ' '
 }
 
 # "+ahead -behind" of HEAD against <base>/<branch>, or "?" without that ref.
 tp_ahead_behind() {
-  _ab_ref="refs/remotes/$2/$3"
-  if ! git -C "$1" rev-parse -q --verify "${_ab_ref}^{commit}" >/dev/null 2>&1; then
+  _ab_path=$1
+  _ab_remote=$2
+  _ab_branch=$3
+  _ab_ref="refs/remotes/${_ab_remote}/${_ab_branch}"
+  if ! git -C "$_ab_path" rev-parse -q --verify "${_ab_ref}^{commit}" >/dev/null 2>&1; then
     printf '?'
     return 0
   fi
-  git -C "$1" rev-list --left-right --count "HEAD...${_ab_ref}" 2>/dev/null |
+  git -C "$_ab_path" rev-list --left-right --count "HEAD...${_ab_ref}" 2>/dev/null |
     awk '{printf "+%s -%s", $1, $2}'
 }
 
 # Role from the remotes when the mode file has none.
 tp_layout_role() {
-  _lr=$(tp_mode_get "$(tp_role_key "$2")")
+  _lr_path=$1
+  _lr_name=$2
+  _lr=$(tp_mode_get "$(tp_role_key "$_lr_name")")
   if [ -n "$_lr" ]; then
     printf '%s' "$_lr"
-  elif tp_has_remote "$1" upstream; then
+  elif tp_has_remote "$_lr_path" upstream; then
     printf contributor
   else
     printf unknown
@@ -360,13 +381,18 @@ tp_cleanup() {
 }
 
 tp_fail_repo() {
-  FAILED="${FAILED} $1"
-  tp_error "$1: $2"
+  _fr_name=$1
+  _fr_why=$2
+  FAILED="${FAILED} ${_fr_name}"
+  tp_error "${_fr_name}: ${_fr_why}"
 }
 
 tp_fetch() {
-  if ! git -C "$1" fetch --quiet --prune "$2" 2>/dev/null; then
-    tp_warn "$3: could not fetch ${2} (offline?); using what is already here."
+  _fe_path=$1
+  _fe_remote=$2
+  _fe_name=$3
+  if ! git -C "$_fe_path" fetch --quiet --prune "$_fe_remote" 2>/dev/null; then
+    tp_warn "${_fe_name}: could not fetch ${_fe_remote} (offline?); using what is already here."
   fi
 }
 
@@ -465,11 +491,9 @@ tp_sync_repo() {
   _sr_branch=$2
   _sr_role=$3
   _sr_path="$DIR/$_sr_name"
-  if [ "$_sr_role" = contributor ]; then
-    if ! tp_ensure_fork "$_sr_name" >/dev/null; then
-      tp_fail_repo "$_sr_name" "no fork to work from"
-      return 0
-    fi
+  if [ "$_sr_role" = contributor ] && ! tp_ensure_fork "$_sr_name" >/dev/null; then
+    tp_fail_repo "$_sr_name" "no fork to work from"
+    return 0
   fi
   if [ ! -e "$_sr_path" ]; then
     tp_clone_new "$_sr_name" "$_sr_branch" "$_sr_role"
@@ -737,11 +761,9 @@ tp_cmd_setup() {
     echo "Dry run: nothing changed."
     return 0
   fi
-  if [ "$ASSUME_YES" -eq 0 ]; then
-    if ! tp_is_interactive || ! tp_read_tty_yn "Go ahead?" y; then
-      echo "Stopped; nothing changed."
-      return 0
-    fi
+  if [ "$ASSUME_YES" -eq 0 ] && { ! tp_is_interactive || ! tp_read_tty_yn "Go ahead?" y; }; then
+    echo "Stopped; nothing changed."
+    return 0
   fi
 
   mkdir -p "$DIR"
