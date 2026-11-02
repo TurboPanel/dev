@@ -19,7 +19,7 @@ DO_SWAP=0
 ALIASES=
 
 tp_usage() {
-  cat <<'USAGE' >&2
+  cat <<'USAGE'
 Usage: vm-bootstrap.sh [options] [DEV_USER]
 
   --upgrade           apt upgrade before anything else
@@ -38,9 +38,9 @@ while [ "$#" -gt 0 ]; do
     --swap) DO_SWAP=1 ;;
     --clone) DO_CLONE=1 ;;
     --lan-alias)
-      [ "$#" -ge 2 ] || { tp_usage; exit 2; }
+      [ "$#" -ge 2 ] || { tp_usage >&2; exit 2; }
       case "$2" in
-        *[!A-Za-z0-9._-]* | '') echo "vm-bootstrap: bad --lan-alias name: $2" >&2; exit 2 ;;
+        *[!A-Za-z0-9._-]* | '') printf 'vm-bootstrap: bad --lan-alias name: %s\n' "$2" >&2; exit 2 ;;
         *) ;;
       esac
       ALIASES="${ALIASES}${2}
@@ -48,16 +48,11 @@ while [ "$#" -gt 0 ]; do
       shift
       ;;
     -h | --help) tp_usage; exit 0 ;;
-    -*) echo "vm-bootstrap: unknown option: $1" >&2; tp_usage; exit 2 ;;
+    -*) echo "vm-bootstrap: unknown option: $1" >&2; tp_usage >&2; exit 2 ;;
     *) DEV_USER=$1 ;;
   esac
   shift
 done
-
-if [ "$(id -u)" -ne 0 ]; then
-  echo "vm-bootstrap: run as root or with sudo." >&2
-  exit 1
-fi
 
 [ -n "$DEV_USER" ] || DEV_USER=${SUDO_USER:-}
 if [ -z "$DEV_USER" ] || [ "$DEV_USER" = root ]; then
@@ -66,18 +61,22 @@ if [ -z "$DEV_USER" ] || [ "$DEV_USER" = root ]; then
 fi
 case "$DEV_USER" in
   *[!A-Za-z0-9._-]* | [0-9]*)
-    echo "vm-bootstrap: ${DEV_USER} is not a plain user name." >&2
+    printf 'vm-bootstrap: %s is not a plain user name.\n' "$DEV_USER" >&2
     exit 1
     ;;
   *) ;;
 esac
+if [ "$(id -u)" -ne 0 ]; then
+  echo "vm-bootstrap: run as root or with sudo." >&2
+  exit 1
+fi
+
 PASSWD_LINE=$(getent passwd "$DEV_USER" 2>/dev/null) || {
-  echo "vm-bootstrap: user ${DEV_USER} does not exist; create it first (adduser ${DEV_USER})." >&2
+  printf 'vm-bootstrap: user %s does not exist; create it first (adduser %s).\n' "$DEV_USER" "$DEV_USER" >&2
   exit 1
 }
 DEV_USER=$(printf '%s\n' "$PASSWD_LINE" | cut -d: -f1)
 DEV_HOME=$(printf '%s\n' "$PASSWD_LINE" | cut -d: -f6)
-DEV_GROUP=$(id -gn "$DEV_USER")
 
 export DEBIAN_FRONTEND=noninteractive
 
@@ -100,7 +99,9 @@ echo ">>> Giving ${DEV_USER} sudo access"
 if ! id -nG "$DEV_USER" | tr ' ' '\n' | grep -qx sudo; then
   usermod -aG sudo "$DEV_USER"
 fi
-SUDOERS=/etc/sudoers.d/turbopanel-dev-nopasswd
+# One file per user so a second user never replaces the first user's rule.
+# sudo ignores drop-in names that contain a dot, so dots become underscores.
+SUDOERS=/etc/sudoers.d/turbopanel-dev-nopasswd-$(printf '%s' "$DEV_USER" | tr '.' '_')
 TMP=$(mktemp)
 cat >"$TMP" <<EOT
 # TurboPanel development passwordless sudo for ${DEV_USER}
@@ -112,7 +113,14 @@ if ! visudo -c -f "$TMP" >/dev/null; then
   echo "vm-bootstrap: generated sudoers rule failed visudo -c." >&2
   exit 1
 fi
-cmp -s "$TMP" "$SUDOERS" 2>/dev/null || install -m 0440 -o root -g root "$TMP" "$SUDOERS"
+if ! cmp -s "$TMP" "$SUDOERS" 2>/dev/null; then
+  install -m 0440 -o root -g root "$TMP" "$SUDOERS"
+  if ! visudo -c >/dev/null; then
+    rm -f "$SUDOERS" "$TMP"
+    echo "vm-bootstrap: sudoers check failed after install; removed ${SUDOERS}." >&2
+    exit 1
+  fi
+fi
 rm -f "$TMP"
 
 echo ">>> Writing /etc/profile.d/turbopanel-dev.sh"
@@ -127,7 +135,7 @@ if [ "$DO_SWAP" -eq 1 ]; then
   SWAPFILE=/swapfile
   SWAP_BYTES=$((8 * 1024 * 1024 * 1024))
   ROOT_RESERVE=$((12 * 1024 * 1024 * 1024))
-  if grep -q "^${SWAPFILE} " /proc/swaps 2>/dev/null; then
+  if grep -q "^${SWAPFILE}[[:space:]]" /proc/swaps 2>/dev/null; then
     echo ">>> Swap file already active"
   else
     ROOT_AVAIL=$(df -B1 --output=avail / | tail -n 1 | tr -d ' ')
@@ -141,7 +149,7 @@ if [ "$DO_SWAP" -eq 1 ]; then
       chmod 600 "$SWAPFILE"
       mkswap "$SWAPFILE" >/dev/null
       swapon "$SWAPFILE"
-      grep -q "^${SWAPFILE} " /etc/fstab ||
+      grep -q "^${SWAPFILE}[[:space:]]" /etc/fstab ||
         printf '%s none swap sw 0 0\n' "$SWAPFILE" >>/etc/fstab
     fi
   fi
@@ -149,10 +157,16 @@ fi
 
 if [ -n "$ALIASES" ]; then
   echo ">>> Writing /etc/turbopanel/dev-forward-hosts"
-  install -d -o "$DEV_USER" -g "$DEV_GROUP" -m 0750 /etc/turbopanel
-  printf '%s' "$ALIASES" | sort -u >/etc/turbopanel/dev-forward-hosts
-  chown "$DEV_USER:$DEV_GROUP" /etc/turbopanel/dev-forward-hosts
-  chmod 0640 /etc/turbopanel/dev-forward-hosts
+  # Keep an existing /etc/turbopanel as it is; only create it when missing.
+  # The aliases file is world-readable (names only) so every dev user can read it.
+  [ -d /etc/turbopanel ] || install -d -m 0755 /etc/turbopanel
+  HOSTS=/etc/turbopanel/dev-forward-hosts
+  {
+    [ ! -f "$HOSTS" ] || cat "$HOSTS"
+    printf '%s' "$ALIASES"
+  } | sort -u >"${HOSTS}.new"
+  chmod 0644 "${HOSTS}.new"
+  mv "${HOSTS}.new" "$HOSTS"
 fi
 
 if [ "$DO_CLONE" -eq 1 ]; then
@@ -160,8 +174,8 @@ if [ "$DO_CLONE" -eq 1 ]; then
   # sudo drops SSH_AUTH_SOCK unless kept; pass it on when present so a forwarded
   # key (ssh -A) can fetch from GitHub.
   for repo in dev turbopaneld turbopanel ui website .github; do
-    if [ -d "${DEV_HOME}/${repo}/.git" ]; then
-      echo "    ${repo}: already cloned"
+    if [ -e "${DEV_HOME}/${repo}" ]; then
+      echo "    ${repo}: ${DEV_HOME}/${repo} already exists, skipping"
       continue
     fi
     runuser -u "$DEV_USER" -- env "HOME=${DEV_HOME}" "SSH_AUTH_SOCK=${SSH_AUTH_SOCK:-}" \
@@ -169,8 +183,15 @@ if [ "$DO_CLONE" -eq 1 ]; then
   done
 fi
 
-if [ -f /var/run/reboot-required ]; then
-  echo ">>> A reboot is pending; run 'sudo reboot' before continuing."
+NEEDS_REBOOT=0
+[ ! -f /var/run/reboot-required ] || NEEDS_REBOOT=1
+RUNNING_KERNEL=$(uname -r)
+NEWEST_KERNEL=$(find /boot -maxdepth 1 -name 'vmlinuz-*' 2>/dev/null | sed 's|.*/vmlinuz-||' | sort -V | tail -n 1 || true)
+if [ -n "$NEWEST_KERNEL" ] && [ "$RUNNING_KERNEL" != "$NEWEST_KERNEL" ]; then
+  NEEDS_REBOOT=1
+fi
+if [ "$NEEDS_REBOOT" -eq 1 ]; then
+  echo ">>> A reboot is pending (running ${RUNNING_KERNEL}, newest ${NEWEST_KERNEL:-unknown}); run 'sudo reboot' before continuing."
 fi
 
 cat <<EOT

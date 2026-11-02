@@ -99,13 +99,13 @@ Vagrant stays fully supported. This path is for a plain Debian 13 machine you al
 
 ### Steps
 
-1. Install Debian 13 and create your user. Log in as that user. If you use cloud-init, [`scripts/vm-bootstrap.cloud-init.yaml`](../scripts/vm-bootstrap.cloud-init.yaml) is an example that does steps 2 and 3 for you.
-2. Get the script: `git clone git@github.com:TurboPanel/dev.git ~/dev` (or download `scripts/vm-bootstrap.sh` with `curl`).
-3. Run it as root through sudo: `su -c 'sh /home/<you>/dev/scripts/vm-bootstrap.sh <you>'` on a fresh install without sudo, or `sudo sh ~/dev/scripts/vm-bootstrap.sh`. It installs `sudo`, `curl`, `git` and the base packages, adds you to the `sudo` group, writes `/etc/sudoers.d/turbopanel-dev-nopasswd` and `/etc/profile.d/turbopanel-dev.sh` (`TURBOPANEL_MODE=development`), and prints the next steps. Options:
+1. Install Debian 13 and create your user. Log in as that user. If you use cloud-init, [`scripts/vm-bootstrap.cloud-init.yaml`](../scripts/vm-bootstrap.cloud-init.yaml) is an example that runs the setup script (step 3) on first boot. It does not clone the repos, because that needs your GitHub key; clone them afterwards.
+2. Get the script. A fresh install may lack `git` and `curl`, so first run `su -c 'apt-get install -y git curl ca-certificates'` (or `sudo apt-get install -y git curl ca-certificates`). Then `git clone git@github.com:TurboPanel/dev.git ~/dev` (or download `scripts/vm-bootstrap.sh` with `curl`).
+3. Run it as root through sudo: `su -c 'sh /home/<you>/dev/scripts/vm-bootstrap.sh <you>'` on a fresh install without sudo, or `sudo sh ~/dev/scripts/vm-bootstrap.sh`. It installs `sudo`, `curl`, `git` and the base packages, adds you to the `sudo` group, writes a per-user rule `/etc/sudoers.d/turbopanel-dev-nopasswd-<you>` (dots in the name become underscores) and `/etc/profile.d/turbopanel-dev.sh` (`TURBOPANEL_MODE=development`), and prints the next steps. Options:
    - `--upgrade` runs an apt upgrade first (reboot afterwards if it says so).
    - `--swap` adds an 8 GiB swap file when the disk has room.
-   - `--lan-alias NAME` (repeatable) writes the extra DNS names the VM should answer to into `/etc/turbopanel/dev-forward-hosts`. Only names the VM cannot see on its own network interfaces, such as a DNS alias, need this.
-   - `--clone` clones `dev`, `turbopaneld`, `turbopanel`, `ui`, `website` and `.github` into your home over SSH and skips any folder that already exists. `sudo` drops your forwarded SSH agent, so use `sudo --preserve-env=SSH_AUTH_SOCK sh ~/dev/scripts/vm-bootstrap.sh --clone` when you rely on `ssh -A`. The first clone asks you to trust the github.com host key; check it yourself.
+   - `--lan-alias NAME` (repeatable) writes the extra DNS names the VM should answer to into `/etc/turbopanel/dev-forward-hosts`, merged with any names already there. Only names the VM cannot see on its own network interfaces, such as a DNS alias, need this.
+   - `--clone` clones `dev`, `turbopaneld`, `turbopanel`, `ui`, `website` and `.github` into your home over SSH and skips any path that already exists, with a message. `sudo` drops your forwarded SSH agent, so use `sudo --preserve-env=SSH_AUTH_SOCK sh ~/dev/scripts/vm-bootstrap.sh --clone` when you rely on `ssh -A`. The first clone asks you to trust the github.com host key; check it yourself.
    - The script is safe to run again.
 4. Log out and back in so the `sudo` group applies, then run `~/dev/console`. The first launch installs the pinned Node and pnpm, then bootstraps the platform as described in "Fresh-Clone → Working Dev".
 

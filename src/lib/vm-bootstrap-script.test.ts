@@ -44,6 +44,33 @@ describe('vm-bootstrap.sh', () => {
     }
   })
 
+  test('writes one sudoers file per user', () => {
+    expect(SOURCE).toContain('turbopanel-dev-nopasswd-$(')
+  })
+
+  test('rejects a bad alias name', () => {
+    expect(() =>
+      execFileSync('sh', [SCRIPT, '--lan-alias', 'bad name'], { stdio: 'pipe' })
+    ).toThrow(/bad --lan-alias name/)
+  })
+
+  test('rejects a user name that is not plain', () => {
+    expect(() => execFileSync('sh', [SCRIPT, '1000'], { stdio: 'pipe' })).toThrow(
+      /not a plain user name/
+    )
+    expect(() => execFileSync('sh', [SCRIPT, 'a b'], { stdio: 'pipe' })).toThrow(
+      /not a plain user name/
+    )
+  })
+
+  test('rejects an option that needs a value', () => {
+    expect(() => execFileSync('sh', [SCRIPT, '--lan-alias'], { stdio: 'pipe' })).toThrow(/Usage/)
+  })
+
+  test('prints help on stdout', () => {
+    expect(execFileSync('sh', [SCRIPT, '--help'], { encoding: 'utf8' })).toContain('Usage:')
+  })
+
   test('rejects an unknown option', () => {
     const run = () => execFileSync('sh', [SCRIPT, '--bogus'], { stdio: 'pipe' })
     expect(run).toThrow()
