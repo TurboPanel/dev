@@ -5,7 +5,19 @@ import { dirname, join } from 'node:path'
 /** Lines of stderr kept for the failure view. */
 export const BOOTSTRAP_STDERR_TAIL_LINES = 20
 
-const FAILURE_LINE = /^(?:✗|\[bootstrap\])\s+(.+)$/u
+const FAILURE_PREFIXES = ['✗', '[bootstrap]']
+
+/** The message after a failure prefix, or null when the line has none. */
+function failureText(line: string): string | null {
+  for (const prefix of FAILURE_PREFIXES) {
+    if (!line.startsWith(prefix)) continue
+    const rest = line.slice(prefix.length)
+    if (rest.trimStart() === rest) continue
+    const text = rest.trim()
+    if (text.length > 0) return text
+  }
+  return null
+}
 
 /**
  * Collects the daemon bootstrap's output so a failure shows what failed, not
@@ -32,8 +44,8 @@ export class BootstrapOutputCollector {
     if (this.#stderrTail.length > BOOTSTRAP_STDERR_TAIL_LINES) {
       this.#stderrTail.shift()
     }
-    const match = FAILURE_LINE.exec(trimmed)
-    if (match) this.#failure = match[1]!.trim()
+    const failure = failureText(trimmed)
+    if (failure) this.#failure = failure
   }
 
   /** The daemon's own failure message, or the last line seen as a fallback. */
