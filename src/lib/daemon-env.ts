@@ -5,45 +5,39 @@ import {
   devOrchestrationDir,
   platformCaCertPath,
   platformRepoEnvKeys,
-  resolveDevRoot,
   TURBOPANEL_TRUNK_BRANCH,
-} from "./paths.ts";
-import { resolveDevIdentity } from "./dev-identity.ts";
-import {
-  mergeEnvFile,
-  parseEnvEntries,
-  readEnvFile,
-  readEnvFileAsync,
-} from "./env-file.ts";
-import { caddyBrowserUrl } from "./service-urls.ts";
+} from './paths.ts'
+import { resolveDevIdentity } from './dev-identity.ts'
+import { devHomeEnvEntry, resolveCheckedDevRoot } from './dev-root.ts'
+import { mergeEnvFile, parseEnvEntries, readEnvFile, readEnvFileAsync } from './env-file.ts'
+import { caddyBrowserUrl } from './service-urls.ts'
 
-const INSTANCE_OPT_IN_KEY = "TURBOPANEL_DEV_INSTANCE";
-const RUNTIME_KEY = "TURBOPANEL_INSTANCE_RUNTIME";
-const WORKERS_INSTANCE_URL_KEYS = [
-  "TURBOPANEL_INSTANCE_URL",
-  "TURBOPANEL_INSTANCE_CA",
-] as const;
+const INSTANCE_OPT_IN_KEY = 'TURBOPANEL_DEV_INSTANCE'
+const RUNTIME_KEY = 'TURBOPANEL_INSTANCE_RUNTIME'
+const WORKERS_INSTANCE_URL_KEYS = ['TURBOPANEL_INSTANCE_URL', 'TURBOPANEL_INSTANCE_CA'] as const
 
 /** Build the managed daemon.env entries the dev console writes (testable contract). */
-export function buildDaemonBaseEnvEntries(
-  extra?: Record<string, string>,
-): Record<string, string> {
-  const dev = resolveDevIdentity();
+export function buildDaemonBaseEnvEntries(extra?: Record<string, string>): Record<string, string> {
+  const dev = resolveDevIdentity()
+  const devRoot = resolveCheckedDevRoot()
   return {
-    TURBOPANEL_MODE: "development",
-    TURBOPANEL_DEV_ROOT: resolveDevRoot(),
+    TURBOPANEL_MODE: 'development',
+    TURBOPANEL_DEV_ROOT: devRoot,
     TURBOPANEL_DEV_ORCHESTRATION_DIR: devOrchestrationDir(),
     ...buildPlatformRepoEntries(),
     [DAEMON_ENV_TRUNK_BRANCH_KEY]: TURBOPANEL_TRUNK_BRANCH,
     TURBOPANEL_DEV_USER: dev.user,
     TURBOPANEL_DEV_UID: String(dev.uid),
     TURBOPANEL_DEV_GID: String(dev.gid),
+    // HOME for git, ssh and pnpm in the repo roles; differs from the root when
+    // the repos sit in a sub-folder such as ~/work/turbopanel.
+    ...devHomeEnvEntry(dev.user, devRoot),
     ...extra,
-  };
+  }
 }
 
 function buildDaemonBaseEntries(extra?: Record<string, string>): Record<string, string> {
-  return buildDaemonBaseEnvEntries(extra);
+  return buildDaemonBaseEnvEntries(extra)
 }
 
 /**
@@ -53,34 +47,32 @@ function buildDaemonBaseEntries(extra?: Record<string, string>): Record<string, 
  * `TURBOPANEL_DEV_ROOT` when the key is gone.
  */
 export function stalePlatformRepoKeys(entries: Record<string, string>): string[] {
-  return platformRepoEnvKeys().filter((key) => !(key in entries));
+  return platformRepoEnvKeys().filter((key) => !(key in entries))
 }
 
 function mergeDaemonEnv(
   entries: Record<string, string>,
-  options?: { removeKeys?: string[] },
+  options?: { removeKeys?: string[] }
 ): void {
-  mergeEnvFile(DAEMON_ENV_PATH, entries, options);
+  mergeEnvFile(DAEMON_ENV_PATH, entries, options)
 }
 
 /** Write co-located dev identity keys without the instance activation marker. */
 export function writeDaemonBaseEnv(extra?: Record<string, string>): void {
-  const entries = buildDaemonBaseEntries(extra);
+  const entries = buildDaemonBaseEntries(extra)
   mergeDaemonEnv(entries, {
     removeKeys: [INSTANCE_OPT_IN_KEY, ...stalePlatformRepoKeys(entries)],
-  });
+  })
 }
 
-function resolveRuntimeForWrite(
-  extra?: Record<string, string>,
-): "deno" | "workers" {
-  if (extra?.[RUNTIME_KEY] === "workers") {
-    return "workers";
+function resolveRuntimeForWrite(extra?: Record<string, string>): 'deno' | 'workers' {
+  if (extra?.[RUNTIME_KEY] === 'workers') {
+    return 'workers'
   }
-  if (extra?.[RUNTIME_KEY] === "deno") {
-    return "deno";
+  if (extra?.[RUNTIME_KEY] === 'deno') {
+    return 'deno'
   }
-  return readInstanceRuntime();
+  return readInstanceRuntime()
 }
 
 /**
@@ -91,26 +83,26 @@ function resolveRuntimeForWrite(
  * so the daemon falls back to the local Unix socket.
  */
 export function writeDaemonInstanceEnv(extra?: Record<string, string>): void {
-  const runtime = resolveRuntimeForWrite(extra);
+  const runtime = resolveRuntimeForWrite(extra)
   const entries: Record<string, string> = {
     ...buildDaemonBaseEntries(),
-    [INSTANCE_OPT_IN_KEY]: "1",
+    [INSTANCE_OPT_IN_KEY]: '1',
     ...extra,
-  };
-  const removeKeys: string[] = stalePlatformRepoKeys(entries);
+  }
+  const removeKeys: string[] = stalePlatformRepoKeys(entries)
 
-  if (runtime === "workers") {
-    entries.TURBOPANEL_INSTANCE_URL = caddyBrowserUrl();
-    entries.TURBOPANEL_INSTANCE_CA = platformCaCertPath();
+  if (runtime === 'workers') {
+    entries.TURBOPANEL_INSTANCE_URL = caddyBrowserUrl()
+    entries.TURBOPANEL_INSTANCE_CA = platformCaCertPath()
   } else {
-    removeKeys.push(...WORKERS_INSTANCE_URL_KEYS);
+    removeKeys.push(...WORKERS_INSTANCE_URL_KEYS)
   }
 
-  mergeDaemonEnv(entries, { removeKeys });
+  mergeDaemonEnv(entries, { removeKeys })
 }
 
 function readDaemonEnvEntries(): Map<string, string> {
-  return parseEnvEntries(readEnvFile(DAEMON_ENV_PATH));
+  return parseEnvEntries(readEnvFile(DAEMON_ENV_PATH))
 }
 
 /**
@@ -122,47 +114,45 @@ function readDaemonEnvEntries(): Map<string, string> {
  * per repaint) must take a snapshot instead of calling them individually.
  */
 export type DaemonEnvSnapshot = {
-  runtime: "deno" | "workers";
-  uiMode: "dev" | "static";
-  runMode: "source" | "compiled";
-  devInstanceEnabled: boolean;
-};
+  runtime: 'deno' | 'workers'
+  uiMode: 'dev' | 'static'
+  runMode: 'source' | 'compiled'
+  devInstanceEnabled: boolean
+}
 
 function snapshotFromEntries(entries: Map<string, string>): DaemonEnvSnapshot {
   return {
-    runtime: entries.get(RUNTIME_KEY) === "workers" ? "workers" : "deno",
-    uiMode: entries.get("TURBOPANEL_UI_MODE") === "static" ? "static" : "dev",
-    runMode: entries.get("TURBOPANEL_INSTANCE_RUN_MODE") === "compiled"
-      ? "compiled"
-      : "source",
-    devInstanceEnabled: entries.get(INSTANCE_OPT_IN_KEY) === "1",
-  };
+    runtime: entries.get(RUNTIME_KEY) === 'workers' ? 'workers' : 'deno',
+    uiMode: entries.get('TURBOPANEL_UI_MODE') === 'static' ? 'static' : 'dev',
+    runMode: entries.get('TURBOPANEL_INSTANCE_RUN_MODE') === 'compiled' ? 'compiled' : 'source',
+    devInstanceEnabled: entries.get(INSTANCE_OPT_IN_KEY) === '1',
+  }
 }
 
 export function readDaemonEnvSnapshot(): DaemonEnvSnapshot {
-  return snapshotFromEntries(readDaemonEnvEntries());
+  return snapshotFromEntries(readDaemonEnvEntries())
 }
 
 /** Async sibling of {@link readDaemonEnvSnapshot} — never blocks the event loop. */
 export async function readDaemonEnvSnapshotAsync(): Promise<DaemonEnvSnapshot> {
-  return snapshotFromEntries(parseEnvEntries(await readEnvFileAsync(DAEMON_ENV_PATH)));
+  return snapshotFromEntries(parseEnvEntries(await readEnvFileAsync(DAEMON_ENV_PATH)))
 }
 
-export function readInstanceRuntime(): "deno" | "workers" {
-  const runtime = readDaemonEnvEntries().get("TURBOPANEL_INSTANCE_RUNTIME");
-  return runtime === "workers" ? "workers" : "deno";
+export function readInstanceRuntime(): 'deno' | 'workers' {
+  const runtime = readDaemonEnvEntries().get('TURBOPANEL_INSTANCE_RUNTIME')
+  return runtime === 'workers' ? 'workers' : 'deno'
 }
 
 /** UI serving mode the converge applies (defaults to dev, like the converge). */
-export function readInstanceUiMode(): "dev" | "static" {
-  const mode = readDaemonEnvEntries().get("TURBOPANEL_UI_MODE");
-  return mode === "static" ? "static" : "dev";
+export function readInstanceUiMode(): 'dev' | 'static' {
+  const mode = readDaemonEnvEntries().get('TURBOPANEL_UI_MODE')
+  return mode === 'static' ? 'static' : 'dev'
 }
 
 /** Instance run mode the converge applies (defaults to source, like the converge). */
-export function readInstanceRunMode(): "source" | "compiled" {
-  const mode = readDaemonEnvEntries().get("TURBOPANEL_INSTANCE_RUN_MODE");
-  return mode === "compiled" ? "compiled" : "source";
+export function readInstanceRunMode(): 'source' | 'compiled' {
+  const mode = readDaemonEnvEntries().get('TURBOPANEL_INSTANCE_RUN_MODE')
+  return mode === 'compiled' ? 'compiled' : 'source'
 }
 
 /**
@@ -179,13 +169,11 @@ export function readInstanceRunMode(): "source" | "compiled" {
  * developer-surface actions must stay hidden.
  */
 export function isDeveloperSurfaceInstance(
-  snapshot: DaemonEnvSnapshot = readDaemonEnvSnapshot(),
+  snapshot: DaemonEnvSnapshot = readDaemonEnvSnapshot()
 ): boolean {
-  return snapshot.runtime === "deno" &&
-    snapshot.runMode === "source" &&
-    snapshot.uiMode === "dev";
+  return snapshot.runtime === 'deno' && snapshot.runMode === 'source' && snapshot.uiMode === 'dev'
 }
 
 export function isDevInstanceEnabled(): boolean {
-  return readDaemonEnvEntries().get(INSTANCE_OPT_IN_KEY) === "1";
+  return readDaemonEnvEntries().get(INSTANCE_OPT_IN_KEY) === '1'
 }

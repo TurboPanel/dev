@@ -27,7 +27,8 @@ Usage: vm-bootstrap.sh [options] [DEV_USER]
   --lan-alias NAME    extra DNS name this VM answers to (repeatable); written to
                       /etc/turbopanel/dev-forward-hosts
   --clone             clone dev, turbopaneld, turbopanel, ui, website and .github
-                      into the dev user's home over SSH (skips existing folders)
+                      over SSH into TURBOPANEL_DEV_ROOT, else the dev user's home
+                      (skips existing folders)
   -h, --help          show this help
 USAGE
 }
@@ -79,6 +80,30 @@ DEV_USER=$(printf '%s\n' "$PASSWD_LINE" | cut -d: -f1)
 DEV_HOME=$(printf '%s\n' "$PASSWD_LINE" | cut -d: -f6)
 
 DEV_UID=$(printf '%s\n' "$PASSWD_LINE" | cut -d: -f3)
+
+# The folder that holds the repos: TURBOPANEL_DEV_ROOT (setup.sh passes it),
+# else the dev user's home. Same rules as tp_validate_dev_root in
+# scripts/lib/paths.sh: the value is written unquoted into the profile file,
+# env files, unit lines and Ansible vars, so only an absolute path of plain
+# characters without . or .. parts is accepted. Checked before anything changes.
+DEV_ROOT=${TURBOPANEL_DEV_ROOT:-$DEV_HOME}
+while [ "${#DEV_ROOT}" -gt 1 ] && [ "${DEV_ROOT%/}" != "$DEV_ROOT" ]; do
+  DEV_ROOT=${DEV_ROOT%/}
+done
+case "$DEV_ROOT" in
+  / | [!/]* | *[!A-Za-z0-9._@+/-]*)
+    printf 'vm-bootstrap: TURBOPANEL_DEV_ROOT=%s must be an absolute path of letters, digits and . _ @ + - / only.\n' "$DEV_ROOT" >&2
+    exit 1
+    ;;
+  *) ;;
+esac
+case "$DEV_ROOT/" in
+  */./* | */../*)
+    printf 'vm-bootstrap: TURBOPANEL_DEV_ROOT=%s must not contain . or .. segments.\n' "$DEV_ROOT" >&2
+    exit 1
+    ;;
+  *) ;;
+esac
 
 export DEBIAN_FRONTEND=noninteractive
 
@@ -168,9 +193,19 @@ rm -f "$TMP" "$BACKUP"
 echo ">>> Writing /etc/profile.d/turbopanel-dev.sh"
 cat >/etc/profile.d/turbopanel-dev.sh <<'EOT'
 # TurboPanel development host defaults (sourced for login shells).
-# ./console also exports TURBOPANEL_MODE=development and repo paths under $HOME.
+# ./console also exports TURBOPANEL_MODE=development and repo paths under TURBOPANEL_DEV_ROOT (default $HOME).
 export TURBOPANEL_MODE="${TURBOPANEL_MODE:-development}"
 EOT
+if [ "$DEV_ROOT" != "$DEV_HOME" ]; then
+  # Only for the dev user; DEV_ROOT and DEV_USER were checked above, so they are
+  # safe to write unquoted. An explicit TURBOPANEL_DEV_ROOT still wins.
+  cat >>/etc/profile.d/turbopanel-dev.sh <<EOT
+# The repos live in ${DEV_ROOT} for ${DEV_USER} (written by vm-bootstrap.sh).
+if [ "\$(id -un)" = "${DEV_USER}" ]; then
+  export TURBOPANEL_DEV_ROOT="\${TURBOPANEL_DEV_ROOT:-${DEV_ROOT}}"
+fi
+EOT
+fi
 chmod 644 /etc/profile.d/turbopanel-dev.sh
 
 if [ "$DO_SWAP" -eq 1 ]; then
@@ -212,16 +247,21 @@ if [ -n "$ALIASES" ]; then
 fi
 
 if [ "$DO_CLONE" -eq 1 ]; then
-  echo ">>> Cloning sibling repos into ${DEV_HOME}"
+  echo ">>> Cloning sibling repos into ${DEV_ROOT}"
+  # Created as the dev user, so a folder that user cannot create stops here.
+  if ! runuser -u "$DEV_USER" -- mkdir -p "$DEV_ROOT"; then
+    printf 'vm-bootstrap: %s cannot create or use %s.\n' "$DEV_USER" "$DEV_ROOT" >&2
+    exit 1
+  fi
   # sudo drops SSH_AUTH_SOCK unless kept; pass it on when present so a forwarded
-  # key (ssh -A) can fetch from GitHub.
+  # key (ssh -A) can fetch from GitHub. HOME stays the real home (SSH keys).
   for repo in dev turbopaneld turbopanel ui website .github; do
-    if [ -e "${DEV_HOME}/${repo}" ]; then
-      echo "    ${repo}: ${DEV_HOME}/${repo} already exists, skipping"
+    if [ -e "${DEV_ROOT}/${repo}" ]; then
+      echo "    ${repo}: ${DEV_ROOT}/${repo} already exists, skipping"
       continue
     fi
     runuser -u "$DEV_USER" -- env "HOME=${DEV_HOME}" "SSH_AUTH_SOCK=${SSH_AUTH_SOCK:-}" \
-      git clone "git@github.com:TurboPanel/${repo}.git" "${DEV_HOME}/${repo}"
+      git clone "git@github.com:TurboPanel/${repo}.git" "${DEV_ROOT}/${repo}"
   done
 fi
 
@@ -240,6 +280,6 @@ cat <<EOT
 
 Done. Next, as ${DEV_USER}:
   1. Log out and back in so the sudo group applies.
-  2. Make sure the six repos sit in ${DEV_HOME} (rerun with --clone, or clone by hand).
-  3. Run:  ${DEV_HOME}/dev/console
+  2. Make sure the six repos sit in ${DEV_ROOT} (rerun with --clone, or clone by hand).
+  3. Run:  ${DEV_ROOT}/dev/console
 EOT
