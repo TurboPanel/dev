@@ -172,6 +172,16 @@ jobs:
           args: >
             -Dsonar.qualitygate.wait=true
 
+      # A pull request from a fork (or from Dependabot) gets no repository
+      # secrets, so the code scan above is skipped. Say so in the run rather
+      # than staying silent; every other check in this run still gates ci-ok.
+      - name: Note a skipped code scan
+        if: github.event_name == 'pull_request' && env.SONAR_TOKEN == ''
+        run: |
+          msg="The code scanner did not run: pull requests from forks get no repository secrets, so the scan is skipped. Formatting, the vocabulary check, the secret scan and the tests run as usual. If a scan is needed, a maintainer will push this branch to the TurboPanel repository, where the scan runs."
+          echo "::notice title=Code scan skipped::${msg}"
+          printf '### Code scan skipped\n\n%s\n' "$msg" >> "$GITHUB_STEP_SUMMARY"
+
       # The Sonar way gate fails only on ratings, so one new code smell passes
       # it; this fails the PR on any new issue (owner rule, 2026-09-30). Runs
       # only where the PR scan ran.
