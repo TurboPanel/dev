@@ -78,7 +78,7 @@ Node is a pinned `nodejs.org` tarball vendored under `/opt/turbopanel/vendor/nod
 
 ## Contribute
 
-Maintainers and outside contributors use the same steps. You need `git`, and the GitHub CLI `gh` logged in (`gh auth login`) to open pull requests.
+Maintainers and outside contributors use the same steps. You need `git`, and the GitHub CLI `gh` logged in (`gh auth login`) to open pull requests. When `gh` is missing on Debian or Ubuntu, the script asks, then installs it from the official GitHub CLI apt source (it checks the signing key fingerprints first); on macOS run `brew install gh`, elsewhere see https://cli.github.com. When you are not logged in, it offers to run `gh auth login`, where you sign in yourself. `--yes` installs `gh` without asking but never starts the login.
 
 ```bash
 mkdir turbopanel && cd turbopanel
@@ -115,7 +115,7 @@ Vagrant stays fully supported. This path is for a plain Debian 13 machine you al
 - A bridged LAN network card, so other machines can reach the VM by name or address.
 - A normal (non-root) user account for development. Any name works, but Debian's `adduser` rejects names with a dot by default: avoid dots, or create the account with `useradd -m` or `adduser --allow-bad-names`.
 - Passwordless sudo for that user. This is a plain requirement; the bootstrap script sets it up (sudo group plus a `NOPASSWD` rule checked with `visudo -c`) and there is no password-prompt fallback.
-- The GitHub CLI `gh` logged in as that user (`gh auth login`) to open pull requests. `setup.sh` clones over HTTPS through `gh` by default, and over SSH only when your `gh` `git_protocol` or a `url.<ssh>.insteadOf https://github.com/` rule says so; then a GitHub SSH key is needed, either one created on the VM or your own through `ssh -A`. Without a login you still get read-only HTTPS clones.
+- The GitHub CLI `gh` logged in as that user (`gh auth login`) to open pull requests. `setup.sh` offers to install it from the official apt source and to run `gh auth login` for you. It clones over HTTPS through `gh` by default, and over SSH only when your `gh` `git_protocol` or a `url.<ssh>.insteadOf https://github.com/` rule says so; then a GitHub SSH key is needed, either one created on the VM or your own through `ssh -A`. Without a login you still get read-only HTTPS clones.
 
 ### Steps
 

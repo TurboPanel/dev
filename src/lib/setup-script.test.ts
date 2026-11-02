@@ -8,6 +8,7 @@ import {
   readFileSync,
   rmSync,
   statSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -25,6 +26,7 @@ const REPOS = ['dev', 'turbopanel', 'turbopaneld', 'ui', 'website', '.github']
 // "<repo> <owner>/<name>". FAKE_GH_API_DOWN makes every API call fail.
 const FAKE_GH = `#!/bin/sh
 echo "gh $*" >> "$FAKE_GH_LOG"
+[ "$1" != --version ] || { echo "gh version 9.9.9"; exit 0; }
 forks="$FAKE_FIXTURE/forks.txt"
 case "$1 $2" in
   "auth token" | "auth status") [ -n "$FAKE_GH_LOGIN" ] || exit 1; exit 0 ;;
@@ -104,6 +106,9 @@ function baseEnv(extra: Env = {}): Env {
     FAKE_GH_PR: '',
     FAKE_GH_API_DOWN: '',
     FAKE_UNAME_S: 'Linux',
+    FAKE_BIN: bin,
+    FAKE_GH_SOURCE: join(root, 'gh-fake'),
+    FAKE_GH_INSTALLS: '1',
     ...extra,
   }
 }
@@ -138,6 +143,50 @@ function upstreamCommit(repo: string, file: string) {
   return git(scratch, 'rev-parse', 'HEAD')
 }
 
+// A PATH with every system tool but gh (CI runners ship a real gh in
+// /usr/bin), plus stubs for the tools the gh install uses.
+const GH_KEY_FPR = '7F38BBB59D064DBCB3D84D725612B36462313325'
+function withoutGh(): Env {
+  const sys = join(root, 'sys')
+  mkdirSync(sys)
+  const seen = new Set<string>()
+  for (const dir of ['/usr/local/bin', '/usr/bin', '/bin']) {
+    if (!existsSync(dir)) continue
+    for (const name of readdirSync(dir)) {
+      if (name === 'gh' || seen.has(name)) continue
+      seen.add(name)
+      symlinkSync(join(dir, name), join(sys, name))
+    }
+  }
+  rmSync(join(bin, 'gh'))
+  stub('apt-get', 'echo "apt-get $*" >> "$FAKE_GH_LOG.apt"; exit 0')
+  stub('dpkg', 'printf "%s" "$FAKE_DPKG_ARCH"')
+  stub(
+    'curl',
+    'echo "curl $*" >> "$FAKE_GH_LOG.apt"; while [ $# -gt 0 ]; do [ "$1" != -o ] || echo keyring > "$2"; shift; done'
+  )
+  stub(
+    'gpg',
+    [
+      '[ -z "$FAKE_GPG_EMPTY" ] || exit 0',
+      'printf "pub:-:4096:1:X:1:::-:::scESC:\\nfpr:::::::::%s:\\nsub:-:4096:1:Y:1::::::e:\\nfpr:::::::::SUBKEY:\\n" "$FAKE_GPG_FPR"',
+      'printf "%b" "$FAKE_GPG_EXTRA"',
+    ].join('\n')
+  )
+  mkdirSync(join(root, 'tmp'))
+  return {
+    PATH: `${bin}:${sys}`,
+    TMPDIR: join(root, 'tmp'),
+    FAKE_GPG_FPR: GH_KEY_FPR,
+    FAKE_GPG_EXTRA: '',
+    FAKE_GPG_EMPTY: '',
+    FAKE_DPKG_ARCH: 'amd64',
+  }
+}
+
+const sudoLog = () =>
+  existsSync(join(root, 'gh.log.sudo')) ? readFileSync(join(root, 'gh.log.sudo'), 'utf8') : ''
+
 const modeFile = () => readFileSync(join(work, '.turbopanel-dev-mode'), 'utf8')
 const ghLog = () =>
   existsSync(join(root, 'gh.log')) ? readFileSync(join(root, 'gh.log'), 'utf8') : ''
@@ -161,7 +210,20 @@ beforeEach(() => {
     'if [ "$1" = --container ]; then echo "${FAKE_CONTAINER:-none}"; [ -n "$FAKE_CONTAINER" ]; exit; fi; echo "${FAKE_VIRT:-kvm}"'
   )
   stub('vagrant', 'echo vagrant_utm; echo vagrant-libvirt')
-  stub('sudo', 'echo "sudo $*" >> "$FAKE_GH_LOG.sudo"; exit 0')
+  writeFileSync(join(root, 'gh-fake'), FAKE_GH)
+  // The fake sudo only logs; tee also logs what it was given, and installing gh
+  // with apt puts the fake gh on the path.
+  stub(
+    'sudo',
+    [
+      'echo "sudo $*" >> "$FAKE_GH_LOG.sudo"',
+      '[ "$1" != tee ] || cat >> "$FAKE_GH_LOG.sudo"',
+      'if [ "$*" = "apt-get install -y gh" ] && [ -n "$FAKE_GH_INSTALLS" ]; then',
+      '  cp "$FAKE_GH_SOURCE" "$FAKE_BIN/gh"; chmod 755 "$FAKE_BIN/gh"',
+      'fi',
+      'exit 0',
+    ].join('\n')
+  )
   for (const repo of REPOS) {
     const seed = join(root, `seed-${repo}`)
     execFileSync('git', ['init', '--quiet', '-b', 'trunk', seed], { env: baseEnv() })
@@ -540,6 +602,114 @@ describe('setup.sh host checks', () => {
   })
 })
 
+describe('setup.sh GitHub CLI', () => {
+  test('--yes installs a missing gh from the official apt source but never logs in', () => {
+    const { status, out } = setup({ ...withoutGh(), FAKE_GH_LOGIN: '' })
+    expect(status, out).toBe(0)
+    const sudo = sudoLog()
+    expect(sudo).toContain('sudo install -d -m 0755 /etc/apt/keyrings')
+    expect(sudo).toMatch(
+      /sudo install -m 0644 \S+\/keyring\.gpg \/etc\/apt\/keyrings\/githubcli-archive-keyring\.gpg/
+    )
+    expect(sudo).toContain(
+      'deb [arch=amd64 signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main'
+    )
+    expect(sudo).toContain('sudo tee /etc/apt/sources.list.d/github-cli.list')
+    expect(sudo.indexOf('sudo apt-get update')).toBeLessThan(
+      sudo.indexOf('sudo apt-get install -y gh')
+    )
+    expect(out).toContain('Installed gh version 9.9.9')
+    expect(readdirSync(join(root, 'tmp'))).toEqual([])
+    expect(ghLog()).not.toContain('auth login')
+    expect(out).toContain("Run 'gh auth login'")
+  })
+
+  test('a signing key that does not match the published fingerprints stops the install', () => {
+    const { status, out } = setup({ ...withoutGh(), FAKE_GPG_FPR: 'DEADBEEF' })
+    expect(status, out).toBe(0)
+    expect(out).toContain('unexpected GitHub CLI signing key DEADBEEF')
+    expect(out).toContain('does not match the published fingerprints')
+    expect(sudoLog()).not.toContain('apt-get install -y gh')
+    expect(sudoLog()).not.toContain('github-cli.list')
+    expect(out).toContain('gh is still not installed')
+  })
+
+  test.each([
+    [
+      'an extra primary key',
+      {
+        FAKE_GPG_EXTRA:
+          'pub:-:4096:1:Z:1:::-:::scESC:\\nfpr:::::::::0123456789ABCDEF0123456789ABCDEF01234567:\\n',
+      },
+      'unexpected GitHub CLI signing key 0123456789ABCDEF',
+    ],
+    [
+      'a primary key without a fingerprint line',
+      { FAKE_GPG_EXTRA: 'pub:-:4096:1:Z:1:::-:::scESC:\\nuid:-::::1::A::B:\\n' },
+      'not a plain set of public keys',
+    ],
+    [
+      'a secret key next to the good one',
+      {
+        FAKE_GPG_EXTRA: `sec:u:4096:1:Z:1:::u:::scESC:\\nfpr:::::::::${GH_KEY_FPR}:\\nssb:u:4096:1:W:1::::::e:\\n`,
+      },
+      'not a plain set of public keys',
+    ],
+    ['no keys at all', { FAKE_GPG_EMPTY: '1' }, 'not a plain set of public keys'],
+    ['an empty architecture', { FAKE_DPKG_ARCH: '' }, 'did not report this machine'],
+  ])('%s stops the install before apt changes', (_name, extra: Env, message) => {
+    const { status, out } = setup({ ...withoutGh(), ...extra })
+    expect(status, out).toBe(0)
+    expect(out).toContain(message)
+    expect(sudoLog()).not.toContain('githubcli-archive-keyring.gpg')
+    expect(sudoLog()).not.toContain('apt-get install -y gh')
+    expect(out).toContain('gh is still not installed')
+    expect(readdirSync(join(root, 'tmp'))).toEqual([])
+  })
+
+  test.each([
+    ['Debian', {}, 'offer to install gh from the official apt source', true],
+    ['macOS', { FAKE_UNAME_S: 'Darwin' }, "install it with 'brew install gh'", false],
+    ['FreeBSD', { FAKE_UNAME_S: 'FreeBSD' }, 'install it from https://cli.github.com', false],
+  ])('a dry run on %s lists the gh step and changes nothing', (_name, extra: Env, line, login) => {
+    const { status, out } = run(['--dir', work, '--dry-run'], { ...withoutGh(), ...extra })
+    expect(status, out).toBe(0)
+    expect(out).toContain(line)
+    expect(out.includes("GitHub login: offer 'gh auth login'")).toBe(login)
+    expect(sudoLog()).toBe('')
+    expect(existsSync(join(root, 'gh.log.apt'))).toBe(false)
+  })
+
+  test('a dry run with --yes says the login is left to you', () => {
+    const { out } = run(['--dir', work, '--dry-run', '--yes'], { FAKE_GH_LOGIN: '' })
+    expect(out).toContain("--yes never runs 'gh auth login'")
+    expect(ghLog()).not.toContain('auth login')
+  })
+
+  test('Ubuntu counts as an apt host', () => {
+    osIs('ubuntu', '24.04')
+    const { out } = run(['--dir', work, '--dry-run', '--mode', 'vagrant'], withoutGh())
+    expect(out).toContain('offer to install gh from the official apt source')
+  })
+
+  // setsid -w starts a new session with no controlling terminal, so no prompt can open.
+  test.skipIf(spawnSync('setsid', ['-w', 'true']).status !== 0)(
+    'without a terminal and without --yes a missing gh only warns',
+    () => {
+      const result = spawnSync('setsid', ['-w', 'sh', SCRIPT, '--dir', work, '--mode', 'vagrant'], {
+        encoding: 'utf8',
+        env: baseEnv(withoutGh()),
+        stdio: ['ignore', 'pipe', 'pipe'],
+      })
+      expect(`${result.stdout}${result.stderr}`).toContain(
+        'Rerun in a terminal or with --yes to install it'
+      )
+      expect(sudoLog()).toBe('')
+      expect(ghLog()).not.toContain('auth login')
+    }
+  )
+})
+
 describe('setup.sh status and doctor', () => {
   test('status shows one row per repo, the open PR and the twin-branch order', () => {
     setup()
@@ -590,6 +760,15 @@ describe('setup.sh status and doctor', () => {
     git(join(work, 'ui'), 'remote', 'set-url', 'origin', 'https://github.com/turbopanel/UI.git')
     const { out } = run(['doctor', '--dir', work])
     expect(out).not.toContain('ui: maintainer checkout whose origin')
+  })
+
+  test('doctor only warns about a custom core.hooksPath', () => {
+    setup()
+    git(join(work, 'ui'), 'config', 'core.hooksPath', 'myhooks')
+    const { status, out } = run(['doctor', '--dir', work])
+    expect(status, out).toBe(0)
+    expect(out).toContain('ui: core.hooksPath is myhooks, not .githooks')
+    expect(out).toContain('No problems found.')
   })
 
   test('doctor is clean after a fresh setup', () => {

@@ -8,7 +8,10 @@
 # setup puts the repos listed in repos.list into one folder (default: the folder
 # named turbopanel that holds this dev checkout, else ./turbopanel), picks each
 # repo's layout from your GitHub push access, and writes
-# <folder>/.turbopanel-dev-mode. It prints the plan before changing anything and
+# <folder>/.turbopanel-dev-mode. A missing GitHub CLI (gh) is installed from the
+# official apt source on Debian or Ubuntu and 'gh auth login' is offered, each
+# only after asking (--yes installs but never logs in). It then prints the plan
+# before changing any repo and
 # is safe to run again: existing checkouts are fetched, a clean checked-out trunk
 # is fast-forwarded, and nothing is ever reset, stashed or switched.
 #
@@ -54,7 +57,8 @@ Options:
                          folder around this checkout, else ./turbopanel)
   --mode direct|vagrant  how you run the development environment
   --fork                 work from your own forks even with push access
-  --yes                  do not ask; needs --mode on a first run
+  --yes                  do not ask; needs --mode on a first run. Installs a
+                         missing gh on Debian or Ubuntu, never runs gh auth login
   --dry-run              print the plan and stop
   -h, --help             show this help
 USAGE
@@ -277,6 +281,201 @@ tp_detect_protocol() {
   if git config --get-regexp '^url\..*\.insteadof$' 2>/dev/null |
     awk '$2 ~ /^https:\/\/github\.com\/?$/ && ($1 ~ /git@github\.com/ || $1 ~ /^url\.ssh:/) {found=1} END {exit !found}'; then
     CLONE_PROTOCOL=ssh
+  fi
+}
+
+# ---------------------------------------------------------------- GitHub CLI
+
+# The GitHub CLI apt source and the primary keys that sign it, as published in
+# https://github.com/cli/cli/blob/trunk/docs/install_linux.md. Fingerprints are
+# pinned rather than the keyring checksum, which changes whenever a key rotates.
+GH_APT_URL=https://cli.github.com/packages
+GH_KEY_URL="${GH_APT_URL}/githubcli-archive-keyring.gpg"
+GH_KEYRING=/etc/apt/keyrings/githubcli-archive-keyring.gpg
+GH_APT_LIST=/etc/apt/sources.list.d/github-cli.list
+GH_KEY_FINGERPRINTS="2C6106201985B60E6C7AC87323F3D4EA75716059 7F38BBB59D064DBCB3D84D725612B36462313325"
+# 1 once setup has installed gh or run gh auth login before printing the plan.
+GH_CHANGED=0
+
+tp_have_gh() {
+  command -v gh >/dev/null 2>&1
+}
+
+# Debian, Ubuntu and their derivatives with apt-get.
+tp_gh_apt_host() {
+  [ "$HOST_KERNEL" = Linux ] || return 1
+  command -v apt-get >/dev/null 2>&1 || return 1
+  case " ${OS_ID} $(tp_os_value ID_LIKE) " in
+    *" debian "* | *" ubuntu "*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+tp_gh_missing_hint() {
+  if [ "$HOST_KERNEL" = Darwin ]; then
+    printf "install it with 'brew install gh' (or from https://cli.github.com)"
+  else
+    printf 'install it from https://cli.github.com'
+  fi
+}
+
+tp_gh_fetch_key() {
+  _gf_out=$1
+  if command -v curl >/dev/null 2>&1; then
+    # The key is served directly; refuse redirects and anything but HTTPS.
+    curl --proto '=https' --tlsv1.2 -fsS -o "$_gf_out" "$GH_KEY_URL"
+  else
+    wget -q --https-only --max-redirect=0 -O "$_gf_out" "$GH_KEY_URL"
+  fi
+}
+
+# True only when the downloaded keyring is public keys alone, holds at least one
+# primary key, every primary key has its fingerprint line and every one of those
+# is a published fingerprint. Fails closed: any record a public key listing does
+# not carry (a secret key lists as sec/ssb) rejects the whole file. Uses a
+# throwaway GNUPGHOME so the user's own keyring is never read or written.
+tp_gh_key_ok() {
+  _gk_dir=$1
+  mkdir -m 700 "$_gk_dir/gnupg" || return 1
+  _gk_fprs=$(GNUPGHOME="$_gk_dir/gnupg" gpg --batch --show-keys --with-colons "$_gk_dir/keyring.gpg" 2>/dev/null |
+    awk -F: '
+      $1 !~ /^(pub|sub|fpr|fp2|grp|uid|uat|sig|rev|rvk|rvs|spk|tru|cfg)$/ {bad = 1}
+      $1 == "pub" {pubs++; want = 1; next}
+      want && $1 == "fpr" && $10 != "" {print $10; fprs++}
+      {want = 0}
+      END {if (bad || pubs == 0 || pubs != fprs) exit 1}') || {
+    tp_error "the GitHub CLI keyring is not a plain set of public keys with fingerprints."
+    return 1
+  }
+  for _gk_fpr in $_gk_fprs; do
+    case " ${GH_KEY_FINGERPRINTS} " in
+      *" ${_gk_fpr} "*) ;;
+      *)
+        tp_error "unexpected GitHub CLI signing key ${_gk_fpr}."
+        return 1
+        ;;
+    esac
+  done
+}
+
+# The official apt steps: fetch the keyring, check its fingerprints, add the
+# signed-by source, install gh. Asks for the sudo password through sudo itself.
+tp_install_gh_apt() {
+  if ! command -v sudo >/dev/null 2>&1; then
+    tp_error "sudo is required to install gh."
+    return 1
+  fi
+  tp_info "Installing the GitHub CLI from ${GH_APT_URL} (asks for your sudo password)"
+  _ig_need=
+  command -v curl >/dev/null 2>&1 || command -v wget >/dev/null 2>&1 || _ig_need=curl
+  command -v gpg >/dev/null 2>&1 || _ig_need="${_ig_need:+${_ig_need} }gnupg"
+  # shellcheck disable=SC2086 # a space-separated list of package names
+  if [ -n "$_ig_need" ] && ! { sudo apt-get update && sudo apt-get install -y $_ig_need; }; then
+    tp_error "could not install ${_ig_need}, needed to check the GitHub CLI signing key."
+    return 1
+  fi
+  _ig_dir=$(mktemp -d) || return 1
+  # tp_cleanup removes CURRENT_TMP, also on an early exit or Ctrl-C.
+  CURRENT_TMP=$_ig_dir
+  trap tp_cleanup EXIT
+  trap 'tp_cleanup; exit 130' INT TERM
+  _ig_ok=0
+  if tp_install_gh_from "$_ig_dir"; then
+    _ig_ok=1
+  fi
+  tp_cleanup
+  CURRENT_TMP=
+  [ "$_ig_ok" -eq 1 ]
+}
+
+tp_install_gh_from() {
+  _if_dir=$1
+  if ! tp_gh_fetch_key "$_if_dir/keyring.gpg"; then
+    tp_error "could not download ${GH_KEY_URL}."
+    return 1
+  fi
+  if ! tp_gh_key_ok "$_if_dir"; then
+    tp_error "the GitHub CLI signing key does not match the published fingerprints; nothing was installed."
+    return 1
+  fi
+  _if_arch=$(dpkg --print-architecture 2>/dev/null || true)
+  if [ -z "$_if_arch" ]; then
+    tp_error "dpkg did not report this machine's architecture; nothing was installed."
+    return 1
+  fi
+  if sudo install -d -m 0755 /etc/apt/keyrings &&
+    sudo install -m 0644 "$_if_dir/keyring.gpg" "$GH_KEYRING" &&
+    printf 'deb [arch=%s signed-by=%s] %s stable main\n' "$_if_arch" "$GH_KEYRING" "$GH_APT_URL" |
+    sudo tee "$GH_APT_LIST" >/dev/null &&
+    sudo apt-get update &&
+    sudo apt-get install -y gh; then
+    return 0
+  fi
+  tp_error "installing gh with apt failed."
+  return 1
+}
+
+# Offer to install gh when it is missing: asks first, installs without asking
+# under --yes, and only warns when there is no terminal and no --yes.
+tp_ensure_gh() {
+  tp_have_gh && return 0
+  if ! tp_gh_apt_host; then
+    tp_warn "The GitHub CLI (gh) is not installed; cloning read-only. Setup installs it only on Debian or Ubuntu; $(tp_gh_missing_hint) to open pull requests."
+    return 0
+  fi
+  if [ "$ASSUME_YES" -eq 0 ]; then
+    if ! tp_has_tty; then
+      tp_warn "The GitHub CLI (gh) is not installed; cloning read-only. Rerun in a terminal or with --yes to install it, or $(tp_gh_missing_hint)."
+      return 0
+    fi
+    if ! tp_read_tty_yn "The GitHub CLI (gh) is not installed. Install it from the official GitHub CLI apt source (uses sudo)?" y; then
+      tp_warn "Skipped installing gh; cloning read-only. $(tp_gh_missing_hint) to open pull requests."
+      return 0
+    fi
+  fi
+  GH_CHANGED=1
+  if tp_install_gh_apt && tp_have_gh; then
+    tp_success "Installed $(gh --version 2>/dev/null | head -n 1)"
+  else
+    tp_warn "gh is still not installed; cloning read-only. $(tp_gh_missing_hint), then rerun setup."
+  fi
+}
+
+# Offer 'gh auth login' on a terminal. The user signs in through gh itself;
+# setup never types, reads or passes a token or password. Never under --yes.
+tp_offer_gh_login() {
+  tp_have_gh || return 0
+  if gh auth token >/dev/null 2>&1; then
+    return 0
+  fi
+  [ "$ASSUME_YES" -eq 0 ] || return 0
+  tp_has_tty || return 0
+  tp_read_tty_yn "You are not logged in to GitHub. Log in now with 'gh auth login'?" y || return 0
+  GH_CHANGED=1
+  if ! gh auth login </dev/tty >/dev/tty 2>&1; then
+    tp_warn "gh auth login did not finish; cloning read-only. Run 'gh auth login' and rerun setup."
+  fi
+}
+
+# Plan lines for the GitHub CLI steps a real run would offer (dry run only).
+tp_gh_plan() {
+  if ! tp_have_gh; then
+    if ! tp_gh_apt_host; then
+      echo "  GitHub CLI:   not installed; $(tp_gh_missing_hint)"
+      return 0
+    fi
+    if [ "$ASSUME_YES" -eq 1 ]; then
+      echo "  GitHub CLI:   install gh from the official apt source ${GH_APT_URL} (signing key fingerprints checked; sudo)"
+    else
+      echo "  GitHub CLI:   offer to install gh from the official apt source ${GH_APT_URL} (asks first; signing key fingerprints checked; sudo)"
+    fi
+  fi
+  if [ -z "$GH_LOGIN" ]; then
+    if [ "$ASSUME_YES" -eq 1 ]; then
+      echo "  GitHub login: not logged in; --yes never runs 'gh auth login', run it yourself"
+    else
+      echo "  GitHub login: offer 'gh auth login' (asks first; you sign in yourself)"
+    fi
   fi
 }
 
@@ -817,14 +1016,20 @@ tp_cmd_setup() {
   [ -f "$REPOS_LIST" ] || tp_die "missing ${REPOS_LIST}."
 
   tp_detect_host
+  # gh and the login decide every repo's role, so they come before the plan.
+  if [ "$DRY_RUN" -eq 0 ]; then
+    tp_ensure_gh
+    tp_offer_gh_login
+  fi
   tp_detect_login
   tp_detect_protocol
-  if ! command -v gh >/dev/null 2>&1; then
-    tp_warn "The GitHub CLI (gh) is not installed; cloning read-only. Install it from https://cli.github.com to open pull requests."
-  fi
   tp_choose_mode
 
-  echo "Plan (nothing has changed yet):"
+  if [ "$GH_CHANGED" -eq 1 ]; then
+    echo "Plan (no repo has changed yet):"
+  else
+    echo "Plan (nothing has changed yet):"
+  fi
   echo "  Folder:       ${DIR}"
   echo "  Mode:         ${MODE:-not chosen}"
   echo "  Host:         ${OS_NAME:-$HOST_KERNEL} ${HOST_ARCH}${VIRT:+ (virtualization: ${VIRT})}"
@@ -833,6 +1038,7 @@ tp_cmd_setup() {
   else
     echo "  GitHub:       not logged in; read-only clones over https"
   fi
+  [ "$DRY_RUN" -eq 0 ] || tp_gh_plan
   if [ "$DEV_CHECKOUT" != "$DIR/dev" ]; then
     echo "  Note:         this dev checkout (${DEV_CHECKOUT}) is outside the folder; ${DIR}/dev is used from now on."
   fi
@@ -1002,8 +1208,11 @@ tp_cmd_doctor() {
       _dr_hooks=$(git -C "$_dr_path" config --get core.hooksPath 2>/dev/null || true)
       if [ "$_dr_hooks" = .githooks ]; then
         echo "    hooks:      .githooks"
+      elif [ -z "$_dr_hooks" ]; then
+        tp_problem "${_dr_name}: core.hooksPath is unset, expected .githooks (rerun setup)"
       else
-        tp_problem "${_dr_name}: core.hooksPath is ${_dr_hooks:-unset}, expected .githooks (rerun setup)"
+        # A hooks folder of your own is a choice; setup keeps it too.
+        tp_warn "${_dr_name}: core.hooksPath is ${_dr_hooks}, not .githooks; the repo's pre-commit hook (secret scan) does not run"
       fi
     fi
   done
