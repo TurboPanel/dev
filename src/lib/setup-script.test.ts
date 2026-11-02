@@ -603,6 +603,14 @@ describe('setup.sh host checks', () => {
     expect(out).not.toContain('until that lands')
   })
 
+  test('refuses a folder that is itself a git checkout (the old home-folder layout)', () => {
+    mkdirSync(join(work, '.git'), { recursive: true })
+    const { status, out } = run(['--dir', work, '--yes', '--mode', 'vagrant'])
+    expect(status).toBe(1)
+    expect(out).toContain('is a git checkout, not the folder that holds the repos')
+    expect(out).toContain('mv tp-move turbopanel')
+  })
+
   test('direct mode refuses a folder that is not named turbopanel', () => {
     const other = join(root, 'repos')
     const { status, out } = run(['--dir', other, '--yes', '--mode', 'direct'])

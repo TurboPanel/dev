@@ -163,6 +163,11 @@ tp_resolve_dir() {
     "$DEV_CHECKOUT"/*) tp_die "${DIR} is inside the dev checkout ${DEV_CHECKOUT}; pick a folder outside it with --dir." ;;
     *) ;;
   esac
+  # In the old home-folder layout ~/turbopanel is the control plane checkout;
+  # cloning into it would nest a second set of repos inside a repo.
+  if [ -e "$DIR/.git" ]; then
+    tp_die "${DIR} is a git checkout, not the folder that holds the repos. If your repos sit directly in your home folder, move them into a folder named turbopanel first (cd ~ && mkdir tp-move && for r in dev turbopaneld turbopanel ui website .github; do [ ! -e \"\$r\" ] || mv \"\$r\" tp-move/; done && mv tp-move turbopanel), then rerun ~/turbopanel/dev/scripts/setup.sh."
+  fi
 }
 
 # ---------------------------------------------------------------- host facts

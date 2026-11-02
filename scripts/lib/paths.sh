@@ -80,7 +80,7 @@ tp_print_move_repos_hint() {
   printf 'TurboPanel: the repos sit in %s, which is not a folder named turbopanel. Outside the Vagrant guest they belong in one, e.g. ~/turbopanel/<repo>.\n' "$_tp_mh_from" >&2
   # In the old home layout ~/turbopanel is the control plane checkout itself, so
   # gather the repos in a new folder first and rename it last.
-  printf '  Move them:  cd %s && mkdir tp-move && mv dev turbopaneld turbopanel ui website tp-move/ && { [ ! -d .github ] || mv .github tp-move/; } && mv tp-move turbopanel\n' "$_tp_mh_from" >&2
+  printf '  Move them:  cd %s && mkdir tp-move && for r in dev turbopaneld turbopanel ui website .github; do [ ! -e "$r" ] || mv "$r" tp-move/; done && mv tp-move turbopanel\n' "$_tp_mh_from" >&2
   printf '  Then run:   %s/turbopanel/dev/scripts/setup.sh\n' "$_tp_mh_from" >&2
 }
 

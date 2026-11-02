@@ -116,7 +116,7 @@ fi
 if [ -z "${TURBOPANEL_DEV_ROOT:-}" ] && [ ! -e "${DEV_ROOT}/dev" ] &&
   { [ -f "${DEV_HOME}/dev/Vagrantfile" ] || [ -d "${DEV_HOME}/turbopaneld" ]; }; then
   printf 'vm-bootstrap: the repos sit in %s, which is not a folder named turbopanel; they belong in one, e.g. ~/turbopanel/<repo>.\n' "$DEV_HOME" >&2
-  printf '  Move them, as %s:  cd %s && mkdir tp-move && mv dev turbopaneld turbopanel ui website tp-move/ && { [ ! -d .github ] || mv .github tp-move/; } && mv tp-move turbopanel\n' "$DEV_USER" "$DEV_HOME" >&2
+  printf '  Move them, as %s:  cd %s && mkdir tp-move && for r in dev turbopaneld turbopanel ui website .github; do [ ! -e "$r" ] || mv "$r" tp-move/; done && mv tp-move turbopanel\n' "$DEV_USER" "$DEV_HOME" >&2
   printf '  Then run:  %s/turbopanel/dev/scripts/setup.sh\n' "$DEV_HOME" >&2
   exit 1
 fi
