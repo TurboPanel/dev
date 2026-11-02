@@ -32,16 +32,17 @@ function shellEnv(extra: Record<string, string> = {}): NodeJS.ProcessEnv {
   return { PATH: process.env.PATH ?? '/usr/bin:/bin', HOME: scratch, ...extra }
 }
 
+/** Source scripts/lib/paths.sh, run `body`, and return status, stdout and stderr. */
+function pathsSh(body: string, args: string[] = [], env: Record<string, string> = {}) {
+  const result = spawnSync('sh', ['-c', `. "$1"; shift; ${body}`, 'sh', PATHS_SH, ...args], {
+    encoding: 'utf8',
+    env: shellEnv(env),
+  })
+  return { status: result.status, stdout: result.stdout, stderr: result.stderr }
+}
+
 function runShell(value: string): { status: number | null; stderr: string } {
-  const result = spawnSync(
-    'sh',
-    ['-c', '. "$1"; tp_validate_dev_root "$2"', 'sh', PATHS_SH, value],
-    {
-      encoding: 'utf8',
-      env: shellEnv(),
-    }
-  )
-  return { status: result.status, stderr: result.stderr }
+  return pathsSh('tp_validate_dev_root "$1"', [value])
 }
 
 describe('resolveDevRoot', () => {
@@ -131,11 +132,9 @@ describe('tp_validate_dev_root (scripts/lib/paths.sh)', () => {
   })
 
   test('drops trailing slashes from TURBOPANEL_DEV_ROOT when it checks the env', () => {
-    const result = spawnSync(
-      'sh',
-      ['-c', '. "$1"; tp_validate_dev_root && printf %s "$TURBOPANEL_DEV_ROOT"', 'sh', PATHS_SH],
-      { encoding: 'utf8', env: shellEnv({ TURBOPANEL_DEV_ROOT: `${scratch}//` }) }
-    )
+    const result = pathsSh('tp_validate_dev_root && printf %s "$TURBOPANEL_DEV_ROOT"', [], {
+      TURBOPANEL_DEV_ROOT: `${scratch}//`,
+    })
     expect(result.status).toBe(0)
     expect(result.stdout).toBe(scratch)
   })
@@ -188,16 +187,10 @@ describe('tp_load_dev_root_mode_file (scripts/lib/paths.sh)', () => {
   }
 
   function load(dev: string, env: Record<string, string> = {}) {
-    const result = spawnSync(
-      'sh',
-      [
-        '-c',
-        '. "$1"; tp_load_dev_root_mode_file "$2" && printf %s "$TURBOPANEL_DEV_ROOT"',
-        'sh',
-        PATHS_SH,
-        dev,
-      ],
-      { encoding: 'utf8', env: shellEnv(env) }
+    const result = pathsSh(
+      'tp_load_dev_root_mode_file "$1" && printf %s "$TURBOPANEL_DEV_ROOT"',
+      [dev],
+      env
     )
     return { status: result.status, root: result.stdout, stderr: result.stderr }
   }

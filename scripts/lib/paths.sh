@@ -16,6 +16,11 @@ TURBOPANEL_DEV_ROOT=${TURBOPANEL_DEV_ROOT:-$HOME}
 # repos, so when its dev_root names another folder (the checkout was moved)
 # the folder that holds the file wins, with a warning.
 #   tp_load_dev_root_mode_file <dev checkout dir>
+# Print the symlink-free path of an existing folder; prints nothing otherwise.
+tp_physical_dir() {
+  (CDPATH='' cd -P -- "$1" 2>/dev/null && pwd) || true
+}
+
 tp_load_dev_root_mode_file() {
   [ -z "$TP_DEV_ROOT_FROM_ENV" ] || return 0
   _tp_lm_parent=$(CDPATH='' cd -- "$1/.." 2>/dev/null && pwd) || return 0
@@ -23,9 +28,7 @@ tp_load_dev_root_mode_file() {
   [ -f "$_tp_lm_file" ] || return 0
   _tp_lm_root=$(sed -n "s/^dev_root='\(.*\)'\$/\1/p" "$_tp_lm_file" | tail -n 1 | sed "s/'\\\\''/'/g")
   [ -n "$_tp_lm_root" ] || return 0
-  _tp_lm_real_root=$(CDPATH='' cd -P -- "$_tp_lm_root" 2>/dev/null && pwd) || _tp_lm_real_root=
-  _tp_lm_real_parent=$(CDPATH='' cd -P -- "$_tp_lm_parent" && pwd)
-  if [ "$_tp_lm_real_root" = "$_tp_lm_real_parent" ]; then
+  if [ "$(tp_physical_dir "$_tp_lm_root")" = "$(tp_physical_dir "$_tp_lm_parent")" ]; then
     TURBOPANEL_DEV_ROOT=$_tp_lm_root
   else
     printf 'TurboPanel: %s says dev_root=%s, but it sits in %s; using %s (rerun dev/scripts/setup.sh to update it).\n' \

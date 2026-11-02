@@ -9,6 +9,43 @@ const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '../..')
 const SCRIPT = join(REPO_ROOT, 'scripts/vm-bootstrap.sh')
 const SOURCE = readFileSync(SCRIPT, 'utf8')
 
+/**
+ * Run the script as user pat with stubbed system commands. Every command that
+ * would change the machine only records its name, so `changed` says whether
+ * the run got that far. `overrides` replaces a stub body.
+ */
+function runStubbed(
+  overrides: Record<string, string>,
+  env: Record<string, string> = {}
+): { status: number; stderr: string; changed: boolean } {
+  const dir = mkdtempSync(join(tmpdir(), 'vmb-'))
+  const marker = join(dir, 'changed')
+  const stubs: Record<string, string> = {
+    id: 'case "$1" in -u) echo 0 ;; *) echo sudo ;; esac',
+    getent: 'echo "pat:x:1001:1001::/srv/pat:/bin/sh"',
+  }
+  for (const cmd of ['visudo', 'apt-get', 'usermod', 'install', 'cp', 'mktemp', 'runuser']) {
+    stubs[cmd] = `echo ${cmd} >> "${marker}"`
+  }
+  for (const [name, body] of Object.entries({ ...stubs, ...overrides })) {
+    writeFileSync(join(dir, name), `#!/bin/sh\n${body}\n`)
+    chmodSync(join(dir, name), 0o755)
+  }
+  let stderr = ''
+  let status = 0
+  try {
+    execFileSync('sh', [SCRIPT, 'pat'], {
+      env: { PATH: `${dir}:/usr/bin:/bin`, ...env },
+      stdio: 'pipe',
+    })
+  } catch (error) {
+    const failure = error as { status: number; stderr: Buffer }
+    status = failure.status
+    stderr = failure.stderr.toString()
+  }
+  return { status, stderr, changed: existsSync(marker) }
+}
+
 describe('vm-bootstrap.sh', () => {
   test('is an executable POSIX sh script that parses', () => {
     expect(SOURCE.startsWith('#!/bin/sh\n')).toBe(true)
@@ -83,30 +120,10 @@ describe('vm-bootstrap.sh', () => {
   })
 
   test('stops with nothing changed when the sudoers tree is already invalid', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'vmb-'))
-    const marker = join(dir, 'changed')
-    const stub = (name: string, body: string) => {
-      writeFileSync(join(dir, name), `#!/bin/sh\n${body}\n`)
-      chmodSync(join(dir, name), 0o755)
-    }
-    stub('id', 'case "$1" in -u) echo 0 ;; *) echo sudo ;; esac')
-    stub('getent', 'echo "pat:x:1001:1001::/home/pat:/bin/sh"')
-    stub('visudo', 'echo broken >&2; exit 1')
-    for (const cmd of ['apt-get', 'usermod', 'install', 'cp', 'mktemp']) {
-      stub(cmd, `echo ${cmd} >> "${marker}"`)
-    }
-    let stderr = ''
-    let status = 0
-    try {
-      execFileSync('sh', [SCRIPT, 'pat'], { env: { PATH: `${dir}:/usr/bin:/bin` }, stdio: 'pipe' })
-    } catch (error) {
-      const failure = error as { status: number; stderr: Buffer }
-      status = failure.status
-      stderr = failure.stderr.toString()
-    }
+    const { status, stderr, changed } = runStubbed({ visudo: 'echo broken >&2; exit 1' })
     expect(status).toBe(1)
     expect(stderr).toContain('already invalid')
-    expect(existsSync(marker)).toBe(false)
+    expect(changed).toBe(false)
   })
 
   test('clones into TURBOPANEL_DEV_ROOT and prints the console path there', () => {
@@ -121,32 +138,10 @@ describe('vm-bootstrap.sh', () => {
   test.each(['relative/turbopanel', '/srv/my repos', '/srv/a$b', '/srv/../root', '/'])(
     'rejects TURBOPANEL_DEV_ROOT=%s before changing anything',
     (root) => {
-      const dir = mkdtempSync(join(tmpdir(), 'vmb-'))
-      const marker = join(dir, 'changed')
-      const stub = (name: string, body: string) => {
-        writeFileSync(join(dir, name), `#!/bin/sh\n${body}\n`)
-        chmodSync(join(dir, name), 0o755)
-      }
-      stub('id', 'case "$1" in -u) echo 0 ;; *) echo sudo ;; esac')
-      stub('getent', 'echo "pat:x:1001:1001::/srv/pat:/bin/sh"')
-      for (const cmd of ['visudo', 'apt-get', 'usermod', 'install', 'cp', 'mktemp', 'runuser']) {
-        stub(cmd, `echo ${cmd} >> "${marker}"`)
-      }
-      let stderr = ''
-      let status = 0
-      try {
-        execFileSync('sh', [SCRIPT, 'pat'], {
-          env: { PATH: `${dir}:/usr/bin:/bin`, TURBOPANEL_DEV_ROOT: root },
-          stdio: 'pipe',
-        })
-      } catch (error) {
-        const failure = error as { status: number; stderr: Buffer }
-        status = failure.status
-        stderr = failure.stderr.toString()
-      }
+      const { status, stderr, changed } = runStubbed({}, { TURBOPANEL_DEV_ROOT: root })
       expect(status).toBe(1)
       expect(stderr).toContain('TURBOPANEL_DEV_ROOT=')
-      expect(existsSync(marker)).toBe(false)
+      expect(changed).toBe(false)
     }
   )
 
