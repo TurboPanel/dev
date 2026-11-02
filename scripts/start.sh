@@ -126,7 +126,8 @@ tp_start_main() {
       *) set -- "$@" "$_sm_arg" ;;
     esac
   done
-  if [ "$#" -eq 0 ] || [ "$1" != "$TP_START_END" ]; then
+  _sm_end=${1-}
+  if [ "$#" -eq 0 ] || [ "$_sm_end" != "$TP_START_END" ]; then
     tp_start_die "this script looks cut short (an interrupted download?); nothing ran. Download it again."
   fi
   shift
