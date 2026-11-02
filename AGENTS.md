@@ -14,7 +14,7 @@ The nearest `AGENTS.md` to the file you edit applies on top of this one:
 - [`scripts/AGENTS.md`](./scripts/AGENTS.md) — editing shell scripts: the shell libraries and POSIX `sh` rules.
 - [`orchestration/AGENTS.md`](./orchestration/AGENTS.md) — editing the Ansible dev overlay or the development Caddyfile.
 - [`.github/AGENTS.md`](./.github/AGENTS.md) — editing workflows, composite actions or rulesets: release promotion (including the break-glass ruleset route), Sonar, dependency advisories.
-- [`docs/dev-environment.md`](./docs/dev-environment.md) — the Vagrant guest, filesystem layout, fresh-clone steps and Vagrantfile provisioning.
+- [`docs/dev-environment.md`](./docs/dev-environment.md) — the Vagrant guest, filesystem layout, fresh-clone steps and Vagrantfile provisioning, and the Direct VM path (`scripts/vm-bootstrap.sh`) for Proxmox or bare metal without Vagrant.
 - [`docs/testing.md`](./docs/testing.md) — test details: cross-repo pin tests, secret scan, command table, pre-commit hook, gate matrix.
 
 **This repo runs on Node, not Deno.** In dev the console bootstraps

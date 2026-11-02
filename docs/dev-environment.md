@@ -66,7 +66,7 @@ SAN is refused when the install command is minted.
 ├── caddy/current/caddy     # …
 └── …                       # uv/python/ansible (orchestration bootstrap)
 
-/etc/turbopanel/          # config (dev-user-owned): daemon.env, instance/, rabbitmq/, …
+/etc/turbopanel/          # config (dev-user-owned after the first converge; root-owned before, on a Direct VM): daemon.env, instance/, rabbitmq/, …
 /var/lib/turbopanel/      # persistent state (dev-user-owned)
 /var/log/turbopanel/      # service logs (dev-user-owned)
 /run/turbopanel/          # runtime sockets (dev-user-owned)
@@ -83,6 +83,48 @@ Node is a pinned `nodejs.org` tarball vendored under `/opt/turbopanel/vendor/nod
 3. Inside the guest: `dev/console` → prereqs, pinned Node, `pnpm install`, TUI launch (exports `TURBOPANEL_MODE=development` and `TURBOPANEL_DEV_ROOT`; a `TURBOPANEL_<DIR>_REPO` override is forwarded only when you set one).
 4. **Bootstrap / converge** → on launch the console uses `resolveDevEnvStartupPlan` (`src/lib/dev-env-readiness.ts`): it **auto-bootstraps** (daemon install → systemd unit) when prerequisites are missing; after bootstrap finishes it opens the **optional services** picker, then converges (`if-needed`). When the host is already installed, launch sits **idle** with no auto-converge; use Developer → **Converge / re-converge development environment**. The picker defaults to UI, website, Mailpit and Drizzle Studio on, and Redis Insight and the Stripe CLI forwarder off; idle for 5 seconds continues with the current selection. Drizzle Studio and Mailpit stay listed on the Services screen in gray when not enabled: select the row and press **E**, or use Developer → **Optional services…**, which also starts and stops optional units at any time without a full converge. The daemon checkout, Stripe forwarder and tier catalogue are described under "Daemon Checkout, Stripe Forwarder and Tier Catalogue" below; the console internals are in [`src/AGENTS.md`](../src/AGENTS.md).
 5. On the **host**, open `https://localhost:8443`; edit source in the host sibling checkouts (mounted into the guest). Prefer a LAN hostname when attaching remote test machines.
+
+## Direct VM (Proxmox or Bare Metal)
+
+Vagrant stays fully supported. This path is for a plain Debian 13 machine you already run, such as a Proxmox VM or a spare computer, where Vagrant is not wanted. The Developer Console, the daemon install and the Ansible dev overlay all work under any user name you pick: they read it from the logged-in user (`tp_resolve_dev_identity()`) and keep the repos under `$HOME` (`TURBOPANEL_DEV_ROOT`). Nothing needs a `vagrant` account.
+
+### Prerequisites
+
+- Debian 13 (Trixie), a full virtual machine or bare metal. LXC containers are not supported (see below).
+- 4 or more CPUs, 8 GB or more RAM, 40 GB or more disk.
+- A bridged LAN network card, so other machines can reach the VM by name or address.
+- A normal (non-root) user account for development. Any name works, but Debian's `adduser` rejects names with a dot by default: avoid dots, or create the account with `useradd -m` or `adduser --allow-bad-names`.
+- Passwordless sudo for that user. This is a plain requirement; the bootstrap script sets it up (sudo group plus a `NOPASSWD` rule checked with `visudo -c`) and there is no password-prompt fallback.
+- A GitHub SSH key available to that user (the repos are cloned over SSH), either a key created on the VM or your own through `ssh -A`.
+
+### Steps
+
+1. Install Debian 13 and create your user. Log in as that user. If you use cloud-init, [`scripts/vm-bootstrap.cloud-init.yaml`](../scripts/vm-bootstrap.cloud-init.yaml) is an example that runs the setup script (step 3) on first boot. It does not clone the repos, because that needs your GitHub key; clone them afterwards.
+2. Get the script. A fresh install may lack `git` and `curl`, so first run `su -c 'apt-get install -y git curl ca-certificates'` (or `sudo apt-get install -y git curl ca-certificates`). Then either `git clone git@github.com:TurboPanel/dev.git ~/dev` (the script is then `~/dev/scripts/vm-bootstrap.sh`) or, when the VM has no GitHub key yet, `curl -fsSL -o ~/vm-bootstrap.sh https://raw.githubusercontent.com/TurboPanel/dev/trunk/scripts/vm-bootstrap.sh` (the script is then `~/vm-bootstrap.sh`). Below, `SCRIPT` means whichever path you have.
+3. Run it as root through sudo: `su -c 'sh SCRIPT <you>'` on a fresh install without sudo (use the full path, not `~`), or `sudo sh SCRIPT`. It installs `sudo`, `curl`, `git` and the base packages, adds you to the `sudo` group, writes a per-user rule `/etc/sudoers.d/turbopanel-dev-nopasswd-uid<N>` (named after your numeric user id, so several users never collide) and `/etc/profile.d/turbopanel-dev.sh` (`TURBOPANEL_MODE=development`), and prints the next steps. Options:
+   - `--upgrade` runs an apt upgrade first (reboot afterwards if it says so).
+   - `--swap` adds an 8 GiB swap file when the disk has room.
+   - `--lan-alias NAME` (repeatable) writes the extra DNS names the VM should answer to into `/etc/turbopanel/dev-forward-hosts`, merged with any names already there. Only names the VM cannot see on its own network interfaces, such as a DNS alias, need this.
+   - `--clone` clones `dev`, `turbopaneld`, `turbopanel`, `ui`, `website` and `.github` into your home over SSH and skips any path that already exists, with a message. `sudo` normally drops your forwarded SSH agent. Try `sudo --preserve-env=SSH_AUTH_SOCK sh SCRIPT --clone` when you rely on `ssh -A`; if your sudo policy refuses that, run the script without `--clone` and clone the repos yourself as your own user. The first clone asks you to trust the github.com host key; check it yourself.
+   - The script is safe to run again.
+   - Sudo matches rules by user name. The script removes its own rule files whose user no longer exists or now has a different user id. If you delete a dev user by hand, also delete `/etc/sudoers.d/turbopanel-dev-nopasswd-uid<N>`, or a new account with the same name could inherit passwordless sudo.
+4. Log out and back in so the `sudo` group applies, then run `~/dev/console`. The first launch installs the pinned Node and pnpm, then bootstraps the platform as described in "Fresh-Clone → Working Dev".
+
+### Editing Model
+
+The repos live on the VM, not on your laptop. Edit them with an editor that works over SSH, for example VS Code Remote-SSH to the VM, and commit from the VM.
+
+### Attaching Remote Test Machines
+
+Give the VM a stable LAN name (a DNS record or a router reservation) and add it with `--lan-alias` if the VM cannot see that name on its own interfaces. Use that name, not `localhost`, when you add a server to the panel from another machine. The panel is on port 8443 of the VM.
+
+### Running the Test Suites
+
+Run everything on the VM itself, with the vendored runtimes first on the path once `./console` has installed them (`export PATH="/opt/turbopanel/vendor/node/current/bin:/opt/turbopanel/vendor/deno/current:$PATH"`): `pnpm test` in `~/dev` and `~/ui`, `deno task test` in `~/turbopaneld`, `pnpm test:do` in `~/turbopanel`, or `./scripts/ci-verify.sh` for all of them. `ci-verify.sh` only re-runs through Vagrant when the vendored Node is missing, so run `./console` once first.
+
+### Why Not LXC
+
+Docker needs nesting inside a container, and the setup writes a swap file, firewall rules and sysctl settings that a container usually restricts. Use a full VM.
 
 ## Vagrantfile Responsibilities
 
