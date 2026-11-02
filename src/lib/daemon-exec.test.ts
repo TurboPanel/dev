@@ -457,6 +457,42 @@ describe("ensureBootstrapDeno", () => {
     ]);
   });
 
+  it("hides the direct attempt's errors when the sudo retry succeeds", async () => {
+    installSpawnMocks({
+      hostDeno: null,
+      writableRuntimes: true,
+      executable: new Set([PINNED_DENO, VENDORED_DENO_BIN]),
+    });
+    mockedRunCaptured.mockImplementation(async (cmd, onLine) => {
+      if (Array.isArray(cmd) && cmd[0] === "sudo") return 0;
+      onLine?.("ln: failed to create symbolic link: Permission denied");
+      return 1;
+    });
+    const onOutput = vi.fn();
+    await ensureBootstrapDeno(onOutput);
+    expect(onOutput).not.toHaveBeenCalledWith(
+      expect.stringContaining("Permission denied"),
+    );
+  });
+
+  it("shows the direct attempt's errors when the sudo retry fails too", async () => {
+    installSpawnMocks({
+      hostDeno: null,
+      writableRuntimes: true,
+      executable: new Set([PINNED_DENO]),
+    });
+    mockedRunCaptured.mockImplementation(async (cmd, onLine) => {
+      if (Array.isArray(cmd) && cmd[0] === "sudo") return 1;
+      onLine?.("ln: failed to create symbolic link: Permission denied");
+      return 1;
+    });
+    const onOutput = vi.fn();
+    await ensureBootstrapDeno(onOutput);
+    expect(onOutput).toHaveBeenCalledWith(
+      expect.stringContaining("Permission denied"),
+    );
+  });
+
   it("mentions a CDN retry when the download script exits non-zero", async () => {
     installSpawnMocks({ hostDeno: null, python3: true });
     mockedRunCaptured.mockResolvedValue(1);

@@ -95,13 +95,28 @@ async function runRuntimesScript(
   script: string,
   onOutput?: InstallOutputHandler,
 ): Promise<number> {
+  // The unprivileged try is speculative: RUNTIMES_DIR can be writable while a
+  // subfolder is not (deno-runtime leaves vendor/deno/bin root-owned until the
+  // dev ownership pass). Hold its output so a failure the sudo retry fixes does
+  // not show up as an error; replay it only when the retry fails too.
+  const held: string[] = [];
   if (runtimesDirWritable()) {
-    const direct = await runCaptured(["bash", "-c", script], onOutput);
+    const direct = await runCaptured(["bash", "-c", script], (line) => {
+      held.push(line);
+    });
     if (direct === 0) {
+      held.forEach((line) => onOutput?.(line));
       return 0;
     }
   }
-  return await runCaptured(["sudo", "-n", "bash", "-c", script], onOutput);
+  const code = await runCaptured(
+    ["sudo", "-n", "bash", "-c", script],
+    onOutput,
+  );
+  if (code !== 0) {
+    held.forEach((line) => onOutput?.(line));
+  }
+  return code;
 }
 
 /** Point `current` / `bin/deno` at the pinned version directory. */
