@@ -72,13 +72,28 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 PASSWD_LINE=$(getent passwd "$DEV_USER" 2>/dev/null) || {
-  printf 'vm-bootstrap: user %s does not exist; create it first (adduser %s).\n' "$DEV_USER" "$DEV_USER" >&2
+  printf 'vm-bootstrap: user %s does not exist; create it first (useradd -m -s /bin/bash %s).\n' "$DEV_USER" "$DEV_USER" >&2
   exit 1
 }
 DEV_USER=$(printf '%s\n' "$PASSWD_LINE" | cut -d: -f1)
 DEV_HOME=$(printf '%s\n' "$PASSWD_LINE" | cut -d: -f6)
 
+DEV_UID=$(printf '%s\n' "$PASSWD_LINE" | cut -d: -f3)
+
 export DEBIAN_FRONTEND=noninteractive
+
+# Check the whole sudoers tree before anything else is changed, so a broken
+# configuration stops the run with nothing touched. visudo ships with sudo; on a
+# minimal image that has no sudo yet, installing it is the only step taken first.
+if ! command -v visudo >/dev/null 2>&1; then
+  echo ">>> visudo is missing; installing sudo first (the only change before the sudoers check)"
+  apt-get -o DPkg::Lock::Timeout=300 update -qq
+  apt-get -o DPkg::Lock::Timeout=300 install -y sudo
+fi
+if ! CHECK_OUT=$(visudo -c 2>&1); then
+  printf 'vm-bootstrap: the existing sudoers configuration is already invalid; no users, groups or files were changed.\n%s\n' "$CHECK_OUT" >&2
+  exit 1
+fi
 
 echo ">>> Installing base packages"
 apt-get -o DPkg::Lock::Timeout=300 update -qq
@@ -102,13 +117,21 @@ fi
 # One file per user so a second user never replaces the first user's rule. The
 # file is named after the numeric uid, which is unique, so names such as bob.smith
 # and bob_smith cannot collide (sudo also ignores names with a dot in them).
-DEV_UID=$(printf '%s\n' "$PASSWD_LINE" | cut -d: -f3)
 SUDOERS=/etc/sudoers.d/turbopanel-dev-nopasswd-uid${DEV_UID}
-# Do not touch anything while the sudoers tree is already broken; that is not ours.
-if ! CHECK_OUT=$(visudo -c 2>&1); then
-  printf 'vm-bootstrap: the existing sudoers configuration is already invalid; nothing was changed.\n%s\n' "$CHECK_OUT" >&2
-  exit 1
-fi
+# sudo matches rules by name, so a rule file whose recorded user is gone, or now
+# has another uid, would let a recreated account of that name inherit NOPASSWD.
+# Remove our own stale files (never anyone else's).
+for OLD in /etc/sudoers.d/turbopanel-dev-nopasswd-uid*; do
+  [ -f "$OLD" ] || continue
+  [ "$OLD" != "$SUDOERS" ] || continue
+  OLD_USER=$(sed -n 's/^# TurboPanel development passwordless sudo for \([^ ]*\) (uid \([0-9]*\))$/\1/p' "$OLD")
+  OLD_UID=$(sed -n 's/^# TurboPanel development passwordless sudo for \([^ ]*\) (uid \([0-9]*\))$/\2/p' "$OLD")
+  [ -n "$OLD_USER" ] || continue
+  if [ "$(getent passwd "$OLD_USER" | cut -d: -f3)" != "$OLD_UID" ]; then
+    echo ">>> Removing stale sudo rule ${OLD} (${OLD_USER} with uid ${OLD_UID} no longer exists)"
+    rm -f "$OLD"
+  fi
+done
 TMP=$(mktemp)
 BACKUP=$(mktemp)
 cat >"$TMP" <<EOT

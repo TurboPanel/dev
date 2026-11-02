@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process'
-import { readFileSync, statSync } from 'node:fs'
+import { chmodSync, existsSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, test } from 'vitest'
@@ -69,9 +70,43 @@ describe('vm-bootstrap.sh', () => {
     )
   })
 
-  test('uses an apt lock timeout and checks sudoers before changing it', () => {
+  test('uses an apt lock timeout', () => {
     expect(SOURCE).toContain('DPkg::Lock::Timeout=300')
-    expect(SOURCE.indexOf('visudo -c 2>&1')).toBeLessThan(SOURCE.indexOf('install -m 0440'))
+  })
+
+  test('checks the whole sudoers tree before any package, group or file change', () => {
+    const check = SOURCE.indexOf('visudo -c 2>&1')
+    expect(check).toBeGreaterThan(0)
+    expect(check).toBeLessThan(SOURCE.indexOf('install -y sudo curl'))
+    expect(check).toBeLessThan(SOURCE.indexOf('usermod -aG'))
+    expect(check).toBeLessThan(SOURCE.indexOf('install -m 0440'))
+  })
+
+  test('stops with nothing changed when the sudoers tree is already invalid', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'vmb-'))
+    const marker = join(dir, 'changed')
+    const stub = (name: string, body: string) => {
+      writeFileSync(join(dir, name), `#!/bin/sh\n${body}\n`)
+      chmodSync(join(dir, name), 0o755)
+    }
+    stub('id', 'case "$1" in -u) echo 0 ;; *) echo sudo ;; esac')
+    stub('getent', 'echo "pat:x:1001:1001::/home/pat:/bin/sh"')
+    stub('visudo', 'echo broken >&2; exit 1')
+    for (const cmd of ['apt-get', 'usermod', 'install', 'cp', 'mktemp']) {
+      stub(cmd, `echo ${cmd} >> "${marker}"`)
+    }
+    let stderr = ''
+    let status = 0
+    try {
+      execFileSync('sh', [SCRIPT, 'pat'], { env: { PATH: `${dir}:/usr/bin:/bin` }, stdio: 'pipe' })
+    } catch (error) {
+      const failure = error as { status: number; stderr: Buffer }
+      status = failure.status
+      stderr = failure.stderr.toString()
+    }
+    expect(status).toBe(1)
+    expect(stderr).toContain('already invalid')
+    expect(existsSync(marker)).toBe(false)
   })
 
   test('rejects an option that needs a value', () => {
