@@ -1,6 +1,12 @@
 import { spawn } from 'node:child_process'
 import { bootstrapOrchestrationCommand, ensureBootstrapDeno } from './daemon-exec.ts'
 import {
+  BootstrapOutputCollector,
+  formatBootstrapFailure,
+  writeBootstrapLog,
+} from './bootstrap-failure.ts'
+import {
+  CONSOLE_BOOTSTRAP_LOG,
   daemonRepoPath,
   DAEMON_SYSTEMD_UNIT,
   PYTHON_RUNTIME_DIR,
@@ -74,19 +80,27 @@ export async function bootstrapOrchestration(
     })
 
     let stdoutBuffer = ''
-    let stdoutTail = ''
     let stderrBuffer = ''
-    let stderrTail = ''
+    const collected = new BootstrapOutputCollector()
 
     const handleLine = (line: string) => {
       const trimmed = sanitizeInstallOutput(line).trim()
       if (trimmed.length === 0) return
-      stdoutTail = trimmed
       try {
         onEvent(JSON.parse(trimmed))
+        return
       } catch {
-        onOutput?.(trimmed)
+        // not an event: plain output
       }
+      collected.add('stdout', trimmed)
+      onOutput?.(trimmed)
+    }
+
+    const handleStderrLine = (line: string) => {
+      const clean = sanitizeInstallOutput(line)
+      if (clean.trim().length === 0) return
+      collected.add('stderr', clean)
+      onOutput?.(clean.trim())
     }
 
     child.stdout.on('data', (chunk: Buffer | string) => {
@@ -101,15 +115,13 @@ export async function bootstrapOrchestration(
     })
 
     child.stderr.on('data', (chunk: Buffer | string) => {
-      const text = chunk.toString()
-      stderrBuffer += text
-      const lines = text
-        .split('\n')
-        .map((line) => line.trim())
-        .filter(Boolean)
-      for (const line of lines) {
-        stderrTail = line
-        onOutput?.(line)
+      stderrBuffer += chunk.toString()
+      let newline = stderrBuffer.indexOf('\n')
+      while (newline >= 0) {
+        const line = stderrBuffer.slice(0, newline)
+        stderrBuffer = stderrBuffer.slice(newline + 1)
+        handleStderrLine(line)
+        newline = stderrBuffer.indexOf('\n')
       }
     })
 
@@ -117,28 +129,25 @@ export async function bootstrapOrchestration(
       reject(error)
     })
 
-    child.on('close', (code) => {
-      if (stdoutBuffer.trim().length > 0) {
-        handleLine(stdoutBuffer)
-      }
+    child.on('close', (code, signal) => {
+      if (stdoutBuffer.trim().length > 0) handleLine(stdoutBuffer)
+      if (stderrBuffer.trim().length > 0) handleStderrLine(stderrBuffer)
       if (code === 0) {
         resolve()
         return
       }
-
-      if (!stderrTail && stderrBuffer.trim().length > 0) {
-        const lines = stderrBuffer
-          .trim()
-          .split('\n')
-          .map((line) => line.trim())
-          .filter(Boolean)
-        if (lines.length > 0) {
-          stderrTail = lines.at(-1)!
-        }
-      }
-
-      const message = stderrTail || stdoutTail || 'Bootstrap orchestration failed'
-      reject(new Error(message))
+      void writeBootstrapLog(CONSOLE_BOOTSTRAP_LOG, collected.lines()).then((logPath) => {
+        reject(
+          new Error(
+            formatBootstrapFailure({
+              failure: collected.failureMessage(),
+              code,
+              signal,
+              logPath,
+            })
+          )
+        )
+      })
     })
   })
 }

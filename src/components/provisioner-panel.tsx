@@ -29,7 +29,8 @@ import { resetDevEnvironment } from '../lib/reset-dev-environment.ts'
 import { resetDevDatabase } from '../lib/reset-dev-database.ts'
 import { saveDevTierCatalogue } from '../lib/save-dev-tier-catalogue.ts'
 
-const OUTPUT_LOG_ROWS = 6
+// Rows of output kept for the failure view (shown only when a step fails).
+const OUTPUT_LOG_ROWS = 20
 const SYNC_OUTPUT_LOG_ROWS = 200
 
 function truncateLine(text: string, maxWidth: number): string {

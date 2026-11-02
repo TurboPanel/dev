@@ -218,6 +218,8 @@ export function consoleLogDir(): string {
 export const CONSOLE_LOG_DIR = consoleLogDir()
 export const CONVERGE_SERVICE_LOG_DIR = `${CONSOLE_LOG_DIR}/converge`
 export const CONSOLE_LAST_TASK_ERROR_LOG = `${CONSOLE_LOG_DIR}/last-task-error.log`
+/** Full output of the last orchestration bootstrap (overwritten each run). */
+export const CONSOLE_BOOTSTRAP_LOG = `${CONSOLE_LOG_DIR}/bootstrap-orchestration.log`
 /** Per-run Developer → Run tests transcripts. */
 export const CONSOLE_TEST_RUN_LOG_DIR = `${CONSOLE_LOG_DIR}/test-runs`
 /** Latest Run tests transcript (overwritten each run). */
