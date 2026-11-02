@@ -18,6 +18,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'vitest'
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '../..')
 const SCRIPT = join(REPO_ROOT, 'scripts/setup.sh')
+const PRIVILEGES = join(REPO_ROOT, 'scripts/lib/privileges.sh')
 const SOURCE = readFileSync(SCRIPT, 'utf8')
 const REPOS = ['dev', 'turbopanel', 'turbopaneld', 'ui', 'website', '.github']
 
@@ -31,6 +32,14 @@ forks="$FAKE_FIXTURE/forks.txt"
 case "$1 $2" in
   "auth token" | "auth status") [ -n "$FAKE_GH_LOGIN" ] || exit 1; exit 0 ;;
   "auth setup-git") exit 0 ;;
+  "auth login")
+    echo "login prompts disabled: $GH_PROMPT_DISABLED" >> "$FAKE_GH_LOG"
+    if [ -n "$FAKE_GH_LOGIN_FAILS" ]; then
+      echo "could not prompt: unexpected escape sequence from terminal: ['\\x1b' ']']" >&2
+      exit 1
+    fi
+    echo "! First copy your one-time code: ABCD-1234"
+    exit 0 ;;
   "config get") echo "$FAKE_GH_PROTOCOL"; exit 0 ;;
   "repo fork")
     [ -z "$FAKE_GH_API_DOWN" ] || exit 1
@@ -453,7 +462,7 @@ describe('setup.sh roles', () => {
     expect(status, out).toBe(0)
     expect(out).toContain('gh auth login')
     expect(out).toContain(
-      "You are not signed in to GitHub, so the repos are read-only. Run 'gh auth login' and rerun this script."
+      "You are not signed in to GitHub, so the repos are read-only. Run 'gh auth login --hostname github.com --git-protocol https --web --scopes workflow' and rerun this script."
     )
     expect(ghLog()).not.toContain('repo fork')
     expect(ghLog()).not.toContain('setup-git')
@@ -747,7 +756,9 @@ describe('setup.sh GitHub CLI', () => {
     expect(out).toContain('Installed gh version 9.9.9')
     expect(readdirSync(join(root, 'tmp'))).toEqual([])
     expect(ghLog()).not.toContain('auth login')
-    expect(out).toContain("Run 'gh auth login'")
+    expect(out).toContain(
+      "Run 'gh auth login --hostname github.com --git-protocol https --web --scopes workflow'"
+    )
   })
 
   test('a signing key that does not match the published fingerprints stops the install', () => {
@@ -808,7 +819,9 @@ describe('setup.sh GitHub CLI', () => {
 
   test('a dry run with --yes says the login is left to you', () => {
     const { out } = run(['--dir', work, '--dry-run', '--yes'], { FAKE_GH_LOGIN: '' })
-    expect(out).toContain("--yes never runs 'gh auth login'")
+    expect(out).toContain(
+      "--yes never runs 'gh auth login', run it yourself: gh auth login --hostname github.com --git-protocol https --web --scopes workflow"
+    )
     expect(ghLog()).not.toContain('auth login')
   })
 
@@ -922,7 +935,9 @@ describe('setup.sh fork', () => {
     setup({ FAKE_GH_PUSH: 'false' })
     const { status, out } = fork(['ui'], { FAKE_GH_LOGIN: '' })
     expect(status).toBe(1)
-    expect(out).toContain("you are not signed in to GitHub; run 'gh auth login'")
+    expect(out).toContain(
+      "you are not signed in to GitHub; run 'gh auth login --hostname github.com --git-protocol https --web --scopes workflow' in a plain SSH terminal"
+    )
     expect(git(join(work, 'ui'), 'remote')).toBe('origin')
   })
 
@@ -1069,5 +1084,79 @@ describe('setup.sh status and doctor', () => {
     const { status, out } = run(['doctor', '--dir', work])
     expect(status, out).toBe(0)
     expect(out).toContain('No problems found.')
+  })
+})
+
+// util-linux script(1) gives setup.sh a real terminal, so the login offer and
+// the questions run as they do for a person. Skipped where it is missing.
+const hasUtilLinuxScript =
+  spawnSync('script', ['--version'], { encoding: 'utf8' }).stdout?.includes('util-linux') ?? false
+
+describe.skipIf(!hasUtilLinuxScript)('setup.sh GitHub login on a terminal', () => {
+  const onTty = (input: string, extra: Env = {}) => {
+    const result = spawnSync('script', ['-qec', 'sh "$TP_SETUP" --dir "$TP_WORK"', '/dev/null'], {
+      encoding: 'utf8',
+      env: baseEnv({ SHELL: '/bin/sh', TP_SETUP: SCRIPT, TP_WORK: work, ...extra }),
+      input,
+      timeout: 60_000,
+    })
+    return { status: result.status, out: `${result.stdout}${result.stderr}` }
+  }
+
+  test('gh runs with every question answered by flags and no prompts', () => {
+    const { status, out } = onTty('y\n1\ny\n', { FAKE_GH_LOGIN: '' })
+    expect(status, out).toBe(0)
+    expect(ghLog()).toContain(
+      'gh auth login --hostname github.com --git-protocol https --web --scopes workflow'
+    )
+    expect(ghLog()).toContain('login prompts disabled: 1')
+    expect(out).toContain('First copy your one-time code')
+  })
+
+  test('a login that fails like a terminal answering late never stops setup', () => {
+    const { status, out } = onTty('y\n1\ny\n', { FAKE_GH_LOGIN: '', FAKE_GH_LOGIN_FAILS: '1' })
+    expect(status, out).toBe(0)
+    expect(out).toContain('could not prompt: unexpected escape sequence from terminal')
+    expect(out).toContain('gh auth login did not finish; setup goes on with read-only clones.')
+    expect(out).toContain(
+      'run this in a plain SSH terminal (it may ask a question or two there), then rerun this script:'
+    )
+    expect(out).toContain(
+      '    gh auth login --hostname github.com --git-protocol https --web --scopes workflow'
+    )
+    expect(out).toContain('How do you want to run TurboPanel?')
+    for (const repo of REPOS) {
+      expect(git(join(work, repo), 'remote')).toBe('origin')
+    }
+    expect(modeFile()).toContain("role_ui='readonly'")
+  })
+
+  test('an earlier ssh choice is kept and no key is generated', () => {
+    const { status, out } = onTty('y\n1\ny\n', { FAKE_GH_LOGIN: '', FAKE_GH_PROTOCOL: 'ssh' })
+    expect(status, out).toBe(0)
+    expect(ghLog()).toContain(
+      'gh auth login --hostname github.com --git-protocol ssh --web --scopes workflow --skip-ssh-key'
+    )
+  })
+})
+
+describe('terminal replies in typed answers', () => {
+  const strip = (value: string) =>
+    execFileSync('sh', ['-c', '. "$1"; tp_strip_terminal_replies "$2"', 'sh', PRIVILEGES, value], {
+      encoding: 'utf8',
+    })
+
+  test.each([
+    ['y', 'y'],
+    ['\x1b]11;rgb:0000/0000/0000\x1b\\y', 'y'],
+    ['11;rgb:0000/0000/0000\x1b\\Y', 'Y'],
+    ['\x1b]11;rgb:1/2/3\x07n', 'n'],
+    ['\x1b[1;1R1', '1'],
+    ['\x1b]11;rgb:0000/0000/0000', ''],
+    ['\x1b]11;rgb:0000/0000/0000y', 'y'],
+    ['11;rgb:0000/0000/00001', '1'],
+    ['\x1b]11;rgb:00/00/001', '1'],
+  ])('%j reads as %j', (typed, answer) => {
+    expect(strip(typed)).toBe(answer)
   })
 })

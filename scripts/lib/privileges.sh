@@ -49,7 +49,7 @@ tp_read_tty_yn() {
     printf '%s [y/N]: ' "$_rty_prompt" >/dev/tty
   fi
   IFS= read -r _rty_answer </dev/tty || true
-  _rty_answer=$(tp_trim_whitespace "$_rty_answer")
+  _rty_answer=$(tp_trim_whitespace "$(tp_strip_terminal_replies "$_rty_answer")")
   case $_rty_answer in
     y|Y|yes|Yes|YES) return 0 ;;
     n|N|no|No|NO) return 1 ;;
@@ -59,6 +59,24 @@ tp_read_tty_yn() {
       ;;
     *) return 1 ;;
   esac
+}
+
+# Drop terminal replies from a typed answer. Some terminals answer a program's
+# colour or cursor query late (ESC ] ... ESC \ or BEL, ESC [ ... R); the reply
+# lands in the input and would be read in front of the next answer.
+tp_strip_terminal_replies() {
+  _tsr=$1
+  _tsr_esc=$(printf '\033')
+  _tsr_bel=$(printf '\007')
+  _tsr_h='[0-9A-Fa-f]'
+  # A complete reply ends in ST (ESC \) or BEL: drop everything up to it. A
+  # colour reply cut off before its end (with or without its ESC ]) is
+  # dropped by its rgb:RRRR/GGGG/BBBB (or rgb:RR/GG/BB) shape, so an answer
+  # typed right after it survives. Cursor replies and stray ESCs go last.
+  printf '%s' "$_tsr" | sed -e "s/.*${_tsr_esc}\\\\//" -e "s/.*${_tsr_bel}//" \
+    -e "s/\\(${_tsr_esc}\\]\\)\\{0,1\\}[0-9]*;rgb:${_tsr_h}\\{4\\}\\/${_tsr_h}\\{4\\}\\/${_tsr_h}\\{4\\}//g" \
+    -e "s/\\(${_tsr_esc}\\]\\)\\{0,1\\}[0-9]*;rgb:${_tsr_h}\\{2\\}\\/${_tsr_h}\\{2\\}\\/${_tsr_h}\\{2\\}//g" \
+    -e "s/${_tsr_esc}\\[[0-9;?]*[A-Za-z]//g" -e "s/${_tsr_esc}//g"
 }
 
 tp_trim_whitespace() {
