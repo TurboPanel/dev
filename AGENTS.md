@@ -127,7 +127,7 @@ Test details (pin tests, secret scan, command table, pre-commit hook, gate matri
 - Do not reintroduce `deno.json`/`deno.lock` to this repo or use Deno to run the console — this repo is Node/pnpm/Vite.
 - Do not add Deno installation or upgrade logic to `./console` or `scripts/lib/runtime.sh` — development Deno is resolved from host PATH when present and otherwise auto-vendored by the orchestration path (`ensureBootstrapDeno` / `ensureOrchestrationDenoBin`); production Deno remains platform-managed. Keep `./console` and `scripts/lib/runtime.sh` Node-only.
 - Contributor setup is `scripts/setup.sh`, fetched by cloning `dev` and reading it first. Do not add a `curl | sh` installer or a hosted installer page for it; docs live at turbopanel.io.
-- Repo cloning on the editing machine belongs in `scripts/setup.sh` only; inside the guest the TUI (`src/lib/platform-install.ts`) clones nothing but a missing daemon checkout.
+- Repo cloning on the editing machine belongs in `scripts/setup.sh`. The one stated exception is `scripts/vm-bootstrap.sh --clone` (root-run, SSH, for a direct VM prepared on its own); inside the guest the TUI (`src/lib/platform-install.ts`) clones nothing but a missing daemon checkout.
 - Do not hardcode developer UID/GID — always read from `tp_resolve_dev_identity()` / `tp_require_dev_identity()` in shell scripts.
 - Do not reintroduce `pull.sh`.
 - Platform repos live under **`$HOME`** (via `TURBOPANEL_DEV_ROOT`; `TURBOPANEL_<DIR>_REPO` only as an explicit override) — do not clone into `/opt/turbopanel/platform`.

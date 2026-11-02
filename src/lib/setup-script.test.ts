@@ -21,28 +21,45 @@ const SOURCE = readFileSync(SCRIPT, 'utf8')
 const REPOS = ['dev', 'turbopanel', 'turbopaneld', 'ui', 'website', '.github']
 
 // A fake gh driven by environment variables. It never talks to GitHub: forks
-// are bare clones inside the fixture folder.
+// are bare clones inside the fixture folder, listed in forks.txt as
+// "<repo> <owner>/<name>". FAKE_GH_API_DOWN makes every API call fail.
 const FAKE_GH = `#!/bin/sh
 echo "gh $*" >> "$FAKE_GH_LOG"
+forks="$FAKE_FIXTURE/forks.txt"
 case "$1 $2" in
-  "auth status") [ -n "$FAKE_GH_LOGIN" ] || exit 1; exit 0 ;;
+  "auth token" | "auth status") [ -n "$FAKE_GH_LOGIN" ] || exit 1; exit 0 ;;
   "auth setup-git") exit 0 ;;
   "config get") echo "$FAKE_GH_PROTOCOL"; exit 0 ;;
   "repo fork")
+    [ -z "$FAKE_GH_API_DOWN" ] || exit 1
+    [ -z "$FAKE_GH_FORK_NOOP" ] || exit 0
     repo=\${3#TurboPanel/}
     git clone --quiet --bare "$FAKE_FIXTURE/TurboPanel/$repo.git" "$FAKE_FIXTURE/$FAKE_GH_LOGIN/$repo.git"
+    echo "$repo $FAKE_GH_LOGIN/$repo" >> "$forks"
     exit 0 ;;
   "pr list") echo "$FAKE_GH_PR"; exit 0 ;;
   *) ;;
 esac
 if [ "$1" = api ]; then
-  case "$2" in
+  [ -z "$FAKE_GH_API_DOWN" ] || exit 1
+  shift
+  [ "$1" != --paginate ] || shift
+  case "$1" in
     user) echo "$FAKE_GH_LOGIN"; exit 0 ;;
-    repos/TurboPanel/*) [ -z "$FAKE_GH_API_DOWN" ] || exit 1; echo "$FAKE_GH_PUSH"; exit 0 ;;
+    repos/TurboPanel/*/forks*)
+      repo=\${1#repos/TurboPanel/}
+      repo=\${repo%%/forks*}
+      [ ! -f "$forks" ] || awk -v r="$repo" -v o="$FAKE_GH_LOGIN/" '$1 == r && index($2, o) == 1 {print $2}' "$forks"
+      exit 0 ;;
+    repos/TurboPanel/*) echo "$FAKE_GH_PUSH"; exit 0 ;;
     repos/*)
-      slug=\${2#repos/}
+      slug=\${1#repos/}
       [ -d "$FAKE_FIXTURE/$slug.git" ] || exit 1
-      echo "TurboPanel/\${slug#*/}"
+      if [ -f "$forks" ] && awk -v s="$slug" '$2 == s {found=1} END {exit !found}' "$forks"; then
+        echo "TurboPanel/\${slug#*/}"
+      else
+        echo ""
+      fi
       exit 0 ;;
     *) ;;
   esac
@@ -91,8 +108,11 @@ function baseEnv(extra: Env = {}): Env {
   }
 }
 
-function run(args: string[], extra: Env = {}) {
+function run(args: string[], extra: Env = {}, cwd?: string) {
+  // detached: a new session without a controlling terminal, so no prompt can open.
   const result = spawnSync('sh', [SCRIPT, ...args], {
+    cwd,
+    detached: true,
     encoding: 'utf8',
     env: baseEnv(extra),
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -256,8 +276,51 @@ describe('setup.sh roles', () => {
       join(fixture, 'TurboPanel', 'ui.git'),
       join(fixture, 'octo', 'ui.git'),
     ])
+    writeFileSync(join(fixture, 'forks.txt'), 'ui octo/ui\n')
     expect(setup({ FAKE_GH_PUSH: 'false' }).status).toBe(0)
     expect(ghLog()).not.toContain('repo fork TurboPanel/ui')
+  })
+
+  test('a renamed fork is found through the fork list', () => {
+    execFileSync('git', [
+      'clone',
+      '--quiet',
+      '--bare',
+      join(fixture, 'TurboPanel', 'ui.git'),
+      join(fixture, 'octo', 'my-ui.git'),
+    ])
+    writeFileSync(join(fixture, 'forks.txt'), 'ui octo/my-ui\n')
+    const { status, out } = setup({ FAKE_GH_PUSH: 'false' })
+    expect(status, out).toBe(0)
+    expect(git(join(work, 'ui'), 'remote', 'get-url', 'origin')).toBe(
+      `file://${fixture}/octo/my-ui.git`
+    )
+    expect(ghLog()).not.toContain('repo fork TurboPanel/ui')
+  })
+
+  test('a fork that never appears fails that repo within the wait', () => {
+    const started = Date.now()
+    const { status, out } = setup({
+      FAKE_GH_PUSH: 'false',
+      FAKE_GH_FORK_NOOP: '1',
+      TURBOPANEL_SETUP_FORK_WAIT: '0',
+    })
+    expect(status).toBe(1)
+    expect(out).toContain('your fork of TurboPanel/ui was not ready within 0s')
+    expect(existsSync(join(work, 'ui'))).toBe(false)
+    expect(existsSync(join(work, '.github', '.git'))).toBe(true)
+    expect(Date.now() - started).toBeLessThan(30_000)
+  })
+
+  test('an answer without permissions never forks', () => {
+    const { status, out } = setup({ FAKE_GH_PUSH: 'null' })
+    expect(status, out).toBe(0)
+    expect(out).toContain('ui: GitHub did not say whether you can push; keeping readonly.')
+    expect(ghLog()).not.toContain('repo fork')
+    expect(modeFile()).toContain("role_ui='readonly'")
+    setup()
+    setup({ FAKE_GH_PUSH: 'null' })
+    expect(modeFile()).toContain("role_ui='maintainer'")
   })
 
   test('logged out: read-only clones and a pointer to gh auth login', () => {
@@ -316,10 +379,49 @@ describe('setup.sh reruns', () => {
     expect(modeFile()).toContain("role_ui='contributor'")
   })
 
-  test('an API outage keeps the roles from the last run', () => {
+  test('an offline rerun keeps the login and roles and makes no GitHub call', () => {
     setup({ FAKE_GH_PUSH: 'false' })
-    expect(setup({ FAKE_GH_API_DOWN: '1' }).status).toBe(0)
+    rmSync(join(root, 'gh.log'))
+    const { status, out } = setup({ FAKE_GH_API_DOWN: '1' })
+    expect(status, out).toBe(0)
+    expect(out).toContain('keeping the login and roles from the last run (octo)')
+    expect(modeFile()).toContain("github_login='octo'")
     expect(modeFile()).toContain("role_ui='contributor'")
+    expect(modeFile()).toContain("role_github='readonly'")
+    expect(ghLog()).not.toContain('repo fork')
+    expect(ghLog()).not.toContain('api repos/')
+    expect(ghLog()).not.toContain('setup-git')
+  })
+
+  test('a trunk checked out in a linked worktree is never moved', () => {
+    setup()
+    const ui = join(work, 'ui')
+    const linked = join(root, 'ui-linked')
+    git(ui, 'switch', '--quiet', '-c', 'feature')
+    git(ui, 'worktree', 'add', '--quiet', linked, 'trunk')
+    const before = git(linked, 'rev-parse', 'HEAD')
+    upstreamCommit('ui', 'later.txt')
+    const { status, out } = setup()
+    expect(status, out).toBe(0)
+    expect(out).toContain('ui: trunk is checked out in another worktree; left as it is.')
+    expect(git(linked, 'rev-parse', 'HEAD')).toBe(before)
+    expect(git(ui, 'rev-parse', 'trunk')).toBe(before)
+    expect(git(linked, 'status', '--porcelain')).toBe('')
+  })
+
+  test('a custom core.hooksPath is kept with a warning', () => {
+    setup()
+    git(join(work, 'ui'), 'config', 'core.hooksPath', 'myhooks')
+    const { out } = setup()
+    expect(out).toContain('ui: core.hooksPath is myhooks, not .githooks; left as it is')
+    expect(git(join(work, 'ui'), 'config', 'core.hooksPath')).toBe('myhooks')
+  })
+
+  test('a run without a terminal and without --yes stops with an error', () => {
+    const { status, out } = run(['--dir', work, '--mode', 'vagrant'])
+    expect(status).toBe(1)
+    expect(out).toContain('Pass --yes to run without asking.')
+    expect(existsSync(work)).toBe(false)
   })
 
   test('a failed clone leaves no half folder and the others finish', () => {
@@ -348,6 +450,42 @@ describe('setup.sh reruns', () => {
     expect(out).toContain('Dry run: nothing changed.')
     expect(existsSync(work)).toBe(false)
     expect(ghLog()).not.toContain('setup-git')
+  })
+})
+
+describe('setup.sh folder', () => {
+  test('from inside a dev checkout the default folder sits next to it', () => {
+    const { status, out } = run(['--dry-run'], {}, REPO_ROOT)
+    expect(status, out).toBe(0)
+    const folder = /Folder: +(.*)/.exec(out)?.[1] ?? ''
+    expect(folder.startsWith(`${REPO_ROOT}/`)).toBe(false)
+    expect(folder.endsWith('/turbopanel')).toBe(true)
+  })
+
+  test('a folder inside the dev checkout is refused', () => {
+    const { status, out } = run(['--dry-run', '--dir', join(REPO_ROOT, 'turbopanel')])
+    expect(status).toBe(1)
+    expect(out).toContain('is inside the dev checkout')
+  })
+
+  test('--dir with .. is normalised', () => {
+    mkdirSync(join(root, 'x'))
+    expect(setup({}, ['--dir', join(root, 'x', '..', 'turbopanel')]).status).toBe(0)
+    expect(modeFile()).toContain(`dev_root='${work}'`)
+  })
+
+  test('a folder with a quote in its name round-trips through the mode file', () => {
+    const quoted = join(root, "it's here")
+    const { status, out } = run(['--dir', quoted, '--yes', '--mode', 'vagrant'])
+    expect(status, out).toBe(0)
+    const doctor = run(['doctor', '--dir', quoted])
+    expect(doctor.out).not.toContain('differs')
+    expect(doctor.status, doctor.out).toBe(0)
+  })
+
+  test('the plan names the global git change', () => {
+    const { out } = run(['--dir', work, '--dry-run'])
+    expect(out).toContain('gh auth setup-git (adds gh as the github.com credential helper')
   })
 })
 
@@ -439,6 +577,13 @@ describe('setup.sh status and doctor', () => {
     expect(status).toBe(1)
     expect(out).toContain('mode is direct but direct mode needs Debian 13')
     expect(out).toContain('Debian 12 here')
+  })
+
+  test('doctor compares owner and repo names without case', () => {
+    setup()
+    git(join(work, 'ui'), 'remote', 'set-url', 'origin', 'https://github.com/turbopanel/UI.git')
+    const { out } = run(['doctor', '--dir', work])
+    expect(out).not.toContain('ui: maintainer checkout whose origin')
   })
 
   test('doctor is clean after a fresh setup', () => {

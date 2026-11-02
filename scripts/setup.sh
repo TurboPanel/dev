@@ -60,6 +60,13 @@ Options:
 USAGE
 }
 
+# True only when a terminal can really be opened: /dev/tty can carry rw bits
+# without a controlling terminal behind it.
+tp_has_tty() {
+  [ -t 0 ] && return 0
+  (: </dev/tty) 2>/dev/null
+}
+
 tp_die() {
   tp_error "$*"
   exit 1
@@ -100,30 +107,58 @@ tp_mode_get() {
   _mg_key=$1
   _mf=$(tp_mode_file)
   [ -f "$_mf" ] || return 0
-  sed -n "s/^${_mg_key}='\\(.*\\)'\$/\\1/p" "$_mf" | tail -n 1
+  # Values are written by tp_sq, which turns ' into '\''; undo that here.
+  sed -n "s/^${_mg_key}='\\(.*\\)'\$/\\1/p" "$_mf" | tail -n 1 | sed "s/'\\\\''/'/g"
 }
 
 # ---------------------------------------------------------------- folder
 
-tp_resolve_dir() {
-  if [ -n "$DIR" ]; then
-    case "$DIR" in
-      /*) ;;
-      *) DIR="$PWD/$DIR" ;;
-    esac
-    DIR=$(printf '%s' "$DIR" | sed 's#/*$##')
-    [ -n "$DIR" ] || DIR=/
+# Absolute path with . and .. resolved, also for folders that do not exist yet.
+tp_abs_path() {
+  _ap_path=$1
+  case "$_ap_path" in
+    /*) ;;
+    *) _ap_path="$PWD/$_ap_path" ;;
+  esac
+  if [ -d "$_ap_path" ]; then
+    (CDPATH='' cd -- "$_ap_path" && pwd)
     return 0
   fi
-  _parent=$(dirname "$DEV_CHECKOUT")
-  if [ -f "$_parent/$MODE_FILE_NAME" ] || [ "$(basename "$_parent")" = turbopanel ]; then
-    DIR=$_parent
-  elif [ -f /etc/profile.d/turbopanel-vagrant.sh ]; then
-    # Inside the Vagrant guest the repos are mounted at $HOME/<repo>.
-    DIR=$HOME
+  _ap_base=$(basename "$_ap_path")
+  _ap_parent=$(tp_abs_path "$(dirname "$_ap_path")")
+  case "$_ap_base" in
+    . | '') printf '%s' "$_ap_parent" ;;
+    ..) dirname "$_ap_parent" ;;
+    *) printf '%s/%s' "${_ap_parent%/}" "$_ap_base" ;;
+  esac
+}
+
+tp_resolve_dir() {
+  if [ -n "$DIR" ]; then
+    DIR=$(tp_abs_path "$DIR")
   else
-    DIR="$PWD/turbopanel"
+    _parent=$(dirname "$DEV_CHECKOUT")
+    if [ -f "$_parent/$MODE_FILE_NAME" ] || [ "$(basename "$_parent")" = turbopanel ]; then
+      DIR=$_parent
+    elif [ -f /etc/profile.d/turbopanel-vagrant.sh ]; then
+      # Inside the Vagrant guest the repos are mounted at $HOME/<repo>.
+      DIR=$HOME
+    else
+      DIR="$(tp_abs_path "$PWD")/turbopanel"
+      # Run from inside a dev checkout: put the folder next to it, not in it.
+      case "$DIR/" in
+        "$DEV_CHECKOUT"/*)
+          _parent=$(dirname "$DEV_CHECKOUT")
+          DIR="${_parent%/}/turbopanel"
+          ;;
+        *) ;;
+      esac
+    fi
   fi
+  case "$DIR/" in
+    "$DEV_CHECKOUT"/*) tp_die "${DIR} is inside the dev checkout ${DEV_CHECKOUT}; pick a folder outside it with --dir." ;;
+    *) ;;
+  esac
 }
 
 # ---------------------------------------------------------------- host facts
@@ -163,6 +198,10 @@ tp_detect_host() {
   if command -v systemd-detect-virt >/dev/null 2>&1; then
     VIRT=$(systemd-detect-virt 2>/dev/null || true)
     CONTAINER=$(systemd-detect-virt --container 2>/dev/null || true)
+  elif [ -f /.dockerenv ]; then
+    CONTAINER=docker
+  elif [ -f /run/.containerenv ]; then
+    CONTAINER=podman
   fi
   [ "$CONTAINER" != none ] || CONTAINER=
 
@@ -198,13 +237,29 @@ tp_detect_host() {
 # ---------------------------------------------------------------- GitHub
 
 GH_LOGIN=
+GH_OFFLINE=0
 CLONE_PROTOCOL=https
 
+# Lower-case owner/repo comparison (GitHub names are case-insensitive).
+tp_same_slug() {
+  _ss_a=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')
+  _ss_b=$(printf '%s' "$2" | tr '[:upper:]' '[:lower:]')
+  [ "$_ss_a" = "$_ss_b" ]
+}
+
+# GH_LOGIN is empty only when gh has no token. With a token but no answer from
+# GitHub (offline), the login and roles from the last run are kept.
 tp_detect_login() {
   GH_LOGIN=
+  GH_OFFLINE=0
   command -v gh >/dev/null 2>&1 || return 0
-  gh auth status >/dev/null 2>&1 || return 0
-  GH_LOGIN=$(gh api user --jq .login 2>/dev/null || true)
+  gh auth token >/dev/null 2>&1 || return 0
+  if GH_LOGIN=$(gh api user --jq .login 2>/dev/null) && [ -n "$GH_LOGIN" ]; then
+    return 0
+  fi
+  GH_OFFLINE=1
+  GH_LOGIN=$(tp_mode_get github_login)
+  tp_warn "GitHub did not answer (offline?); keeping the login and roles from the last run${GH_LOGIN:+ (${GH_LOGIN})}."
 }
 
 tp_detect_protocol() {
@@ -259,18 +314,25 @@ tp_has_remote() {
 # readonly: not logged in (or the .github repo without push access); origin = TurboPanel.
 tp_detect_role() {
   _dr_repo=$1
+  _dr_prev=$(tp_mode_get "$(tp_role_key "$_dr_repo")")
   if [ -z "$GH_LOGIN" ]; then
     printf readonly
     return 0
   fi
-  if _dr_push=$(gh api "repos/${TP_ORG}/${_dr_repo}" --jq .permissions.push 2>/dev/null); then
-    :
-  else
+  if [ "$GH_OFFLINE" -eq 1 ] || ! _dr_push=$(gh api "repos/${TP_ORG}/${_dr_repo}" --jq .permissions.push 2>/dev/null); then
     # Offline or an API error: keep what the last run recorded.
-    _dr_prev=$(tp_mode_get "$(tp_role_key "$_dr_repo")")
     printf '%s' "${_dr_prev:-readonly}"
     return 0
   fi
+  case "$_dr_push" in
+    true | false) ;;
+    *)
+      # No permissions in the answer: never fork on an unclear answer.
+      tp_warn "${_dr_repo}: GitHub did not say whether you can push; keeping ${_dr_prev:-readonly}." >&2
+      printf '%s' "${_dr_prev:-readonly}"
+      return 0
+      ;;
+  esac
   if [ "$_dr_push" = true ] && [ "$FORCE_FORK" -eq 0 ]; then
     printf maintainer
   elif [ "$_dr_repo" = .github ]; then
@@ -282,35 +344,48 @@ tp_detect_role() {
   fi
 }
 
-# Make sure <login>/<repo> is a fork of TurboPanel/<repo>; print its slug.
-# Only provable against real GitHub: the fork call is asynchronous, so poll.
+tp_slug_url() {
+  _su_slug=$1
+  tp_url "${_su_slug%%/*}" "${_su_slug#*/}"
+}
+
+# The user's fork of TurboPanel/<repo>, whatever it is called: <login>/<repo>
+# first, then the fork list filtered by owner (a fork can be renamed).
+tp_find_fork() {
+  _fk_repo=$1
+  _fk_parent=$(gh api "repos/${GH_LOGIN}/${_fk_repo}" --jq '.parent.full_name // ""' 2>/dev/null || true)
+  if tp_same_slug "$_fk_parent" "${TP_ORG}/${_fk_repo}"; then
+    printf '%s/%s' "$GH_LOGIN" "$_fk_repo"
+    return 0
+  fi
+  gh api --paginate "repos/${TP_ORG}/${_fk_repo}/forks?per_page=100" \
+    --jq ".[] | select((.owner.login | ascii_downcase) == (\"${GH_LOGIN}\" | ascii_downcase)) | .full_name" \
+    2>/dev/null | head -n 1
+}
+
+# Set EF_SLUG to the user's fork of TurboPanel/<repo>, creating it if needed.
+# Only provable against real GitHub: the fork call is asynchronous, so poll for
+# at most TURBOPANEL_SETUP_FORK_WAIT seconds; a rerun finds a late fork.
 tp_ensure_fork() {
   _ef_repo=$1
-  _ef_slug="${GH_LOGIN}/${_ef_repo}"
-  if _ef_parent=$(gh api "repos/${_ef_slug}" --jq '.parent.full_name // ""' 2>/dev/null); then
-    if [ "$_ef_parent" = "${TP_ORG}/${_ef_repo}" ]; then
-      printf '%s' "$_ef_slug"
-      return 0
-    fi
-    tp_error "${_ef_slug} exists but is not a fork of ${TP_ORG}/${_ef_repo}; rename it or fork by hand."
-    return 1
-  fi
+  EF_SLUG=$(tp_find_fork "$_ef_repo")
+  [ -z "$EF_SLUG" ] || return 0
   if ! (cd / && gh repo fork "${TP_ORG}/${_ef_repo}" --clone=false >/dev/null 2>&1); then
     tp_error "could not fork ${TP_ORG}/${_ef_repo} (gh repo fork failed)."
     return 1
   fi
   _ef_waited=0
   while [ "$_ef_waited" -le "$FORK_WAIT" ]; do
-    _ef_parent=$(gh api "repos/${_ef_slug}" --jq '.parent.full_name // ""' 2>/dev/null || true)
-    if [ "$_ef_parent" = "${TP_ORG}/${_ef_repo}" ] &&
-      git ls-remote "$(tp_url "$GH_LOGIN" "$_ef_repo")" HEAD >/dev/null 2>&1; then
-      printf '%s' "$_ef_slug"
+    EF_SLUG=$(tp_find_fork "$_ef_repo")
+    if [ -n "$EF_SLUG" ] && git ls-remote "$(tp_slug_url "$EF_SLUG")" HEAD >/dev/null 2>&1; then
       return 0
     fi
+    [ "$_ef_waited" -lt "$FORK_WAIT" ] || break
     sleep 2
     _ef_waited=$((_ef_waited + 2))
   done
-  tp_error "the fork ${_ef_slug} did not become ready within ${FORK_WAIT}s; rerun setup in a minute."
+  EF_SLUG=
+  tp_error "your fork of ${TP_ORG}/${_ef_repo} was not ready within ${FORK_WAIT}s; GitHub may still be copying it. Rerun setup later."
   return 1
 }
 
@@ -411,10 +486,13 @@ tp_fast_forward() {
     elif ! git -C "$_ff_path" merge --ff-only --quiet "$_ff_ref" >/dev/null 2>&1; then
       tp_warn "${_ff_name}: ${_ff_branch} has commits that are not on ${_ff_base}; left as it is."
     fi
-  elif git -C "$_ff_path" rev-parse -q --verify "refs/heads/${_ff_branch}" >/dev/null 2>&1; then
-    if git -C "$_ff_path" merge-base --is-ancestor "refs/heads/${_ff_branch}" "$_ff_ref" 2>/dev/null; then
-      git -C "$_ff_path" update-ref "refs/heads/${_ff_branch}" "$_ff_ref"
-    fi
+  elif git -C "$_ff_path" worktree list --porcelain 2>/dev/null | grep -qx "branch refs/heads/${_ff_branch}"; then
+    tp_warn "${_ff_name}: ${_ff_branch} is checked out in another worktree; left as it is."
+  elif git -C "$_ff_path" rev-parse -q --verify "refs/heads/${_ff_branch}" >/dev/null 2>&1 &&
+    git -C "$_ff_path" merge-base --is-ancestor "refs/heads/${_ff_branch}" "$_ff_ref" 2>/dev/null; then
+    # A fetch from . refuses a branch checked out anywhere and only fast-forwards.
+    git -C "$_ff_path" fetch --quiet . "${_ff_ref}:refs/heads/${_ff_branch}" 2>/dev/null ||
+      tp_warn "${_ff_name}: could not fast-forward ${_ff_branch}; left as it is."
   fi
 }
 
@@ -422,11 +500,12 @@ tp_clone_new() {
   _cn_name=$1
   _cn_branch=$2
   _cn_role=$3
+  _cn_fork=$4
   _cn_path="$DIR/$_cn_name"
   _cn_canon=$(tp_url "$TP_ORG" "$_cn_name")
   _cn_origin=$_cn_canon
   if [ "$_cn_role" = contributor ]; then
-    _cn_origin=$(tp_url "$GH_LOGIN" "$_cn_name")
+    _cn_origin=$(tp_slug_url "$_cn_fork")
   fi
   CURRENT_TMP="$DIR/.setup-clone-${_cn_name}"
   rm -rf "$CURRENT_TMP"
@@ -456,31 +535,31 @@ tp_reconcile_remotes() {
   _rr_path=$1
   _rr_name=$2
   _rr_role=$3
+  _rr_fork=$4
   _rr_canon_slug="${TP_ORG}/${_rr_name}"
   _rr_origin=$(tp_remote_slug "$_rr_path" origin)
   _rr_upstream=$(tp_remote_slug "$_rr_path" upstream)
-  if [ "$_rr_upstream" = "$_rr_canon_slug" ] && [ "$_rr_origin" != "$_rr_canon_slug" ]; then
+  if tp_same_slug "$_rr_upstream" "$_rr_canon_slug" && ! tp_same_slug "$_rr_origin" "$_rr_canon_slug"; then
     # Already fork-shaped; keep it even for a maintainer.
     printf contributor
     return 0
   fi
-  if [ "$_rr_role" = contributor ]; then
-    _rr_fork="${GH_LOGIN}/${_rr_name}"
-    if [ "$_rr_origin" = "$_rr_canon_slug" ] && [ -z "$_rr_upstream" ]; then
+  if [ "$_rr_role" = contributor ] && [ -n "$_rr_fork" ] && [ -z "$_rr_upstream" ]; then
+    if tp_same_slug "$_rr_origin" "$_rr_canon_slug"; then
       tp_info "${_rr_name}: origin becomes your fork ${_rr_fork}; ${_rr_canon_slug} becomes upstream" >&2
       git -C "$_rr_path" remote rename origin upstream
-      git -C "$_rr_path" remote add origin "$(tp_url "$GH_LOGIN" "$_rr_name")"
+      git -C "$_rr_path" remote add origin "$(tp_slug_url "$_rr_fork")"
       printf contributor
       return 0
     fi
-    if [ "$_rr_origin" = "$_rr_fork" ] && [ -z "$_rr_upstream" ]; then
+    if tp_same_slug "$_rr_origin" "$_rr_fork"; then
       git -C "$_rr_path" remote add upstream "$(tp_url "$TP_ORG" "$_rr_name")"
       printf contributor
       return 0
     fi
   fi
-  if [ -n "$_rr_origin" ] && [ "$_rr_origin" != "$_rr_canon_slug" ] &&
-    [ "$_rr_origin" != "${GH_LOGIN:-?}/${_rr_name}" ]; then
+  if [ -n "$_rr_origin" ] && ! tp_same_slug "$_rr_origin" "$_rr_canon_slug" &&
+    ! tp_same_slug "$_rr_origin" "${_rr_fork:-?}"; then
     tp_warn "${_rr_name}: origin points to ${_rr_origin}; left as it is." >&2
   fi
   printf '%s' "$_rr_role"
@@ -491,18 +570,33 @@ tp_sync_repo() {
   _sr_branch=$2
   _sr_role=$3
   _sr_path="$DIR/$_sr_name"
-  if [ "$_sr_role" = contributor ] && ! tp_ensure_fork "$_sr_name" >/dev/null; then
-    tp_fail_repo "$_sr_name" "no fork to work from"
-    return 0
+  _sr_fork=
+  if [ "$_sr_role" = contributor ]; then
+    _sr_origin=$(tp_remote_slug "$_sr_path" origin)
+    if tp_is_checkout "$_sr_path" && [ -n "$_sr_origin" ] &&
+      ! tp_same_slug "$_sr_origin" "${TP_ORG}/${_sr_name}" &&
+      { tp_same_slug "$(tp_remote_slug "$_sr_path" upstream)" "${TP_ORG}/${_sr_name}" ||
+        tp_same_slug "${_sr_origin%%/*}" "$GH_LOGIN"; }; then
+      # The checkout already points at your fork: no GitHub call needed.
+      _sr_fork=$_sr_origin
+    elif [ "$GH_OFFLINE" -eq 1 ]; then
+      tp_fail_repo "$_sr_name" "GitHub did not answer, so your fork cannot be looked up; rerun when online"
+      return 0
+    elif tp_ensure_fork "$_sr_name"; then
+      _sr_fork=$EF_SLUG
+    else
+      tp_fail_repo "$_sr_name" "no fork to work from"
+      return 0
+    fi
   fi
   if [ ! -e "$_sr_path" ]; then
-    tp_clone_new "$_sr_name" "$_sr_branch" "$_sr_role"
+    tp_clone_new "$_sr_name" "$_sr_branch" "$_sr_role" "$_sr_fork"
     [ -d "$_sr_path" ] || return 0
   elif ! tp_is_checkout "$_sr_path"; then
     tp_fail_repo "$_sr_name" "${_sr_path} exists but is not a git checkout; left alone"
     return 0
   else
-    _sr_role=$(tp_reconcile_remotes "$_sr_path" "$_sr_name" "$_sr_role")
+    _sr_role=$(tp_reconcile_remotes "$_sr_path" "$_sr_name" "$_sr_role" "$_sr_fork")
     tp_fetch "$_sr_path" origin "$_sr_name"
     if tp_has_remote "$_sr_path" upstream; then
       tp_fetch "$_sr_path" upstream "$_sr_name"
@@ -510,7 +604,12 @@ tp_sync_repo() {
     tp_fast_forward "$_sr_path" "$_sr_name" "$_sr_branch"
   fi
   if [ -f "$_sr_path/.githooks/pre-commit" ]; then
-    git -C "$_sr_path" config core.hooksPath .githooks
+    _sr_hooks=$(git -C "$_sr_path" config --local --get core.hooksPath 2>/dev/null || true)
+    if [ -z "$_sr_hooks" ]; then
+      git -C "$_sr_path" config core.hooksPath .githooks
+    elif [ "$_sr_hooks" != .githooks ]; then
+      tp_warn "${_sr_name}: core.hooksPath is ${_sr_hooks}, not .githooks; left as it is (git -C $(tp_sq "$_sr_path") config core.hooksPath .githooks)."
+    fi
   fi
   eval "ROLE_$(tp_role_key "$_sr_name" | sed 's/^role_//')=\$_sr_role"
 }
@@ -553,7 +652,7 @@ tp_choose_mode() {
       MODE=
     elif [ "$ASSUME_YES" -eq 1 ]; then
       tp_die "--yes needs --mode direct or --mode vagrant on a first run."
-    elif ! tp_is_interactive; then
+    elif ! tp_has_tty; then
       tp_die "no terminal to ask on; pass --yes --mode direct|vagrant."
     else
       _cm_hint=
@@ -747,7 +846,10 @@ tp_cmd_setup() {
     fi
     printf '  %-12s %-12s %s\n' "$_cs_name" "$_cs_role" "$_cs_action"
   done
-  echo "  Then:         core.hooksPath=.githooks in each repo, write $(tp_mode_file)"
+  if [ -n "$GH_LOGIN" ] && [ "$GH_OFFLINE" -eq 0 ] && [ "$CLONE_PROTOCOL" = https ]; then
+    echo "  Git config:   gh auth setup-git (adds gh as the github.com credential helper in your global git config)"
+  fi
+  echo "  Then:         core.hooksPath=.githooks in each repo where it is unset, write $(tp_mode_file)"
   if [ "$MODE" = direct ]; then
     echo "  Direct mode:  sudo sh dev/scripts/vm-bootstrap.sh $(id -un) (base packages, sudo rule, profile file)"
     if [ "$DIR" != "$HOME" ]; then
@@ -761,15 +863,18 @@ tp_cmd_setup() {
     echo "Dry run: nothing changed."
     return 0
   fi
-  if [ "$ASSUME_YES" -eq 0 ] && { ! tp_is_interactive || ! tp_read_tty_yn "Go ahead?" y; }; then
-    echo "Stopped; nothing changed."
-    return 0
+  if [ "$ASSUME_YES" -eq 0 ]; then
+    tp_has_tty || tp_die "no terminal to confirm on; nothing changed. Pass --yes to run without asking."
+    if ! tp_read_tty_yn "Go ahead?" y; then
+      echo "Stopped; nothing changed."
+      return 0
+    fi
   fi
 
   mkdir -p "$DIR"
   trap tp_cleanup EXIT
   trap 'tp_cleanup; exit 130' INT TERM
-  if [ -n "$GH_LOGIN" ] && [ "$CLONE_PROTOCOL" = https ]; then
+  if [ -n "$GH_LOGIN" ] && [ "$GH_OFFLINE" -eq 0 ] && [ "$CLONE_PROTOCOL" = https ]; then
     gh auth setup-git >/dev/null 2>&1 || tp_warn "gh auth setup-git failed; pushes over https may ask for a password."
   fi
   for _cs_name in $(tp_repo_names); do
@@ -885,10 +990,10 @@ tp_cmd_doctor() {
     if tp_has_remote "$_dr_path" upstream; then
       echo "    upstream:   $(git -C "$_dr_path" remote get-url upstream)"
     fi
-    if [ "$_dr_role" = contributor ] && [ "$(tp_remote_slug "$_dr_path" upstream)" != "${TP_ORG}/${_dr_name}" ]; then
+    if [ "$_dr_role" = contributor ] && ! tp_same_slug "$(tp_remote_slug "$_dr_path" upstream)" "${TP_ORG}/${_dr_name}"; then
       tp_problem "${_dr_name}: contributor checkout without upstream = ${TP_ORG}/${_dr_name}"
     fi
-    if [ "$_dr_role" = maintainer ] && [ "$(tp_remote_slug "$_dr_path" origin)" != "${TP_ORG}/${_dr_name}" ]; then
+    if [ "$_dr_role" = maintainer ] && ! tp_same_slug "$(tp_remote_slug "$_dr_path" origin)" "${TP_ORG}/${_dr_name}"; then
       tp_problem "${_dr_name}: maintainer checkout whose origin is not ${TP_ORG}/${_dr_name}"
     fi
     if [ -f "$_dr_path/.githooks/pre-commit" ]; then
