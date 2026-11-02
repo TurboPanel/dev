@@ -469,8 +469,22 @@ tp_ensure_gh() {
   fi
 }
 
+# The login command setup runs and tells people to run themselves: the
+# browser (device code) flow with every question answered by flags.
+TP_GH_LOGIN_CMD='gh auth login --hostname github.com --git-protocol https --web'
+
+tp_gh_login_hint() {
+  echo "  To log in yourself, run this in a plain SSH terminal, then rerun this script:"
+  echo "    ${TP_GH_LOGIN_CMD}"
+}
+
 # Offer 'gh auth login' on a terminal. The user signs in through gh itself;
 # setup never types, reads or passes a token or password. Never under --yes.
+# gh's menus fail on terminals that answer its colour query late ("could not
+# prompt: unexpected escape sequence from terminal"), so every question is a
+# flag and GH_PROMPT_DISABLED keeps gh from asking any: it prints a one-time
+# code and https://github.com/login/device and waits. A failed or cancelled
+# login never stops setup.
 tp_offer_gh_login() {
   tp_have_gh || return 0
   if gh auth token >/dev/null 2>&1; then
@@ -478,10 +492,22 @@ tp_offer_gh_login() {
   fi
   [ "$ASSUME_YES" -eq 0 ] || return 0
   tp_has_tty || return 0
-  tp_read_tty_yn "You are not logged in to GitHub. Log in now with 'gh auth login'?" y || return 0
+  if ! tp_read_tty_yn "You are not logged in to GitHub. Log in now (gh shows a one-time code to enter at https://github.com/login/device)?" y; then
+    tp_gh_login_hint
+    return 0
+  fi
   GH_CHANGED=1
-  if ! gh auth login </dev/tty >/dev/tty 2>&1; then
-    tp_warn "gh auth login did not finish; cloning read-only. Run 'gh auth login' and rerun setup."
+  _gl_proto=https
+  _gl_extra=
+  if [ "$(gh config get git_protocol -h github.com 2>/dev/null || true)" = ssh ]; then
+    # Keep an ssh choice made before; never generate or upload a key here.
+    _gl_proto=ssh
+    _gl_extra=--skip-ssh-key
+  fi
+  # shellcheck disable=SC2086 # _gl_extra is one flag or empty
+  if ! GH_PROMPT_DISABLED=1 gh auth login --hostname github.com --git-protocol "$_gl_proto" --web $_gl_extra </dev/tty >/dev/tty 2>&1; then
+    tp_warn "gh auth login did not finish; setup goes on with read-only clones."
+    tp_gh_login_hint
   fi
 }
 
@@ -500,9 +526,9 @@ tp_gh_plan() {
   fi
   if [ -z "$GH_LOGIN" ]; then
     if [ "$ASSUME_YES" -eq 1 ]; then
-      echo "  GitHub login: not logged in; --yes never runs 'gh auth login', run it yourself"
+      echo "  GitHub login: not logged in; --yes never runs 'gh auth login', run it yourself: ${TP_GH_LOGIN_CMD}"
     else
-      echo "  GitHub login: offer 'gh auth login' (asks first; you sign in yourself)"
+      echo "  GitHub login: offer 'gh auth login' (asks first; you sign in yourself with a one-time code)"
     fi
   fi
 }
@@ -935,7 +961,7 @@ tp_choose_mode() {
       fi
       printf 'How do you want to run TurboPanel?\n  1) Vagrant: the repos stay in %s on this machine; '"'"'vagrant up'"'"' in %s/dev runs them in a Debian VM\n  2) Direct: this Debian 13 machine becomes the dev machine; setup gives your user passwordless sudo%s\nChoose 1 or 2: ' "$DIR" "$DIR" "$_cm_hint" >/dev/tty
       IFS= read -r _cm_answer </dev/tty || _cm_answer=
-      case "$(tp_trim_whitespace "$_cm_answer")" in
+      case "$(tp_trim_whitespace "$(tp_strip_terminal_replies "$_cm_answer")")" in
         1 | vagrant) MODE=vagrant ;;
         2 | direct) MODE=direct ;;
         *) tp_die "no choice made; rerun and pick 1 or 2, or pass --mode." ;;
@@ -1094,7 +1120,7 @@ tp_role_sentence() {
       ;;
     readonly)
       if [ -z "$GH_LOGIN" ]; then
-        echo "You are not signed in to GitHub, so the repos are read-only. Run 'gh auth login' and rerun this script."
+        echo "You are not signed in to GitHub, so the repos are read-only. Run '${TP_GH_LOGIN_CMD}' and rerun this script."
       else
         echo "The repos are read-only clones (GitHub did not answer when they were set up). Rerun this script when you are online."
       fi
@@ -1339,7 +1365,7 @@ tp_cmd_fork() {
   tp_have_gh || tp_die "forking needs the GitHub CLI (gh); $(tp_gh_missing_hint), then rerun."
   tp_offer_gh_login
   tp_detect_login
-  [ -n "$GH_LOGIN" ] || tp_die "you are not signed in to GitHub; run 'gh auth login' and rerun."
+  [ -n "$GH_LOGIN" ] || tp_die "you are not signed in to GitHub; run '${TP_GH_LOGIN_CMD}' in a plain SSH terminal and rerun."
   [ "$GH_OFFLINE" -eq 0 ] || tp_die "GitHub did not answer (offline?); nothing changed. Rerun when online."
   tp_detect_protocol
   for _cf_name in $FORK_REPOS; do
@@ -1402,7 +1428,7 @@ tp_cmd_doctor() {
   if [ -n "$GH_LOGIN" ]; then
     echo "  login:        ${GH_LOGIN}"
   else
-    tp_warn "not logged in to GitHub (gh auth login)"
+    tp_warn "not logged in to GitHub (${TP_GH_LOGIN_CMD})"
   fi
 
   echo "Mode file"
