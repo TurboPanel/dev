@@ -78,6 +78,19 @@ test("ensureFhsTreeOwnership chowns via sudo when identity resolves", async () =
   expect(String(cmd[4])).toContain("dev");
 });
 
+test("ensureFhsTreeOwnership creates missing FHS trees as the dev user", async () => {
+  mockedTryResolve.mockReturnValue({ user: "dev", uid: 1000, gid: 1000 });
+  mockedRunCaptured.mockClear();
+  mockedRunCaptured.mockResolvedValue(0);
+  await ensureFhsTreeOwnership();
+  const script = String(
+    (mockedRunCaptured.mock.calls[0]![0] as string[])[4],
+  );
+  expect(script).toContain("/var/lib/turbopanel");
+  expect(script).toContain('install -d -o "$dev" -g "$group" -m 0755 "$dir"');
+  expect(script).not.toContain('[ -e "$dir" ] || continue');
+});
+
 function spawnRet(
   status: number,
   stdout = "",

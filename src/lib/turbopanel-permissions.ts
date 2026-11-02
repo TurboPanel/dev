@@ -43,8 +43,8 @@ function dockerIsPresent(): boolean {
 }
 
 /**
- * Best-effort: chown FHS trees to the resolved dev user when they exist but are
- * not yet dev-owned. Covers the window before the first Ansible converge — which
+ * Best-effort: create missing FHS trees as the resolved dev user, and chown
+ * existing ones to that user when they are not yet dev-owned. Covers the window before the first Ansible converge — which
  * is authoritative for ownership — and root-owned artifacts from sudo runtime
  * installers (./console Node, ensureBootstrapDeno).
  *
@@ -73,7 +73,12 @@ export async function ensureFhsTreeOwnership(
     `dev=${shellQuote(dev.user)}`,
     `group=${shellQuote(String(dev.gid))}`,
     `for dir in ${treePaths}; do`,
-    '  [ -e "$dir" ] || continue',
+    // A fresh host has none of these yet, and the dev user cannot create them
+    // under /etc, /var or /opt; the daemon's Ansible probes need the state dir.
+    '  if [ ! -e "$dir" ]; then',
+    '    install -d -o "$dev" -g "$group" -m 0755 "$dir"',
+    "    continue",
+    "  fi",
     '  owner="$(stat -c %U "$dir" 2>/dev/null || true)"',
     '  [ "$owner" = "$dev" ] && continue',
     '  chown "$dev:$group" "$dir" 2>/dev/null || true',
