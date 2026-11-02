@@ -321,10 +321,52 @@ describe('setup.sh roles', () => {
     expect(modeFile()).toContain("role_github='readonly'")
   })
 
-  test('--fork makes a maintainer work like a contributor', () => {
-    const { status, out } = setup({}, ['--fork'])
+  test('fork checkouts get TurboPanel as the gh default and a plain summary', () => {
+    const { status, out } = setup({ FAKE_GH_PUSH: 'false' })
+    expect(status, out).toBe(0)
+    for (const repo of REPOS.filter((name) => name !== '.github')) {
+      expect(ghLog()).toContain(`gh repo set-default TurboPanel/${repo}`)
+    }
+    expect(ghLog()).not.toContain('set-default TurboPanel/.github')
+    expect(out).toContain(
+      'You work from your own fork. Your repos push to octo/<repo> (origin); TurboPanel is upstream.'
+    )
+    expect(out).toContain('Except: .github (read-only).')
+    expect(out.split('You work from your own fork').length - 1).toBe(1)
+  })
+
+  test('a failed gh repo set-default only warns', () => {
+    writeFileSync(
+      join(bin, 'gh'),
+      FAKE_GH.replace(
+        '"auth setup-git") exit 0 ;;',
+        '"auth setup-git") exit 0 ;;\n  "repo set-default") exit 1 ;;'
+      )
+    )
+    const { status, out } = setup({ FAKE_GH_PUSH: 'false' })
+    expect(status, out).toBe(0)
+    expect(out).toContain('ui: gh repo set-default TurboPanel/ui failed')
+  })
+
+  test('push access: the summary says so once, with no exceptions', () => {
+    const { out } = setup()
+    expect(out).toContain('You can push to TurboPanel directly.')
+    expect(out).toContain('rerun with --as-contributor')
+    expect(out).not.toContain('Except:')
+    expect(ghLog()).not.toContain('set-default')
+  })
+
+  test('--as-contributor makes a maintainer work like a contributor', () => {
+    const { status, out } = setup({}, ['--as-contributor'])
     expect(status, out).toBe(0)
     expect(git(join(work, 'ui'), 'remote', 'get-url', 'origin')).toContain('/octo/ui.git')
+    expect(modeFile()).toContain("role_ui='contributor'")
+  })
+
+  test('--fork still works but points at --as-contributor', () => {
+    const { status, out } = setup({}, ['--fork'])
+    expect(status, out).toBe(0)
+    expect(out).toContain('--fork is now --as-contributor')
     expect(modeFile()).toContain("role_ui='contributor'")
   })
 
@@ -387,6 +429,9 @@ describe('setup.sh roles', () => {
     const { status, out } = setup({ FAKE_GH_LOGIN: '' })
     expect(status, out).toBe(0)
     expect(out).toContain('gh auth login')
+    expect(out).toContain(
+      "You are not signed in to GitHub, so the repos are read-only. Run 'gh auth login' and rerun this script."
+    )
     expect(ghLog()).not.toContain('repo fork')
     expect(ghLog()).not.toContain('setup-git')
     expect(modeFile()).toContain("role_turbopaneld='readonly'")
@@ -783,6 +828,7 @@ describe('setup.sh status and doctor', () => {
     )
     expect(out).not.toContain('Branch staging')
     expect(ghLog()).toContain('pr list -R TurboPanel/turbopanel --head feat/wire')
+    expect(out).toContain('You can push to TurboPanel directly.')
   })
 
   test('doctor reports and changes nothing', () => {

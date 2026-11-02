@@ -21,8 +21,22 @@ while Node, Deno, Docker, and systemd live in the VM.
 
 ## Repository layout
 
-Clone all six repos as siblings (any parent path works — example below). Use
-your own forks and feature branches so you can open PRs against `trunk`:
+The quickest start on a new machine needs no clone first. From any folder, as
+your normal user:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/TurboPanel/dev/trunk/scripts/start.sh | sh
+```
+
+It clones this repo into `~/turbopanel/dev` and runs `scripts/setup.sh`, which
+clones the other repos next to it and asks whether you use Vagrant or this
+Debian 13 machine directly. Reading a script before you run it is wise: you can
+download it, read it, then run `sh start.sh`. The URL always serves the current
+`trunk`. Details: [`docs/dev-environment.md`](./docs/dev-environment.md)
+(Contribute).
+
+All six repos sit as siblings in a folder named `turbopanel`. Work on feature
+branches so you can open PRs against `trunk`:
 
 ```
 turbopanel/

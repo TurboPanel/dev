@@ -45,7 +45,8 @@ Canonical docs: https://turbopanel.io/docs/getting-started/development
 
 | Script | Purpose |
 |--------|---------|
-| `./scripts/setup.sh` | **Start here.** Clone or update all six repos into one `turbopanel` folder, pick each repo's layout from your GitHub push access (maintainer: `origin` = TurboPanel repo; contributor: `origin` = your fork, `upstream` = TurboPanel repo; read-only when not logged in), ask Vagrant or direct, set `core.hooksPath`, write `<folder>/.turbopanel-dev-mode`. Flags: `--dir`, `--mode direct\|vagrant`, `--fork`, `--yes`, `--dry-run`. Details: [`scripts/AGENTS.md`](./scripts/AGENTS.md). |
+| `scripts/start.sh` | **New machine, no clone yet:** `curl -fsSL https://raw.githubusercontent.com/TurboPanel/dev/trunk/scripts/start.sh \| sh` (or download, read, `sh start.sh`). Clones `dev` into `~/turbopanel/dev` (or reuses it) and runs `setup.sh` with the other options. Details: [`scripts/AGENTS.md`](./scripts/AGENTS.md). |
+| `./scripts/setup.sh` | **Start here.** Clone or update all six repos into one `turbopanel` folder, pick each repo's layout from your GitHub push access (maintainer: `origin` = TurboPanel repo; contributor: `origin` = your fork, `upstream` = TurboPanel repo; read-only when not logged in), ask Vagrant or direct, set `core.hooksPath`, write `<folder>/.turbopanel-dev-mode`. Flags: `--dir`, `--mode direct\|vagrant`, `--as-contributor`, `--yes`, `--dry-run`. Details: [`scripts/AGENTS.md`](./scripts/AGENTS.md). |
 | `./scripts/setup.sh doctor` | Read-only report: host, Debian `VERSION_ID`, tools, GitHub login, remotes and role per repo, hooks path, signing, mode file agreement. |
 | `./scripts/setup.sh status` | Read-only table: role, branch, ahead/behind trunk, uncommitted files and open pull request per repo, plus a warning for same-named branches across repos. |
 | `vagrant up` / `vagrant ssh` | **Canonical:** boot guest from `dev/`, then SSH in and run `turbopanel/dev/console`. |
@@ -59,10 +60,10 @@ Canonical docs: https://turbopanel.io/docs/getting-started/development
 **Typical flow:**
 
 ```bash
-mkdir turbopanel && cd turbopanel
-git clone https://github.com/TurboPanel/dev.git && ./dev/scripts/setup.sh
-# siblings: …/turbopanel/{dev,turbopaneld,turbopanel,ui,website,.github}
-cd dev
+curl -fsSL https://raw.githubusercontent.com/TurboPanel/dev/trunk/scripts/start.sh | sh
+# or, with a clone already: ~/turbopanel/dev/scripts/setup.sh
+# siblings: ~/turbopanel/{dev,turbopaneld,turbopanel,ui,website,.github}
+cd ~/turbopanel/dev
 vagrant up
 vagrant ssh
 # inside guest:
@@ -126,8 +127,8 @@ Test details (pin tests, secret scan, command table, pre-commit hook, gate matri
 
 - Do not reintroduce `deno.json`/`deno.lock` to this repo or use Deno to run the console — this repo is Node/pnpm/Vite.
 - Do not add Deno installation or upgrade logic to `./console` or `scripts/lib/runtime.sh` — development Deno is resolved from host PATH when present and otherwise auto-vendored by the orchestration path (`ensureBootstrapDeno` / `ensureOrchestrationDenoBin`); production Deno remains platform-managed. Keep `./console` and `scripts/lib/runtime.sh` Node-only.
-- Contributor setup is `scripts/setup.sh`, fetched by cloning `dev` and reading it first. Do not add a `curl | sh` installer or a hosted installer page for it; docs live at turbopanel.io.
-- Repo cloning on the editing machine belongs in `scripts/setup.sh`. The one stated exception is `scripts/vm-bootstrap.sh --clone` (root-run, SSH, for a direct VM prepared on its own); inside the guest the TUI (`src/lib/platform-install.ts`) clones nothing but a missing daemon checkout.
+- Contributor setup is `scripts/setup.sh`. The one `curl | sh` entry is `scripts/start.sh` (owner decision 2026-11-02): it only clones `dev` and hands over to `setup.sh`, installs nothing and uses no sudo, and the docs always offer download, read, then run next to it. Do not add another installer or a hosted installer page; docs live at turbopanel.io.
+- Repo cloning on the editing machine belongs in `scripts/setup.sh`; `scripts/start.sh` clones only `dev` itself so `setup.sh` exists. The other stated exception is `scripts/vm-bootstrap.sh --clone` (root-run, SSH, for a direct VM prepared on its own); inside the guest the TUI (`src/lib/platform-install.ts`) clones nothing but a missing daemon checkout.
 - Do not hardcode developer UID/GID — always read from `tp_resolve_dev_identity()` / `tp_require_dev_identity()` in shell scripts.
 - Do not reintroduce `pull.sh`.
 - Platform repos live under **`TURBOPANEL_DEV_ROOT`** (a folder named `turbopanel`, default `~/turbopanel`, e.g. `~/work/turbopanel`; the Vagrant guest mounts the host repos at `~/turbopanel/<repo>` too; anything else is refused; `TURBOPANEL_<DIR>_REPO` only as an explicit override) — do not clone into `/opt/turbopanel/platform`. Never use the root as `HOME` for git, ssh or pnpm: that is `TURBOPANEL_DEV_HOME` / `turbopanel_dev_home`. Validation rules and the reason for them: `docs/dev-environment.md` (Repos Outside the Home Folder).
