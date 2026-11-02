@@ -3,7 +3,7 @@
 # TurboPanel development VM (libvirt on Linux, UTM on macOS).
 #
 # Plain `vagrant up` selects the native provider for the host. After `vagrant ssh`,
-# start the Ink console from the guest home: `dev/console`.
+# start the Ink console: `~/turbopanel/dev/console`.
 #
 # Mounts sibling checkouts from the host workspace (parent of this repo) into the
 # guest at ~/turbopanel/<repo>, the same folder named turbopanel that every
