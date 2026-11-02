@@ -45,7 +45,7 @@ describe('vm-bootstrap.sh', () => {
   })
 
   test('writes one sudoers file per user', () => {
-    expect(SOURCE).toContain('turbopanel-dev-nopasswd-$(')
+    expect(SOURCE).toContain('turbopanel-dev-nopasswd-uid${DEV_UID}')
   })
 
   test('rejects a bad alias name', () => {
@@ -61,6 +61,17 @@ describe('vm-bootstrap.sh', () => {
     expect(() => execFileSync('sh', [SCRIPT, 'a b'], { stdio: 'pipe' })).toThrow(
       /not a plain user name/
     )
+  })
+
+  test.each(['--swap', '.hidden', '-x'])('rejects the alias %s', (alias) => {
+    expect(() => execFileSync('sh', [SCRIPT, '--lan-alias', alias], { stdio: 'pipe' })).toThrow(
+      /bad --lan-alias name/
+    )
+  })
+
+  test('uses an apt lock timeout and checks sudoers before changing it', () => {
+    expect(SOURCE).toContain('DPkg::Lock::Timeout=300')
+    expect(SOURCE.indexOf('visudo -c 2>&1')).toBeLessThan(SOURCE.indexOf('install -m 0440'))
   })
 
   test('rejects an option that needs a value', () => {

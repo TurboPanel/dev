@@ -40,7 +40,7 @@ while [ "$#" -gt 0 ]; do
     --lan-alias)
       [ "$#" -ge 2 ] || { tp_usage >&2; exit 2; }
       case "$2" in
-        *[!A-Za-z0-9._-]* | '') printf 'vm-bootstrap: bad --lan-alias name: %s\n' "$2" >&2; exit 2 ;;
+        *[!A-Za-z0-9._-]* | [-.]* | '') printf 'vm-bootstrap: bad --lan-alias name: %s\n' "$2" >&2; exit 2 ;;
         *) ;;
       esac
       ALIASES="${ALIASES}${2}
@@ -81,17 +81,17 @@ DEV_HOME=$(printf '%s\n' "$PASSWD_LINE" | cut -d: -f6)
 export DEBIAN_FRONTEND=noninteractive
 
 echo ">>> Installing base packages"
-apt-get update -qq
+apt-get -o DPkg::Lock::Timeout=300 update -qq
 if [ "$DO_UPGRADE" -eq 1 ]; then
-  apt-get -y \
+  apt-get -o DPkg::Lock::Timeout=300 -y \
     -o Dpkg::Options::="--force-confdef" \
     -o Dpkg::Options::="--force-confold" \
     upgrade
-  apt-get -y autoremove
+  apt-get -o DPkg::Lock::Timeout=300 -y autoremove
 fi
 # sudo first: a minimal Debian install may not ship it. tar and coreutils
 # (sha256sum) are what ./console checks for before it vendors Node.
-apt-get install -y sudo curl git ca-certificates openssh-client tar
+apt-get -o DPkg::Lock::Timeout=300 install -y sudo curl git ca-certificates openssh-client tar
 
 echo ">>> Giving ${DEV_USER} sudo access"
 # ./console requires membership in the sudo group; the drop-in below adds the
@@ -99,29 +99,48 @@ echo ">>> Giving ${DEV_USER} sudo access"
 if ! id -nG "$DEV_USER" | tr ' ' '\n' | grep -qx sudo; then
   usermod -aG sudo "$DEV_USER"
 fi
-# One file per user so a second user never replaces the first user's rule.
-# sudo ignores drop-in names that contain a dot, so dots become underscores.
-SUDOERS=/etc/sudoers.d/turbopanel-dev-nopasswd-$(printf '%s' "$DEV_USER" | tr '.' '_')
+# One file per user so a second user never replaces the first user's rule. The
+# file is named after the numeric uid, which is unique, so names such as bob.smith
+# and bob_smith cannot collide (sudo also ignores names with a dot in them).
+DEV_UID=$(printf '%s\n' "$PASSWD_LINE" | cut -d: -f3)
+SUDOERS=/etc/sudoers.d/turbopanel-dev-nopasswd-uid${DEV_UID}
+# Do not touch anything while the sudoers tree is already broken; that is not ours.
+if ! CHECK_OUT=$(visudo -c 2>&1); then
+  printf 'vm-bootstrap: the existing sudoers configuration is already invalid; nothing was changed.\n%s\n' "$CHECK_OUT" >&2
+  exit 1
+fi
 TMP=$(mktemp)
+BACKUP=$(mktemp)
 cat >"$TMP" <<EOT
-# TurboPanel development passwordless sudo for ${DEV_USER}
+# TurboPanel development passwordless sudo for ${DEV_USER} (uid ${DEV_UID})
 # Installed by dev/scripts/vm-bootstrap.sh; remove this file to revert.
 ${DEV_USER} ALL=(ALL) NOPASSWD: ALL
 EOT
 if ! visudo -c -f "$TMP" >/dev/null; then
-  rm -f "$TMP"
+  rm -f "$TMP" "$BACKUP"
   echo "vm-bootstrap: generated sudoers rule failed visudo -c." >&2
   exit 1
 fi
 if ! cmp -s "$TMP" "$SUDOERS" 2>/dev/null; then
+  HAD_RULE=0
+  if [ -f "$SUDOERS" ]; then
+    HAD_RULE=1
+    cp -p "$SUDOERS" "$BACKUP"
+  fi
   install -m 0440 -o root -g root "$TMP" "$SUDOERS"
-  if ! visudo -c >/dev/null; then
-    rm -f "$SUDOERS" "$TMP"
-    echo "vm-bootstrap: sudoers check failed after install; removed ${SUDOERS}." >&2
+  if ! visudo -c >/dev/null 2>&1; then
+    if [ "$HAD_RULE" -eq 1 ]; then
+      install -m 0440 -o root -g root "$BACKUP" "$SUDOERS"
+      echo "vm-bootstrap: the new rule broke the sudoers check; restored the previous ${SUDOERS}." >&2
+    else
+      rm -f "$SUDOERS"
+      echo "vm-bootstrap: the new rule broke the sudoers check; removed ${SUDOERS}." >&2
+    fi
+    rm -f "$TMP" "$BACKUP"
     exit 1
   fi
 fi
-rm -f "$TMP"
+rm -f "$TMP" "$BACKUP"
 
 echo ">>> Writing /etc/profile.d/turbopanel-dev.sh"
 cat >/etc/profile.d/turbopanel-dev.sh <<'EOT'
