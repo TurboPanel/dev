@@ -109,6 +109,47 @@ describe('vm-bootstrap.sh', () => {
     expect(existsSync(marker)).toBe(false)
   })
 
+  test('clones into TURBOPANEL_DEV_ROOT and prints the console path there', () => {
+    expect(SOURCE).toContain('DEV_ROOT=${TURBOPANEL_DEV_ROOT:-$DEV_HOME}')
+    expect(SOURCE).toContain('"${DEV_ROOT}/${repo}"')
+    expect(SOURCE).toContain('${DEV_ROOT}/dev/console')
+    expect(SOURCE).toContain('export TURBOPANEL_DEV_ROOT=')
+    // git still runs with the real home, where the SSH keys are.
+    expect(SOURCE).toContain('"HOME=${DEV_HOME}"')
+  })
+
+  test.each(['relative/turbopanel', '/srv/my repos', '/srv/a$b', '/srv/../root', '/'])(
+    'rejects TURBOPANEL_DEV_ROOT=%s before changing anything',
+    (root) => {
+      const dir = mkdtempSync(join(tmpdir(), 'vmb-'))
+      const marker = join(dir, 'changed')
+      const stub = (name: string, body: string) => {
+        writeFileSync(join(dir, name), `#!/bin/sh\n${body}\n`)
+        chmodSync(join(dir, name), 0o755)
+      }
+      stub('id', 'case "$1" in -u) echo 0 ;; *) echo sudo ;; esac')
+      stub('getent', 'echo "pat:x:1001:1001::/srv/pat:/bin/sh"')
+      for (const cmd of ['visudo', 'apt-get', 'usermod', 'install', 'cp', 'mktemp', 'runuser']) {
+        stub(cmd, `echo ${cmd} >> "${marker}"`)
+      }
+      let stderr = ''
+      let status = 0
+      try {
+        execFileSync('sh', [SCRIPT, 'pat'], {
+          env: { PATH: `${dir}:/usr/bin:/bin`, TURBOPANEL_DEV_ROOT: root },
+          stdio: 'pipe',
+        })
+      } catch (error) {
+        const failure = error as { status: number; stderr: Buffer }
+        status = failure.status
+        stderr = failure.stderr.toString()
+      }
+      expect(status).toBe(1)
+      expect(stderr).toContain('TURBOPANEL_DEV_ROOT=')
+      expect(existsSync(marker)).toBe(false)
+    }
+  )
+
   test('rejects an option that needs a value', () => {
     expect(() => execFileSync('sh', [SCRIPT, '--lan-alias'], { stdio: 'pipe' })).toThrow(/Usage/)
   })

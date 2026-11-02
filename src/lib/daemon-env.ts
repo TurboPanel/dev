@@ -8,7 +8,7 @@ import {
   TURBOPANEL_TRUNK_BRANCH,
 } from './paths.ts'
 import { resolveDevIdentity } from './dev-identity.ts'
-import { resolveCheckedDevRoot, resolveDevHome } from './dev-root.ts'
+import { devHomeEnvEntry, resolveCheckedDevRoot } from './dev-root.ts'
 import { mergeEnvFile, parseEnvEntries, readEnvFile, readEnvFileAsync } from './env-file.ts'
 import { caddyBrowserUrl } from './service-urls.ts'
 
@@ -19,10 +19,10 @@ const WORKERS_INSTANCE_URL_KEYS = ['TURBOPANEL_INSTANCE_URL', 'TURBOPANEL_INSTAN
 /** Build the managed daemon.env entries the dev console writes (testable contract). */
 export function buildDaemonBaseEnvEntries(extra?: Record<string, string>): Record<string, string> {
   const dev = resolveDevIdentity()
-  const devHome = resolveDevHome(dev.user)
+  const devRoot = resolveCheckedDevRoot()
   return {
     TURBOPANEL_MODE: 'development',
-    TURBOPANEL_DEV_ROOT: resolveCheckedDevRoot(),
+    TURBOPANEL_DEV_ROOT: devRoot,
     TURBOPANEL_DEV_ORCHESTRATION_DIR: devOrchestrationDir(),
     ...buildPlatformRepoEntries(),
     [DAEMON_ENV_TRUNK_BRANCH_KEY]: TURBOPANEL_TRUNK_BRANCH,
@@ -31,7 +31,7 @@ export function buildDaemonBaseEnvEntries(extra?: Record<string, string>): Recor
     TURBOPANEL_DEV_GID: String(dev.gid),
     // HOME for git, ssh and pnpm in the repo roles; differs from the root when
     // the repos sit in a sub-folder such as ~/work/turbopanel.
-    ...(devHome ? { TURBOPANEL_DEV_HOME: devHome } : {}),
+    ...devHomeEnvEntry(dev.user, devRoot),
     ...extra,
   }
 }

@@ -61,5 +61,27 @@ export function resolveDevHome(user: string): string | null {
   })
   if (result.status !== 0 || !result.stdout) return null
   const home = result.stdout.trim().split(':')[5]?.trim()
-  return home?.startsWith('/') ? home : null
+  // Written unquoted into daemon.env and Ansible extra-vars, like the root.
+  return home && devRootSyntaxError(home) === null ? home : null
+}
+
+/**
+ * `TURBOPANEL_DEV_HOME` entry for daemon.env. When the home cannot be read (or
+ * has characters that would break the env file) the key is left out and the
+ * daemon's repo roles fall back to the repo folder as HOME, which breaks git,
+ * ssh and pnpm when the repos sit outside the home, so say so loudly.
+ */
+export function devHomeEnvEntry(
+  user: string,
+  root: string,
+  warn: (message: string) => void = console.warn
+): Record<string, string> {
+  const home = resolveDevHome(user)
+  if (home) return { TURBOPANEL_DEV_HOME: home }
+  warn(
+    `WARNING: could not read a usable home folder for ${user} from passwd; ` +
+      `TURBOPANEL_DEV_HOME is left out of daemon.env, so git, ssh and pnpm in the ` +
+      `dev converge will use ${root} as HOME.`
+  )
+  return {}
 }

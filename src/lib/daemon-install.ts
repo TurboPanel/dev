@@ -1,24 +1,19 @@
-import { spawn } from "node:child_process";
-import { bootstrapOrchestrationCommand, ensureBootstrapDeno } from "./daemon-exec.ts";
-import {
-  daemonRepoPath,
-  DAEMON_SYSTEMD_UNIT,
-  PYTHON_RUNTIME_DIR,
-  resolveDevRoot,
-  UV_CACHE_DIR,
-} from "./paths.ts";
-import type { InstallStepHandler } from "./platform-install.ts";
+import { spawn } from 'node:child_process'
+import { bootstrapOrchestrationCommand, ensureBootstrapDeno } from './daemon-exec.ts'
+import { daemonRepoPath, DAEMON_SYSTEMD_UNIT, PYTHON_RUNTIME_DIR, UV_CACHE_DIR } from './paths.ts'
+import type { InstallStepHandler } from './platform-install.ts'
 import {
   captureChildEnv,
   type InstallOutputHandler,
   runCaptured,
   sanitizeInstallOutput,
-} from "./install-output.ts";
-import { ensureFhsTreeOwnership } from "./turbopanel-permissions.ts";
-import { writeDaemonBaseEnv } from "./daemon-env.ts";
-import { resolveDevIdentity } from "./dev-identity.ts";
-import { TRUSTED_SYSTEM_PATH } from "./spawn-trusted.ts";
-import { shellQuote } from "./shell-quote.ts";
+} from './install-output.ts'
+import { ensureFhsTreeOwnership } from './turbopanel-permissions.ts'
+import { writeDaemonBaseEnv } from './daemon-env.ts'
+import { resolveDevIdentity } from './dev-identity.ts'
+import { TRUSTED_SYSTEM_PATH } from './spawn-trusted.ts'
+import { resolveCheckedDevRoot } from './dev-root.ts'
+import { shellQuote } from './shell-quote.ts'
 
 /**
  * Dev vs production install path invariant:
@@ -36,164 +31,155 @@ import { shellQuote } from "./shell-quote.ts";
  * directly as that user (Ansible's `become: true` handles per-task privilege
  * escalation via the dev user's own passwordless sudo).
  */
-const DAEMON_DIR = daemonRepoPath();
+const DAEMON_DIR = daemonRepoPath()
 
 function bootstrapEnv(): string[] {
   return [
     `UV_PYTHON_INSTALL_DIR=${PYTHON_RUNTIME_DIR}`,
     `UV_CACHE_DIR=${UV_CACHE_DIR}`,
-    "UV_NO_MODIFY_PATH=1",
-    "UV_PYTHON_DOWNLOADS=automatic",
-    "UV_VENV_CLEAR=1",
+    'UV_NO_MODIFY_PATH=1',
+    'UV_PYTHON_DOWNLOADS=automatic',
+    'UV_VENV_CLEAR=1',
     // Match daemon runtimeEnv(): cryptography 47+ SIGILLs on Apple Silicon VMs
     // that advertise SVE2 without implementing it (UTM). Harmless elsewhere.
-    "OPENSSL_armcap=0",
-  ];
+    'OPENSSL_armcap=0',
+  ]
 }
 
-async function prepareBootstrapEnvironment(
-  onOutput?: InstallOutputHandler,
-): Promise<void> {
-  await ensureFhsTreeOwnership(onOutput);
+async function prepareBootstrapEnvironment(onOutput?: InstallOutputHandler): Promise<void> {
+  await ensureFhsTreeOwnership(onOutput)
 }
 
 export async function bootstrapOrchestration(
   onEvent: (event: unknown) => void,
-  onOutput?: InstallOutputHandler,
+  onOutput?: InstallOutputHandler
 ): Promise<void> {
-  await prepareBootstrapEnvironment(onOutput);
+  await prepareBootstrapEnvironment(onOutput)
 
-  await ensureBootstrapDeno(onOutput);
+  await ensureBootstrapDeno(onOutput)
 
-  const bootstrapInvocation = bootstrapOrchestrationCommand();
-  const command =
-    `cd ${shellQuote(DAEMON_DIR)} && exec ${bootstrapInvocation}`;
+  const bootstrapInvocation = bootstrapOrchestrationCommand()
+  const command = `cd ${shellQuote(DAEMON_DIR)} && exec ${bootstrapInvocation}`
 
   await new Promise<void>((resolve, reject) => {
-    const child = spawn("/usr/bin/env", [
-      ...bootstrapEnv(),
-      "/bin/bash",
-      "-c",
-      command,
-    ], {
-      stdio: ["ignore", "pipe", "pipe"],
+    const child = spawn('/usr/bin/env', [...bootstrapEnv(), '/bin/bash', '-c', command], {
+      stdio: ['ignore', 'pipe', 'pipe'],
       env: captureChildEnv({ PATH: TRUSTED_SYSTEM_PATH }),
       detached: false,
-    });
+    })
 
-    let stdoutBuffer = "";
-    let stdoutTail = "";
-    let stderrBuffer = "";
-    let stderrTail = "";
+    let stdoutBuffer = ''
+    let stdoutTail = ''
+    let stderrBuffer = ''
+    let stderrTail = ''
 
     const handleLine = (line: string) => {
-      const trimmed = sanitizeInstallOutput(line).trim();
-      if (trimmed.length === 0) return;
-      stdoutTail = trimmed;
+      const trimmed = sanitizeInstallOutput(line).trim()
+      if (trimmed.length === 0) return
+      stdoutTail = trimmed
       try {
-        onEvent(JSON.parse(trimmed));
+        onEvent(JSON.parse(trimmed))
       } catch {
-        onOutput?.(trimmed);
+        onOutput?.(trimmed)
       }
-    };
+    }
 
-    child.stdout.on("data", (chunk: Buffer | string) => {
-      stdoutBuffer += chunk.toString();
-      let newline = stdoutBuffer.indexOf("\n");
+    child.stdout.on('data', (chunk: Buffer | string) => {
+      stdoutBuffer += chunk.toString()
+      let newline = stdoutBuffer.indexOf('\n')
       while (newline >= 0) {
-        const line = stdoutBuffer.slice(0, newline);
-        stdoutBuffer = stdoutBuffer.slice(newline + 1);
-        handleLine(line);
-        newline = stdoutBuffer.indexOf("\n");
+        const line = stdoutBuffer.slice(0, newline)
+        stdoutBuffer = stdoutBuffer.slice(newline + 1)
+        handleLine(line)
+        newline = stdoutBuffer.indexOf('\n')
       }
-    });
+    })
 
-    child.stderr.on("data", (chunk: Buffer | string) => {
-      const text = chunk.toString();
-      stderrBuffer += text;
-      const lines = text.split("\n").map((line) => line.trim()).filter(Boolean);
+    child.stderr.on('data', (chunk: Buffer | string) => {
+      const text = chunk.toString()
+      stderrBuffer += text
+      const lines = text
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean)
       for (const line of lines) {
-        stderrTail = line;
-        onOutput?.(line);
+        stderrTail = line
+        onOutput?.(line)
       }
-    });
+    })
 
-    child.on("error", (error) => {
-      reject(error);
-    });
+    child.on('error', (error) => {
+      reject(error)
+    })
 
-    child.on("close", (code) => {
+    child.on('close', (code) => {
       if (stdoutBuffer.trim().length > 0) {
-        handleLine(stdoutBuffer);
+        handleLine(stdoutBuffer)
       }
       if (code === 0) {
-        resolve();
-        return;
+        resolve()
+        return
       }
 
       if (!stderrTail && stderrBuffer.trim().length > 0) {
         const lines = stderrBuffer
           .trim()
-          .split("\n")
+          .split('\n')
           .map((line) => line.trim())
-          .filter(Boolean);
+          .filter(Boolean)
         if (lines.length > 0) {
-          stderrTail = lines.at(-1)!;
+          stderrTail = lines.at(-1)!
         }
       }
 
-      const message = stderrTail || stdoutTail || "Bootstrap orchestration failed";
-      reject(new Error(message));
-    });
-  });
+      const message = stderrTail || stdoutTail || 'Bootstrap orchestration failed'
+      reject(new Error(message))
+    })
+  })
 }
 
 export async function installDaemonSystemd(
   onOutput?: InstallOutputHandler,
-  onStep?: InstallStepHandler,
+  onStep?: InstallStepHandler
 ): Promise<void> {
-  onStep?.(`Install ${DAEMON_SYSTEMD_UNIT} systemd unit`, "running");
+  onStep?.(`Install ${DAEMON_SYSTEMD_UNIT} systemd unit`, 'running')
 
   // Must precede systemd setup so the playbook's create-if-absent guard and the
   // daemon's first start both see the real dev-identity/connectivity contract.
-  writeDaemonBaseEnv();
+  writeDaemonBaseEnv()
 
-  const dev = resolveDevIdentity();
+  const dev = resolveDevIdentity()
   const envPrefix = [
-    "TURBOPANEL_SKIP_DAEMON_START=1",
+    'TURBOPANEL_SKIP_DAEMON_START=1',
     `TURBOPANEL_DEV_USER=${dev.user}`,
     `TURBOPANEL_DEV_UID=${dev.uid}`,
     `TURBOPANEL_DEV_GID=${dev.gid}`,
-    `TURBOPANEL_DEV_ROOT=${resolveDevRoot()}`,
+    `TURBOPANEL_DEV_ROOT=${shellQuote(resolveCheckedDevRoot())}`,
     `TURBOPANEL_DAEMON_ROOT=${DAEMON_DIR}`,
-  ].join(" ");
+  ].join(' ')
 
-  const command =
-    `cd ${shellQuote(DAEMON_DIR)} && ${envPrefix} exec bash ${shellQuote("scripts/install-daemon-systemd.sh")}`;
+  const command = `cd ${shellQuote(DAEMON_DIR)} && ${envPrefix} exec bash ${shellQuote('scripts/install-daemon-systemd.sh')}`
 
-  const code = await runCaptured(["sudo", "bash", "-c", command], onOutput);
+  const code = await runCaptured(['sudo', 'bash', '-c', command], onOutput)
 
   if (code !== 0) {
-    onStep?.(`Install ${DAEMON_SYSTEMD_UNIT} systemd unit`, "failed");
-    throw new Error("Install daemon systemd failed");
+    onStep?.(`Install ${DAEMON_SYSTEMD_UNIT} systemd unit`, 'failed')
+    throw new Error('Install daemon systemd failed')
   }
 
-  onStep?.(`Install ${DAEMON_SYSTEMD_UNIT} systemd unit`, "ok");
+  onStep?.(`Install ${DAEMON_SYSTEMD_UNIT} systemd unit`, 'ok')
 
   // Stop if the install script started the daemon before env was fully applied.
-  await runCaptured(
-    ["sudo", "-n", "systemctl", "stop", DAEMON_SYSTEMD_UNIT],
-    onOutput,
-  );
+  await runCaptured(['sudo', '-n', 'systemctl', 'stop', DAEMON_SYSTEMD_UNIT], onOutput)
 
-  onStep?.(`Start ${DAEMON_SYSTEMD_UNIT}`, "running");
+  onStep?.(`Start ${DAEMON_SYSTEMD_UNIT}`, 'running')
   const startCode = await runCaptured(
-    ["sudo", "-n", "systemctl", "enable", "--now", DAEMON_SYSTEMD_UNIT],
-    onOutput,
-  );
+    ['sudo', '-n', 'systemctl', 'enable', '--now', DAEMON_SYSTEMD_UNIT],
+    onOutput
+  )
   if (startCode !== 0) {
-    onStep?.(`Start ${DAEMON_SYSTEMD_UNIT}`, "failed");
-    throw new Error(`Failed to start ${DAEMON_SYSTEMD_UNIT}`);
+    onStep?.(`Start ${DAEMON_SYSTEMD_UNIT}`, 'failed')
+    throw new Error(`Failed to start ${DAEMON_SYSTEMD_UNIT}`)
   }
-  onStep?.(`Start ${DAEMON_SYSTEMD_UNIT}`, "ok");
+  onStep?.(`Start ${DAEMON_SYSTEMD_UNIT}`, 'ok')
 }

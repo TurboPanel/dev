@@ -854,9 +854,6 @@ tp_cmd_setup() {
   echo "  Then:         core.hooksPath=.githooks in each repo where it is unset, write $(tp_mode_file)"
   if [ "$MODE" = direct ]; then
     echo "  Direct mode:  sudo sh dev/scripts/vm-bootstrap.sh $(id -un) (base packages, sudo rule, profile file)"
-    if [ "$DIR" != "$HOME" ]; then
-      tp_warn "Direct mode with repos outside \$HOME needs the console and Ansible to honour TURBOPANEL_DEV_ROOT; until that lands use --dir \"\$HOME\"."
-    fi
   elif [ "$MODE" = vagrant ]; then
     tp_vagrant_hints
   fi

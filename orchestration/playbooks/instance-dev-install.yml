@@ -120,7 +120,7 @@
     - name: Validate the dev source-repo root path
       ansible.builtin.assert:
         that:
-          - turbopanel_dev_root is match('^/[A-Za-z0-9._@+/-]+$')
+          - turbopanel_dev_root is match('^/[A-Za-z0-9._@+/-]+\Z')
           - turbopanel_dev_root is not match('^/+$')
           - ('/' ~ turbopanel_dev_root ~ '/') is not search('/[.][.]?/')
         fail_msg: >-

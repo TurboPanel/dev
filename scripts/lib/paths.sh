@@ -3,8 +3,36 @@
 
 TURBOPANEL_ROOT=/opt/turbopanel
 # Development source-repo root (turbopaneld/turbopanel/ui/website live here).
-# Defaults to the dev user's home; override with TURBOPANEL_DEV_ROOT.
+# Defaults to the dev user's home; override with TURBOPANEL_DEV_ROOT, or let
+# ./console read it from the mode file setup.sh writes next to the repos
+# (tp_load_dev_root_mode_file). An explicit TURBOPANEL_DEV_ROOT always wins.
+TP_DEV_ROOT_FROM_ENV=${TURBOPANEL_DEV_ROOT:+1}
 TURBOPANEL_DEV_ROOT=${TURBOPANEL_DEV_ROOT:-$HOME}
+
+# When TURBOPANEL_DEV_ROOT was not set by the caller, take it from
+# <folder holding the dev checkout>/.turbopanel-dev-mode (key dev_root). The
+# file is parsed, never sourced: only a line dev_root='...' counts, and the
+# '\'' escape setup.sh writes for a quote is undone. The file sits next to the
+# repos, so when its dev_root names another folder (the checkout was moved)
+# the folder that holds the file wins, with a warning.
+#   tp_load_dev_root_mode_file <dev checkout dir>
+tp_load_dev_root_mode_file() {
+  [ -z "$TP_DEV_ROOT_FROM_ENV" ] || return 0
+  _tp_lm_parent=$(CDPATH='' cd -- "$1/.." 2>/dev/null && pwd) || return 0
+  _tp_lm_file=$_tp_lm_parent/.turbopanel-dev-mode
+  [ -f "$_tp_lm_file" ] || return 0
+  _tp_lm_root=$(sed -n "s/^dev_root='\(.*\)'\$/\1/p" "$_tp_lm_file" | tail -n 1 | sed "s/'\\\\''/'/g")
+  [ -n "$_tp_lm_root" ] || return 0
+  _tp_lm_real_root=$(CDPATH='' cd -P -- "$_tp_lm_root" 2>/dev/null && pwd) || _tp_lm_real_root=
+  _tp_lm_real_parent=$(CDPATH='' cd -P -- "$_tp_lm_parent" && pwd)
+  if [ "$_tp_lm_real_root" = "$_tp_lm_real_parent" ]; then
+    TURBOPANEL_DEV_ROOT=$_tp_lm_root
+  else
+    printf 'TurboPanel: %s says dev_root=%s, but it sits in %s; using %s (rerun dev/scripts/setup.sh to update it).\n' \
+      "$_tp_lm_file" "$_tp_lm_root" "$_tp_lm_parent" "$_tp_lm_parent" >&2
+    TURBOPANEL_DEV_ROOT=$_tp_lm_parent
+  fi
+}
 # Check TURBOPANEL_DEV_ROOT (or $1) before anything uses it; prints the problem
 # and returns 1 when it is unusable. Without $1 it also drops trailing slashes
 # from TURBOPANEL_DEV_ROOT, matching the daemon's resolver. The character rules

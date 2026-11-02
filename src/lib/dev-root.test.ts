@@ -1,11 +1,12 @@
 import { spawnSync } from 'node:child_process'
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir, userInfo } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { buildDaemonBaseEnvEntries } from './daemon-env.ts'
 import {
+  devHomeEnvEntry,
   DevRootError,
   devRootSyntaxError,
   resolveCheckedDevRoot,
@@ -173,5 +174,92 @@ describe('tp_validate_dev_root (scripts/lib/paths.sh)', () => {
     const { status, stderr } = runShell(join(file, 'turbopanel'))
     expect(status).toBe(1)
     expect(stderr).toContain('cannot be created')
+  })
+})
+
+describe('tp_load_dev_root_mode_file (scripts/lib/paths.sh)', () => {
+  // <scratch>/turbopanel/{dev,.turbopanel-dev-mode}, as setup.sh lays it out.
+  function layout(modeLines: string[] | null): { root: string; dev: string } {
+    const root = join(scratch, 'turbopanel')
+    const dev = join(root, 'dev')
+    mkdirSync(dev, { recursive: true })
+    if (modeLines) writeFileSync(join(root, '.turbopanel-dev-mode'), `${modeLines.join('\n')}\n`)
+    return { root, dev }
+  }
+
+  function load(dev: string, env: Record<string, string> = {}) {
+    const result = spawnSync(
+      'sh',
+      [
+        '-c',
+        '. "$1"; tp_load_dev_root_mode_file "$2" && printf %s "$TURBOPANEL_DEV_ROOT"',
+        'sh',
+        PATHS_SH,
+        dev,
+      ],
+      { encoding: 'utf8', env: shellEnv(env) }
+    )
+    return { status: result.status, root: result.stdout, stderr: result.stderr }
+  }
+
+  test('takes dev_root from the mode file next to the repos', () => {
+    const { root, dev } = layout([
+      '# written by setup.sh',
+      "TURBOPANEL_DEV_ENV='direct'",
+      `dev_root='${'$'}{HOME}/ignored'`,
+      `dev_root='${scratch}/turbopanel'`,
+    ])
+    expect(load(dev)).toEqual({ status: 0, root, stderr: '' })
+  })
+
+  test('an explicit TURBOPANEL_DEV_ROOT wins over the mode file', () => {
+    const { dev, root } = layout([`dev_root='${scratch}/turbopanel'`])
+    expect(load(dev, { TURBOPANEL_DEV_ROOT: '/srv/elsewhere' }).root).toBe('/srv/elsewhere')
+    expect(root).not.toBe('/srv/elsewhere')
+  })
+
+  test('falls back to the home folder without a mode file', () => {
+    const { dev } = layout(null)
+    expect(load(dev).root).toBe(scratch)
+  })
+
+  test('never runs the file: a command line in it is ignored', () => {
+    const marker = join(scratch, 'ran')
+    const { dev } = layout([`touch ${marker}`, `dev_root='${scratch}/turbopanel'`])
+    load(dev)
+    expect(() => readFileSync(marker)).toThrow()
+  })
+
+  test('undoes the quote escape setup.sh writes, and the validator then refuses the value', () => {
+    const { dev, root } = layout(["dev_root='/srv/it'\\''s'"])
+    const result = load(dev)
+    // The unescaped value names another folder, so the folder holding the file wins.
+    expect(result.stderr).toContain("says dev_root=/srv/it's")
+    expect(result.root).toBe(root)
+    expect(devRootSyntaxError("/srv/it's")).toContain('no spaces')
+  })
+
+  test('a moved folder: the folder that holds the mode file wins, with a warning', () => {
+    const { dev, root } = layout(["dev_root='/srv/old/turbopanel'"])
+    const result = load(dev)
+    expect(result.root).toBe(root)
+    expect(result.stderr).toContain('rerun dev/scripts/setup.sh')
+  })
+})
+
+describe('devHomeEnvEntry', () => {
+  test('warns loudly and leaves the key out when the home cannot be read', () => {
+    const warn = vi.fn()
+    expect(devHomeEnvEntry('tp-no-such-user-xyz', '/srv/turbopanel', warn)).toEqual({})
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('WARNING'))
+    expect(warn.mock.calls[0]?.[0]).toContain('/srv/turbopanel as HOME')
+  })
+
+  test.skipIf(!ON_LINUX)('writes the home when passwd has a usable one', () => {
+    const warn = vi.fn()
+    expect(devHomeEnvEntry(userInfo().username, '/srv/turbopanel', warn)).toEqual({
+      TURBOPANEL_DEV_HOME: userInfo().homedir,
+    })
+    expect(warn).not.toHaveBeenCalled()
   })
 })
