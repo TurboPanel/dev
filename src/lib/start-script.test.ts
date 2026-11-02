@@ -8,6 +8,7 @@ import {
   readFileSync,
   rmSync,
   statSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -36,6 +37,7 @@ exec "$REAL_GIT" "$@"
 // Stands in for setup.sh: prints what it was given.
 const FAKE_SETUP = `#!/bin/sh
 echo "setup.sh got: $*"
+for a; do echo "arg:[$a]"; done
 `
 
 type Env = Record<string, string>
@@ -113,7 +115,8 @@ describe('start.sh source', () => {
     expect(SOURCE.startsWith('#!/bin/sh\n')).toBe(true)
     expect(statSync(SCRIPT).mode & 0o111).not.toBe(0)
     expect(() => execFileSync('sh', ['-n', SCRIPT])).not.toThrow()
-    expect(SOURCE.trimEnd().split('\n').at(-1)).toBe('tp_start_main "$@"')
+    expect(SOURCE.trimEnd().split('\n').at(-1)).toBe('tp_start_main "$@" "$TP_START_END"')
+    expect(SOURCE).not.toMatch(/\beval\b/)
     expect(SOURCE).not.toMatch(/^\s*sudo\b/m)
   })
 
@@ -182,6 +185,89 @@ describe('start.sh checks', () => {
   })
 })
 
+describe('start.sh hardening', () => {
+  test.each([[['--dir', '']], [['--dir=']]])('an empty --dir is refused: %j', (args) => {
+    const { status, out } = run(args)
+    expect(status).toBe(1)
+    expect(out).toContain('--dir needs a folder')
+    expect(gitLog()).toBe('')
+  })
+
+  test('a home folder with a space is blamed, not --dir', () => {
+    const spaced = join(root, 'my home')
+    mkdirSync(spaced)
+    const { status, out } = run([], { HOME: spaced })
+    expect(status).toBe(1)
+    expect(out).toContain('the default folder ($HOME/turbopanel; pass --dir')
+    expect(out).not.toMatch(/--dir (must|may)/)
+  })
+
+  test('options with quotes, spaces and $( ) reach setup.sh unchanged and never run', () => {
+    const folder = join(home, 'turbopanel')
+    devCheckout(folder)
+    const odd = ['a b', '$(touch pwned)', '"; touch pwned2; "', "it's", '`touch pwned3`']
+    const { status, out } = run(['--mode', 'vagrant', ...odd])
+    expect(status, out).toBe(0)
+    for (const value of ['--mode', 'vagrant', ...odd, '--dir', folder]) {
+      expect(out).toContain(`arg:[${value}]`)
+    }
+    for (const file of ['pwned', 'pwned2', 'pwned3']) {
+      expect(existsSync(join(home, file))).toBe(false)
+    }
+  })
+
+  test.each([
+    ['before the call', (src: string) => src.slice(0, src.lastIndexOf('tp_start_main "$@"'))],
+    [
+      'inside the call, at the name',
+      (src: string) => src.slice(0, src.lastIndexOf(' "$@" "$TP_START_END"')),
+    ],
+    [
+      'inside the call, before the marker',
+      (src: string) => src.slice(0, src.lastIndexOf(' "$TP_START_END"')),
+    ],
+    ['inside the marker', (src: string) => src.slice(0, src.lastIndexOf('END"'))],
+  ])('a download cut %s runs nothing', (_where, cut) => {
+    const result = spawnSync('/bin/sh', ['-s', '--', '--mode', 'vagrant'], {
+      cwd: home,
+      encoding: 'utf8',
+      env: baseEnv(),
+      input: cut(SOURCE),
+    })
+    expect(result.stdout).not.toContain('TurboPanel development setup')
+    expect(gitLog()).toBe('')
+    expect(existsSync(join(home, 'turbopanel'))).toBe(false)
+  })
+
+  test('only origin or upstream make an existing dev folder count', () => {
+    const folder = join(home, 'turbopanel')
+    const dev = devCheckout(folder, 'https://github.com/octo/dev.git')
+    execFileSync('git', ['-C', dev, 'remote', 'add', 'other', DEV_URL], { env: baseEnv() })
+    const { status, out } = run([])
+    expect(status).toBe(1)
+    expect(out).toContain('not a git checkout of TurboPanel/dev')
+  })
+
+  test('a dangling symlink in place of dev is refused before cloning', () => {
+    const folder = join(home, 'turbopanel')
+    mkdirSync(folder)
+    symlinkSync(join(root, 'nowhere'), join(folder, 'dev'))
+    const { status, out } = run([])
+    expect(status).toBe(1)
+    expect(out).toContain('is a symlink to nothing')
+    expect(gitLog()).not.toContain('clone')
+  })
+
+  test('on macOS the plan offers Vagrant only', () => {
+    stub('uname', 'echo Darwin')
+    const { status, out } = run(['--dry-run'])
+    expect(status, out).toBe(0)
+    expect(out).toContain('Vagrant: the repos stay in')
+    expect(out).not.toContain('Direct:')
+    expect(out).toContain('on macOS setup uses Vagrant')
+  })
+})
+
 describe('start.sh hand-off', () => {
   test('a fresh machine clones dev into ~/turbopanel and passes every option on', () => {
     const folder = join(home, 'turbopanel')
@@ -192,7 +278,7 @@ describe('start.sh hand-off', () => {
     expect(existsSync(join(folder, '.start-clone-dev'))).toBe(false)
     expect(out).toContain(`clone ${DEV_URL} into ${folder}/dev`)
     expect(out).toContain('Vagrant: the repos stay in')
-    expect(out).toContain('Direct:  this Debian 13 machine')
+    expect(out).toContain('Direct:  a Debian 13 machine becomes the dev machine')
     expect(out).toContain(`setup.sh got: --mode direct --yes --fork --dir ${folder}`)
   })
 
@@ -250,7 +336,7 @@ describe('start.sh hand-off', () => {
     expect(out).toContain(`setup.sh got: --dry-run --dir ${folder}`)
   })
 
-  test('piped in without a terminal, the script text never reaches setup.sh', () => {
+  test('piped in without a terminal, the options still reach setup.sh', () => {
     const folder = join(home, 'turbopanel')
     devCheckout(folder)
     const result = spawnSync('/bin/sh', ['-s', '--', '--mode', 'vagrant'], {

@@ -12,12 +12,16 @@
 # changes anything (including how you want to run TurboPanel: Vagrant or this
 # Debian 13 machine directly). Every option it does not know goes to setup.sh.
 #
-# The whole script is one function called on the last line, so a download cut
-# short never runs half of it and nothing after the call is left on the pipe.
+# The whole script is functions plus one call on the last line, which passes
+# an end marker after your options. A download cut short before that line
+# runs nothing; one cut inside it fails on the missing marker (or a syntax
+# error) instead of running with lost options. Nothing after the call is left
+# on the pipe for setup.sh to read.
 set -eu
 
 TP_DEV_URL=https://github.com/TurboPanel/dev.git
 TP_RAW_URL=https://raw.githubusercontent.com/TurboPanel/dev/trunk/scripts/start.sh
+TP_START_END=--tp-start-end
 
 tp_start_usage() {
   cat <<USAGE
@@ -50,20 +54,21 @@ tp_start_die() {
 # arguments later, so only plain characters are allowed.
 tp_start_check_dir() {
   _cd_dir=$1
+  _cd_what=$2
   while [ "${#_cd_dir}" -gt 1 ] && [ "${_cd_dir%/}" != "$_cd_dir" ]; do
     _cd_dir=${_cd_dir%/}
   done
   case $_cd_dir in
-    /) tp_start_die "--dir must not be the filesystem root." ;;
+    /) tp_start_die "${_cd_what} must not be the filesystem root." ;;
     /*) ;;
-    *) tp_start_die "--dir must be an absolute path (got ${_cd_dir})." ;;
+    *) tp_start_die "${_cd_what} must be an absolute path (got ${_cd_dir})." ;;
   esac
   case $_cd_dir in
-    *[!A-Za-z0-9._@+/-]*) tp_start_die "--dir may only contain letters, digits and . _ @ + - / (no spaces or shell characters): ${_cd_dir}" ;;
+    *[!A-Za-z0-9._@+/-]*) tp_start_die "${_cd_what} may only contain letters, digits and . _ @ + - / (no spaces or shell characters): ${_cd_dir}" ;;
     *) ;;
   esac
   case "$_cd_dir/" in
-    */./* | */../*) tp_start_die "--dir must not contain . or .. parts: ${_cd_dir}" ;;
+    */./* | */../*) tp_start_die "${_cd_what} must not contain . or .. parts: ${_cd_dir}" ;;
     *) ;;
   esac
   [ "${_cd_dir##*/}" = turbopanel ] ||
@@ -81,7 +86,7 @@ tp_start_is_dev_checkout() {
   [ -e "$_dc_path/.git" ] || return 1
   _dc_top=$(git -C "$_dc_path" rev-parse --show-toplevel 2>/dev/null) || return 1
   [ "$_dc_top" = "$(CDPATH='' cd -- "$_dc_path" && pwd -P)" ] || return 1
-  for _dc_remote in $(git -C "$_dc_path" remote 2>/dev/null); do
+  for _dc_remote in origin upstream; do
     _dc_url=$(git -C "$_dc_path" remote get-url "$_dc_remote" 2>/dev/null | tr '[:upper:]' '[:lower:]') || continue
     case "${_dc_url%.git}" in
       https://github.com/turbopanel/dev | git@github.com:turbopanel/dev | ssh://git@github.com/turbopanel/dev) return 0 ;;
@@ -94,29 +99,37 @@ tp_start_is_dev_checkout() {
 tp_start_main() {
   START_DIR=
   _sm_dir=
+  _sm_dir_set=0
   _sm_dry=0
-  _sm_pass=
-  _sm_count=0
-  while [ "$#" -gt 0 ]; do
-    case "$1" in
+  # The last argument is the end marker from the call on the script's last
+  # line; without it the download was cut short. Rotate through the others
+  # once: ours are consumed, the rest are appended to "$@" for setup.sh.
+  _sm_left=$(($# - 1))
+  while [ "$_sm_left" -gt 0 ]; do
+    _sm_arg=$1
+    shift
+    _sm_left=$((_sm_left - 1))
+    case "$_sm_arg" in
       --dir)
-        [ "$#" -ge 2 ] || { tp_start_usage >&2; exit 2; }
-        _sm_dir=$2
+        [ "$_sm_left" -gt 0 ] || { tp_start_usage >&2; exit 2; }
+        _sm_dir=$1
+        _sm_dir_set=1
         shift
+        _sm_left=$((_sm_left - 1))
         ;;
-      --dir=*) _sm_dir=${1#--dir=} ;;
+      --dir=*)
+        _sm_dir=${_sm_arg#--dir=}
+        _sm_dir_set=1
+        ;;
       --dry-run) _sm_dry=1 ;;
       -h | --help) tp_start_usage; exit 0 ;;
-      *)
-        # Keep the remaining options in the positional list, in order.
-        _sm_count=$((_sm_count + 1))
-        _sm_pass="${_sm_pass} \"\${_sm_arg_${_sm_count}}\""
-        eval "_sm_arg_${_sm_count}=\$1"
-        ;;
+      *) set -- "$@" "$_sm_arg" ;;
     esac
-    shift
   done
-  eval "set -- ${_sm_pass}"
+  if [ "$#" -eq 0 ] || [ "$1" != "$TP_START_END" ]; then
+    tp_start_die "this script looks cut short (an interrupted download?); nothing ran. Download it again."
+  fi
+  shift
   [ "$_sm_dry" -eq 0 ] || set -- "$@" --dry-run
 
   [ "$(id -u)" -ne 0 ] || tp_start_die "run this as your normal user, not root; setup asks for sudo only where it needs it."
@@ -126,15 +139,20 @@ tp_start_main() {
     tp_start_die "curl or wget is required. Debian or Ubuntu: sudo apt-get install curl. macOS ships curl."
   fi
 
-  if [ -z "$_sm_dir" ]; then
+  if [ "$_sm_dir_set" -eq 1 ]; then
+    [ -n "$_sm_dir" ] || tp_start_die "--dir needs a folder, for example --dir \$HOME/turbopanel."
+    tp_start_check_dir "$_sm_dir" "--dir"
+  else
     [ -n "${HOME:-}" ] || tp_start_die "HOME is not set; pass --dir /path/to/turbopanel."
-    _sm_dir="$HOME/turbopanel"
+    tp_start_check_dir "$HOME/turbopanel" "the default folder (\$HOME/turbopanel; pass --dir to use another folder named turbopanel)"
   fi
-  tp_start_check_dir "$_sm_dir"
   _sm_dev="$START_DIR/dev"
   _sm_setup="$_sm_dev/scripts/setup.sh"
 
   _sm_have=0
+  if [ -L "$_sm_dev" ] && [ ! -e "$_sm_dev" ]; then
+    tp_start_die "${_sm_dev} is a symlink to nothing; remove it or pick another folder with --dir."
+  fi
   if [ -e "$_sm_dev" ]; then
     tp_start_is_dev_checkout "$_sm_dev" ||
       tp_start_die "${_sm_dev} exists but is not a git checkout of TurboPanel/dev; move it away or pick another folder with --dir."
@@ -153,7 +171,11 @@ tp_start_main() {
   echo "setup.sh shows its own plan and asks before it changes anything, including how"
   echo "you want to run TurboPanel:"
   echo "  Vagrant: the repos stay in ${START_DIR} on this machine; 'vagrant up' in ${_sm_dev} runs them in a Debian VM."
-  echo "  Direct:  this Debian 13 machine becomes the dev machine; setup gives your user passwordless sudo."
+  if [ "$(uname -s 2>/dev/null)" = Darwin ]; then
+    echo "  (Direct mode needs a Debian 13 machine, so on macOS setup uses Vagrant.)"
+  else
+    echo "  Direct:  a Debian 13 machine becomes the dev machine itself; setup gives your user passwordless sudo."
+  fi
 
   if [ "$_sm_have" -eq 0 ]; then
     if [ "$_sm_dry" -eq 1 ]; then
@@ -170,7 +192,12 @@ tp_start_main() {
     export GIT_TERMINAL_PROMPT
     git clone --quiet "$TP_DEV_URL" "$_sm_tmp" </dev/null ||
       tp_start_die "could not clone ${TP_DEV_URL} (offline?); nothing else changed."
-    mv "$_sm_tmp" "$_sm_dev"
+    # Never move the clone into or over something that appeared meanwhile.
+    if [ -e "$_sm_dev" ] || [ -L "$_sm_dev" ]; then
+      tp_start_die "${_sm_dev} appeared while cloning; left it alone. Move it away and rerun."
+    fi
+    mv "$_sm_tmp" "$_sm_dev" ||
+      tp_start_die "could not move the clone to ${_sm_dev}."
     trap - EXIT INT TERM
     [ -f "$_sm_setup" ] || tp_start_die "${_sm_setup} is missing in the fresh clone."
   fi
@@ -183,4 +210,4 @@ tp_start_main() {
   exec sh "$_sm_setup" "$@" --dir "$START_DIR"
 }
 
-tp_start_main "$@"
+tp_start_main "$@" "$TP_START_END"
