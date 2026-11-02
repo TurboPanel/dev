@@ -48,7 +48,7 @@ Canonical docs: https://turbopanel.io/docs/getting-started/development
 | `./scripts/setup.sh` | **Start here.** Clone or update all six repos into one `turbopanel` folder, pick each repo's layout from your GitHub push access (maintainer: `origin` = TurboPanel repo; contributor: `origin` = your fork, `upstream` = TurboPanel repo; read-only when not logged in), ask Vagrant or direct, set `core.hooksPath`, write `<folder>/.turbopanel-dev-mode`. Flags: `--dir`, `--mode direct\|vagrant`, `--fork`, `--yes`, `--dry-run`. Details: [`scripts/AGENTS.md`](./scripts/AGENTS.md). |
 | `./scripts/setup.sh doctor` | Read-only report: host, Debian `VERSION_ID`, tools, GitHub login, remotes and role per repo, hooks path, signing, mode file agreement. |
 | `./scripts/setup.sh status` | Read-only table: role, branch, ahead/behind trunk, uncommitted files and open pull request per repo, plus a warning for same-named branches across repos. |
-| `vagrant up` / `vagrant ssh` | **Canonical:** boot guest from `dev/`, then SSH in and run `dev/console`. |
+| `vagrant up` / `vagrant ssh` | **Canonical:** boot guest from `dev/`, then SSH in and run `turbopanel/dev/console`. |
 | `./console` | Ensure pinned Node (sudo on first run), `pnpm install`, launch `src/tui.tsx` via `vite-node` (run **inside the guest**; that is `~/turbopanel/dev/console`). |
 | `./console --watch` | Same, but use `scripts/hot-reload.tsx` for live reload on `src/` changes. |
 | `pnpm dev` | Run `src/tui.tsx` directly via `vite-node` (requires Node on PATH). |

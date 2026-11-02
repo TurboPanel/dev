@@ -78,7 +78,8 @@ tp_print_move_repos_hint() {
   _tp_mh_from=$1
   if tp_in_vagrant_guest; then
     printf 'TurboPanel: this Vagrant guest still mounts the repos at %s/<repo>; they now belong at ~/turbopanel/<repo>.\n' "$_tp_mh_from" >&2
-    printf '  On the host, in the dev checkout:  vagrant reload --provision   (or: vagrant destroy -f && vagrant up)\n' >&2
+    printf '  On the host, in the dev checkout:  vagrant destroy -f && vagrant up   (the guest holds no source; its stack is rebuilt)\n' >&2
+    printf '  Faster but untidier:  vagrant reload --provision, then in the guest ~/turbopanel/dev/console and Developer > Reset development environment (the daemon unit still points at the old paths)\n' >&2
     printf '  Then, in the guest:  ~/turbopanel/dev/console\n' >&2
     printf '  The old ~/<repo> folders left in the guest are empty mount points; your checkouts stay on the host.\n' >&2
     return 0

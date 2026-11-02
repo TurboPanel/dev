@@ -19,8 +19,11 @@ UTM uses VirtFS. Synced folders map host siblings
 `TURBOPANEL_DEV_ROOT=$HOME/turbopanel` applies unchanged in the guest. The
 provisioner makes that folder belong to the `vagrant` user (Vagrant creates
 missing mount points as root). A guest created before the mounts moved still
-has them at `~/<repo>`; `./console` and `setup.sh` stop there and say to run
-`vagrant reload --provision` on the host (or `vagrant destroy -f && vagrant up`).
+has them at `~/<repo>`; `./console`, `setup.sh` and `scripts/vagrant-up.sh`
+stop there. Rebuild it with `vagrant destroy -f && vagrant up` on the host (the
+guest holds no source). `vagrant reload --provision` is faster but leaves the
+daemon unit and `daemon.env` pointing at the old paths, so follow it with
+Developer → Reset development environment in the console.
 The old `~/<repo>` folders in such a guest are empty mount points; the
 checkouts stay on the host. This change is not yet proven on a real guest:
 the first `vagrant up` / `vagrant reload --provision` after it confirms the

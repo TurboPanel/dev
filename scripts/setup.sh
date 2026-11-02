@@ -147,7 +147,7 @@ tp_resolve_dir() {
     elif [ -f /etc/profile.d/turbopanel-vagrant.sh ]; then
       # The guest mounts the host repos at ~/turbopanel/<repo>; a dev checkout
       # anywhere else is an old guest that still mounts them at ~/<repo>.
-      tp_die "this Vagrant guest still mounts the repos at ~/<repo>; they now belong at ~/turbopanel/<repo>. On the host, in the dev checkout, run: vagrant reload --provision (or vagrant destroy -f && vagrant up)."
+      tp_die "this Vagrant guest still mounts the repos at ~/<repo>; they now belong at ~/turbopanel/<repo>. On the host, in the dev checkout, run: vagrant destroy -f && vagrant up (or vagrant reload --provision, then Developer > Reset development environment in the console)."
     else
       DIR="$(tp_abs_path "$PWD")/turbopanel"
       # Run from inside a dev checkout: put the folder next to it, not in it.

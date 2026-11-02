@@ -112,6 +112,11 @@ describe('Vagrant host providers', () => {
 })
 
 describe('Vagrant host sibling checkouts', () => {
+  test('vagrant-up.sh opens ~/turbopanel/dev/console and explains an old guest', () => {
+    expect(VAGRANT_UP).toContain('cd "$HOME/turbopanel/dev" && exec ./console')
+    expect(VAGRANT_UP).toContain('vagrant destroy -f && vagrant up')
+  })
+
   test('vagrant-up.sh requires turbopaneld/turbopanel siblings, not retired names', () => {
     // The sibling list comes from repos.list; .github is the only optional one.
     expect(VAGRANT_UP).toContain('done <"$REPO_ROOT/repos.list"')

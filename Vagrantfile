@@ -491,7 +491,7 @@ Vagrant.configure("2") do |config|
 
   # Every repo sits in ~/turbopanel/<repo> in the guest, like on any other dev
   # machine. Guests created before this change mounted them at ~/<repo>; they
-  # need `vagrant reload --provision` (the console says so).
+  # need `vagrant destroy -f && vagrant up` (the console says so).
   config.vm.synced_folder ".", "#{GUEST_REPOS_DIR}/dev", **SYNCED_FOLDER_OPTIONS
   config.vm.synced_folder "../turbopaneld", "#{GUEST_REPOS_DIR}/turbopaneld", **SYNCED_FOLDER_OPTIONS
   config.vm.synced_folder "../turbopanel", "#{GUEST_REPOS_DIR}/turbopanel", **SYNCED_FOLDER_OPTIONS
