@@ -2,7 +2,7 @@
 # Example user-data for a new Debian 13 VM (Proxmox, bare metal installers that
 # support cloud-init, or any cloud image). Replace the user name and key, then
 # the first boot prepares the machine. The user name appears twice (the users
-# entry and the last runcmd line); change both. Run ~/dev/console after logging in.
+# entry and the last runcmd line); change both. Run ~/turbopanel/dev/console after logging in.
 users:
   - name: dev
     groups: [sudo]

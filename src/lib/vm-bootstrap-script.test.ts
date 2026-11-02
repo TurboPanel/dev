@@ -127,7 +127,8 @@ describe('vm-bootstrap.sh', () => {
   })
 
   test('clones into TURBOPANEL_DEV_ROOT and prints the console path there', () => {
-    expect(SOURCE).toContain('DEV_ROOT=${TURBOPANEL_DEV_ROOT:-$DEV_HOME}')
+    // Default ~/turbopanel/<repo>, never the bare home folder.
+    expect(SOURCE).toContain('DEV_ROOT=${TURBOPANEL_DEV_ROOT:-$DEV_HOME/turbopanel}')
     expect(SOURCE).toContain('"${DEV_ROOT}/${repo}"')
     expect(SOURCE).toContain('${DEV_ROOT}/dev/console')
     expect(SOURCE).toContain('export TURBOPANEL_DEV_ROOT=')
@@ -141,6 +142,17 @@ describe('vm-bootstrap.sh', () => {
       const { status, stderr, changed } = runStubbed({}, { TURBOPANEL_DEV_ROOT: root })
       expect(status).toBe(1)
       expect(stderr).toContain('TURBOPANEL_DEV_ROOT=')
+      expect(changed).toBe(false)
+    }
+  )
+
+  test.each(['/srv/pat', '/srv/pat/work', '/srv/pat/turbopanel-old'])(
+    'refuses TURBOPANEL_DEV_ROOT=%s: the folder must be named turbopanel',
+    (root) => {
+      const { status, stderr, changed } = runStubbed({}, { TURBOPANEL_DEV_ROOT: root })
+      expect(status).toBe(1)
+      expect(stderr).toContain('is not a folder named turbopanel')
+      expect(stderr).toContain('run dev/scripts/setup.sh')
       expect(changed).toBe(false)
     }
   )

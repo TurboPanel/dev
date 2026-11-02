@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { buildDaemonBaseEnvEntries } from './daemon-env.ts'
 import {
   devHomeEnvEntry,
+  devRootNameError,
   DevRootError,
   devRootSyntaxError,
   resolveCheckedDevRoot,
@@ -21,7 +22,17 @@ let scratch = ''
 
 beforeEach(() => {
   scratch = mkdtempSync(join(tmpdir(), 'tp-dev-root-'))
+  // Not the Vagrant guest unless a test says so, wherever the suite runs.
+  vi.stubEnv('TURBOPANEL_VAGRANT_GUEST_MARKER', join(scratch, 'no-guest-marker'))
 })
+
+/** Make this test run as if inside the Vagrant guest. */
+function asVagrantGuest(): string {
+  const marker = join(scratch, 'turbopanel-vagrant.sh')
+  writeFileSync(marker, '# guest\n')
+  vi.stubEnv('TURBOPANEL_VAGRANT_GUEST_MARKER', marker)
+  return marker
+}
 
 afterEach(() => {
   rmSync(scratch, { recursive: true, force: true })
@@ -29,7 +40,12 @@ afterEach(() => {
 })
 
 function shellEnv(extra: Record<string, string> = {}): NodeJS.ProcessEnv {
-  return { PATH: process.env.PATH ?? '/usr/bin:/bin', HOME: scratch, ...extra }
+  return {
+    PATH: process.env.PATH ?? '/usr/bin:/bin',
+    HOME: scratch,
+    TURBOPANEL_VAGRANT_GUEST_MARKER: process.env.TURBOPANEL_VAGRANT_GUEST_MARKER ?? '',
+    ...extra,
+  }
 }
 
 /** Source scripts/lib/paths.sh, run `body`, and return status, stdout and stderr. */
@@ -46,12 +62,21 @@ function runShell(value: string): { status: number | null; stderr: string } {
 }
 
 describe('resolveDevRoot', () => {
-  test("defaults to the dev user's home when TURBOPANEL_DEV_ROOT is unset", () => {
+  test('defaults to ~/turbopanel when TURBOPANEL_DEV_ROOT is unset', () => {
     vi.stubEnv('TURBOPANEL_DEV_ROOT', '')
     vi.stubEnv('TURBOPANEL_INSTANCE_REPO', '')
     vi.stubEnv('HOME', '/home/pat')
-    expect(resolveDevRoot()).toBe('/home/pat')
-    expect(platformRepoPath('turbopanel')).toBe('/home/pat/turbopanel')
+    expect(resolveDevRoot()).toBe('/home/pat/turbopanel')
+    expect(platformRepoPath('turbopanel')).toBe('/home/pat/turbopanel/turbopanel')
+  })
+
+  test('defaults to the home folder inside the Vagrant guest', () => {
+    asVagrantGuest()
+    vi.stubEnv('TURBOPANEL_DEV_ROOT', '')
+    vi.stubEnv('TURBOPANEL_INSTANCE_REPO', '')
+    vi.stubEnv('HOME', '/home/vagrant')
+    expect(resolveDevRoot()).toBe('/home/vagrant')
+    expect(platformRepoPath('turbopanel')).toBe('/home/vagrant/turbopanel')
   })
 
   test('puts every repo under a folder outside the home when set', () => {
@@ -96,6 +121,24 @@ describe('resolveCheckedDevRoot', () => {
     expect(resolveCheckedDevRoot()).toBe('/home/pat/work/turbopanel')
   })
 
+  test.each(['/home/pat', '/home/pat/work', '/home/pat/turbopanel-old'])(
+    'refuses %s: the folder must be named turbopanel',
+    (root) => {
+      vi.stubEnv('TURBOPANEL_DEV_ROOT', root)
+      expect(() => resolveCheckedDevRoot()).toThrow(
+        `TURBOPANEL_DEV_ROOT=${root} is not a folder named turbopanel`
+      )
+      expect(() => resolveCheckedDevRoot()).toThrow('run dev/scripts/setup.sh')
+    }
+  )
+
+  test('accepts the home folder inside the Vagrant guest', () => {
+    asVagrantGuest()
+    vi.stubEnv('TURBOPANEL_DEV_ROOT', '/home/vagrant')
+    expect(resolveCheckedDevRoot()).toBe('/home/vagrant')
+    expect(devRootNameError('/home/vagrant')).toBeNull()
+  })
+
   test('names the variable and the problem for a bad value', () => {
     vi.stubEnv('TURBOPANEL_DEV_ROOT', '/home/pat/my repos')
     expect(() => resolveCheckedDevRoot()).toThrow(DevRootError)
@@ -127,16 +170,40 @@ describe('resolveDevHome and daemon.env', () => {
 
 describe('tp_validate_dev_root (scripts/lib/paths.sh)', () => {
   test('accepts an existing folder and one it can create', () => {
-    expect(runShell(scratch).status).toBe(0)
+    mkdirSync(join(scratch, 'turbopanel'))
+    expect(runShell(join(scratch, 'turbopanel')).status).toBe(0)
     expect(runShell(`${join(scratch, 'work', 'turbopanel')}/`).status).toBe(0)
   })
 
+  test('refuses a folder not named turbopanel, including the home folder', () => {
+    for (const root of [scratch, join(scratch, 'work')]) {
+      const { status, stderr } = runShell(root)
+      expect(status).toBe(1)
+      expect(stderr).toContain('is not a folder named turbopanel')
+      expect(stderr).toContain('run dev/scripts/setup.sh')
+    }
+  })
+
+  test('accepts the home folder inside the Vagrant guest, where it is also the default', () => {
+    const marker = asVagrantGuest()
+    expect(runShell(scratch).status).toBe(0)
+    const fresh = pathsSh('printf %s "$TURBOPANEL_DEV_ROOT"', [], {
+      TURBOPANEL_VAGRANT_GUEST_MARKER: marker,
+    })
+    expect(fresh.stdout).toBe(scratch)
+  })
+
+  test('defaults to ~/turbopanel outside the guest', () => {
+    expect(pathsSh('printf %s "$TURBOPANEL_DEV_ROOT"').stdout).toBe(join(scratch, 'turbopanel'))
+  })
+
   test('drops trailing slashes from TURBOPANEL_DEV_ROOT when it checks the env', () => {
+    const root = join(scratch, 'turbopanel')
     const result = pathsSh('tp_validate_dev_root && printf %s "$TURBOPANEL_DEV_ROOT"', [], {
-      TURBOPANEL_DEV_ROOT: `${scratch}//`,
+      TURBOPANEL_DEV_ROOT: `${root}//`,
     })
     expect(result.status).toBe(0)
-    expect(result.stdout).toBe(scratch)
+    expect(result.stdout).toBe(root)
   })
 
   test.each([
@@ -155,12 +222,12 @@ describe('tp_validate_dev_root (scripts/lib/paths.sh)', () => {
   test.skipIf(process.getuid?.() === 0)(
     'rejects a folder the user cannot read or create in',
     () => {
-      const locked = join(scratch, 'locked')
+      const locked = join(scratch, 'turbopanel')
       mkdirSync(locked)
       chmodSync(locked, 0o000)
       try {
         expect(runShell(locked).stderr).toContain('not readable')
-        expect(runShell(join(locked, 'turbopanel')).stderr).toContain('cannot be created')
+        expect(runShell(join(locked, 'work', 'turbopanel')).stderr).toContain('cannot be created')
       } finally {
         chmodSync(locked, 0o755)
       }
@@ -211,9 +278,15 @@ describe('tp_load_dev_root_mode_file (scripts/lib/paths.sh)', () => {
     expect(root).not.toBe('/srv/elsewhere')
   })
 
-  test('falls back to the home folder without a mode file', () => {
-    const { dev } = layout(null)
-    expect(load(dev).root).toBe(scratch)
+  test('without a mode file, a checkout inside a folder named turbopanel sets the root', () => {
+    const { dev, root } = layout(null)
+    expect(load(dev).root).toBe(root)
+  })
+
+  test('without a mode file or a turbopanel parent, the root stays ~/turbopanel', () => {
+    const dev = join(scratch, 'elsewhere', 'dev')
+    mkdirSync(dev, { recursive: true })
+    expect(load(dev).root).toBe(join(scratch, 'turbopanel'))
   })
 
   test('never runs the file: a command line in it is ignored', () => {

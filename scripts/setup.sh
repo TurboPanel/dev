@@ -873,6 +873,11 @@ tp_choose_mode() {
     '') ;;
     direct)
       [ "$DIRECT_OK" -eq 1 ] || tp_die "direct mode is not available: ${DIRECT_WHY}."
+      # The console, vm-bootstrap.sh and the dev playbook refuse any other
+      # folder name outside the Vagrant guest (where the repos sit in $HOME).
+      if [ "${DIR##*/}" != turbopanel ] && [ ! -f /etc/profile.d/turbopanel-vagrant.sh ]; then
+        tp_die "direct mode keeps the repos in a folder named turbopanel (e.g. ~/turbopanel/<repo>), not ${DIR}; rerun with --dir \"\$HOME/turbopanel\" or another folder named turbopanel."
+      fi
       ;;
     vagrant)
       [ "$VAGRANT_OK" -eq 1 ] || tp_die "Vagrant mode is not available: ${VAGRANT_WHY}."
@@ -997,11 +1002,8 @@ tp_next_steps() {
     echo "  Edit and commit on this machine; the guest only runs the stack. Hooks here run the secret scan."
   elif [ "$MODE" = direct ]; then
     echo "  Log out and back in if setup just added you to the sudo group, then:"
-    if [ "$DIR" = "$HOME" ]; then
-      echo "  ~/dev/console"
-    else
-      echo "  TURBOPANEL_DEV_ROOT=$(tp_sq "$DIR") $(tp_sq "$DIR/dev/console")"
-    fi
+    # The console finds the folder from the mode file next to the repos.
+    echo "  $(tp_sq "$DIR/dev/console")"
   fi
   if [ -z "$GH_LOGIN" ]; then
     echo "  You are not logged in to GitHub, so the repos are read-only clones."

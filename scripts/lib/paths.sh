@@ -2,19 +2,36 @@
 # Source after privileges.sh when needed.
 
 TURBOPANEL_ROOT=/opt/turbopanel
-# Development source-repo root (turbopaneld/turbopanel/ui/website live here).
-# Defaults to the dev user's home; override with TURBOPANEL_DEV_ROOT, or let
-# ./console read it from the mode file setup.sh writes next to the repos
-# (tp_load_dev_root_mode_file). An explicit TURBOPANEL_DEV_ROOT always wins.
+# The Vagrant guest is recognised by the profile file its provisioner writes.
+# TURBOPANEL_VAGRANT_GUEST_MARKER only exists so tests can point it elsewhere.
+TP_VAGRANT_GUEST_MARKER=${TURBOPANEL_VAGRANT_GUEST_MARKER:-/etc/profile.d/turbopanel-vagrant.sh}
+tp_in_vagrant_guest() {
+  [ -f "$TP_VAGRANT_GUEST_MARKER" ]
+}
+
+# Development source-repo root: the folder that holds the repos. Everywhere but
+# the Vagrant guest it must be named `turbopanel` (default $HOME/turbopanel);
+# the guest mounts the host repos at $HOME/<repo>, so there it is $HOME.
+# Override with TURBOPANEL_DEV_ROOT, or let ./console read it from the mode
+# file setup.sh writes next to the repos (tp_load_dev_root_mode_file). An
+# explicit TURBOPANEL_DEV_ROOT always wins.
+tp_default_dev_root() {
+  if tp_in_vagrant_guest; then
+    printf '%s' "$HOME"
+  else
+    printf '%s/turbopanel' "$HOME"
+  fi
+}
 TP_DEV_ROOT_FROM_ENV=${TURBOPANEL_DEV_ROOT:+1}
-TURBOPANEL_DEV_ROOT=${TURBOPANEL_DEV_ROOT:-$HOME}
+TURBOPANEL_DEV_ROOT=${TURBOPANEL_DEV_ROOT:-$(tp_default_dev_root)}
 
 # When TURBOPANEL_DEV_ROOT was not set by the caller, take it from
 # <folder holding the dev checkout>/.turbopanel-dev-mode (key dev_root). The
 # file is parsed, never sourced: only a line dev_root='...' counts, and the
 # '\'' escape setup.sh writes for a quote is undone. The file sits next to the
 # repos, so when its dev_root names another folder (the checkout was moved)
-# the folder that holds the file wins, with a warning.
+# the folder that holds the file wins, with a warning. Without a mode file, a
+# dev checkout whose parent folder is named turbopanel sets the root to it.
 #   tp_load_dev_root_mode_file <dev checkout dir>
 # Print the symlink-free path of an existing folder; prints nothing otherwise.
 tp_physical_dir() {
@@ -27,7 +44,14 @@ tp_load_dev_root_mode_file() {
   _tp_lm_dev=$1
   _tp_lm_parent=$(CDPATH='' cd -- "$_tp_lm_dev/.." 2>/dev/null && pwd) || return 0
   _tp_lm_file=$_tp_lm_parent/.turbopanel-dev-mode
-  [ -f "$_tp_lm_file" ] || return 0
+  if [ ! -f "$_tp_lm_file" ]; then
+    # No mode file: a dev checkout inside a folder named turbopanel still says
+    # where the repos are (e.g. ~/work/turbopanel/dev).
+    if [ "${_tp_lm_parent##*/}" = turbopanel ]; then
+      TURBOPANEL_DEV_ROOT=$_tp_lm_parent
+    fi
+    return 0
+  fi
   _tp_lm_root=$(sed -n "s/^dev_root='\(.*\)'\$/\1/p" "$_tp_lm_file" | tail -n 1 | sed "s/'\\\\''/'/g")
   [ -n "$_tp_lm_root" ] || return 0
   if [ "$(tp_physical_dir "$_tp_lm_root")" = "$(tp_physical_dir "$_tp_lm_parent")" ]; then
@@ -45,7 +69,8 @@ tp_load_dev_root_mode_file() {
 # written unquoted into systemd Environment= lines, KEY=VALUE env files, a YAML
 # vars file, Caddyfile placeholders and Ansible `-e key=value` pairs, so it must
 # be an absolute path of plain characters (no spaces or shell/YAML characters),
-# and either a directory the user can read or one it can create.
+# named turbopanel outside the Vagrant guest, and either a directory the user
+# can read or one it can create.
 tp_validate_dev_root() {
   _tp_vdr=${1-$TURBOPANEL_DEV_ROOT}
   while [ "${#_tp_vdr}" -gt 1 ] && [ "${_tp_vdr%/}" != "$_tp_vdr" ]; do
@@ -68,6 +93,9 @@ tp_validate_dev_root() {
       */./* | */../*) _tp_vdr_err='must not contain . or .. segments' ;;
       *) ;;
     esac
+  fi
+  if [ -z "$_tp_vdr_err" ] && [ "${_tp_vdr##*/}" != turbopanel ] && ! tp_in_vagrant_guest; then
+    _tp_vdr_err='is not a folder named turbopanel; the repos belong in one, e.g. ~/turbopanel/<repo> (run dev/scripts/setup.sh to set it up)'
   fi
   if [ -z "$_tp_vdr_err" ]; then
     if [ -d "$_tp_vdr" ]; then
