@@ -110,6 +110,16 @@ if [ "${DEV_ROOT##*/}" != turbopanel ]; then
   printf 'vm-bootstrap: TURBOPANEL_DEV_ROOT=%s is not a folder named turbopanel; the repos belong in one, e.g. ~/turbopanel/<repo> (run dev/scripts/setup.sh to set it up).\n' "$DEV_ROOT" >&2
   exit 1
 fi
+# An older layout kept the repos directly in the home folder. Defaulting to
+# ~/turbopanel then would clone (or point the console at) a second, empty set,
+# so stop with the steps to move them instead. Only when no root was given.
+if [ -z "${TURBOPANEL_DEV_ROOT:-}" ] && [ ! -e "${DEV_ROOT}/dev" ] &&
+  { [ -f "${DEV_HOME}/dev/Vagrantfile" ] || [ -d "${DEV_HOME}/turbopaneld" ]; }; then
+  printf 'vm-bootstrap: the repos sit in %s, which is not a folder named turbopanel; they belong in one, e.g. ~/turbopanel/<repo>.\n' "$DEV_HOME" >&2
+  printf '  Move them, as %s:  cd %s && mkdir tp-move && mv dev turbopaneld turbopanel ui website tp-move/ && { [ ! -d .github ] || mv .github tp-move/; } && mv tp-move turbopanel\n' "$DEV_USER" "$DEV_HOME" >&2
+  printf '  Then run:  %s/turbopanel/dev/scripts/setup.sh\n' "$DEV_HOME" >&2
+  exit 1
+fi
 
 export DEBIAN_FRONTEND=noninteractive
 

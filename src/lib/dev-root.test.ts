@@ -283,10 +283,30 @@ describe('tp_load_dev_root_mode_file (scripts/lib/paths.sh)', () => {
     expect(load(dev).root).toBe(root)
   })
 
-  test('without a mode file or a turbopanel parent, the root stays ~/turbopanel', () => {
+  test('refuses a dev checkout that is not in a folder named turbopanel', () => {
     const dev = join(scratch, 'elsewhere', 'dev')
     mkdirSync(dev, { recursive: true })
-    expect(load(dev).root).toBe(join(scratch, 'turbopanel'))
+    const result = load(dev)
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain(`the repos sit in ${join(scratch, 'elsewhere')}`)
+    expect(result.stderr).toContain('not a folder named turbopanel')
+  })
+
+  test('refuses the old layout with the repos directly in the home folder', () => {
+    // ~/dev, ~/turbopaneld, ... and no mode file: the default ~/turbopanel would
+    // be a second, empty set of repos, so the console stops with the move steps.
+    for (const repo of ['dev', 'turbopaneld', 'turbopanel']) mkdirSync(join(scratch, repo))
+    const result = load(join(scratch, 'dev'))
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('mv tp-move turbopanel')
+    expect(result.stderr).toContain(`${scratch}/turbopanel/dev/scripts/setup.sh`)
+  })
+
+  test('keeps the home-folder layout inside the Vagrant guest', () => {
+    const marker = asVagrantGuest()
+    mkdirSync(join(scratch, 'dev'))
+    const result = load(join(scratch, 'dev'), { TURBOPANEL_VAGRANT_GUEST_MARKER: marker })
+    expect(result).toEqual({ status: 0, root: scratch, stderr: '' })
   })
 
   test('never runs the file: a command line in it is ignored', () => {

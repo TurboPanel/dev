@@ -43,7 +43,7 @@ done
 # The folder that holds the repos: TURBOPANEL_DEV_ROOT when set, else the mode
 # file setup.sh writes next to the repos, else $HOME. Refuse a value that would
 # break the env files, units or Ansible vars it is written into.
-tp_load_dev_root_mode_file "$SCRIPT_DIR"
+tp_load_dev_root_mode_file "$SCRIPT_DIR" || exit 1
 tp_validate_dev_root || exit 1
 
 if [ -n "${TURBOPANEL_CONSOLE_WATCH:-}" ]; then

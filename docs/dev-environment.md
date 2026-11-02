@@ -42,7 +42,20 @@ SAN is refused when the install command is minted.
 
 ## Filesystem Layout
 
-The tree below is the Vagrant guest, where the host repos are mounted at `$HOME/<repo>`. Everywhere else the same repos sit in `~/turbopanel/<repo>` (see Repos Outside the Home Folder).
+The repos sit in `$TURBOPANEL_DEV_ROOT/<repo>`. On a direct machine that is a folder named `turbopanel` (see Repos Outside the Home Folder):
+
+```
+~/turbopanel/             # $TURBOPANEL_DEV_ROOT (direct mode; any folder named turbopanel)
+├── .turbopanel-dev-mode  # written by dev/scripts/setup.sh; ./console reads dev_root from it
+├── dev/                  # turbopanel/dev checkout (./console, Vagrantfile, orchestration/)
+├── turbopaneld/          # optional override: TURBOPANEL_DAEMON_REPO
+├── turbopanel/           # control plane; optional override: TURBOPANEL_INSTANCE_REPO
+├── ui/                   # optional override: TURBOPANEL_UI_REPO
+├── website/              # optional override: TURBOPANEL_WEBSITE_REPO
+└── .github/              # turbopanel_github_dir (github-repo Ansible role)
+```
+
+Inside the Vagrant guest the host repos are mounted at `$HOME/<repo>` instead, and `TURBOPANEL_DEV_ROOT` is `$HOME`:
 
 ```
 ~/dev/                    # turbopanel/dev checkout (Vagrant mounts host sibling here)
@@ -86,6 +99,10 @@ Outside the Vagrant guest the repos always sit together in a folder named `turbo
 - `./console` and the dev playbook check the value: it must be an absolute path made only of letters, digits and `. _ @ + - /`, with no `.` or `..` parts, and it must be a folder named `turbopanel` outside the Vagrant guest, and a folder the developer can read, or one they can create (the playbook creates a missing one as the developer). A wrong name is refused with a pointer to `dev/scripts/setup.sh`; `setup.sh` itself refuses another name in direct mode, and `vm-bootstrap.sh` refuses it before changing anything. The console also refuses unsafe characters when it writes `daemon.env`. Spaces and shell or YAML characters are refused because the value is written unquoted into systemd `Environment=` lines, `KEY=VALUE` env files, a YAML vars file, Caddyfile placeholders and Ansible `-e key=value` pairs, and any of them would break or split it.
 - The per-repo `TURBOPANEL_<DIR>_REPO` overrides still work and still win for a single repo.
 - Proof so far: the dev playbook's root and home pre_tasks and the daemon role defaults, run in a throwaway Debian 13 container, resolve every repo under the folder and keep `HOME` on the real home. A full converge from a folder outside the home has not been run yet.
+
+#### Moving an Existing Home-Folder Layout
+
+Older direct setups kept the repos directly in the home folder (`~/dev`, `~/turbopaneld`, `~/turbopanel`, ...). Outside the Vagrant guest, `./console` and `vm-bootstrap.sh` now stop on that layout and print these steps instead of defaulting to an empty `~/turbopanel`. In that layout `~/turbopanel` is the control plane checkout itself, so gather the repos in a new folder first and rename it last. Stop the console, then run `cd ~ && mkdir tp-move && mv dev turbopaneld turbopanel ui website tp-move/` (add `.github` if you have it) and `mv tp-move turbopanel`. Finally run `~/turbopanel/dev/scripts/setup.sh`, which writes the mode file. Move first: `setup.sh` does not move an existing layout, and run from the old `~/dev` it would not find the repos where they are.
 
 Node is a pinned `nodejs.org` tarball vendored under `/opt/turbopanel/vendor/node/<version>/` with a `current` symlink (same layout as deno/caddy). pnpm is provisioned via Corepack and pinned by the `packageManager` field in `package.json`. **Node 25+ no longer ships Corepack**, so `./console` (and the daemon `node-runtime` role) install it with the vendored `npm install -g corepack` into that prefix, then Corepack still activates the hashed pnpm pin. Deno is **host-provided in development** (preferred) or bootstrap-installed to `/opt/turbopanel/vendor/deno/current/deno` when host Deno is absent; the dev console always runs the daemon and orchestration **from the source checkout** via Deno. Production daemon installs use native `/opt/turbopanel/bin/turbopaneld` or, when that binary cannot execute on the host, `turbopaneld.js` via vendored Deno — driven by `run.sh` + Ansible, never by this console.
 
