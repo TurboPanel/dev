@@ -118,4 +118,6 @@ vagrant up --provider=utm
 
 tp_success "Guest ready — attaching to developer console"
 # Force a TTY so Ink alternate-screen works over SSH.
-exec vagrant ssh -- -t 'cd "$HOME/dev" && exec ./console'
+# A guest created before the repos moved to ~/turbopanel/<repo> still mounts
+# them at ~/<repo>; say how to rebuild it instead of a bare cd error.
+exec vagrant ssh -- -t 'if [ -x "$HOME/turbopanel/dev/console" ]; then cd "$HOME/turbopanel/dev" && exec ./console; fi; echo "This Vagrant guest still mounts the repos at ~/<repo>; they now belong at ~/turbopanel/<repo>." >&2; echo "On the host, in the dev checkout: vagrant destroy -f && vagrant up (or vagrant reload --provision, then Developer > Reset development environment)." >&2; exit 1'

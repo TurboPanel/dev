@@ -57,8 +57,9 @@ turbopanel/
 | `website/` | [TurboPanel/website](https://github.com/TurboPanel/website) |
 | `.github/` | [TurboPanel/.github](https://github.com/TurboPanel/.github) |
 
-Inside the guest these mount at `~/dev`, `~/turbopaneld`, `~/turbopanel`,
-`~/ui`, `~/website`, and `~/.github`. FHS trees (`/etc/turbopanel`,
+Inside the guest these mount at `~/turbopanel/dev`, `~/turbopanel/turbopaneld`,
+`~/turbopanel/turbopanel`, `~/turbopanel/ui`, `~/turbopanel/website`, and
+`~/turbopanel/.github`, the same folder named `turbopanel` as on the host. FHS trees (`/etc/turbopanel`,
 `/opt/turbopanel`, …) stay on the VM disk.
 
 ## System requirements
@@ -126,7 +127,7 @@ upgrades packages, and may reboot the guest once when a newer kernel is pending
 Inside the guest (SSH lands in `$HOME`):
 
 ```sh
-dev/console
+turbopanel/dev/console
 ```
 
 That ensures pinned Node, runs `pnpm install`, and launches the Ink developer

@@ -26,7 +26,7 @@ beforeEach(() => {
   vi.stubEnv('TURBOPANEL_VAGRANT_GUEST_MARKER', join(scratch, 'no-guest-marker'))
 })
 
-/** Make this test run as if inside the Vagrant guest. */
+/** Make the shell helpers run as if inside the Vagrant guest (only the old-guest message reads it). */
 function asVagrantGuest(): string {
   const marker = join(scratch, 'turbopanel-vagrant.sh')
   writeFileSync(marker, '# guest\n')
@@ -70,13 +70,12 @@ describe('resolveDevRoot', () => {
     expect(platformRepoPath('turbopanel')).toBe('/home/pat/turbopanel/turbopanel')
   })
 
-  test('defaults to the home folder inside the Vagrant guest', () => {
-    asVagrantGuest()
+  test('defaults to ~/turbopanel inside the Vagrant guest too', () => {
     vi.stubEnv('TURBOPANEL_DEV_ROOT', '')
     vi.stubEnv('TURBOPANEL_INSTANCE_REPO', '')
     vi.stubEnv('HOME', '/home/vagrant')
-    expect(resolveDevRoot()).toBe('/home/vagrant')
-    expect(platformRepoPath('turbopanel')).toBe('/home/vagrant/turbopanel')
+    expect(resolveDevRoot()).toBe('/home/vagrant/turbopanel')
+    expect(platformRepoPath('turbopanel')).toBe('/home/vagrant/turbopanel/turbopanel')
   })
 
   test('puts every repo under a folder outside the home when set', () => {
@@ -132,11 +131,11 @@ describe('resolveCheckedDevRoot', () => {
     }
   )
 
-  test('accepts the home folder inside the Vagrant guest', () => {
-    asVagrantGuest()
+  test('refuses the guest home folder too: there is no Vagrant exemption', () => {
     vi.stubEnv('TURBOPANEL_DEV_ROOT', '/home/vagrant')
-    expect(resolveCheckedDevRoot()).toBe('/home/vagrant')
-    expect(devRootNameError('/home/vagrant')).toBeNull()
+    expect(() => resolveCheckedDevRoot()).toThrow('is not a folder named turbopanel')
+    expect(devRootNameError('/home/vagrant')).toContain('folder named turbopanel')
+    expect(devRootNameError('/home/vagrant/turbopanel')).toBeNull()
   })
 
   test('names the variable and the problem for a bad value', () => {
@@ -184,17 +183,27 @@ describe('tp_validate_dev_root (scripts/lib/paths.sh)', () => {
     }
   })
 
-  test('accepts the home folder inside the Vagrant guest, where it is also the default', () => {
+  test('refuses the home folder inside the Vagrant guest too, and defaults to ~/turbopanel there', () => {
     const marker = asVagrantGuest()
-    expect(runShell(scratch).status).toBe(0)
+    const { status, stderr } = runShell(scratch)
+    expect(status).toBe(1)
+    expect(stderr).toContain('is not a folder named turbopanel')
     const fresh = pathsSh('printf %s "$TURBOPANEL_DEV_ROOT"', [], {
       TURBOPANEL_VAGRANT_GUEST_MARKER: marker,
     })
-    expect(fresh.stdout).toBe(scratch)
+    expect(fresh.stdout).toBe(join(scratch, 'turbopanel'))
   })
 
   test('defaults to ~/turbopanel outside the guest', () => {
     expect(pathsSh('printf %s "$TURBOPANEL_DEV_ROOT"').stdout).toBe(join(scratch, 'turbopanel'))
+  })
+
+  test('refuses a folder named turbopanel that is itself a git checkout', () => {
+    const root = join(scratch, 'turbopanel')
+    mkdirSync(join(root, '.git'), { recursive: true })
+    const { status, stderr } = runShell(root)
+    expect(status).toBe(1)
+    expect(stderr).toContain('is a git checkout, not the folder that holds the repos')
   })
 
   test('drops trailing slashes from TURBOPANEL_DEV_ROOT when it checks the env', () => {
@@ -300,13 +309,27 @@ describe('tp_load_dev_root_mode_file (scripts/lib/paths.sh)', () => {
     expect(result.status).toBe(1)
     expect(result.stderr).toContain('mv tp-move turbopanel')
     expect(result.stderr).toContain(`${scratch}/turbopanel/dev/scripts/setup.sh`)
+    expect(result.stderr).toContain('sudo systemctl stop turbopaneld')
   })
 
-  test('keeps the home-folder layout inside the Vagrant guest', () => {
+  test('an old Vagrant guest still mounting ~/<repo> is told to reload, not to move', () => {
     const marker = asVagrantGuest()
     mkdirSync(join(scratch, 'dev'))
     const result = load(join(scratch, 'dev'), { TURBOPANEL_VAGRANT_GUEST_MARKER: marker })
-    expect(result).toEqual({ status: 0, root: scratch, stderr: '' })
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('this Vagrant guest still mounts the repos at')
+    expect(result.stderr).toContain('vagrant destroy -f && vagrant up')
+    expect(result.stderr).toContain('Reset development environment')
+    expect(result.stderr).toContain('empty mount points')
+    expect(result.stderr).not.toContain('mv tp-move')
+  })
+
+  test('a current Vagrant guest with the repos at ~/turbopanel/<repo> passes', () => {
+    const marker = asVagrantGuest()
+    const dev = join(scratch, 'turbopanel', 'dev')
+    mkdirSync(dev, { recursive: true })
+    const result = load(dev, { TURBOPANEL_VAGRANT_GUEST_MARKER: marker })
+    expect(result).toEqual({ status: 0, root: join(scratch, 'turbopanel'), stderr: '' })
   })
 
   test('never runs the file: a command line in it is ignored', () => {

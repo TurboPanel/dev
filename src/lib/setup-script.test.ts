@@ -372,19 +372,26 @@ describe('setup.sh roles', () => {
     expect(ghLog()).not.toContain('set-default')
   })
 
-  test('--fork gives a maintainer the read-only clones a contributor gets', () => {
-    const { status, out } = setup({}, ['--fork'])
+  test('--as-contributor gives a maintainer the read-only clones a contributor gets', () => {
+    const { status, out } = setup({}, ['--as-contributor'])
     expect(status, out).toBe(0)
     expect(git(join(work, 'ui'), 'remote', 'get-url', 'origin')).toContain('/TurboPanel/ui.git')
     expect(ghLog()).not.toContain('repo fork')
     expect(modeFile()).toContain("role_ui='contributor'")
   })
 
-  test('--fork with --fork-all forks even with push access', () => {
-    const { status, out } = setup({}, ['--fork', '--fork-all'])
+  test('--as-contributor with --fork-all forks even with push access', () => {
+    const { status, out } = setup({}, ['--as-contributor', '--fork-all'])
     expect(status, out).toBe(0)
     expect(git(join(work, 'ui'), 'remote', 'get-url', 'origin')).toContain('/octo/ui.git')
     expect(modeFile()).toContain("role_ui='contributor-fork'")
+  })
+
+  test('--fork still works but points at --as-contributor', () => {
+    const { status, out } = setup({}, ['--fork'])
+    expect(status, out).toBe(0)
+    expect(out).toContain('--fork is now --as-contributor')
+    expect(modeFile()).toContain("role_ui='contributor'")
   })
 
   test('a fork that exists already is reused', () => {
@@ -617,6 +624,44 @@ describe('setup.sh folder', () => {
   test('the plan names the global git change', () => {
     const { out } = run(['--dir', work, '--dry-run'])
     expect(out).toContain('gh auth setup-git (adds gh as the github.com credential helper')
+  })
+})
+
+describe('setup.sh in an old Vagrant guest', () => {
+  // A guest made before the repos moved still mounts them at ~/<repo>, so the
+  // dev checkout sits directly in the home folder with no mode file next to it.
+  function oldGuestCheckout(): string {
+    const dev = join(root, 'old-guest-home', 'dev')
+    mkdirSync(join(dev, 'scripts', 'lib'), { recursive: true })
+    for (const file of ['scripts/setup.sh', 'scripts/lib/privileges.sh', 'repos.list']) {
+      writeFileSync(join(dev, file), readFileSync(join(REPO_ROOT, file)))
+    }
+    return join(dev, 'scripts', 'setup.sh')
+  }
+
+  test('stops with the rebuild steps instead of picking a folder', () => {
+    const marker = join(root, 'turbopanel-vagrant.sh')
+    writeFileSync(marker, '# guest\n')
+    const result = spawnSync('sh', [oldGuestCheckout(), '--dry-run'], {
+      cwd: root,
+      encoding: 'utf8',
+      env: baseEnv({ TURBOPANEL_VAGRANT_GUEST_MARKER: marker }),
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    const out = `${result.stdout}${result.stderr}`
+    expect(result.status, out).toBe(1)
+    expect(out).toContain('this Vagrant guest still mounts the repos at ~/<repo>')
+    expect(out).toContain('vagrant destroy -f && vagrant up')
+  })
+
+  test('outside the guest the same checkout is not refused for being a guest', () => {
+    const result = spawnSync('sh', [oldGuestCheckout(), '--dry-run'], {
+      cwd: root,
+      encoding: 'utf8',
+      env: baseEnv({ TURBOPANEL_VAGRANT_GUEST_MARKER: join(root, 'no-marker') }),
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    expect(`${result.stdout}${result.stderr}`).not.toContain('this Vagrant guest')
   })
 })
 

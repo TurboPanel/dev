@@ -1,5 +1,3 @@
-import { isVagrantGuest } from './vagrant-guest.ts'
-
 export const TURBOPANEL_ROOT = '/opt/turbopanel'
 
 /**
@@ -13,9 +11,9 @@ export const PLATFORM_REPO_DIRS = ['turbopaneld', 'turbopanel', 'ui', 'website']
 export const ALL_DEV_CHECKOUT_DIRS = ['dev', ...PLATFORM_REPO_DIRS] as const
 
 /**
- * Development source-repo root: the folder that holds the repos. Outside the
- * Vagrant guest it is a folder named `turbopanel` (default `$HOME/turbopanel`);
- * the guest mounts the host repos at `$HOME/<repo>`, so there it is `$HOME`.
+ * Development source-repo root: the folder that holds the repos, always one
+ * named `turbopanel` (default `$HOME/turbopanel`, the Vagrant guest included,
+ * where the host repos are mounted at `~/turbopanel/<repo>`).
  * `TURBOPANEL_DEV_ROOT` overrides it (`./console` also reads the mode file
  * setup.sh writes); `resolveCheckedDevRoot` in `dev-root.ts` enforces the name.
  */
@@ -24,7 +22,7 @@ export function resolveDevRoot(): string {
   if (explicit) return explicit
   const home = process.env.HOME?.trim()
   if (!home) return TURBOPANEL_ROOT
-  return isVagrantGuest() ? home : `${home}/turbopanel`
+  return `${home}/turbopanel`
 }
 
 /**

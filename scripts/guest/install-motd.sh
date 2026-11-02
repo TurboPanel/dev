@@ -55,6 +55,6 @@ fi
 if [ -f "$MOTD_SRC" ] && [ -r "$MOTD_SRC" ]; then
   /bin/sh "$MOTD_SRC" >"$MOTD_DST"
 else
-  printf '%s\n' "TurboPanel development environment. Run: ~/dev/console" >"$MOTD_DST"
+  printf '%s\n' "TurboPanel development environment. Run: ~/turbopanel/dev/console" >"$MOTD_DST"
 fi
 chmod 0644 "$MOTD_DST"
