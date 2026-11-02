@@ -8,7 +8,7 @@
 # Future: production host MOTD lives in the daemon Ansible roles.
 #
 # After editing, refresh the installed banner:
-#   sudo sh ~/dev/scripts/guest/install-motd.sh
+#   sudo sh ~/turbopanel/dev/scripts/guest/install-motd.sh
 # or: vagrant provision --provision-with guest-motd
 
 set -eu
@@ -82,7 +82,7 @@ printf '  %sDevelopment environment%s  %s·%s  %sPrivate alpha%s\n' \
   "$TP_TEXT" "$TP_RST" "$TP_MUTED" "$TP_RST" "$TP_G" "$TP_RST"
 printf '  %s─────────────────────────────────────────────%s\n' "$TP_MUTED" "$TP_RST"
 printf '\n'
-printf '  Run  %s%s~/dev/console%s\n' "$TP_BOLD" "$TP_G" "$TP_RST"
+printf '  Run  %s%s~/turbopanel/dev/console%s\n' "$TP_BOLD" "$TP_G" "$TP_RST"
 printf '  to enter the developer console and start the stack.\n'
 printf '\n'
 printf '  Then open  %s%shttps://localhost:8443%s  on the host.\n' \

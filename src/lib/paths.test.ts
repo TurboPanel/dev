@@ -58,7 +58,6 @@ describe('resolveDevRoot', () => {
 
   test('falls back to HOME/turbopanel when TURBOPANEL_DEV_ROOT is absent or whitespace', () => {
     vi.stubEnv('TURBOPANEL_DEV_ROOT', '   ')
-    vi.stubEnv('TURBOPANEL_VAGRANT_GUEST_MARKER', '/nonexistent/turbopanel-vagrant.sh')
     vi.stubEnv('HOME', '/home/user')
     expect(resolveDevRoot()).toBe('/home/user/turbopanel')
   })

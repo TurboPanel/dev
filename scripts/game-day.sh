@@ -89,7 +89,7 @@ EOF
 if ! tp_in_guest; then
   if ! command -v vagrant >/dev/null 2>&1; then
     echo "game-day: run inside the Vagrant guest (or install vagrant on the host)." >&2
-    echo "  From the host dev checkout: vagrant ssh -c '\$HOME/dev/scripts/game-day.sh'" >&2
+    echo "  From the host dev checkout: vagrant ssh -c '\$HOME/turbopanel/dev/scripts/game-day.sh'" >&2
     exit 1
   fi
   cd "$REPO_ROOT"
@@ -99,7 +99,7 @@ if ! tp_in_guest; then
   done
   echo "game-day: re-exec inside the Vagrant guest" >&2
   # shellcheck disable=SC2086
-  exec vagrant ssh -c "\$HOME/dev/scripts/game-day.sh$quoted"
+  exec vagrant ssh -c "\$HOME/turbopanel/dev/scripts/game-day.sh$quoted"
 fi
 
 INCLUDE_OPERATOR_STOP=0

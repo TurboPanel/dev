@@ -219,7 +219,7 @@ tp_ensure_git_hooks_path() {
 tp_ensure_all_git_hooks_paths() {
   _eahhp_lib=$1
   if [ -z "$_eahhp_lib" ]; then
-    _eahhp_lib="${TURBOPANEL_DEV_ROOT:-$HOME}/dev/scripts/lib"
+    _eahhp_lib="${TURBOPANEL_DEV_ROOT:-$HOME/turbopanel}/dev/scripts/lib"
   fi
   # shellcheck source=scripts/lib/paths.sh
   . "$_eahhp_lib/paths.sh"

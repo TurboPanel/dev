@@ -1,6 +1,5 @@
 import { resolveDevRoot } from './paths.ts'
 import { spawnSyncTrustedText } from './spawn-trusted.ts'
-import { isVagrantGuest } from './vagrant-guest.ts'
 
 /**
  * Characters allowed in `TURBOPANEL_DEV_ROOT`. The value is written unquoted
@@ -38,20 +37,20 @@ export class DevRootError extends Error {
 }
 
 /**
- * Outside the Vagrant guest the repos must sit in a folder named `turbopanel`
- * (owner rule), never directly in the home folder. The guest is exempt: the
- * Vagrantfile mounts the host repos at `$HOME/<repo>`. `null` when it passes.
- * Kept apart from {@link devRootSyntaxError}, which also checks home folders.
+ * The repos must sit in a folder named `turbopanel` (owner rule), never directly
+ * in the home folder, on every machine including the Vagrant guest. `null` when
+ * it passes. Kept apart from {@link devRootSyntaxError}, which also checks home
+ * folders.
  */
 export function devRootNameError(root: string): string | null {
-  if (root.split('/').pop() === 'turbopanel' || isVagrantGuest()) return null
+  if (root.split('/').pop() === 'turbopanel') return null
   return 'is not a folder named turbopanel; the repos belong in one, e.g. ~/turbopanel/<repo> (run dev/scripts/setup.sh to set it up)'
 }
 
 /**
  * Resolve the development source-repo root and refuse a value that would break
- * the files it is written into, or that is not a folder named `turbopanel`
- * outside the Vagrant guest. No filesystem access beyond the guest check; see
+ * the files it is written into, or that is not a folder named `turbopanel`.
+ * No filesystem access; see
  * {@link devRootSyntaxError} for where the folder itself is checked.
  */
 export function resolveCheckedDevRoot(): string {

@@ -40,9 +40,12 @@ EOF
   esac
 done
 
-# The folder that holds the repos: TURBOPANEL_DEV_ROOT when set, else the mode
-# file setup.sh writes next to the repos, else $HOME. Refuse a value that would
-# break the env files, units or Ansible vars it is written into.
+# The folder that holds the repos (always one named turbopanel, e.g.
+# ~/turbopanel): TURBOPANEL_DEV_ROOT when set, else dev_root from the mode file
+# setup.sh writes next to the repos, else the folder holding this checkout when
+# it is named turbopanel. Stop when this checkout is not in that folder (an old
+# ~/<repo> layout or an old Vagrant guest; the message says what to do), or the
+# value would break the env files, units or Ansible vars it is written into.
 tp_load_dev_root_mode_file "$SCRIPT_DIR" || exit 1
 tp_validate_dev_root || exit 1
 
