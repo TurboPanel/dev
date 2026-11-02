@@ -68,7 +68,14 @@ tp_strip_terminal_replies() {
   _tsr=$1
   _tsr_esc=$(printf '\033')
   _tsr_bel=$(printf '\007')
+  _tsr_h='[0-9A-Fa-f]'
+  # A complete reply ends in ST (ESC \) or BEL: drop everything up to it. A
+  # colour reply cut off before its end (with or without its ESC ]) is
+  # dropped by its rgb:RRRR/GGGG/BBBB (or rgb:RR/GG/BB) shape, so an answer
+  # typed right after it survives. Cursor replies and stray ESCs go last.
   printf '%s' "$_tsr" | sed -e "s/.*${_tsr_esc}\\\\//" -e "s/.*${_tsr_bel}//" \
+    -e "s/\\(${_tsr_esc}\\]\\)\\{0,1\\}[0-9]*;rgb:${_tsr_h}\\{4\\}\\/${_tsr_h}\\{4\\}\\/${_tsr_h}\\{4\\}//g" \
+    -e "s/\\(${_tsr_esc}\\]\\)\\{0,1\\}[0-9]*;rgb:${_tsr_h}\\{2\\}\\/${_tsr_h}\\{2\\}\\/${_tsr_h}\\{2\\}//g" \
     -e "s/${_tsr_esc}\\[[0-9;?]*[A-Za-z]//g" -e "s/${_tsr_esc}//g"
 }
 

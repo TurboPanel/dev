@@ -462,7 +462,7 @@ describe('setup.sh roles', () => {
     expect(status, out).toBe(0)
     expect(out).toContain('gh auth login')
     expect(out).toContain(
-      "You are not signed in to GitHub, so the repos are read-only. Run 'gh auth login --hostname github.com --git-protocol https --web' and rerun this script."
+      "You are not signed in to GitHub, so the repos are read-only. Run 'gh auth login --hostname github.com --git-protocol https --web --scopes workflow' and rerun this script."
     )
     expect(ghLog()).not.toContain('repo fork')
     expect(ghLog()).not.toContain('setup-git')
@@ -756,7 +756,9 @@ describe('setup.sh GitHub CLI', () => {
     expect(out).toContain('Installed gh version 9.9.9')
     expect(readdirSync(join(root, 'tmp'))).toEqual([])
     expect(ghLog()).not.toContain('auth login')
-    expect(out).toContain("Run 'gh auth login --hostname github.com --git-protocol https --web'")
+    expect(out).toContain(
+      "Run 'gh auth login --hostname github.com --git-protocol https --web --scopes workflow'"
+    )
   })
 
   test('a signing key that does not match the published fingerprints stops the install', () => {
@@ -818,7 +820,7 @@ describe('setup.sh GitHub CLI', () => {
   test('a dry run with --yes says the login is left to you', () => {
     const { out } = run(['--dir', work, '--dry-run', '--yes'], { FAKE_GH_LOGIN: '' })
     expect(out).toContain(
-      "--yes never runs 'gh auth login', run it yourself: gh auth login --hostname github.com --git-protocol https --web"
+      "--yes never runs 'gh auth login', run it yourself: gh auth login --hostname github.com --git-protocol https --web --scopes workflow"
     )
     expect(ghLog()).not.toContain('auth login')
   })
@@ -934,7 +936,7 @@ describe('setup.sh fork', () => {
     const { status, out } = fork(['ui'], { FAKE_GH_LOGIN: '' })
     expect(status).toBe(1)
     expect(out).toContain(
-      "you are not signed in to GitHub; run 'gh auth login --hostname github.com --git-protocol https --web' in a plain SSH terminal"
+      "you are not signed in to GitHub; run 'gh auth login --hostname github.com --git-protocol https --web --scopes workflow' in a plain SSH terminal"
     )
     expect(git(join(work, 'ui'), 'remote')).toBe('origin')
   })
@@ -1104,7 +1106,9 @@ describe.skipIf(!hasUtilLinuxScript)('setup.sh GitHub login on a terminal', () =
   test('gh runs with every question answered by flags and no prompts', () => {
     const { status, out } = onTty('y\n1\ny\n', { FAKE_GH_LOGIN: '' })
     expect(status, out).toBe(0)
-    expect(ghLog()).toContain('gh auth login --hostname github.com --git-protocol https --web')
+    expect(ghLog()).toContain(
+      'gh auth login --hostname github.com --git-protocol https --web --scopes workflow'
+    )
     expect(ghLog()).toContain('login prompts disabled: 1')
     expect(out).toContain('First copy your one-time code')
   })
@@ -1114,8 +1118,12 @@ describe.skipIf(!hasUtilLinuxScript)('setup.sh GitHub login on a terminal', () =
     expect(status, out).toBe(0)
     expect(out).toContain('could not prompt: unexpected escape sequence from terminal')
     expect(out).toContain('gh auth login did not finish; setup goes on with read-only clones.')
-    expect(out).toContain('run this in a plain SSH terminal, then rerun this script:')
-    expect(out).toContain('    gh auth login --hostname github.com --git-protocol https --web')
+    expect(out).toContain(
+      'run this in a plain SSH terminal (it may ask a question or two there), then rerun this script:'
+    )
+    expect(out).toContain(
+      '    gh auth login --hostname github.com --git-protocol https --web --scopes workflow'
+    )
     expect(out).toContain('How do you want to run TurboPanel?')
     for (const repo of REPOS) {
       expect(git(join(work, repo), 'remote')).toBe('origin')
@@ -1127,7 +1135,7 @@ describe.skipIf(!hasUtilLinuxScript)('setup.sh GitHub login on a terminal', () =
     const { status, out } = onTty('y\n1\ny\n', { FAKE_GH_LOGIN: '', FAKE_GH_PROTOCOL: 'ssh' })
     expect(status, out).toBe(0)
     expect(ghLog()).toContain(
-      'gh auth login --hostname github.com --git-protocol ssh --web --skip-ssh-key'
+      'gh auth login --hostname github.com --git-protocol ssh --web --scopes workflow --skip-ssh-key'
     )
   })
 })
@@ -1144,6 +1152,10 @@ describe('terminal replies in typed answers', () => {
     ['11;rgb:0000/0000/0000\x1b\\Y', 'Y'],
     ['\x1b]11;rgb:1/2/3\x07n', 'n'],
     ['\x1b[1;1R1', '1'],
+    ['\x1b]11;rgb:0000/0000/0000', ''],
+    ['\x1b]11;rgb:0000/0000/0000y', 'y'],
+    ['11;rgb:0000/0000/00001', '1'],
+    ['\x1b]11;rgb:00/00/001', '1'],
   ])('%j reads as %j', (typed, answer) => {
     expect(strip(typed)).toBe(answer)
   })

@@ -470,11 +470,15 @@ tp_ensure_gh() {
 }
 
 # The login command setup runs and tells people to run themselves: the
-# browser (device code) flow with every question answered by flags.
-TP_GH_LOGIN_CMD='gh auth login --hostname github.com --git-protocol https --web'
+# browser (device code) flow with the questions answered by flags. The
+# workflow scope is asked for explicitly: gh adds it only in its interactive
+# git-credential step, and without it a push that touches
+# .github/workflows/* is refused once 'gh auth setup-git' makes this token
+# the https push credential.
+TP_GH_LOGIN_CMD='gh auth login --hostname github.com --git-protocol https --web --scopes workflow'
 
 tp_gh_login_hint() {
-  echo "  To log in yourself, run this in a plain SSH terminal, then rerun this script:"
+  echo "  To log in yourself, run this in a plain SSH terminal (it may ask a question or two there), then rerun this script:"
   echo "    ${TP_GH_LOGIN_CMD}"
 }
 
@@ -483,8 +487,8 @@ tp_gh_login_hint() {
 # gh's menus fail on terminals that answer its colour query late ("could not
 # prompt: unexpected escape sequence from terminal"), so every question is a
 # flag and GH_PROMPT_DISABLED keeps gh from asking any: it prints a one-time
-# code and https://github.com/login/device and waits. A failed or cancelled
-# login never stops setup.
+# code and https://github.com/login/device and waits. A failed or declined
+# login never stops setup, and Ctrl-C during it stops only gh.
 tp_offer_gh_login() {
   tp_have_gh || return 0
   if gh auth token >/dev/null 2>&1; then
@@ -504,7 +508,14 @@ tp_offer_gh_login() {
     _gl_proto=ssh
     _gl_ssh=1
   fi
-  if ! GH_PROMPT_DISABLED=1 gh auth login --hostname github.com --git-protocol "$_gl_proto" --web ${_gl_ssh:+"--skip-ssh-key"} </dev/tty >/dev/tty 2>&1; then
+  # A trap with a handler is reset in the child, so Ctrl-C still stops gh;
+  # setup itself only notes it and carries on.
+  trap ':' INT
+  _gl_ok=1
+  GH_PROMPT_DISABLED=1 gh auth login --hostname github.com --git-protocol "$_gl_proto" --web \
+    --scopes workflow ${_gl_ssh:+"--skip-ssh-key"} </dev/tty >/dev/tty 2>&1 || _gl_ok=0
+  trap - INT
+  if [ "$_gl_ok" -eq 0 ]; then
     tp_warn "gh auth login did not finish; setup goes on with read-only clones."
     tp_gh_login_hint
   fi
