@@ -12,6 +12,15 @@ Repo context: `../AGENTS.md`.
 - **`scripts/lib/dev-prerequisites.sh`** — curl/sudo/dev-user checks for `./console`. When sudo still requires a password, optionally prompts to install `/etc/sudoers.d/turbopanel-dev-nopasswd` (full `NOPASSWD` for the dev user on local dev hosts). Set `TURBOPANEL_DEV_SKIP_NOPASSWD_SUDO=1` to skip the prompt.
 - **`scripts/lib/git-github-ssh.sh`** — git identity prompts, SSH key generation, GitHub verification (used by `./console` when needed).
 
+## Contributor Setup (`setup.sh`)
+
+- **`scripts/setup.sh`** is the one entry for every contributor; `doctor` and `status` are its read-only subcommands. It reads the repo list from `repos.list` (name, default branch, optional `optional` flag), and `vagrant-up.sh` reads the same file.
+- **Folder:** all repos sit in one folder, by default the folder named `turbopanel` that holds this checkout, else `./turbopanel`; `--dir` overrides. The mode file is `<folder>/.turbopanel-dev-mode` (the folder that holds the repos, not its parent), shell-sourceable `key='value'` lines: `TURBOPANEL_DEV_ENV` (`direct` or `vagrant`; never `TURBOPANEL_MODE`, which means development versus production), `dev_root`, `clone_protocol`, `github_login`, `role_<repo>` (`role_github` for `.github`), `created` (kept across reruns) and `updated`. Scripts read it with `sed`, not by sourcing it; `ci-verify.sh` reads `TURBOPANEL_DEV_ENV` from `$REPO_ROOT/../.turbopanel-dev-mode`.
+- **Roles** come from `gh api repos/TurboPanel/<repo> --jq .permissions.push`: `maintainer` (origin = TurboPanel repo, no upstream), `contributor` (origin = the user's fork, upstream = TurboPanel repo; also with `--fork`) or `readonly` (not logged in). `.github` is never forked for anyone: a fork of an org's `.github` repo becomes the user's own account-wide community health repo. An API failure keeps the role from the last run.
+- **Safety:** clones go to `<folder>/.setup-clone-<repo>` and are renamed on success; reruns fetch with `GIT_TERMINAL_PROMPT=0`, fast-forward the default branch only when it is clean and checked out (or not checked out at all), and never reset, stash or switch. An existing folder that is not a checkout, or a remote it does not recognise, is left alone with a message.
+- **Direct mode** runs `sudo env TURBOPANEL_DEV_ROOT=<folder> sh vm-bootstrap.sh <user>` once and is offered only on Debian 13 outside a container; macOS and other hosts get Vagrant only.
+- **Not provable in CI:** the fork call (`gh repo fork --clone=false`, then polling until the fork answers) and the permissions API need a real GitHub login; the tests in `src/lib/setup-script.test.ts` stand in a fake `gh` and `file://` bare repos (`TURBOPANEL_SETUP_REMOTE_BASE`, `TURBOPANEL_SETUP_OS_RELEASE`, `TURBOPANEL_SETUP_FORK_WAIT` are test-only overrides).
+
 ## Shell Conventions
 
 - Shell scripts are **POSIX `sh`** — no bashisms. Sonar `shelldre:S7688` (`[[` vs `[`) and `shelldre:S7682` (explicit `return`) are ignored in `sonar-project.properties` / `.sonarcloud.properties` for that reason.
