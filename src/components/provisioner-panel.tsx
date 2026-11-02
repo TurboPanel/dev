@@ -126,6 +126,37 @@ async function reportProvisionerFailure(opts: {
   setError(message)
 }
 
+// One labelled step: running, then ok and done, or a reported failure.
+async function runSingleStepPhase(opts: {
+  title: string
+  stepLabel: string
+  run: () => Promise<unknown>
+  isCancelled: () => boolean
+  emitStep: EmitStep
+  setDone: (done: boolean) => void
+  setError: (message: string) => void
+  setErrorLogPath: (path: string) => void
+}): Promise<void> {
+  const { title, stepLabel, run, isCancelled, emitStep, setDone, setError, setErrorLogPath } = opts
+  try {
+    emitStep(stepLabel, 'running')
+    await run()
+    if (isCancelled()) return
+    emitStep(stepLabel, 'ok')
+    setDone(true)
+  } catch (error_) {
+    if (isCancelled()) return
+    await reportProvisionerFailure({
+      title,
+      stepLabel,
+      error_,
+      emitStep,
+      setError,
+      setErrorLogPath,
+    })
+  }
+}
+
 function ProvisionerSyncOutput({
   outputWidth,
   syncLogHeight,
@@ -392,26 +423,16 @@ function useProvisionerPhaseEffects(opts: {
 
     let cancelled = false
 
-    void (async () => {
-      const stepLabel = 'Save tier catalogue'
-      try {
-        emitStep(stepLabel, 'running')
-        await saveDevTierCatalogue(appendOutput)
-        if (cancelled) return
-        emitStep(stepLabel, 'ok')
-        setDone(true)
-      } catch (error_) {
-        if (cancelled) return
-        await reportProvisionerFailure({
-          title: 'Save tier catalogue',
-          stepLabel,
-          error_,
-          emitStep,
-          setError,
-          setErrorLogPath,
-        })
-      }
-    })()
+    void runSingleStepPhase({
+      title: 'Save tier catalogue',
+      stepLabel: 'Save tier catalogue',
+      run: () => saveDevTierCatalogue(appendOutput),
+      isCancelled: () => cancelled,
+      emitStep,
+      setDone,
+      setError,
+      setErrorLogPath,
+    })
 
     return () => {
       cancelled = true
@@ -423,26 +444,16 @@ function useProvisionerPhaseEffects(opts: {
 
     let cancelled = false
 
-    void (async () => {
-      const stepLabel = 'Reset dev database'
-      try {
-        emitStep(stepLabel, 'running')
-        await resetDevDatabase(appendOutput)
-        if (cancelled) return
-        emitStep(stepLabel, 'ok')
-        setDone(true)
-      } catch (error_) {
-        if (cancelled) return
-        await reportProvisionerFailure({
-          title: 'Reset dev database',
-          stepLabel,
-          error_,
-          emitStep,
-          setError,
-          setErrorLogPath,
-        })
-      }
-    })()
+    void runSingleStepPhase({
+      title: 'Reset dev database',
+      stepLabel: 'Reset dev database',
+      run: () => resetDevDatabase(appendOutput),
+      isCancelled: () => cancelled,
+      emitStep,
+      setDone,
+      setError,
+      setErrorLogPath,
+    })
 
     return () => {
       cancelled = true
@@ -454,26 +465,16 @@ function useProvisionerPhaseEffects(opts: {
 
     let cancelled = false
 
-    void (async () => {
-      const stepLabel = 'Sync source to attached checkouts'
-      try {
-        emitStep(stepLabel, 'running')
-        await syncDevBuildToDaemons(appendSyncOutput)
-        if (cancelled) return
-        emitStep(stepLabel, 'ok')
-        setDone(true)
-      } catch (error_) {
-        if (cancelled) return
-        await reportProvisionerFailure({
-          title: 'Sync source',
-          stepLabel,
-          error_,
-          emitStep,
-          setError,
-          setErrorLogPath,
-        })
-      }
-    })()
+    void runSingleStepPhase({
+      title: 'Sync source',
+      stepLabel: 'Sync source to attached checkouts',
+      run: () => syncDevBuildToDaemons(appendSyncOutput),
+      isCancelled: () => cancelled,
+      emitStep,
+      setDone,
+      setError,
+      setErrorLogPath,
+    })
 
     return () => {
       cancelled = true
@@ -485,26 +486,16 @@ function useProvisionerPhaseEffects(opts: {
 
     let cancelled = false
 
-    void (async () => {
-      const stepLabel = 'Rebuild daemon and upgrade connected servers'
-      try {
-        emitStep(stepLabel, 'running')
-        await rebuildDaemonAndUpgradeConnectedServers(appendSyncOutput)
-        if (cancelled) return
-        emitStep(stepLabel, 'ok')
-        setDone(true)
-      } catch (error_) {
-        if (cancelled) return
-        await reportProvisionerFailure({
-          title: 'Rebuild daemon',
-          stepLabel,
-          error_,
-          emitStep,
-          setError,
-          setErrorLogPath,
-        })
-      }
-    })()
+    void runSingleStepPhase({
+      title: 'Rebuild daemon',
+      stepLabel: 'Rebuild daemon and upgrade connected servers',
+      run: () => rebuildDaemonAndUpgradeConnectedServers(appendSyncOutput),
+      isCancelled: () => cancelled,
+      emitStep,
+      setDone,
+      setError,
+      setErrorLogPath,
+    })
 
     return () => {
       cancelled = true
