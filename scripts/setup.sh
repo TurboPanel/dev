@@ -818,6 +818,7 @@ tp_sync_repo() {
     fi
   fi
   eval "ROLE_$(tp_role_key "$_sr_name" | sed 's/^role_//')=\$_sr_role"
+  [ "$_sr_role" != contributor ] || tp_set_gh_default "$_sr_name"
 }
 
 tp_write_mode_file() {
@@ -865,7 +866,7 @@ tp_choose_mode() {
       if [ -n "$VIRT" ] && [ "$VIRT" != none ]; then
         _cm_hint=" (recommended: this machine is already a ${VIRT} VM)"
       fi
-      printf 'How do you want to run TurboPanel?\n  1) Vagrant: a VM on this machine\n  2) This Debian 13 machine directly%s\nChoose 1 or 2: ' "$_cm_hint" >/dev/tty
+      printf 'How do you want to run TurboPanel?\n  1) Vagrant: the repos stay in %s on this machine; '"'"'vagrant up'"'"' in %s/dev runs them in a Debian VM\n  2) Direct: this Debian 13 machine becomes the dev machine; setup gives your user passwordless sudo%s\nChoose 1 or 2: ' "$DIR" "$DIR" "$_cm_hint" >/dev/tty
       IFS= read -r _cm_answer </dev/tty || _cm_answer=
       case "$(tp_trim_whitespace "$_cm_answer")" in
         1 | vagrant) MODE=vagrant ;;
@@ -1010,9 +1011,68 @@ tp_next_steps() {
     # The console finds the folder from the mode file next to the repos.
     echo "  $(tp_sq "$DIR/dev/console")"
   fi
-  if [ -z "$GH_LOGIN" ]; then
-    echo "  You are not logged in to GitHub, so the repos are read-only clones."
-    echo "  Run 'gh auth login', then rerun this script to set up your forks."
+}
+
+tp_role_sentence() {
+  case "$1" in
+    maintainer)
+      echo "You can push to ${TP_ORG} directly. Your repos point at ${TP_ORG}; push branches there and open pull requests from them. To work from your own fork instead, rerun with --fork."
+      ;;
+    contributor)
+      echo "You work from your own fork. Your repos push to ${GH_LOGIN:-<your login>}/<repo> (origin); ${TP_ORG} is upstream. Push branches to your fork and open pull requests into ${TP_ORG}."
+      ;;
+    readonly)
+      if [ -z "$GH_LOGIN" ]; then
+        echo "You are not signed in to GitHub, so the repos are read-only. Run 'gh auth login' and rerun this script."
+      else
+        echo "The repos are read-only clones (GitHub did not answer when they were set up). Rerun this script when you are online."
+      fi
+      ;;
+    *) ;;
+  esac
+}
+
+tp_role_label() {
+  case "$1" in
+    maintainer) printf 'you push to %s directly' "$TP_ORG" ;;
+    contributor) printf 'you work from your fork' ;;
+    readonly) printf 'read-only' ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
+
+# One plain summary of what the person can do, from the role of each repo.
+# The most common role sets the sentence; other repos are listed as exceptions.
+tp_role_summary() {
+  _rs_all=
+  for _rs_name in $(tp_repo_names); do
+    eval "_rs_role=\${ROLE_$(tp_role_key "$_rs_name" | sed 's/^role_//'):-}"
+    if [ -z "$_rs_role" ] && tp_is_checkout "$DIR/$_rs_name"; then
+      _rs_role=$(tp_layout_role "$DIR/$_rs_name" "$_rs_name")
+    fi
+    case "$_rs_role" in
+      maintainer | contributor | readonly) _rs_all="${_rs_all}${_rs_name} ${_rs_role}
+" ;;
+      *) ;;
+    esac
+  done
+  [ -n "$_rs_all" ] || return 0
+  _rs_main=$(printf '%s' "$_rs_all" | awk '{n[$2]++} END {best=""; for (r in n) if (best == "" || n[r] > n[best] || (n[r] == n[best] && r < best)) best = r; print best}')
+  echo
+  tp_role_sentence "$_rs_main"
+  _rs_except=$(printf '%s' "$_rs_all" | while read -r _rs_n _rs_r; do
+    [ "$_rs_r" = "$_rs_main" ] || printf '%s (%s); ' "$_rs_n" "$(tp_role_label "$_rs_r")"
+  done)
+  [ -z "$_rs_except" ] || echo "Except: ${_rs_except%; }."
+}
+
+# gh asks which repository a fork checkout means on the first 'gh pr create';
+# answer it once so pull requests go to TurboPanel. Best effort.
+tp_set_gh_default() {
+  _sd_name=$1
+  [ -n "$GH_LOGIN" ] && [ "$GH_OFFLINE" -eq 0 ] && tp_have_gh || return 0
+  if ! (cd "$DIR/$_sd_name" && gh repo set-default "${TP_ORG}/${_sd_name}" >/dev/null 2>&1); then
+    tp_warn "${_sd_name}: gh repo set-default ${TP_ORG}/${_sd_name} failed; gh pr create may ask which repository you mean."
   fi
 }
 
@@ -1055,7 +1115,7 @@ tp_cmd_setup() {
     if [ -e "$DIR/$_cs_name" ]; then
       _cs_action="present: fetch, fast-forward ${_cs_name} $(tp_repo_branch "$_cs_name") only if clean"
     elif [ "$_cs_role" = contributor ]; then
-      _cs_action="fork to ${GH_LOGIN}/${_cs_name} if needed, clone it as origin, upstream = ${TP_ORG}/${_cs_name}"
+      _cs_action="fork to ${GH_LOGIN}/${_cs_name} if needed, clone it as origin, upstream = ${TP_ORG}/${_cs_name}, gh repo set-default ${TP_ORG}/${_cs_name}"
     else
       _cs_action="clone ${TP_ORG}/${_cs_name} as origin"
     fi
@@ -1101,6 +1161,7 @@ tp_cmd_setup() {
   echo
   tp_print_rows 0
   tp_twin_branches
+  tp_role_summary
   tp_next_steps
   if [ -n "$FAILED" ]; then
     tp_error "Not finished:${FAILED}. Fix the errors above and rerun; finished repos are kept."
@@ -1248,6 +1309,7 @@ tp_cmd_status() {
   echo "Repos in ${DIR} (as of the last fetch)"
   tp_print_rows 1
   tp_twin_branches
+  tp_role_summary
 }
 
 # ---------------------------------------------------------------- main

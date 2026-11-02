@@ -108,7 +108,23 @@ Node is a pinned `nodejs.org` tarball vendored under `/opt/turbopanel/vendor/nod
 
 ## Contribute
 
-Maintainers and outside contributors use the same steps. You need `git`, and the GitHub CLI `gh` logged in (`gh auth login`) to open pull requests. When `gh` is missing on Debian or Ubuntu, the script asks, then installs it from the official GitHub CLI apt source (it checks the signing key fingerprints first); on macOS run `brew install gh`, elsewhere see https://cli.github.com. When you are not logged in, it offers to run `gh auth login`, where you sign in yourself. `--yes` installs `gh` without asking but never starts the login.
+Maintainers and outside contributors use the same steps. On a new machine you do not need to clone anything first: from any folder (your home folder is fine), run the starter script as your normal user, not root. It needs only `git` and `curl` (or `wget`); on a fresh Debian install get them with `sudo apt-get install git curl`, or `su -c 'apt-get install -y git curl sudo'` where sudo is not set up yet.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/TurboPanel/dev/trunk/scripts/start.sh | sh
+```
+
+Reading a script before you run it is wise, and the starter is short. The same file also works as download, read, then run:
+
+```bash
+curl -fsSL -o start.sh https://raw.githubusercontent.com/TurboPanel/dev/trunk/scripts/start.sh
+less start.sh                    # read it
+sh start.sh                      # or: sh start.sh --dry-run to see the plan only
+```
+
+`scripts/start.sh` installs nothing and uses no sudo. It clones `https://github.com/TurboPanel/dev.git` over HTTPS into `~/turbopanel/dev` (or `<folder>/dev` with `--dir <folder>`, which must be an absolute path to a folder named `turbopanel`), or reuses that checkout when it is already there, then hands over to `dev/scripts/setup.sh` below. Every other option goes to `setup.sh` unchanged; when you pipe the script, put them after `sh -s --`, for example `curl -fsSL https://raw.githubusercontent.com/TurboPanel/dev/trunk/scripts/start.sh | sh -s -- --mode direct`. Even when piped, `setup.sh` asks its questions on your terminal, including whether you use Vagrant (the repos stay in `~/turbopanel` on this machine, and `vagrant up` in `~/turbopanel/dev` runs them in a Debian VM) or Direct (this Debian 13 machine becomes the dev machine, and setup gives your user passwordless sudo). The folder is the same either way. `--dry-run` without a dev checkout prints the plan and clones nothing, because the setup dry run needs the files it would clone. The raw URL always serves the current `trunk`; a pinned release tag with a published checksum is planned hardening.
+
+With the dev repo already cloned, run `setup.sh` directly. You need `git`, and the GitHub CLI `gh` logged in (`gh auth login`) to open pull requests. When `gh` is missing on Debian or Ubuntu, the script asks, then installs it from the official GitHub CLI apt source (it checks the signing key fingerprints first); on macOS run `brew install gh`, elsewhere see https://cli.github.com. When you are not logged in, it offers to run `gh auth login`, where you sign in yourself. `--yes` installs `gh` without asking but never starts the login.
 
 ```bash
 mkdir turbopanel && cd turbopanel
@@ -118,7 +134,8 @@ less dev/scripts/setup.sh        # read it before you run it
 ```
 
 - **Where the repos go.** All six repos (`dev`, `turbopanel`, `turbopaneld`, `ui`, `website`, `.github`) sit side by side in a folder named `turbopanel`, wherever you put it (for example `~/turbopanel/<repo>`). Pass `--dir PATH` to choose another folder; in direct mode it must also be named `turbopanel`.
-- **Push access decides the layout.** With push access to a repo, `origin` is the TurboPanel repo and you push feature branches there. Without it, the script forks the repo to your account, clones your fork as `origin` and adds the TurboPanel repo as `upstream`. Pass `--fork` to work from forks even with push access. Not logged in, you get read-only clones; run `gh auth login` and rerun the script to add your forks. The `.github` repo is never forked for you, because a fork of it becomes your account's own community health repo; fork it by hand only to change it.
+- **What you can do.** At the end of `setup` and `status` the script prints one plain sentence about it: you push to TurboPanel directly (maintainer), you work from your own fork (contributor), or the repos are read-only because you are not signed in; repos that differ, such as `.github`, are listed after it.
+- **Push access decides the layout.** With push access to a repo, `origin` is the TurboPanel repo and you push feature branches there. Without it, the script forks the repo to your account, clones your fork as `origin`, adds the TurboPanel repo as `upstream` and runs `gh repo set-default TurboPanel/<repo>` in the checkout so `gh pr create` opens pull requests into TurboPanel without asking. Pass `--fork` to work from forks even with push access. Not logged in, you get read-only clones; run `gh auth login` and rerun the script to add your forks. The `.github` repo is never forked for you, because a fork of it becomes your account's own community health repo; fork it by hand only to change it.
 - **Clone method.** HTTPS through `gh` (`gh auth setup-git`), or SSH when `gh config get git_protocol` is `ssh` or a `url.<ssh>.insteadOf https://github.com/` rule is set.
 - **Vagrant or direct.** The script asks which to use. Direct mode is offered only on Debian 13 outside a container (see "Direct VM" below); macOS and other hosts get Vagrant only. In Vagrant mode you edit, commit and push on the host; the guest only runs the stack, and the host pre-commit hooks run the secret scan. Non-interactive: `--yes --mode vagrant` or `--yes --mode direct`. `--dry-run` prints the plan and stops.
 - **Mode file.** The answer and each repo's role are written to `turbopanel/.turbopanel-dev-mode` (shell-sourceable `key='value'` lines, `TURBOPANEL_DEV_ENV=direct|vagrant`). `ci-verify.sh` reads it.
@@ -128,7 +145,7 @@ less dev/scripts/setup.sh        # read it before you run it
 
 ## Fresh-Clone → Working Dev
 
-1. Run `./dev/scripts/setup.sh` (see "Contribute"). It puts the six sibling repos under one parent directory on the host (`dev`, `turbopaneld`, `turbopanel`, `ui`, `website`, `.github`). `.github` is optional for `vagrant-up.sh` and the `Vagrantfile`: when it is missing, the `github-repo` Ansible role clones it inside the guest.
+1. Run the starter one-liner, or `./dev/scripts/setup.sh` in an existing clone (see "Contribute"). It puts the six sibling repos under one parent directory on the host (`dev`, `turbopaneld`, `turbopanel`, `ui`, `website`, `.github`). `.github` is optional for `vagrant-up.sh` and the `Vagrantfile`: when it is missing, the `github-repo` Ansible role clones it inside the guest.
 2. From the host `dev` checkout: `vagrant up` then `vagrant ssh` (on macOS `./scripts/vagrant-up.sh` does both).
 3. Inside the guest: `dev/console` → prereqs, pinned Node, `pnpm install`, TUI launch (exports `TURBOPANEL_MODE=development` and `TURBOPANEL_DEV_ROOT`; a `TURBOPANEL_<DIR>_REPO` override is forwarded only when you set one).
 4. **Bootstrap / converge** → on launch the console uses `resolveDevEnvStartupPlan` (`src/lib/dev-env-readiness.ts`): it **auto-bootstraps** (daemon install → systemd unit) when prerequisites are missing; after bootstrap finishes it opens the **optional services** picker, then converges (`if-needed`). When the host is already installed, launch sits **idle** with no auto-converge; use Developer → **Converge / re-converge development environment**. The picker defaults to UI, website, Mailpit and Drizzle Studio on, and Redis Insight and the Stripe CLI forwarder off; idle for 5 seconds continues with the current selection. Drizzle Studio and Mailpit stay listed on the Services screen in gray when not enabled: select the row and press **E**, or use Developer → **Optional services…**, which also starts and stops optional units at any time without a full converge. The daemon checkout, Stripe forwarder and tier catalogue are described under "Daemon Checkout, Stripe Forwarder and Tier Catalogue" below; the console internals are in [`src/AGENTS.md`](../src/AGENTS.md).
