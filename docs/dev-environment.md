@@ -33,7 +33,7 @@ Ansible roles (`daemon-launch`, `instance-launch`, etc.) resolve source to
 can move the root, see Repos Outside the Home Folder below), and
 `/opt/turbopanel` in dev holds **only** vendored runtimes, the production
 binary, and the built static UI — never source checkouts. `../.github`
-(community health files) mounts to `$HOME/.github` when present on the host;
+(community health files) mounts to `~/turbopanel/.github` when present on the host;
 otherwise the `github-repo` Ansible role clones it inside the guest via HTTPS.
 FHS trees stay **guest-local**. Ports `80` / `443` (hosting Caddy) / `8443` / `8081` / `8088` / `19820` forward
 to the host on `0.0.0.0` (LAN-reachable, not localhost-only). Drizzle Studio
@@ -54,11 +54,11 @@ SAN is refused when the install command is minted.
 
 ## Filesystem Layout
 
-The repos sit in `$TURBOPANEL_DEV_ROOT/<repo>`. On a direct machine that is a folder named `turbopanel` (see Repos Outside the Home Folder):
+The repos sit in `$TURBOPANEL_DEV_ROOT/<repo>`, always a folder named `turbopanel`, on a direct machine and in the Vagrant guest alike (see Repos Outside the Home Folder):
 
 ```
-~/turbopanel/             # $TURBOPANEL_DEV_ROOT (direct mode; any folder named turbopanel)
-├── .turbopanel-dev-mode  # written by dev/scripts/setup.sh; ./console reads dev_root from it
+~/turbopanel/             # $TURBOPANEL_DEV_ROOT (any folder named turbopanel; the guest mounts the host repos here)
+├── .turbopanel-dev-mode  # written by dev/scripts/setup.sh on the editing machine (not in the guest); ./console reads dev_root from it
 ├── dev/                  # turbopanel/dev checkout (./console, Vagrantfile, orchestration/)
 ├── turbopaneld/          # optional override: TURBOPANEL_DAEMON_REPO
 ├── turbopanel/           # control plane; optional override: TURBOPANEL_INSTANCE_REPO

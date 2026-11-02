@@ -557,6 +557,44 @@ describe('setup.sh folder', () => {
   })
 })
 
+describe('setup.sh in an old Vagrant guest', () => {
+  // A guest made before the repos moved still mounts them at ~/<repo>, so the
+  // dev checkout sits directly in the home folder with no mode file next to it.
+  function oldGuestCheckout(): string {
+    const dev = join(root, 'old-guest-home', 'dev')
+    mkdirSync(join(dev, 'scripts', 'lib'), { recursive: true })
+    for (const file of ['scripts/setup.sh', 'scripts/lib/privileges.sh', 'repos.list']) {
+      writeFileSync(join(dev, file), readFileSync(join(REPO_ROOT, file)))
+    }
+    return join(dev, 'scripts', 'setup.sh')
+  }
+
+  test('stops with the rebuild steps instead of picking a folder', () => {
+    const marker = join(root, 'turbopanel-vagrant.sh')
+    writeFileSync(marker, '# guest\n')
+    const result = spawnSync('sh', [oldGuestCheckout(), '--dry-run'], {
+      cwd: root,
+      encoding: 'utf8',
+      env: baseEnv({ TURBOPANEL_VAGRANT_GUEST_MARKER: marker }),
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    const out = `${result.stdout}${result.stderr}`
+    expect(result.status, out).toBe(1)
+    expect(out).toContain('this Vagrant guest still mounts the repos at ~/<repo>')
+    expect(out).toContain('vagrant destroy -f && vagrant up')
+  })
+
+  test('outside the guest the same checkout is not refused for being a guest', () => {
+    const result = spawnSync('sh', [oldGuestCheckout(), '--dry-run'], {
+      cwd: root,
+      encoding: 'utf8',
+      env: baseEnv({ TURBOPANEL_VAGRANT_GUEST_MARKER: join(root, 'no-marker') }),
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    expect(`${result.stdout}${result.stderr}`).not.toContain('this Vagrant guest')
+  })
+})
+
 describe('setup.sh host checks', () => {
   test('macOS offers Vagrant only and says why', () => {
     const { status, out } = run(['--dir', work, '--dry-run'], { FAKE_UNAME_S: 'Darwin' })

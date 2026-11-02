@@ -30,6 +30,10 @@ DEV_CHECKOUT=$(CDPATH='' cd -- "$SCRIPT_DIR/.." && pwd)
 TP_ORG=TurboPanel
 MODE_FILE_NAME=.turbopanel-dev-mode
 REPOS_LIST="$DEV_CHECKOUT/repos.list"
+# The profile file the Vagrantfile provisioner writes marks the Vagrant guest
+# (scripts/lib/paths.sh reads the same file). TURBOPANEL_VAGRANT_GUEST_MARKER
+# exists only so tests can point it elsewhere.
+VAGRANT_GUEST_MARKER=${TURBOPANEL_VAGRANT_GUEST_MARKER:-/etc/profile.d/turbopanel-vagrant.sh}
 REMOTE_BASE=${TURBOPANEL_SETUP_REMOTE_BASE:-}
 OS_RELEASE=${TURBOPANEL_SETUP_OS_RELEASE:-/etc/os-release}
 FORK_WAIT=${TURBOPANEL_SETUP_FORK_WAIT:-60}
@@ -144,7 +148,7 @@ tp_resolve_dir() {
     _parent=$(dirname "$DEV_CHECKOUT")
     if [ -f "$_parent/$MODE_FILE_NAME" ] || [ "$(basename "$_parent")" = turbopanel ]; then
       DIR=$_parent
-    elif [ -f /etc/profile.d/turbopanel-vagrant.sh ]; then
+    elif [ -f "$VAGRANT_GUEST_MARKER" ]; then
       # The guest mounts the host repos at ~/turbopanel/<repo>; a dev checkout
       # anywhere else is an old guest that still mounts them at ~/<repo>.
       tp_die "this Vagrant guest still mounts the repos at ~/<repo>; they now belong at ~/turbopanel/<repo>. On the host, in the dev checkout, run: vagrant destroy -f && vagrant up (or vagrant reload --provision, then Developer > Reset development environment in the console)."
@@ -1125,7 +1129,7 @@ tp_cmd_doctor() {
   echo "  uname:        ${HOST_KERNEL} ${HOST_ARCH}"
   echo "  system:       ${OS_NAME:-unknown}${OS_VERSION_ID:+ (VERSION_ID ${OS_VERSION_ID})}"
   echo "  virtual:      ${VIRT:-unknown}${CONTAINER:+, container ${CONTAINER}}"
-  if [ -f /etc/profile.d/turbopanel-vagrant.sh ]; then
+  if [ -f "$VAGRANT_GUEST_MARKER" ]; then
     echo "  this is the Vagrant guest; commit on the host, not here"
   fi
   if command -v vagrant >/dev/null 2>&1; then
@@ -1168,7 +1172,7 @@ tp_cmd_doctor() {
     echo "  mode:         ${_dr_mode:-unset}"
     _dr_root=$(tp_mode_get dev_root)
     echo "  dev_root:     ${_dr_root:-unset}"
-    if [ -n "$_dr_root" ] && [ "$_dr_root" != "$DIR" ] && [ ! -f /etc/profile.d/turbopanel-vagrant.sh ]; then
+    if [ -n "$_dr_root" ] && [ "$_dr_root" != "$DIR" ] && [ ! -f "$VAGRANT_GUEST_MARKER" ]; then
       tp_problem "mode file dev_root ${_dr_root} differs from ${DIR}"
     fi
   else
@@ -1176,7 +1180,7 @@ tp_cmd_doctor() {
   fi
   case "$_dr_mode" in
     direct)
-      [ "$DIRECT_OK" -eq 1 ] || [ -f /etc/profile.d/turbopanel-vagrant.sh ] ||
+      [ "$DIRECT_OK" -eq 1 ] || [ -f "$VAGRANT_GUEST_MARKER" ] ||
         tp_problem "mode is direct but ${DIRECT_WHY}"
       ;;
     vagrant)
