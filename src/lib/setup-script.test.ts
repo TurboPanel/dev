@@ -109,10 +109,8 @@ function baseEnv(extra: Env = {}): Env {
 }
 
 function run(args: string[], extra: Env = {}, cwd?: string) {
-  // detached: a new session without a controlling terminal, so no prompt can open.
   const result = spawnSync('sh', [SCRIPT, ...args], {
     cwd,
-    detached: true,
     encoding: 'utf8',
     env: baseEnv(extra),
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -417,12 +415,20 @@ describe('setup.sh reruns', () => {
     expect(git(join(work, 'ui'), 'config', 'core.hooksPath')).toBe('myhooks')
   })
 
-  test('a run without a terminal and without --yes stops with an error', () => {
-    const { status, out } = run(['--dir', work, '--mode', 'vagrant'])
-    expect(status).toBe(1)
-    expect(out).toContain('Pass --yes to run without asking.')
-    expect(existsSync(work)).toBe(false)
-  })
+  // setsid -w starts a new session with no controlling terminal, so no prompt can open.
+  test.skipIf(spawnSync('setsid', ['-w', 'true']).status !== 0)(
+    'a run without a terminal and without --yes stops with an error',
+    () => {
+      const result = spawnSync('setsid', ['-w', 'sh', SCRIPT, '--dir', work, '--mode', 'vagrant'], {
+        encoding: 'utf8',
+        env: baseEnv(),
+        stdio: ['ignore', 'pipe', 'pipe'],
+      })
+      expect(result.status).toBe(1)
+      expect(`${result.stdout}${result.stderr}`).toContain('Pass --yes to run without asking.')
+      expect(existsSync(work)).toBe(false)
+    }
+  )
 
   test('a failed clone leaves no half folder and the others finish', () => {
     rmSync(join(fixture, 'TurboPanel', 'website.git'), { recursive: true })

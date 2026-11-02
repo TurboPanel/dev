@@ -242,8 +242,10 @@ CLONE_PROTOCOL=https
 
 # Lower-case owner/repo comparison (GitHub names are case-insensitive).
 tp_same_slug() {
-  _ss_a=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')
-  _ss_b=$(printf '%s' "$2" | tr '[:upper:]' '[:lower:]')
+  _ss_a=$1
+  _ss_b=$2
+  _ss_a=$(printf '%s' "$_ss_a" | tr '[:upper:]' '[:lower:]')
+  _ss_b=$(printf '%s' "$_ss_b" | tr '[:upper:]' '[:lower:]')
   [ "$_ss_a" = "$_ss_b" ]
 }
 
@@ -486,7 +488,7 @@ tp_fast_forward() {
     elif ! git -C "$_ff_path" merge --ff-only --quiet "$_ff_ref" >/dev/null 2>&1; then
       tp_warn "${_ff_name}: ${_ff_branch} has commits that are not on ${_ff_base}; left as it is."
     fi
-  elif git -C "$_ff_path" worktree list --porcelain 2>/dev/null | grep -qx "branch refs/heads/${_ff_branch}"; then
+  elif git -C "$_ff_path" worktree list --porcelain 2>/dev/null | grep -qxF "branch refs/heads/${_ff_branch}"; then
     tp_warn "${_ff_name}: ${_ff_branch} is checked out in another worktree; left as it is."
   elif git -C "$_ff_path" rev-parse -q --verify "refs/heads/${_ff_branch}" >/dev/null 2>&1 &&
     git -C "$_ff_path" merge-base --is-ancestor "refs/heads/${_ff_branch}" "$_ff_ref" 2>/dev/null; then
