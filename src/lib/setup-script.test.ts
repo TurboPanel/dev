@@ -598,7 +598,7 @@ describe('setup.sh host checks', () => {
     expect(sudo).toContain(`${REPO_ROOT}/scripts/vm-bootstrap.sh`)
     expect(modeFile()).toContain("TURBOPANEL_DEV_ENV='direct'")
     expect(out).toContain(`TURBOPANEL_DEV_ROOT='${work}'`)
-    expect(out).toContain('until that lands use --dir')
+    expect(out).not.toContain('until that lands')
   })
 })
 

@@ -11,8 +11,12 @@
 # In dev-user mode the daemon roles collapse every TurboPanel service identity
 # (turbopanel/turbopaneli/turbopanelc, uid 9999/9998/9997) onto the single human
 # dev user, and:
-#   * source repos live under the dev user's home (turbopanel_dev_root):
-#       <home>/turbopaneld, <home>/turbopanel, <home>/ui, <home>/website
+#   * source repos live under the dev source-repo root (turbopanel_dev_root,
+#     from TURBOPANEL_DEV_ROOT; defaults to the dev user's home, the Vagrant
+#     layout): <root>/turbopaneld, <root>/turbopanel, <root>/ui, <root>/website.
+#     A host-native checkout may keep them anywhere, e.g. ~/work/turbopanel.
+#   * git, ssh and pnpm still run with HOME = the dev user's real home
+#     (turbopanel_dev_home), never the repo folder.
 #   * every mutable dir is the shared FHS location (dev-user-owned at runtime):
 #       /etc/turbopanel, /var/lib/turbopanel, /var/log/turbopanel,
 #       /opt/turbopanel/vendor, /run/turbopanel, /backup
@@ -40,9 +44,10 @@
     turbopanel_dev_user: ""
     turbopanel_dev_uid: ""
     turbopanel_dev_gid: ""
-    # Dev source-repo root (the dev user's home). ansible_env.HOME is unreliable
-    # under become (it resolves to root's HOME), so a pre_task below overrides this
-    # with the dev user's real home resolved from getent. Passed on to every
+    # Dev source-repo root: the folder that holds the repos. The daemon passes
+    # TURBOPANEL_DEV_ROOT as an extra-var, which always wins. Without it (a
+    # direct run) a pre_task below falls back to the dev user's home from getent,
+    # because ansible_env.HOME is root's HOME under become. Passed on to every
     # daemon role, which derive <root>/{turbopaneld,turbopanel,ui,website} from it.
     turbopanel_dev_root: "{{ ansible_env.HOME }}"
     instance_repo_url: https://github.com/TurboPanel/turbopanel
@@ -90,21 +95,67 @@
         cache_valid_time: 3600
       when: ansible_os_family == 'Debian'
 
-    # Resolve the dev user's home from passwd so the daemon roles clone the source
-    # repos into the real home (ansible_env.HOME is root's HOME under become).
+    # Resolve the dev user's home from passwd (ansible_env.HOME is root's HOME
+    # under become). It is the HOME for git, ssh and pnpm in the repo roles, and
+    # the source-repo root when no extra-var turbopanel_dev_root was passed
+    # (an extra-var always wins over set_fact).
     - name: Resolve dev user account for source-checkout root
       ansible.builtin.getent:
         database: passwd
         key: "{{ turbopanel_dev_user }}"
       when: turbopanel_dev_user | length > 0
 
-    - name: Set dev source-repo root from the dev user's home directory
+    - name: Set dev home and default source-repo root from the dev user's home directory
       ansible.builtin.set_fact:
+        turbopanel_dev_home: "{{ getent_passwd[turbopanel_dev_user][4] }}"
         turbopanel_dev_root: "{{ getent_passwd[turbopanel_dev_user][4] }}"
       when:
         - turbopanel_dev_user | length > 0
         - getent_passwd is defined
         - getent_passwd[turbopanel_dev_user] is defined
+
+    # Same rules as dev/src/lib/dev-root.ts and tp_validate_dev_root: the root is
+    # written unquoted into unit Environment= lines, env files, YAML vars and
+    # `-e key=value` pairs, so it must be an absolute path of plain characters.
+    - name: Validate the dev source-repo root path
+      ansible.builtin.assert:
+        that:
+          - turbopanel_dev_root is match('^/[A-Za-z0-9._@+/-]+\Z')
+          - turbopanel_dev_root is not match('^/+$')
+          - ('/' ~ turbopanel_dev_root ~ '/') is not search('/[.][.]?/')
+        fail_msg: >-
+          turbopanel_dev_root ({{ turbopanel_dev_root }}) must be an absolute
+          path of letters, digits and . _ @ + - / only, without . or ..
+          segments. Set TURBOPANEL_DEV_ROOT to the folder that holds the repos.
+        quiet: true
+      when: turbopanel_dev_user | length > 0
+
+    # Creating a missing root as the dev user proves that user can create and
+    # use it; an existing folder is left as it is (no owner or mode change).
+    - name: Check the dev source-repo root
+      ansible.builtin.stat:
+        path: "{{ turbopanel_dev_root }}"
+      register: _turbopanel_dev_root_stat
+      when: turbopanel_dev_user | length > 0
+
+    - name: Create the dev source-repo root as the dev user
+      ansible.builtin.file:
+        path: "{{ turbopanel_dev_root }}"
+        state: directory
+        mode: "0750"
+      become: true
+      become_user: "{{ turbopanel_dev_user }}"
+      when:
+        - turbopanel_dev_user | length > 0
+        - not (_turbopanel_dev_root_stat.stat.exists | default(false))
+
+    - name: Require the dev source-repo root to be a folder the dev user can read
+      ansible.builtin.command:
+        argv: [test, -d, "{{ turbopanel_dev_root }}", -a, -r, "{{ turbopanel_dev_root }}", -a, -x, "{{ turbopanel_dev_root }}"]
+      become: true
+      become_user: "{{ turbopanel_dev_user }}"
+      changed_when: false
+      when: turbopanel_dev_user | length > 0
 
     # The guest cannot see the Vagrant host's LAN address. dev/Vagrantfile
     # publishes that address, the host FQDN, and configured LAN aliases
