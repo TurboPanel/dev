@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { spawnSync } from 'node:child_process'
 import {
   daemonBootstrapScript,
   daemonDenoConfig,
@@ -6,81 +6,77 @@ import {
   DENO_VERSION,
   RUNTIMES_DIR,
   VENDORED_DENO_BIN,
-} from "./paths.ts";
-import { type InstallOutputHandler, runCaptured } from "./install-output.ts";
-import { shellQuote } from "./shell-quote.ts";
-import { spawnSyncTrusted } from "./spawn-trusted.ts";
+} from './paths.ts'
+import { type InstallOutputHandler, runCaptured } from './install-output.ts'
+import { shellQuote } from './shell-quote.ts'
+import { spawnSyncTrusted } from './spawn-trusted.ts'
 
 /** True when the host runs the production runtime contract (compiled entrypoints). */
 export function isProductionRuntime(): boolean {
-  return process.env.TURBOPANEL_RUNTIME === "production";
+  return process.env.TURBOPANEL_RUNTIME === 'production'
 }
 
 /** Resolve Deno from the developer host PATH (not managed by turbopanel-dev). */
 export function lookupHostDenoBin(): string | null {
-  const result = spawnSync("/bin/sh", ["-c", "command -v deno"], {
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "ignore"],
-  });
-  const bin = (result.stdout ?? "").trim();
+  const result = spawnSync('/bin/sh', ['-c', 'command -v deno'], {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'ignore'],
+  })
+  const bin = (result.stdout ?? '').trim()
   if (result.status !== 0 || bin.length === 0) {
-    return null;
+    return null
   }
-  return bin;
+  return bin
 }
 
 /** Resolve Deno from the developer host PATH (not managed by turbopanel-dev). */
 export function resolveHostDenoBin(): string {
-  const bin = lookupHostDenoBin();
+  const bin = lookupHostDenoBin()
   if (!bin) {
-    throw new Error(
-      "Deno is not on PATH — install Deno on the host for development bootstrap",
-    );
+    throw new Error('Deno is not on PATH — install Deno on the host for development bootstrap')
   }
-  return bin;
+  return bin
 }
 
 /** Report the version a Deno binary announces, or null when it will not run. */
 export function resolveDenoBinVersion(bin: string): string | null {
-  const result = spawnSync(bin, ["--version"], {
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "ignore"],
-  });
+  const result = spawnSync(bin, ['--version'], {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'ignore'],
+  })
   if (result.status !== 0) {
-    return null;
+    return null
   }
-  const stdout = result.stdout ?? "";
-  const newline = stdout.indexOf("\n");
-  const first = newline === -1 ? stdout : stdout.slice(0, newline);
-  return /^deno\s+([\d.]+)/.exec(first.trim())?.[1] ?? null;
+  const stdout = result.stdout ?? ''
+  const newline = stdout.indexOf('\n')
+  const first = newline === -1 ? stdout : stdout.slice(0, newline)
+  return /^deno\s+([\d.]+)/.exec(first.trim())?.[1] ?? null
 }
 
 /** True when a host Deno is the exact version orchestration pins. */
 export function hostDenoMatchesPin(bin: string): boolean {
-  return resolveDenoBinVersion(bin) === DENO_VERSION;
+  return resolveDenoBinVersion(bin) === DENO_VERSION
 }
 
 function pathIsExecutable(path: string): boolean {
-  const direct = spawnSync("/bin/sh", ["-c", `test -x ${shellQuote(path)}`], {
-    stdio: "ignore",
-  });
+  const direct = spawnSync('/bin/sh', ['-c', `test -x ${shellQuote(path)}`], {
+    stdio: 'ignore',
+  })
   if (direct.status === 0) {
-    return true;
+    return true
   }
-  const sudo = spawnSyncTrusted("sudo", ["-n", "test", "-x", path], {
-    stdio: "ignore",
-  });
-  return sudo.status === 0;
+  const sudo = spawnSyncTrusted('sudo', ['-n', 'test', '-x', path], {
+    stdio: 'ignore',
+  })
+  return sudo.status === 0
 }
 
 /** True when RUNTIMES_DIR can be written without escalating to sudo. */
 function runtimesDirWritable(): boolean {
-  const result = spawnSync(
-    "/bin/sh",
-    ["-c", `test -w ${shellQuote(RUNTIMES_DIR)}`],
-    { stdio: "ignore" },
-  );
-  return result.status === 0;
+  const result = spawnSync('/bin/sh', ['-c', `test -w ${shellQuote(RUNTIMES_DIR)}`], {
+    stdio: 'ignore',
+  })
+  return result.status === 0
 }
 
 /**
@@ -91,58 +87,51 @@ function runtimesDirWritable(): boolean {
  * password-prompting sudoers entry stops being the thing that decides whether
  * the console can repair its own runtime.
  */
-async function runRuntimesScript(
-  script: string,
-  onOutput?: InstallOutputHandler,
-): Promise<number> {
+async function runRuntimesScript(script: string, onOutput?: InstallOutputHandler): Promise<number> {
   // The unprivileged try is speculative: RUNTIMES_DIR can be writable while a
   // subfolder is not (deno-runtime leaves vendor/deno/bin root-owned until the
   // dev ownership pass). Hold its output so a failure the sudo retry fixes does
   // not show up as an error; replay it only when the retry fails too.
-  const held: string[] = [];
+  const held: string[] = []
   if (runtimesDirWritable()) {
-    const direct = await runCaptured(["bash", "-c", script], (line) => {
-      held.push(line);
-    });
+    const direct = await runCaptured(['bash', '-c', script], (line) => {
+      held.push(line)
+    })
     if (direct === 0) {
-      held.forEach((line) => onOutput?.(line));
-      return 0;
+      held.forEach((line) => onOutput?.(line))
+      return 0
     }
   }
-  const code = await runCaptured(
-    ["sudo", "-n", "bash", "-c", script],
-    onOutput,
-  );
+  const code = await runCaptured(['sudo', '-n', 'bash', '-c', script], onOutput)
   if (code !== 0) {
-    held.forEach((line) => onOutput?.(line));
+    held.forEach((line) => onOutput?.(line))
   }
-  return code;
+  return code
 }
 
 /** Point `current` / `bin/deno` at the pinned version directory. */
 function denoSymlinkScript(): string {
   return [
-    "set -euo pipefail",
+    'set -euo pipefail',
     `RUNTIMES_DIR=${shellQuote(RUNTIMES_DIR)}`,
     `VERSION=${shellQuote(DENO_VERSION)}`,
     'mkdir -p "$RUNTIMES_DIR/deno/bin"',
     'ln -sfn "$RUNTIMES_DIR/deno/$VERSION" "$RUNTIMES_DIR/deno/current"',
     'ln -sfn ../current/deno "$RUNTIMES_DIR/deno/bin/deno"',
-  ].join("\n");
+  ].join('\n')
 }
 
 /** The pinned Deno binary, addressed by version rather than via `current`. */
-export const PINNED_VENDORED_DENO_BIN =
-  `${RUNTIMES_DIR}/deno/${DENO_VERSION}/deno`;
+export const PINNED_VENDORED_DENO_BIN = `${RUNTIMES_DIR}/deno/${DENO_VERSION}/deno`
 
 /** True when the pinned Deno binary exists under vendor/deno/<DENO_VERSION>/. */
 function pinnedVendoredDenoUsable(): boolean {
-  return pathIsExecutable(PINNED_VENDORED_DENO_BIN);
+  return pathIsExecutable(PINNED_VENDORED_DENO_BIN)
 }
 
 /** True when vendor/deno/current/deno resolves to an executable (any version). */
 function vendoredDenoUsable(): boolean {
-  return pathIsExecutable(VENDORED_DENO_BIN);
+  return pathIsExecutable(VENDORED_DENO_BIN)
 }
 
 /**
@@ -153,8 +142,7 @@ function vendoredDenoUsable(): boolean {
  * to stop the console from exec'ing.
  */
 function vendoredDenoMatchesPin(): boolean {
-  return vendoredDenoUsable() &&
-    resolveDenoBinVersion(VENDORED_DENO_BIN) === DENO_VERSION;
+  return vendoredDenoUsable() && resolveDenoBinVersion(VENDORED_DENO_BIN) === DENO_VERSION
 }
 
 /**
@@ -169,25 +157,23 @@ function vendoredDenoMatchesPin(): boolean {
  * before throwing.
  */
 export function resolveBootstrapDenoBin(): string {
-  const host = lookupHostDenoBin();
+  const host = lookupHostDenoBin()
   if (host && hostDenoMatchesPin(host)) {
-    return host;
+    return host
   }
   if (pinnedVendoredDenoUsable()) {
-    return vendoredDenoMatchesPin()
-      ? VENDORED_DENO_BIN
-      : PINNED_VENDORED_DENO_BIN;
+    return vendoredDenoMatchesPin() ? VENDORED_DENO_BIN : PINNED_VENDORED_DENO_BIN
   }
   if (host) {
-    return host;
+    return host
   }
   if (vendoredDenoMatchesPin()) {
-    return VENDORED_DENO_BIN;
+    return VENDORED_DENO_BIN
   }
   throw new Error(
     `Deno is not installed — expected ${VENDORED_DENO_BIN} (pinned ${DENO_VERSION}) ` +
-      "or Deno on PATH; re-run the Ensure Deno runtime step or install host Deno",
-  );
+      'or Deno on PATH; re-run the Ensure Deno runtime step or install host Deno'
+  )
 }
 
 /**
@@ -197,49 +183,49 @@ export function resolveBootstrapDenoBin(): string {
  * {@link orchestrationActionCommand} so converge/playbook paths do not fail
  * with a missing binary when only `ensureBootstrapDeno` was never run.
  */
-export async function ensureOrchestrationDenoBin(
-  onOutput?: InstallOutputHandler,
-): Promise<string> {
-  await ensureBootstrapDeno(onOutput);
-  return resolveBootstrapDenoBin();
+export async function ensureOrchestrationDenoBin(onOutput?: InstallOutputHandler): Promise<string> {
+  await ensureBootstrapDeno(onOutput)
+  return resolveBootstrapDenoBin()
 }
 
 function resolveProductionDenoBin(): string {
-  return resolveBootstrapDenoBin();
+  return resolveBootstrapDenoBin()
 }
 
 function denoRunBootstrapInvocation(denoBin: string): string {
   return [
     denoBin,
-    "run",
-    "--config",
+    'run',
+    '--config',
     daemonDenoConfig(),
-    "--allow-net",
-    "--allow-read",
-    "--allow-write",
-    "--allow-run",
-    "--allow-env",
+    '--allow-net',
+    '--allow-read',
+    '--allow-write',
+    '--allow-run',
+    '--allow-env',
     daemonBootstrapScript(),
-  ].map(shellQuote).join(" ");
+  ]
+    .map(shellQuote)
+    .join(' ')
 }
 
 function resolveDenoAssetTriple(): string {
-  const arch = process.arch;
+  const arch = process.arch
   switch (arch) {
-    case "arm64":
-      return "aarch64-unknown-linux-gnu";
-    case "x64":
-      return "x86_64-unknown-linux-gnu";
+    case 'arm64':
+      return 'aarch64-unknown-linux-gnu'
+    case 'x64':
+      return 'x86_64-unknown-linux-gnu'
     default:
-      throw new Error(`Unsupported CPU architecture for Deno bootstrap: ${arch}`);
+      throw new Error(`Unsupported CPU architecture for Deno bootstrap: ${arch}`)
   }
 }
 
 function hostPython3Available(): boolean {
-  const result = spawnSync("/bin/sh", ["-c", "command -v python3"], {
-    stdio: "ignore",
-  });
-  return result.status === 0;
+  const result = spawnSync('/bin/sh', ['-c', 'command -v python3'], {
+    stdio: 'ignore',
+  })
+  return result.status === 0
 }
 
 /**
@@ -260,25 +246,23 @@ function hostPython3Available(): boolean {
  * {@link resolveBootstrapDenoBin} execs {@link PINNED_VENDORED_DENO_BIN}
  * directly, so a stale symlink is drift to note, not a bootstrap failure.
  */
-export async function ensureBootstrapDeno(
-  onOutput?: InstallOutputHandler,
-): Promise<void> {
-  const hostBin = lookupHostDenoBin();
+export async function ensureBootstrapDeno(onOutput?: InstallOutputHandler): Promise<void> {
+  const hostBin = lookupHostDenoBin()
   if (hostBin) {
-    const hostVersion = resolveDenoBinVersion(hostBin);
+    const hostVersion = resolveDenoBinVersion(hostBin)
     if (hostVersion === DENO_VERSION) {
-      return;
+      return
     }
     onOutput?.(
-      `Host Deno ${hostVersion ?? "(unknown version)"} does not match pinned ` +
-        `${DENO_VERSION} — vendoring pinned Deno for orchestration parity`,
-    );
+      `Host Deno ${hostVersion ?? '(unknown version)'} does not match pinned ` +
+        `${DENO_VERSION} — vendoring pinned Deno for orchestration parity`
+    )
   }
   if (pinnedVendoredDenoUsable()) {
     // Repair drifted symlinks even when the pinned binary is already present.
-    const linkCode = await runRuntimesScript(denoSymlinkScript(), onOutput);
+    const linkCode = await runRuntimesScript(denoSymlinkScript(), onOutput)
     if (linkCode === 0 && vendoredDenoUsable()) {
-      return;
+      return
     }
     // The relink is a convenience, not the contract: with the pinned binary on
     // disk `resolveBootstrapDenoBin` execs vendor/deno/<version>/deno directly.
@@ -287,21 +271,21 @@ export async function ensureBootstrapDeno(
     // bootstrap outright — the runtime it needs is already installed.
     onOutput?.(
       `Could not relink ${RUNTIMES_DIR}/deno/current to ${DENO_VERSION} — ` +
-        `running the pinned ${PINNED_VENDORED_DENO_BIN} directly`,
-    );
-    return;
+        `running the pinned ${PINNED_VENDORED_DENO_BIN} directly`
+    )
+    return
   }
 
   if (!hostPython3Available()) {
     throw new Error(
-      "Deno is not installed — install host Deno, vendor it via stack converge, " +
-        "or install python3-minimal to extract the release zip",
-    );
+      'Deno is not installed — install host Deno, vendor it via stack converge, ' +
+        'or install python3-minimal to extract the release zip'
+    )
   }
 
-  const triple = resolveDenoAssetTriple();
+  const triple = resolveDenoAssetTriple()
   const installScript = [
-    "set -euo pipefail",
+    'set -euo pipefail',
     `RUNTIMES_DIR=${shellQuote(RUNTIMES_DIR)}`,
     `VERSION=${shellQuote(DENO_VERSION)}`,
     'DEST="$RUNTIMES_DIR/deno/$VERSION/deno"',
@@ -327,53 +311,54 @@ with tempfile.TemporaryDirectory(prefix="deno-zip-") as tmp:
 dest.chmod(0o755)
 PY`,
     'rm -rf "$TMP"',
-    "fi",
+    'fi',
     'mkdir -p "$RUNTIMES_DIR/deno/bin"',
     'ln -sfn "$RUNTIMES_DIR/deno/$VERSION" "$RUNTIMES_DIR/deno/current"',
     'ln -sfn ../current/deno "$RUNTIMES_DIR/deno/bin/deno"',
-  ].join("\n");
+  ].join('\n')
 
-  const code = await runRuntimesScript(installScript, onOutput);
+  const code = await runRuntimesScript(installScript, onOutput)
   if (code !== 0 || !pinnedVendoredDenoUsable() || !vendoredDenoUsable()) {
-    const hint = code !== 0
-      ? " — download or extract failed (often a transient dl.deno.land CDN error; retry)"
-      : "";
-    throw new Error(
-      `Failed to install Deno ${DENO_VERSION} to ${VENDORED_DENO_BIN}${hint}`,
-    );
+    const hint =
+      code !== 0
+        ? ' — download or extract failed (often a transient dl.deno.land CDN error; retry)'
+        : ''
+    throw new Error(`Failed to install Deno ${DENO_VERSION} to ${VENDORED_DENO_BIN}${hint}`)
   }
 }
 
 function denoRunOrchestrationInvocation(denoBin: string, actionArgs: string[]): string {
   return [
     denoBin,
-    "run",
-    "--config",
+    'run',
+    '--config',
     daemonDenoConfig(),
-    "--allow-read",
-    "--allow-run",
-    "--allow-env",
-    "--allow-write",
-    "--allow-net",
+    '--allow-read',
+    '--allow-run',
+    '--allow-env',
+    '--allow-write',
+    '--allow-net',
     daemonOrchestrationScript(),
     ...actionArgs,
-  ].map(shellQuote).join(" ");
+  ]
+    .map(shellQuote)
+    .join(' ')
 }
 
 export type OrchestrationActionCommandOptions = {
   /** Pre-resolved Deno binary; skips host/vendored resolution when set. */
-  denoBin?: string;
-};
+  denoBin?: string
+}
 
 /** Shell command to exec run-orchestration-action.ts for the current runtime contract. */
 export function orchestrationActionCommand(
   actionArgs: readonly string[],
-  options?: OrchestrationActionCommandOptions,
+  options?: OrchestrationActionCommandOptions
 ): string {
-  const denoBin = options?.denoBin ?? (
-    isProductionRuntime() ? resolveProductionDenoBin() : resolveBootstrapDenoBin()
-  );
-  return denoRunOrchestrationInvocation(denoBin, [...actionArgs]);
+  const denoBin =
+    options?.denoBin ??
+    (isProductionRuntime() ? resolveProductionDenoBin() : resolveBootstrapDenoBin())
+  return denoRunOrchestrationInvocation(denoBin, [...actionArgs])
 }
 
 /**
@@ -388,7 +373,7 @@ export function orchestrationActionCommand(
  */
 export function bootstrapOrchestrationCommand(): string {
   if (isProductionRuntime()) {
-    return denoRunBootstrapInvocation(resolveProductionDenoBin());
+    return denoRunBootstrapInvocation(resolveProductionDenoBin())
   }
-  return denoRunBootstrapInvocation(resolveBootstrapDenoBin());
+  return denoRunBootstrapInvocation(resolveBootstrapDenoBin())
 }
