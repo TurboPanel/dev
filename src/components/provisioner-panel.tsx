@@ -1,32 +1,16 @@
-import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type RefObject,
-} from "react";
-import { Box, Text, useInput } from "ink";
-import {
-  AnsibleTaskList,
-  type AnsibleTaskRow,
-} from "@turbopanel/components/ansible-task-list.tsx";
-import {
-  buildAnsibleTaskView,
-  useAnsibleEvents,
-} from "../hooks/use-ansible-events.ts";
-import { useSpinnerFrame } from "../hooks/use-spinner-frame.ts";
-import { installDaemon } from "../lib/platform-install.ts";
-import { CONSOLE_LAST_TASK_ERROR_LOG } from "../lib/paths.ts";
-import { appendOutputLines } from "../lib/install-output.ts";
-import { logContentWidth } from "./log-scrollbar.tsx";
-import { ScrollableLogList } from "./scrollable-log-list.tsx";
-import { writeTaskErrorLog } from "../lib/task-error-log.ts";
-import {
-  bootstrapOrchestration,
-  installDaemonSystemd,
-} from "../lib/daemon-install.ts";
-import { ensureBootstrapDeno } from "../lib/daemon-exec.ts";
+import React, { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react'
+import { Box, Text, useInput } from 'ink'
+import { AnsibleTaskList, type AnsibleTaskRow } from '@turbopanel/components/ansible-task-list.tsx'
+import { buildAnsibleTaskView, useAnsibleEvents } from '../hooks/use-ansible-events.ts'
+import { useSpinnerFrame } from '../hooks/use-spinner-frame.ts'
+import { installDaemon } from '../lib/platform-install.ts'
+import { CONSOLE_LAST_TASK_ERROR_LOG } from '../lib/paths.ts'
+import { appendOutputLines } from '../lib/install-output.ts'
+import { logContentWidth } from './log-scrollbar.tsx'
+import { ScrollableLogList } from './scrollable-log-list.tsx'
+import { writeTaskErrorLog } from '../lib/task-error-log.ts'
+import { bootstrapOrchestration, installDaemonSystemd } from '../lib/daemon-install.ts'
+import { ensureBootstrapDeno } from '../lib/daemon-exec.ts'
 import {
   BOOTSTRAP_ANSIBLE,
   BOOTSTRAP_CONVERGE,
@@ -35,75 +19,72 @@ import {
   BOOTSTRAP_UV,
   bootstrapStepForPhase,
   type BootstrapPhase,
-} from "../lib/bootstrap-phase.ts";
-import { rebuildDaemonAndUpgradeConnectedServers, syncDevBuildToDaemons } from "../lib/daemon-actions.ts";
+} from '../lib/bootstrap-phase.ts'
 import {
-  DEV_ENV_CONVERGE_STEP,
-  installDevEnvironment,
-} from "../lib/instance-install.ts";
-import { resetDevEnvironment } from "../lib/reset-dev-environment.ts";
-import { resetDevDatabase } from "../lib/reset-dev-database.ts";
-import { saveDevTierCatalogue } from "../lib/save-dev-tier-catalogue.ts";
+  rebuildDaemonAndUpgradeConnectedServers,
+  syncDevBuildToDaemons,
+} from '../lib/daemon-actions.ts'
+import { DEV_ENV_CONVERGE_STEP, installDevEnvironment } from '../lib/instance-install.ts'
+import { resetDevEnvironment } from '../lib/reset-dev-environment.ts'
+import { resetDevDatabase } from '../lib/reset-dev-database.ts'
+import { saveDevTierCatalogue } from '../lib/save-dev-tier-catalogue.ts'
 
-const OUTPUT_LOG_ROWS = 6;
-const SYNC_OUTPUT_LOG_ROWS = 200;
+// Rows of output kept for the failure view (shown only when a step fails).
+const OUTPUT_LOG_ROWS = 20
+const SYNC_OUTPUT_LOG_ROWS = 200
 
 function truncateLine(text: string, maxWidth: number): string {
-  if (maxWidth < 4) return "…";
-  if (text.length <= maxWidth) return text;
-  return `${text.slice(0, maxWidth - 1)}…`;
+  if (maxWidth < 4) return '…'
+  if (text.length <= maxWidth) return text
+  return `${text.slice(0, maxWidth - 1)}…`
 }
 
 type ProvisionerPhase =
-  | "daemon"
-  | "dev-env"
-  | "reset-dev-env"
-  | "reset-dev-db"
-  | "save-tier-catalogue"
-  | "sync-dev-build"
-  | "rebuild-daemon-upgrade";
+  | 'daemon'
+  | 'dev-env'
+  | 'reset-dev-env'
+  | 'reset-dev-db'
+  | 'save-tier-catalogue'
+  | 'sync-dev-build'
+  | 'rebuild-daemon-upgrade'
 
-type EmitStep = (
-  label: string,
-  status: AnsibleTaskRow["status"],
-  id?: string,
-) => void;
+type EmitStep = (label: string, status: AnsibleTaskRow['status'], id?: string) => void
 
 function provisionerTitle(phase: ProvisionerPhase): string {
   switch (phase) {
-    case "sync-dev-build":
-      return "Syncing source to attached checkouts…";
-    case "rebuild-daemon-upgrade":
-      return "Rebuilding daemon and upgrading connected servers…";
-    case "dev-env":
-      return "Starting development environment";
-    case "reset-dev-env":
-      return "Resetting development environment…";
-    case "reset-dev-db":
-      return "Resetting dev database…";
-    case "save-tier-catalogue":
-      return "Saving tier catalogue…";
-    case "daemon":
-      return "Bootstrapping development environment";
+    case 'sync-dev-build':
+      return 'Syncing source to attached checkouts…'
+    case 'rebuild-daemon-upgrade':
+      return 'Rebuilding daemon and upgrading connected servers…'
+    case 'dev-env':
+      return 'Starting development environment'
+    case 'reset-dev-env':
+      return 'Resetting development environment…'
+    case 'reset-dev-db':
+      return 'Resetting dev database…'
+    case 'save-tier-catalogue':
+      return 'Saving tier catalogue…'
+    case 'daemon':
+      return 'Bootstrapping development environment'
   }
 }
 
 function provisionerSuccessMessage(phase: ProvisionerPhase): string {
   switch (phase) {
-    case "sync-dev-build":
-      return "Source synced to attached checkouts";
-    case "rebuild-daemon-upgrade":
-      return "Connected servers upgraded to the new daemon build";
-    case "dev-env":
-      return "Development environment running";
-    case "reset-dev-env":
-      return "Development environment reset complete";
-    case "reset-dev-db":
-      return "Dev database reset complete";
-    case "save-tier-catalogue":
-      return "Tier catalogue saved to dev/local/tiers.json";
-    case "daemon":
-      return "Development environment ready";
+    case 'sync-dev-build':
+      return 'Source synced to attached checkouts'
+    case 'rebuild-daemon-upgrade':
+      return 'Connected servers upgraded to the new daemon build'
+    case 'dev-env':
+      return 'Development environment running'
+    case 'reset-dev-env':
+      return 'Development environment reset complete'
+    case 'reset-dev-db':
+      return 'Dev database reset complete'
+    case 'save-tier-catalogue':
+      return 'Tier catalogue saved to dev/local/tiers.json'
+    case 'daemon':
+      return 'Development environment ready'
   }
 }
 
@@ -111,38 +92,69 @@ function footerRowCount(
   finished: boolean,
   error: string | null,
   errorLogPath: string | null,
-  holdUntilKeypress: boolean,
+  holdUntilKeypress: boolean
 ): number {
-  if (!finished) return 0;
-  if (!error) return holdUntilKeypress ? 2 : 1;
-  return errorLogPath ? 3 : 2;
+  if (!finished) return 0
+  if (!error) return holdUntilKeypress ? 2 : 1
+  return errorLogPath ? 3 : 2
 }
 
 function errorMessage(error_: unknown): string {
-  return error_ instanceof Error ? error_.message : String(error_);
+  return error_ instanceof Error ? error_.message : String(error_)
 }
 
 async function reportProvisionerFailure(opts: {
-  title: string;
-  stepLabel: string;
-  error_: unknown;
-  emitStep: EmitStep;
-  setError: (message: string) => void;
-  setErrorLogPath: (path: string) => void;
+  title: string
+  stepLabel: string
+  error_: unknown
+  emitStep: EmitStep
+  setError: (message: string) => void
+  setErrorLogPath: (path: string) => void
 }): Promise<void> {
-  const { title, stepLabel, error_, emitStep, setError, setErrorLogPath } = opts;
-  emitStep(stepLabel, "failed");
-  const message = errorMessage(error_);
+  const { title, stepLabel, error_, emitStep, setError, setErrorLogPath } = opts
+  emitStep(stepLabel, 'failed')
+  const message = errorMessage(error_)
   const saved = await writeTaskErrorLog({
     title,
     message: `step=${stepLabel}\n${message}`,
-    tasks: [{ label: stepLabel, status: "failed" }],
+    tasks: [{ label: stepLabel, status: 'failed' }],
     timestamp: new Date().toISOString(),
-  });
+  })
   if (saved) {
-    setErrorLogPath(CONSOLE_LAST_TASK_ERROR_LOG);
+    setErrorLogPath(CONSOLE_LAST_TASK_ERROR_LOG)
   }
-  setError(message);
+  setError(message)
+}
+
+// One labelled step: running, then ok and done, or a reported failure.
+async function runSingleStepPhase(opts: {
+  title: string
+  stepLabel: string
+  run: () => Promise<unknown>
+  isCancelled: () => boolean
+  emitStep: EmitStep
+  setDone: (done: boolean) => void
+  setError: (message: string) => void
+  setErrorLogPath: (path: string) => void
+}): Promise<void> {
+  const { title, stepLabel, run, isCancelled, emitStep, setDone, setError, setErrorLogPath } = opts
+  try {
+    emitStep(stepLabel, 'running')
+    await run()
+    if (isCancelled()) return
+    emitStep(stepLabel, 'ok')
+    setDone(true)
+  } catch (error_) {
+    if (isCancelled()) return
+    await reportProvisionerFailure({
+      title,
+      stepLabel,
+      error_,
+      emitStep,
+      setError,
+      setErrorLogPath,
+    })
+  }
 }
 
 function ProvisionerSyncOutput({
@@ -151,10 +163,10 @@ function ProvisionerSyncOutput({
   syncLogContentWidth,
   outputLines,
 }: Readonly<{
-  outputWidth: number;
-  syncLogHeight: number;
-  syncLogContentWidth: number;
-  outputLines: string[];
+  outputWidth: number
+  syncLogHeight: number
+  syncLogContentWidth: number
+  outputLines: string[]
 }>) {
   return (
     <Box flexDirection="column" marginTop={1} flexShrink={0} minHeight={0}>
@@ -171,15 +183,15 @@ function ProvisionerSyncOutput({
         ))}
       </ScrollableLogList>
     </Box>
-  );
+  )
 }
 
 function ProvisionerErrorOutput({
   outputWidth,
   outputLines,
 }: Readonly<{
-  outputWidth: number;
-  outputLines: string[];
+  outputWidth: number
+  outputLines: string[]
 }>) {
   return (
     <Box flexDirection="column" marginTop={1} flexShrink={0}>
@@ -190,7 +202,7 @@ function ProvisionerErrorOutput({
         </Text>
       ))}
     </Box>
-  );
+  )
 }
 
 function ProvisionerStatusFooter({
@@ -199,41 +211,41 @@ function ProvisionerStatusFooter({
   successMessage,
   holdUntilKeypress,
 }: Readonly<{
-  finished: boolean;
-  error: string | null;
-  successMessage: string;
-  holdUntilKeypress: boolean;
+  finished: boolean
+  error: string | null
+  successMessage: string
+  holdUntilKeypress: boolean
 }>) {
-  if (!finished) return null;
+  if (!finished) return null
   if (error !== null) {
     return (
       <Box marginTop={1}>
         <Text dimColor>Press any key to continue</Text>
       </Box>
-    );
+    )
   }
   return (
     <Box marginTop={1} flexDirection="column">
       <Text color="green">{successMessage}</Text>
       {holdUntilKeypress && <Text dimColor>Press any key to continue</Text>}
     </Box>
-  );
+  )
 }
 
 function useProvisionerPhaseEffects(opts: {
-  phase: ProvisionerPhase;
-  appendOutput: (line: string) => void;
-  appendSyncOutput: (line: string) => void;
-  emitStep: EmitStep;
-  setDone: (done: boolean) => void;
-  setError: (message: string) => void;
-  setErrorLogPath: (path: string) => void;
-  onInstallFinished?: (success: boolean) => void;
-  onDaemonInstallDone?: () => void;
-  trackBootstrapEvent: (event: unknown) => void;
-  trackBootstrapOutput: (line: string) => void;
-  trackDevEnvStep: (label: string, status: "running" | "ok" | "failed") => void;
-  bootstrapPhase: RefObject<BootstrapPhase>;
+  phase: ProvisionerPhase
+  appendOutput: (line: string) => void
+  appendSyncOutput: (line: string) => void
+  emitStep: EmitStep
+  setDone: (done: boolean) => void
+  setError: (message: string) => void
+  setErrorLogPath: (path: string) => void
+  onInstallFinished?: (success: boolean) => void
+  onDaemonInstallDone?: () => void
+  trackBootstrapEvent: (event: unknown) => void
+  trackBootstrapOutput: (line: string) => void
+  trackDevEnvStep: (label: string, status: 'running' | 'ok' | 'failed') => void
+  bootstrapPhase: RefObject<BootstrapPhase>
 }): void {
   const {
     phase,
@@ -249,15 +261,15 @@ function useProvisionerPhaseEffects(opts: {
     trackBootstrapOutput,
     trackDevEnvStep,
     bootstrapPhase,
-  } = opts;
+  } = opts
 
   useEffect(() => {
-    if (phase !== "daemon") return;
+    if (phase !== 'daemon') return
 
-    let cancelled = false;
+    let cancelled = false
 
     void (async () => {
-      let currentStep = "Ensure daemon repository";
+      let currentStep = 'Ensure daemon repository'
       // True only while bootstrapOrchestration()'s uv→converge work is in flight.
       // Deno is ensured *before* that call (own step) so a GitHub/curl Deno failure
       // does not paint "Install uv package manager" as failed. During the
@@ -265,60 +277,60 @@ function useProvisionerPhaseEffects(opts: {
       // four uv/python/ansible/converge steps actually failed. Outside that window,
       // `currentStep` already names the real failing step (installDaemon and
       // installDaemonSystemd emit their own "failed" status before throwing).
-      let duringBootstrapOrchestration = false;
+      let duringBootstrapOrchestration = false
       try {
-        emitStep(currentStep, "running");
-        await installDaemon(emitStep, appendOutput);
-        if (cancelled) return;
-        emitStep(currentStep, "ok");
+        emitStep(currentStep, 'running')
+        await installDaemon(emitStep, appendOutput)
+        if (cancelled) return
+        emitStep(currentStep, 'ok')
 
         // Vendored Deno must exist before the orchestration script can run.
         // Keep this as its own task-list row — ensureBootstrapDeno also runs
         // again inside bootstrapOrchestration (no-op when already usable).
-        bootstrapPhase.current = "deno";
-        currentStep = BOOTSTRAP_DENO;
-        emitStep(BOOTSTRAP_DENO, "running");
-        await ensureBootstrapDeno(trackBootstrapOutput);
-        if (cancelled) return;
-        emitStep(BOOTSTRAP_DENO, "ok");
+        bootstrapPhase.current = 'deno'
+        currentStep = BOOTSTRAP_DENO
+        emitStep(BOOTSTRAP_DENO, 'running')
+        await ensureBootstrapDeno(trackBootstrapOutput)
+        if (cancelled) return
+        emitStep(BOOTSTRAP_DENO, 'ok')
 
-        bootstrapPhase.current = "uv";
-        currentStep = BOOTSTRAP_UV;
-        emitStep(BOOTSTRAP_UV, "running");
-        duringBootstrapOrchestration = true;
-        await bootstrapOrchestration(trackBootstrapEvent, trackBootstrapOutput);
-        duringBootstrapOrchestration = false;
-        if (cancelled) return;
-        emitStep(BOOTSTRAP_UV, "ok");
-        emitStep(BOOTSTRAP_PYTHON, "ok");
-        emitStep(BOOTSTRAP_ANSIBLE, "ok");
-        emitStep(BOOTSTRAP_CONVERGE, "ok");
+        bootstrapPhase.current = 'uv'
+        currentStep = BOOTSTRAP_UV
+        emitStep(BOOTSTRAP_UV, 'running')
+        duringBootstrapOrchestration = true
+        await bootstrapOrchestration(trackBootstrapEvent, trackBootstrapOutput)
+        duringBootstrapOrchestration = false
+        if (cancelled) return
+        emitStep(BOOTSTRAP_UV, 'ok')
+        emitStep(BOOTSTRAP_PYTHON, 'ok')
+        emitStep(BOOTSTRAP_ANSIBLE, 'ok')
+        emitStep(BOOTSTRAP_CONVERGE, 'ok')
 
-        currentStep = "Install turbopaneld systemd unit";
-        await installDaemonSystemd(appendOutput, emitStep);
-        if (cancelled) return;
+        currentStep = 'Install turbopaneld systemd unit'
+        await installDaemonSystemd(appendOutput, emitStep)
+        if (cancelled) return
 
-        onInstallFinished?.(true);
-        onDaemonInstallDone?.();
+        onInstallFinished?.(true)
+        onDaemonInstallDone?.()
       } catch (error_) {
-        if (cancelled) return;
+        if (cancelled) return
         if (duringBootstrapOrchestration) {
-          currentStep = bootstrapStepForPhase(bootstrapPhase.current);
+          currentStep = bootstrapStepForPhase(bootstrapPhase.current)
         }
         await reportProvisionerFailure({
-          title: "Install daemon",
+          title: 'Install daemon',
           stepLabel: currentStep,
           error_,
           emitStep,
           setError,
           setErrorLogPath,
-        });
+        })
       }
-    })();
+    })()
 
     return () => {
-      cancelled = true;
-    };
+      cancelled = true
+    }
   }, [
     appendOutput,
     bootstrapPhase,
@@ -330,15 +342,15 @@ function useProvisionerPhaseEffects(opts: {
     setErrorLogPath,
     trackBootstrapEvent,
     trackBootstrapOutput,
-  ]);
+  ])
 
   useEffect(() => {
-    if (phase !== "dev-env") return;
+    if (phase !== 'dev-env') return
 
-    let cancelled = false;
+    let cancelled = false
 
     void (async () => {
-      const currentStep = DEV_ENV_CONVERGE_STEP;
+      const currentStep = DEV_ENV_CONVERGE_STEP
       try {
         // First-run provision must rebuild unconditionally — never inherit skip.
         await installDevEnvironment(
@@ -346,26 +358,26 @@ function useProvisionerPhaseEffects(opts: {
           appendOutput,
           trackDevEnvStep,
           undefined,
-          "force",
-        );
-        if (cancelled) return;
-        setDone(true);
+          'force'
+        )
+        if (cancelled) return
+        setDone(true)
       } catch (error_) {
-        if (cancelled) return;
+        if (cancelled) return
         await reportProvisionerFailure({
-          title: "Converge / re-converge development environment",
+          title: 'Converge / re-converge development environment',
           stepLabel: currentStep,
           error_,
           emitStep,
           setError,
           setErrorLogPath,
-        });
+        })
       }
-    })();
+    })()
 
     return () => {
-      cancelled = true;
-    };
+      cancelled = true
+    }
   }, [
     appendOutput,
     emitStep,
@@ -375,208 +387,139 @@ function useProvisionerPhaseEffects(opts: {
     setErrorLogPath,
     trackBootstrapEvent,
     trackDevEnvStep,
-  ]);
+  ])
 
   useEffect(() => {
-    if (phase !== "reset-dev-env") return;
+    if (phase !== 'reset-dev-env') return
 
-    let cancelled = false;
+    let cancelled = false
 
     void (async () => {
-      const currentStep = DEV_ENV_CONVERGE_STEP;
+      const currentStep = DEV_ENV_CONVERGE_STEP
       try {
-        await resetDevEnvironment(appendOutput, trackDevEnvStep);
-        if (cancelled) return;
-        setDone(true);
+        await resetDevEnvironment(appendOutput, trackDevEnvStep)
+        if (cancelled) return
+        setDone(true)
       } catch (error_) {
-        if (cancelled) return;
+        if (cancelled) return
         await reportProvisionerFailure({
-          title: "Reset development environment",
+          title: 'Reset development environment',
           stepLabel: currentStep,
           error_,
           emitStep,
           setError,
           setErrorLogPath,
-        });
+        })
       }
-    })();
+    })()
 
     return () => {
-      cancelled = true;
-    };
-  }, [
-    appendOutput,
-    emitStep,
-    phase,
-    setDone,
-    setError,
-    setErrorLogPath,
-    trackDevEnvStep,
-  ]);
+      cancelled = true
+    }
+  }, [appendOutput, emitStep, phase, setDone, setError, setErrorLogPath, trackDevEnvStep])
 
   useEffect(() => {
-    if (phase !== "save-tier-catalogue") return;
+    if (phase !== 'save-tier-catalogue') return
 
-    let cancelled = false;
+    let cancelled = false
 
-    void (async () => {
-      const stepLabel = "Save tier catalogue";
-      try {
-        emitStep(stepLabel, "running");
-        await saveDevTierCatalogue(appendOutput);
-        if (cancelled) return;
-        emitStep(stepLabel, "ok");
-        setDone(true);
-      } catch (error_) {
-        if (cancelled) return;
-        await reportProvisionerFailure({
-          title: "Save tier catalogue",
-          stepLabel,
-          error_,
-          emitStep,
-          setError,
-          setErrorLogPath,
-        });
-      }
-    })();
+    void runSingleStepPhase({
+      title: 'Save tier catalogue',
+      stepLabel: 'Save tier catalogue',
+      run: () => saveDevTierCatalogue(appendOutput),
+      isCancelled: () => cancelled,
+      emitStep,
+      setDone,
+      setError,
+      setErrorLogPath,
+    })
 
     return () => {
-      cancelled = true;
-    };
-  }, [appendOutput, emitStep, phase, setDone, setError, setErrorLogPath]);
+      cancelled = true
+    }
+  }, [appendOutput, emitStep, phase, setDone, setError, setErrorLogPath])
 
   useEffect(() => {
-    if (phase !== "reset-dev-db") return;
+    if (phase !== 'reset-dev-db') return
 
-    let cancelled = false;
+    let cancelled = false
 
-    void (async () => {
-      const stepLabel = "Reset dev database";
-      try {
-        emitStep(stepLabel, "running");
-        await resetDevDatabase(appendOutput);
-        if (cancelled) return;
-        emitStep(stepLabel, "ok");
-        setDone(true);
-      } catch (error_) {
-        if (cancelled) return;
-        await reportProvisionerFailure({
-          title: "Reset dev database",
-          stepLabel,
-          error_,
-          emitStep,
-          setError,
-          setErrorLogPath,
-        });
-      }
-    })();
+    void runSingleStepPhase({
+      title: 'Reset dev database',
+      stepLabel: 'Reset dev database',
+      run: () => resetDevDatabase(appendOutput),
+      isCancelled: () => cancelled,
+      emitStep,
+      setDone,
+      setError,
+      setErrorLogPath,
+    })
 
     return () => {
-      cancelled = true;
-    };
-  }, [
-    appendOutput,
-    emitStep,
-    phase,
-    setDone,
-    setError,
-    setErrorLogPath,
-  ]);
+      cancelled = true
+    }
+  }, [appendOutput, emitStep, phase, setDone, setError, setErrorLogPath])
 
   useEffect(() => {
-    if (phase !== "sync-dev-build") return;
+    if (phase !== 'sync-dev-build') return
 
-    let cancelled = false;
+    let cancelled = false
 
-    void (async () => {
-      const stepLabel = "Sync source to attached checkouts";
-      try {
-        emitStep(stepLabel, "running");
-        await syncDevBuildToDaemons(appendSyncOutput);
-        if (cancelled) return;
-        emitStep(stepLabel, "ok");
-        setDone(true);
-      } catch (error_) {
-        if (cancelled) return;
-        await reportProvisionerFailure({
-          title: "Sync source",
-          stepLabel,
-          error_,
-          emitStep,
-          setError,
-          setErrorLogPath,
-        });
-      }
-    })();
+    void runSingleStepPhase({
+      title: 'Sync source',
+      stepLabel: 'Sync source to attached checkouts',
+      run: () => syncDevBuildToDaemons(appendSyncOutput),
+      isCancelled: () => cancelled,
+      emitStep,
+      setDone,
+      setError,
+      setErrorLogPath,
+    })
 
     return () => {
-      cancelled = true;
-    };
-  }, [
-    appendSyncOutput,
-    emitStep,
-    phase,
-    setDone,
-    setError,
-    setErrorLogPath,
-  ]);
+      cancelled = true
+    }
+  }, [appendSyncOutput, emitStep, phase, setDone, setError, setErrorLogPath])
 
   useEffect(() => {
-    if (phase !== "rebuild-daemon-upgrade") return;
+    if (phase !== 'rebuild-daemon-upgrade') return
 
-    let cancelled = false;
+    let cancelled = false
 
-    void (async () => {
-      const stepLabel = "Rebuild daemon and upgrade connected servers";
-      try {
-        emitStep(stepLabel, "running");
-        await rebuildDaemonAndUpgradeConnectedServers(appendSyncOutput);
-        if (cancelled) return;
-        emitStep(stepLabel, "ok");
-        setDone(true);
-      } catch (error_) {
-        if (cancelled) return;
-        await reportProvisionerFailure({
-          title: "Rebuild daemon",
-          stepLabel,
-          error_,
-          emitStep,
-          setError,
-          setErrorLogPath,
-        });
-      }
-    })();
+    void runSingleStepPhase({
+      title: 'Rebuild daemon',
+      stepLabel: 'Rebuild daemon and upgrade connected servers',
+      run: () => rebuildDaemonAndUpgradeConnectedServers(appendSyncOutput),
+      isCancelled: () => cancelled,
+      emitStep,
+      setDone,
+      setError,
+      setErrorLogPath,
+    })
 
     return () => {
-      cancelled = true;
-    };
-  }, [
-    appendSyncOutput,
-    emitStep,
-    phase,
-    setDone,
-    setError,
-    setErrorLogPath,
-  ]);
+      cancelled = true
+    }
+  }, [appendSyncOutput, emitStep, phase, setDone, setError, setErrorLogPath])
 }
 
 export function ProvisionerPanel({
   width,
   height,
-  phase = "daemon",
+  phase = 'daemon',
   onDone,
   onInstallFinished,
   onDaemonInstallDone,
 }: Readonly<{
-  width: number;
-  height: number;
-  phase?: ProvisionerPhase;
-  onDone: () => void;
-  onInstallFinished?: (success: boolean) => void;
-  onDaemonInstallDone?: () => void;
+  width: number
+  height: number
+  phase?: ProvisionerPhase
+  onDone: () => void
+  onInstallFinished?: (success: boolean) => void
+  onDaemonInstallDone?: () => void
 }>) {
-  const [outputLines, setOutputLines] = useState<string[]>([]);
-  const bootstrapPhase = useRef<BootstrapPhase>("deno");
+  const [outputLines, setOutputLines] = useState<string[]>([])
+  const bootstrapPhase = useRef<BootstrapPhase>('deno')
   const {
     tasks,
     recap,
@@ -588,117 +531,113 @@ export function ProvisionerPanel({
     setDone,
     setError,
     setErrorLogPath,
-  } = useAnsibleEvents();
+  } = useAnsibleEvents()
 
-  const isSyncPhase = phase === "sync-dev-build" || phase === "rebuild-daemon-upgrade";
-  const finished = done || error !== null;
-  const footerRows = footerRowCount(finished, error, errorLogPath, isSyncPhase);
-  const showLiveSyncOutput = isSyncPhase && (!finished || outputLines.length > 0);
+  const isSyncPhase = phase === 'sync-dev-build' || phase === 'rebuild-daemon-upgrade'
+  const finished = done || error !== null
+  const footerRows = footerRowCount(finished, error, errorLogPath, isSyncPhase)
+  const showLiveSyncOutput = isSyncPhase && (!finished || outputLines.length > 0)
   const syncLogHeight = showLiveSyncOutput
     ? Math.max(6, Math.min(height - 10, Math.floor(height * 0.55)))
-    : 0;
-  const syncLogSectionRows = showLiveSyncOutput ? syncLogHeight + 2 : 0;
-  const taskRowBudget = Math.max(
-    3,
-    height - 1 - footerRows - syncLogSectionRows,
-  );
-  const outputWidth = Math.max(20, width - 2);
-  const syncLogContentWidth = logContentWidth(outputWidth);
-  const showErrorOutput = Boolean(error) && outputLines.length > 0 && !isSyncPhase;
+    : 0
+  const syncLogSectionRows = showLiveSyncOutput ? syncLogHeight + 2 : 0
+  const taskRowBudget = Math.max(3, height - 1 - footerRows - syncLogSectionRows)
+  const outputWidth = Math.max(20, width - 2)
+  const syncLogContentWidth = logContentWidth(outputWidth)
+  const showErrorOutput = Boolean(error) && outputLines.length > 0 && !isSyncPhase
 
   const appendOutput = useCallback((line: string) => {
-    setOutputLines((lines) => appendOutputLines(lines, line, OUTPUT_LOG_ROWS));
-  }, []);
+    setOutputLines((lines) => appendOutputLines(lines, line, OUTPUT_LOG_ROWS))
+  }, [])
 
   const appendSyncOutput = useCallback((line: string) => {
-    setOutputLines((lines) => appendOutputLines(lines, line, SYNC_OUTPUT_LOG_ROWS));
-  }, []);
+    setOutputLines((lines) => appendOutputLines(lines, line, SYNC_OUTPUT_LOG_ROWS))
+  }, [])
 
-  const trackBootstrapOutput = useCallback((line: string) => {
-    appendOutput(line);
-    const lower = line.toLowerCase();
+  const trackBootstrapOutput = useCallback(
+    (line: string) => {
+      appendOutput(line)
+      const lower = line.toLowerCase()
 
-    if (lower.includes("[orchestration] uv") || lower.includes("uv ")) {
-      emitStep(BOOTSTRAP_UV, "running");
-      bootstrapPhase.current = "uv";
-    }
-    if (lower.includes("ensuring python")) {
-      emitStep(BOOTSTRAP_UV, "ok");
-      emitStep(BOOTSTRAP_PYTHON, "running");
-      bootstrapPhase.current = "python";
-    }
-    if (lower.includes("python") && lower.includes("ready")) {
-      emitStep(BOOTSTRAP_PYTHON, "ok");
-      emitStep(BOOTSTRAP_ANSIBLE, "running");
-      bootstrapPhase.current = "ansible";
-    }
-    if (
-      lower.includes("ansible")
-      || lower.includes("galaxy")
-      || lower.includes("virtualenv")
-    ) {
-      emitStep(BOOTSTRAP_ANSIBLE, "running");
-      bootstrapPhase.current = "ansible";
-    }
-  }, [appendOutput, emitStep]);
+      if (lower.includes('[orchestration] uv') || lower.includes('uv ')) {
+        emitStep(BOOTSTRAP_UV, 'running')
+        bootstrapPhase.current = 'uv'
+      }
+      if (lower.includes('ensuring python')) {
+        emitStep(BOOTSTRAP_UV, 'ok')
+        emitStep(BOOTSTRAP_PYTHON, 'running')
+        bootstrapPhase.current = 'python'
+      }
+      if (lower.includes('python') && lower.includes('ready')) {
+        emitStep(BOOTSTRAP_PYTHON, 'ok')
+        emitStep(BOOTSTRAP_ANSIBLE, 'running')
+        bootstrapPhase.current = 'ansible'
+      }
+      if (lower.includes('ansible') || lower.includes('galaxy') || lower.includes('virtualenv')) {
+        emitStep(BOOTSTRAP_ANSIBLE, 'running')
+        bootstrapPhase.current = 'ansible'
+      }
+    },
+    [appendOutput, emitStep]
+  )
 
-  const trackBootstrapEvent = useCallback((event: unknown) => {
-    onEvent(event);
-    if (typeof event !== "object" || event === null) {
-      return;
-    }
-    const record = event as Record<string, unknown>;
-    const eventType = record._event;
-    if (typeof eventType !== "string") {
-      return;
-    }
+  const trackBootstrapEvent = useCallback(
+    (event: unknown) => {
+      onEvent(event)
+      if (typeof event !== 'object' || event === null) {
+        return
+      }
+      const record = event as Record<string, unknown>
+      const eventType = record._event
+      if (typeof eventType !== 'string') {
+        return
+      }
 
-    if (eventType === "v2_playbook_on_play_start") {
-      emitStep(BOOTSTRAP_ANSIBLE, "ok");
-      emitStep(BOOTSTRAP_CONVERGE, "running");
-      bootstrapPhase.current = "converge";
-      return;
-    }
+      if (eventType === 'v2_playbook_on_play_start') {
+        emitStep(BOOTSTRAP_ANSIBLE, 'ok')
+        emitStep(BOOTSTRAP_CONVERGE, 'running')
+        bootstrapPhase.current = 'converge'
+        return
+      }
 
-    if (eventType === "v2_playbook_on_stats") {
-      const stats = record.stats as Record<string, Record<string, number>> | undefined;
-      let failed = 0;
-      if (stats) {
-        for (const hostStats of Object.values(stats)) {
-          failed += hostStats.failures ?? hostStats.failed ?? 0;
+      if (eventType === 'v2_playbook_on_stats') {
+        const stats = record.stats as Record<string, Record<string, number>> | undefined
+        let failed = 0
+        if (stats) {
+          for (const hostStats of Object.values(stats)) {
+            failed += hostStats.failures ?? hostStats.failed ?? 0
+          }
+        }
+        if (failed === 0) {
+          emitStep(BOOTSTRAP_CONVERGE, 'ok')
         }
       }
-      if (failed === 0) {
-        emitStep(BOOTSTRAP_CONVERGE, "ok");
-      }
-    }
-  }, [emitStep, onEvent]);
+    },
+    [emitStep, onEvent]
+  )
 
-  const trackDevEnvStep = useCallback((
-    label: string,
-    status: "running" | "ok" | "failed",
-  ) => {
-    emitStep(label, status);
-  }, [emitStep]);
+  const trackDevEnvStep = useCallback(
+    (label: string, status: 'running' | 'ok' | 'failed') => {
+      emitStep(label, status)
+    },
+    [emitStep]
+  )
 
-  const view = useMemo(
-    () => buildAnsibleTaskView(tasks, taskRowBudget),
-    [tasks, taskRowBudget],
-  );
-  const hasRunningTask = tasks.some((task) => task.status === "running");
-  const spinnerFrame = useSpinnerFrame(!finished && hasRunningTask ? 120 : 0);
+  const view = useMemo(() => buildAnsibleTaskView(tasks, taskRowBudget), [tasks, taskRowBudget])
+  const hasRunningTask = tasks.some((task) => task.status === 'running')
+  const spinnerFrame = useSpinnerFrame(!finished && hasRunningTask ? 120 : 0)
 
   useEffect(() => {
     if (done) {
-      onInstallFinished?.(true);
+      onInstallFinished?.(true)
     }
-  }, [done, onInstallFinished]);
+  }, [done, onInstallFinished])
 
   useEffect(() => {
     if (error !== null) {
-      onInstallFinished?.(false);
+      onInstallFinished?.(false)
     }
-  }, [error, onInstallFinished]);
+  }, [error, onInstallFinished])
 
   useProvisionerPhaseEffects({
     phase,
@@ -714,19 +653,19 @@ export function ProvisionerPanel({
     trackBootstrapOutput,
     trackDevEnvStep,
     bootstrapPhase,
-  });
+  })
 
   useEffect(() => {
     if (done && error === null && !isSyncPhase) {
-      onDone();
+      onDone()
     }
-  }, [done, error, onDone, isSyncPhase]);
+  }, [done, error, onDone, isSyncPhase])
 
   useInput(() => {
-    if (!finished) return;
-    if (error === null && !isSyncPhase) return;
-    onDone();
-  });
+    if (!finished) return
+    if (error === null && !isSyncPhase) return
+    onDone()
+  })
 
   return (
     <Box flexDirection="column" width={width} height={height} paddingX={1}>
@@ -756,10 +695,7 @@ export function ProvisionerPanel({
         />
       )}
       {showErrorOutput && (
-        <ProvisionerErrorOutput
-          outputWidth={outputWidth}
-          outputLines={outputLines}
-        />
+        <ProvisionerErrorOutput outputWidth={outputWidth} outputLines={outputLines} />
       )}
       <ProvisionerStatusFooter
         finished={finished}
@@ -768,5 +704,5 @@ export function ProvisionerPanel({
         holdUntilKeypress={isSyncPhase}
       />
     </Box>
-  );
+  )
 }
