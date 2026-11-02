@@ -41,6 +41,7 @@ while [ "$#" -gt 0 ]; do
       [ "$#" -ge 2 ] || { tp_usage; exit 2; }
       case "$2" in
         *[!A-Za-z0-9._-]* | '') echo "vm-bootstrap: bad --lan-alias name: $2" >&2; exit 2 ;;
+        *) ;;
       esac
       ALIASES="${ALIASES}${2}
 "
@@ -68,6 +69,7 @@ case "$DEV_USER" in
     echo "vm-bootstrap: ${DEV_USER} is not a plain user name." >&2
     exit 1
     ;;
+  *) ;;
 esac
 PASSWD_LINE=$(getent passwd "$DEV_USER" 2>/dev/null) || {
   echo "vm-bootstrap: user ${DEV_USER} does not exist; create it first (adduser ${DEV_USER})." >&2
