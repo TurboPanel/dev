@@ -22,8 +22,8 @@ export function devRootSyntaxError(value: string): string | null {
   if (!SAFE_PATH_CHARS.test(value)) {
     return 'may only contain letters, digits and . _ @ + - / (no spaces or shell characters)'
   }
-  const segments = value.split('/')
-  if (segments.includes('.') || segments.includes('..')) {
+  const segments = new Set(value.split('/'))
+  if (segments.has('.') || segments.has('..')) {
     return 'must not contain . or .. segments'
   }
   return null

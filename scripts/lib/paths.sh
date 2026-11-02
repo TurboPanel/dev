@@ -27,11 +27,13 @@ tp_validate_dev_root() {
   if [ -z "$_tp_vdr_err" ]; then
     case $_tp_vdr in
       *[!A-Za-z0-9._@+/-]*) _tp_vdr_err='may only contain letters, digits and . _ @ + - / (no spaces or shell characters)' ;;
+      *) ;;
     esac
   fi
   if [ -z "$_tp_vdr_err" ]; then
     case "$_tp_vdr/" in
       */./* | */../*) _tp_vdr_err='must not contain . or .. segments' ;;
+      *) ;;
     esac
   fi
   if [ -z "$_tp_vdr_err" ]; then
