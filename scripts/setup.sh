@@ -1,7 +1,7 @@
 #!/bin/sh
 # One setup script for every TurboPanel contributor, maintainer or not.
 #
-#   ./scripts/setup.sh [setup] [--dir PATH] [--mode direct|vagrant] [--fork] [--yes] [--dry-run]
+#   ./scripts/setup.sh [setup] [--dir PATH] [--mode direct|vagrant] [--as-contributor] [--yes] [--dry-run]
 #   ./scripts/setup.sh doctor [--dir PATH]   read-only health report
 #   ./scripts/setup.sh status [--dir PATH]   read-only one-row-per-repo summary
 #
@@ -60,7 +60,8 @@ Options:
   --dir PATH             folder that holds the repos (default: the turbopanel
                          folder around this checkout, else ./turbopanel)
   --mode direct|vagrant  how you run the development environment
-  --fork                 work from your own forks even with push access
+  --as-contributor       work from your own forks even with push access
+                         (--fork is the old name)
   --yes                  do not ask; needs --mode on a first run. Installs a
                          missing gh on Debian or Ubuntu, never runs gh auth login
   --dry-run              print the plan and stop
@@ -521,7 +522,7 @@ tp_has_remote() {
 }
 
 # maintainer: push access, origin = TurboPanel repo, no upstream.
-# contributor: no push access (or --fork), origin = your fork, upstream = TurboPanel.
+# contributor: no push access (or --as-contributor), origin = your fork, upstream = TurboPanel.
 # readonly: not logged in (or the .github repo without push access); origin = TurboPanel.
 tp_detect_role() {
   _dr_repo=$1
@@ -1022,7 +1023,7 @@ tp_role_sentence() {
   _rse_role=$1
   case "$_rse_role" in
     maintainer)
-      echo "You can push to ${TP_ORG} directly. Your repos point at ${TP_ORG}; push branches there and open pull requests from them. To work from your own fork instead, rerun with --fork."
+      echo "You can push to ${TP_ORG} directly. Your repos point at ${TP_ORG}; push branches there and open pull requests from them. To work from your own fork instead, rerun with --as-contributor."
       ;;
     contributor)
       echo "You work from your own fork. Your repos push to ${GH_LOGIN:-<your login>}/<repo> (origin); ${TP_ORG} is upstream. Push branches to your fork and open pull requests into ${TP_ORG}."
@@ -1336,7 +1337,8 @@ while [ "$#" -gt 0 ]; do
       shift
       ;;
     --mode=*) MODE=${1#--mode=} ;;
-    --fork) FORCE_FORK=1 ;;
+    --as-contributor) FORCE_FORK=1 ;;
+    --fork) tp_warn "--fork is now --as-contributor; use --as-contributor."; FORCE_FORK=1 ;;
     --yes | -y) ASSUME_YES=1 ;;
     --dry-run) DRY_RUN=1 ;;
     -h | --help) tp_usage; exit 0 ;;

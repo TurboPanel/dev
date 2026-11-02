@@ -351,15 +351,22 @@ describe('setup.sh roles', () => {
   test('push access: the summary says so once, with no exceptions', () => {
     const { out } = setup()
     expect(out).toContain('You can push to TurboPanel directly.')
-    expect(out).toContain('rerun with --fork')
+    expect(out).toContain('rerun with --as-contributor')
     expect(out).not.toContain('Except:')
     expect(ghLog()).not.toContain('set-default')
   })
 
-  test('--fork makes a maintainer work like a contributor', () => {
-    const { status, out } = setup({}, ['--fork'])
+  test('--as-contributor makes a maintainer work like a contributor', () => {
+    const { status, out } = setup({}, ['--as-contributor'])
     expect(status, out).toBe(0)
     expect(git(join(work, 'ui'), 'remote', 'get-url', 'origin')).toContain('/octo/ui.git')
+    expect(modeFile()).toContain("role_ui='contributor'")
+  })
+
+  test('--fork still works but points at --as-contributor', () => {
+    const { status, out } = setup({}, ['--fork'])
+    expect(status, out).toBe(0)
+    expect(out).toContain('--fork is now --as-contributor')
     expect(modeFile()).toContain("role_ui='contributor'")
   })
 
