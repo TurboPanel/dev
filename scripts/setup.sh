@@ -1014,7 +1014,8 @@ tp_next_steps() {
 }
 
 tp_role_sentence() {
-  case "$1" in
+  _rse_role=$1
+  case "$_rse_role" in
     maintainer)
       echo "You can push to ${TP_ORG} directly. Your repos point at ${TP_ORG}; push branches there and open pull requests from them. To work from your own fork instead, rerun with --fork."
       ;;
@@ -1033,11 +1034,12 @@ tp_role_sentence() {
 }
 
 tp_role_label() {
-  case "$1" in
+  _rl_role=$1
+  case "$_rl_role" in
     maintainer) printf 'you push to %s directly' "$TP_ORG" ;;
     contributor) printf 'you work from your fork' ;;
     readonly) printf 'read-only' ;;
-    *) printf '%s' "$1" ;;
+    *) printf '%s' "$_rl_role" ;;
   esac
 }
 
