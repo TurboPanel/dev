@@ -1,13 +1,16 @@
 #!/bin/sh
 # One setup script for every TurboPanel contributor, maintainer or not.
 #
-#   ./scripts/setup.sh [setup] [--dir PATH] [--mode direct|vagrant] [--as-contributor] [--yes] [--dry-run]
+#   ./scripts/setup.sh [setup] [--dir PATH] [--mode direct|vagrant] [--as-contributor] [--fork-all] [--yes] [--dry-run]
+#   ./scripts/setup.sh fork REPO... [--dir PATH]   fork repos and point their checkouts at your forks
 #   ./scripts/setup.sh doctor [--dir PATH]   read-only health report
 #   ./scripts/setup.sh status [--dir PATH]   read-only one-row-per-repo summary
 #
 # setup puts the repos listed in repos.list into one folder (default: the folder
 # named turbopanel that holds this dev checkout, else ./turbopanel), picks each
-# repo's layout from your GitHub push access, and writes
+# repo's layout from your GitHub push access (without it you get a read-only
+# clone of TurboPanel's repo; 'setup.sh fork <repo>' forks it when you are
+# ready to push), and writes
 # <folder>/.turbopanel-dev-mode. A missing GitHub CLI (gh) is installed from the
 # official apt source on Debian or Ubuntu and 'gh auth login' is offered, each
 # only after asking (--yes installs but never logs in). It then prints the plan
@@ -44,6 +47,8 @@ COMMAND=setup
 DIR=
 MODE=
 FORCE_FORK=0
+FORK_ALL=0
+FORK_REPOS=
 ASSUME_YES=0
 DRY_RUN=0
 
@@ -53,6 +58,8 @@ Usage: setup.sh [setup|doctor|status] [options]
 
 Commands:
   setup        clone or update every repo, write the mode file (default)
+  fork REPO... fork each named repo to your account and make the checkout push
+               there (origin = your fork, upstream = TurboPanel); keeps branches
   doctor       read-only report: host, tools, login, remotes, signing, mode file
   status       read-only table: role, branch, ahead/behind trunk, changes, open PR
 
@@ -60,8 +67,11 @@ Options:
   --dir PATH             folder that holds the repos (default: the turbopanel
                          folder around this checkout, else ./turbopanel)
   --mode direct|vagrant  how you run the development environment
-  --as-contributor       work from your own forks even with push access
-                         (--fork is the old name)
+  --as-contributor       act as if you had no push access: read-only clones,
+                         as an outside contributor gets them (add --fork-all
+                         to fork at setup instead; --fork is the old name)
+  --fork-all             during setup, fork every repo you cannot push to
+                         (all but .github) instead of on first push
   --yes                  do not ask; needs --mode on a first run. Installs a
                          missing gh on Debian or Ubuntu, never runs gh auth login
   --dry-run              print the plan and stop
@@ -103,6 +113,13 @@ tp_repo_branch() {
 tp_role_key() {
   _rk_repo=$1
   printf 'role_%s' "$(printf '%s' "$_rk_repo" | sed -e 's/^\.//' -e 's/[^A-Za-z0-9_]/_/g')"
+}
+
+# The same key without role_, for the ROLE_<suffix> shell variables.
+tp_role_suffix() {
+  _rsf_repo=$1
+  _rsf_key=$(tp_role_key "$_rsf_repo")
+  printf '%s' "${_rsf_key#role_}"
 }
 
 # ---------------------------------------------------------------- mode file
@@ -505,7 +522,25 @@ tp_url() {
 # owner/repo from any remote URL form.
 tp_url_slug() {
   _us_url=$1
-  printf '%s' "$_us_url" | sed -e 's#\.git$##' -e 's#/*$##' | awk -F'[/:]' '{print $(NF-1) "/" $NF}'
+  # Only GitHub (or the test-only remote base) names a GitHub repo; another
+  # host with the same owner/repo path is not TurboPanel's.
+  case "$_us_url" in
+    https://github.com/* | git@github.com:* | ssh://git@github.com/* | ssh://github.com/*)
+      _us_path=${_us_url#*github.com}
+      _us_path=${_us_path#[:/]}
+      ;;
+    *)
+      _us_path=
+      if [ -n "$REMOTE_BASE" ]; then
+        case "$_us_url" in
+          "$REMOTE_BASE"/*) _us_path=${_us_url#"$REMOTE_BASE"/} ;;
+          *) ;;
+        esac
+      fi
+      ;;
+  esac
+  [ -n "$_us_path" ] || return 0
+  printf '%s' "$_us_path" | sed -e 's#\.git$##' -e 's#/*$##' | awk -F/ 'NF == 2 {print $1 "/" $2}'
 }
 
 tp_remote_slug() {
@@ -522,7 +557,9 @@ tp_has_remote() {
 }
 
 # maintainer: push access, origin = TurboPanel repo, no upstream.
-# contributor: no push access (or --as-contributor), origin = your fork, upstream = TurboPanel.
+# contributor: no push access (or --as-contributor), a read-only clone: origin = TurboPanel.
+# contributor-fork: forked (setup.sh fork, or --fork-all): origin = your fork,
+#   upstream = TurboPanel.
 # readonly: not logged in (or the .github repo without push access); origin = TurboPanel.
 tp_detect_role() {
   _dr_repo=$1
@@ -549,9 +586,12 @@ tp_detect_role() {
     printf maintainer
   elif [ "$_dr_repo" = .github ]; then
     # A fork of an org's .github repo becomes your own account-wide community
-    # health repo, so it is never forked for you. Fork it by hand to change it.
+    # health repo, so it is never forked for you: only 'setup.sh fork .github'.
     printf readonly
+  elif [ "$FORK_ALL" -eq 1 ]; then
+    printf contributor-fork
   else
+    # No push access: a read-only clone until 'setup.sh fork <repo>'.
     printf contributor
   fi
 }
@@ -597,7 +637,7 @@ tp_ensure_fork() {
     _ef_waited=$((_ef_waited + 2))
   done
   EF_SLUG=
-  tp_error "your fork of ${TP_ORG}/${_ef_repo} was not ready within ${FORK_WAIT}s; GitHub may still be copying it. Rerun setup later."
+  tp_error "your fork of ${TP_ORG}/${_ef_repo} was not ready within ${FORK_WAIT}s; GitHub may still be copying it. Rerun later (setup.sh fork ${_ef_repo}, or setup with --fork-all)."
   return 1
 }
 
@@ -642,18 +682,39 @@ tp_ahead_behind() {
     awk '{printf "+%s -%s", $1, $2}'
 }
 
-# Role from the remotes when the mode file has none.
+# True when the checkout pushes to a fork: upstream = TurboPanel, origin elsewhere.
+tp_fork_shaped() {
+  _fs_path=$1
+  _fs_name=$2
+  _fs_origin=$(tp_remote_slug "$_fs_path" origin)
+  [ -n "$_fs_origin" ] &&
+    tp_same_slug "$(tp_remote_slug "$_fs_path" upstream)" "${TP_ORG}/${_fs_name}" &&
+    ! tp_same_slug "$_fs_origin" "${TP_ORG}/${_fs_name}"
+}
+
+# Role of a checkout: a fork-shaped layout wins (mode files written before
+# fork-on-first-push said contributor for a fork), else the mode file.
 tp_layout_role() {
   _lr_path=$1
   _lr_name=$2
   _lr=$(tp_mode_get "$(tp_role_key "$_lr_name")")
-  if [ -n "$_lr" ]; then
+  if tp_fork_shaped "$_lr_path" "$_lr_name"; then
+    printf contributor-fork
+  elif [ -n "$_lr" ]; then
     printf '%s' "$_lr"
-  elif tp_has_remote "$_lr_path" upstream; then
-    printf contributor
   else
     printf unknown
   fi
+}
+
+# Short words for a role in tables: read-only clone versus forked.
+tp_role_word() {
+  _rw_role=$1
+  case "$_rw_role" in
+    contributor | readonly) printf read-only ;;
+    contributor-fork) printf forked ;;
+    *) printf '%s' "$_rw_role" ;;
+  esac
 }
 
 # ---------------------------------------------------------------- setup steps
@@ -716,7 +777,7 @@ tp_clone_new() {
   _cn_path="$DIR/$_cn_name"
   _cn_canon=$(tp_url "$TP_ORG" "$_cn_name")
   _cn_origin=$_cn_canon
-  if [ "$_cn_role" = contributor ]; then
+  if [ "$_cn_role" = contributor-fork ]; then
     _cn_origin=$(tp_slug_url "$_cn_fork")
   fi
   CURRENT_TMP="$DIR/.setup-clone-${_cn_name}"
@@ -728,7 +789,7 @@ tp_clone_new() {
     tp_fail_repo "$_cn_name" "clone failed (offline, or no access to $(tp_url_slug "$_cn_origin"))"
     return 0
   fi
-  if [ "$_cn_role" = contributor ]; then
+  if [ "$_cn_role" = contributor-fork ]; then
     git -C "$CURRENT_TMP" remote add upstream "$_cn_canon"
     tp_fetch "$CURRENT_TMP" upstream "$_cn_name"
     if git -C "$CURRENT_TMP" rev-parse -q --verify "refs/remotes/upstream/${_cn_branch}" >/dev/null 2>&1 &&
@@ -753,20 +814,20 @@ tp_reconcile_remotes() {
   _rr_upstream=$(tp_remote_slug "$_rr_path" upstream)
   if tp_same_slug "$_rr_upstream" "$_rr_canon_slug" && ! tp_same_slug "$_rr_origin" "$_rr_canon_slug"; then
     # Already fork-shaped; keep it even for a maintainer.
-    printf contributor
+    printf contributor-fork
     return 0
   fi
-  if [ "$_rr_role" = contributor ] && [ -n "$_rr_fork" ] && [ -z "$_rr_upstream" ]; then
+  if [ "$_rr_role" = contributor-fork ] && [ -n "$_rr_fork" ] && [ -z "$_rr_upstream" ]; then
     if tp_same_slug "$_rr_origin" "$_rr_canon_slug"; then
       tp_info "${_rr_name}: origin becomes your fork ${_rr_fork}; ${_rr_canon_slug} becomes upstream" >&2
       git -C "$_rr_path" remote rename origin upstream
       git -C "$_rr_path" remote add origin "$(tp_slug_url "$_rr_fork")"
-      printf contributor
+      printf contributor-fork
       return 0
     fi
     if tp_same_slug "$_rr_origin" "$_rr_fork"; then
       git -C "$_rr_path" remote add upstream "$(tp_url "$TP_ORG" "$_rr_name")"
-      printf contributor
+      printf contributor-fork
       return 0
     fi
   fi
@@ -783,7 +844,7 @@ tp_sync_repo() {
   _sr_role=$3
   _sr_path="$DIR/$_sr_name"
   _sr_fork=
-  if [ "$_sr_role" = contributor ]; then
+  if [ "$_sr_role" = contributor-fork ]; then
     _sr_origin=$(tp_remote_slug "$_sr_path" origin)
     if tp_is_checkout "$_sr_path" && [ -n "$_sr_origin" ] &&
       ! tp_same_slug "$_sr_origin" "${TP_ORG}/${_sr_name}" &&
@@ -823,8 +884,8 @@ tp_sync_repo() {
       tp_warn "${_sr_name}: core.hooksPath is ${_sr_hooks}, not .githooks; left as it is (git -C $(tp_sq "$_sr_path") config core.hooksPath .githooks)."
     fi
   fi
-  eval "ROLE_$(tp_role_key "$_sr_name" | sed 's/^role_//')=\$_sr_role"
-  [ "$_sr_role" != contributor ] || tp_set_gh_default "$_sr_name"
+  eval "ROLE_$(tp_role_suffix "$_sr_name")=\$_sr_role"
+  [ "$_sr_role" != contributor-fork ] || tp_set_gh_default "$_sr_name"
 }
 
 tp_write_mode_file() {
@@ -958,9 +1019,9 @@ tp_print_rows() {
           --json number --jq '.[0].number // ""' 2>/dev/null || true)
         [ -z "$_pr_num" ] || _pr_pr="#${_pr_num}"
       fi
-      printf '%-12s %-12s %-28s %-12s %-6s %s\n' "$_pr_name" "$_pr_role" "$_pr_branch" "$_pr_vs" "$_pr_dirty" "$_pr_pr"
+      printf '%-12s %-12s %-28s %-12s %-6s %s\n' "$_pr_name" "$(tp_role_word "$_pr_role")" "$_pr_branch" "$_pr_vs" "$_pr_dirty" "$_pr_pr"
     else
-      printf '%-12s %-12s %-28s %-12s %s\n' "$_pr_name" "$_pr_role" "$_pr_branch" "$_pr_vs" "$_pr_dirty"
+      printf '%-12s %-12s %-28s %-12s %s\n' "$_pr_name" "$(tp_role_word "$_pr_role")" "$_pr_branch" "$_pr_vs" "$_pr_dirty"
     fi
   done
 }
@@ -1023,9 +1084,12 @@ tp_role_sentence() {
   _rse_role=$1
   case "$_rse_role" in
     maintainer)
-      echo "You can push to ${TP_ORG} directly. Your repos point at ${TP_ORG}; push branches there and open pull requests from them. To work from your own fork instead, rerun with --as-contributor."
+      echo "You can push to ${TP_ORG} directly. Your repos point at ${TP_ORG}; push branches there and open pull requests from them. To work from your own fork instead, run: ${DIR}/dev/scripts/setup.sh fork <repo>"
       ;;
     contributor)
+      echo "Your repos are read-only clones of ${TP_ORG}. When you are ready to push in one, run: ${DIR}/dev/scripts/setup.sh fork <repo>"
+      ;;
+    contributor-fork)
       echo "You work from your own fork. Your repos push to ${GH_LOGIN:-<your login>}/<repo> (origin); ${TP_ORG} is upstream. Push branches to your fork and open pull requests into ${TP_ORG}."
       ;;
     readonly)
@@ -1041,9 +1105,11 @@ tp_role_sentence() {
 
 tp_role_label() {
   _rl_role=$1
+  _rl_repo=$2
   case "$_rl_role" in
     maintainer) printf 'you push to %s directly' "$TP_ORG" ;;
-    contributor) printf 'you work from your fork' ;;
+    contributor) printf 'read-only clone; setup.sh fork %s to push' "$_rl_repo" ;;
+    contributor-fork) printf 'forked' ;;
     readonly) printf 'read-only' ;;
     *) printf '%s' "$_rl_role" ;;
   esac
@@ -1054,12 +1120,12 @@ tp_role_label() {
 tp_role_summary() {
   _rs_all=
   for _rs_name in $(tp_repo_names); do
-    eval "_rs_role=\${ROLE_$(tp_role_key "$_rs_name" | sed 's/^role_//'):-}"
+    eval "_rs_role=\${ROLE_$(tp_role_suffix "$_rs_name"):-}"
     if [ -z "$_rs_role" ] && tp_is_checkout "$DIR/$_rs_name"; then
       _rs_role=$(tp_layout_role "$DIR/$_rs_name" "$_rs_name")
     fi
     case "$_rs_role" in
-      maintainer | contributor | readonly) _rs_all="${_rs_all}${_rs_name} ${_rs_role}
+      maintainer | contributor | contributor-fork | readonly) _rs_all="${_rs_all}${_rs_name} ${_rs_role}
 " ;;
       *) ;;
     esac
@@ -1069,7 +1135,7 @@ tp_role_summary() {
   echo
   tp_role_sentence "$_rs_main"
   _rs_except=$(printf '%s' "$_rs_all" | while read -r _rs_n _rs_r; do
-    [ "$_rs_r" = "$_rs_main" ] || printf '%s (%s); ' "$_rs_n" "$(tp_role_label "$_rs_r")"
+    [ "$_rs_r" = "$_rs_main" ] || printf '%s (%s); ' "$_rs_n" "$(tp_role_label "$_rs_r" "$_rs_n")"
   done)
   [ -z "$_rs_except" ] || echo "Except: ${_rs_except%; }."
 }
@@ -1119,10 +1185,12 @@ tp_cmd_setup() {
   fi
   for _cs_name in $(tp_repo_names); do
     _cs_role=$(tp_detect_role "$_cs_name")
-    eval "ROLE_$(tp_role_key "$_cs_name" | sed 's/^role_//')=\$_cs_role"
+    eval "ROLE_$(tp_role_suffix "$_cs_name")=\$_cs_role"
     if [ -e "$DIR/$_cs_name" ]; then
       _cs_action="present: fetch, fast-forward ${_cs_name} $(tp_repo_branch "$_cs_name") only if clean"
     elif [ "$_cs_role" = contributor ]; then
+      _cs_action="clone ${TP_ORG}/${_cs_name} read-only as origin (setup.sh fork ${_cs_name} when you want to push)"
+    elif [ "$_cs_role" = contributor-fork ]; then
       _cs_action="fork to ${GH_LOGIN}/${_cs_name} if needed, clone it as origin, upstream = ${TP_ORG}/${_cs_name}, gh repo set-default ${TP_ORG}/${_cs_name}"
     else
       _cs_action="clone ${TP_ORG}/${_cs_name} as origin"
@@ -1158,7 +1226,7 @@ tp_cmd_setup() {
     gh auth setup-git >/dev/null 2>&1 || tp_warn "gh auth setup-git failed; pushes over https may ask for a password."
   fi
   for _cs_name in $(tp_repo_names); do
-    eval "_cs_role=\$ROLE_$(tp_role_key "$_cs_name" | sed 's/^role_//')"
+    eval "_cs_role=\$ROLE_$(tp_role_suffix "$_cs_name")"
     tp_sync_repo "$_cs_name" "$(tp_repo_branch "$_cs_name")" "$_cs_role"
   done
   tp_write_mode_file
@@ -1176,6 +1244,114 @@ tp_cmd_setup() {
     return 1
   fi
   tp_success "Setup finished. Mode file: $(tp_mode_file)"
+}
+
+# ---------------------------------------------------------------- fork
+
+# Can this checkout be pointed at a fork? Checked before anything is created
+# on GitHub. Sets FP_STATE (ready, forked or bad) and FP_WHY.
+tp_fork_precheck() {
+  _fp_path=$1
+  _fp_name=$2
+  FP_WHY=
+  FP_STATE=ready
+  if ! tp_is_checkout "$_fp_path"; then
+    FP_STATE=bad
+    FP_WHY="${_fp_path} is not a checkout; run setup first"
+  elif tp_fork_shaped "$_fp_path" "$_fp_name"; then
+    FP_STATE=forked
+  elif ! tp_same_slug "$(tp_remote_slug "$_fp_path" origin)" "${TP_ORG}/${_fp_name}"; then
+    FP_STATE=bad
+    FP_WHY="origin is $(git -C "$_fp_path" remote get-url origin 2>/dev/null || echo missing), not ${TP_ORG}/${_fp_name}; left as it is"
+  elif tp_has_remote "$_fp_path" upstream; then
+    FP_STATE=bad
+    FP_WHY="an upstream remote already points to $(git -C "$_fp_path" remote get-url upstream); rename or remove it (git remote remove upstream) and rerun"
+  fi
+}
+
+# Fork one repo and point its checkout at the fork. Keeps every branch and
+# commit; only the remotes change (origin = your fork, upstream = TurboPanel).
+tp_fork_repo() {
+  _fo_name=$1
+  _fo_path="$DIR/$_fo_name"
+  _fo_key=$(tp_role_suffix "$_fo_name")
+  tp_fork_precheck "$_fo_path" "$_fo_name"
+  case "$FP_STATE" in
+    forked)
+      tp_info "${_fo_name}: already forked (origin $(tp_remote_slug "$_fo_path" origin), upstream ${TP_ORG}/${_fo_name}); nothing to do."
+      eval "ROLE_${_fo_key}=contributor-fork"
+      return 0
+      ;;
+    bad)
+      tp_fail_repo "$_fo_name" "$FP_WHY"
+      return 0
+      ;;
+    *) ;;
+  esac
+  if ! tp_ensure_fork "$_fo_name"; then
+    tp_fail_repo "$_fo_name" "no fork to work from"
+    return 0
+  fi
+  _fo_role=$(tp_reconcile_remotes "$_fo_path" "$_fo_name" contributor-fork "$EF_SLUG")
+  if [ "$_fo_role" != contributor-fork ]; then
+    tp_fail_repo "$_fo_name" "the remotes could not be pointed at ${EF_SLUG}; left as they are"
+    return 0
+  fi
+  tp_fetch "$_fo_path" origin "$_fo_name"
+  tp_fetch "$_fo_path" upstream "$_fo_name"
+  _fo_branch=$(tp_repo_branch "$_fo_name")
+  if git -C "$_fo_path" rev-parse -q --verify "refs/heads/${_fo_branch}" >/dev/null 2>&1 &&
+    git -C "$_fo_path" rev-parse -q --verify "refs/remotes/upstream/${_fo_branch}" >/dev/null 2>&1; then
+    git -C "$_fo_path" branch --quiet --set-upstream-to="upstream/${_fo_branch}" "$_fo_branch" >/dev/null 2>&1 || true
+  fi
+  tp_set_gh_default "$_fo_name"
+  eval "ROLE_${_fo_key}=contributor-fork"
+  tp_success "${_fo_name}: origin is your fork ${EF_SLUG}; ${TP_ORG}/${_fo_name} is upstream."
+}
+
+tp_cmd_fork() {
+  [ "$(id -u)" -ne 0 ] || tp_die "run setup as your normal user, not root."
+  command -v git >/dev/null 2>&1 || tp_die "git is required."
+  [ -n "$FORK_REPOS" ] || { tp_usage >&2; exit 2; }
+  # Repo names split on spaces only, never expanded as file patterns.
+  set -f
+  for _cf_name in $FORK_REPOS; do
+    tp_repo_names | grep -qxF -- "$_cf_name" ||
+      tp_die "unknown repo ${_cf_name}; use one of: $(tp_repo_names | tr '\n' ' ')"
+  done
+  [ -f "$(tp_mode_file)" ] || tp_die "no mode file at $(tp_mode_file); run ${DIR}/dev/scripts/setup.sh first."
+  MODE=$(tp_mode_get TURBOPANEL_DEV_ENV)
+  if [ "$DRY_RUN" -eq 1 ]; then
+    # No GitHub call and no remote change: only what each checkout allows.
+    echo "Plan (nothing changes):"
+    for _cf_name in $FORK_REPOS; do
+      tp_fork_precheck "$DIR/$_cf_name" "$_cf_name"
+      case "$FP_STATE" in
+        forked) echo "  ${_cf_name}: already forked; nothing to do" ;;
+        bad) echo "  ${_cf_name}: cannot fork: ${FP_WHY}" ;;
+        *) echo "  ${_cf_name}: fork ${TP_ORG}/${_cf_name} to your account (or reuse your fork), make it origin, ${TP_ORG}/${_cf_name} upstream, track upstream/$(tp_repo_branch "$_cf_name"), gh repo set-default ${TP_ORG}/${_cf_name}" ;;
+      esac
+    done
+    set +f
+    echo "Dry run: nothing changed."
+    return 0
+  fi
+  tp_have_gh || tp_die "forking needs the GitHub CLI (gh); $(tp_gh_missing_hint), then rerun."
+  tp_offer_gh_login
+  tp_detect_login
+  [ -n "$GH_LOGIN" ] || tp_die "you are not signed in to GitHub; run 'gh auth login' and rerun."
+  [ "$GH_OFFLINE" -eq 0 ] || tp_die "GitHub did not answer (offline?); nothing changed. Rerun when online."
+  tp_detect_protocol
+  for _cf_name in $FORK_REPOS; do
+    tp_fork_repo "$_cf_name"
+  done
+  set +f
+  tp_write_mode_file
+  if [ -n "$FAILED" ]; then
+    tp_error "Not finished:${FAILED}. Fix the errors above and rerun."
+    return 1
+  fi
+  echo "Push branches to your fork (git push origin <branch>) and open pull requests into ${TP_ORG}."
 }
 
 # ---------------------------------------------------------------- doctor
@@ -1266,13 +1442,16 @@ tp_cmd_doctor() {
       continue
     fi
     _dr_role=$(tp_layout_role "$_dr_path" "$_dr_name")
-    echo "  ${_dr_name} (${_dr_role})"
+    echo "  ${_dr_name} (${_dr_role}, $(tp_role_word "$_dr_role"))"
     echo "    origin:     $(git -C "$_dr_path" remote get-url origin 2>/dev/null || echo none)"
     if tp_has_remote "$_dr_path" upstream; then
       echo "    upstream:   $(git -C "$_dr_path" remote get-url upstream)"
     fi
-    if [ "$_dr_role" = contributor ] && ! tp_same_slug "$(tp_remote_slug "$_dr_path" upstream)" "${TP_ORG}/${_dr_name}"; then
-      tp_problem "${_dr_name}: contributor checkout without upstream = ${TP_ORG}/${_dr_name}"
+    if [ "$_dr_role" = contributor-fork ] && ! tp_same_slug "$(tp_remote_slug "$_dr_path" upstream)" "${TP_ORG}/${_dr_name}"; then
+      tp_problem "${_dr_name}: fork checkout without upstream = ${TP_ORG}/${_dr_name}"
+    fi
+    if [ "$_dr_role" = contributor ] && [ -n "$GH_LOGIN" ]; then
+      echo "    to push:    ${DIR}/dev/scripts/setup.sh fork ${_dr_name}"
     fi
     if [ "$_dr_role" = maintainer ] && ! tp_same_slug "$(tp_remote_slug "$_dr_path" origin)" "${TP_ORG}/${_dr_name}"; then
       tp_problem "${_dr_name}: maintainer checkout whose origin is not ${TP_ORG}/${_dr_name}"
@@ -1324,7 +1503,7 @@ tp_cmd_status() {
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
-    setup | doctor | status) COMMAND=$1 ;;
+    setup | doctor | status | fork) COMMAND=$1 ;;
     --dir)
       [ "$#" -ge 2 ] || { tp_usage >&2; exit 2; }
       DIR=$2
@@ -1339,10 +1518,15 @@ while [ "$#" -gt 0 ]; do
     --mode=*) MODE=${1#--mode=} ;;
     --as-contributor) FORCE_FORK=1 ;;
     --fork) tp_warn "--fork is now --as-contributor; use --as-contributor."; FORCE_FORK=1 ;;
+    --fork-all) FORK_ALL=1 ;;
     --yes | -y) ASSUME_YES=1 ;;
     --dry-run) DRY_RUN=1 ;;
     -h | --help) tp_usage; exit 0 ;;
-    *) echo "setup: unknown argument: $1" >&2; tp_usage >&2; exit 2 ;;
+    -*) echo "setup: unknown argument: $1" >&2; tp_usage >&2; exit 2 ;;
+    *)
+      [ "$COMMAND" = fork ] || { echo "setup: unknown argument: $1" >&2; tp_usage >&2; exit 2; }
+      FORK_REPOS="${FORK_REPOS}${FORK_REPOS:+ }$1"
+      ;;
   esac
   shift
 done
@@ -1357,5 +1541,6 @@ case "$COMMAND" in
   setup) tp_cmd_setup ;;
   doctor) tp_cmd_doctor ;;
   status) tp_cmd_status ;;
+  fork) tp_cmd_fork ;;
   *) ;;
 esac

@@ -39,7 +39,7 @@ Options:
   -h, --help   show this help
 
 Everything else goes to setup.sh unchanged, for example --mode direct|vagrant,
---fork, --yes, doctor or status. See setup.sh --help once the dev repo is here.
+--as-contributor, --yes, doctor or status. See setup.sh --help once the dev repo is here.
 USAGE
 }
 
