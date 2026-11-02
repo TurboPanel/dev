@@ -1,5 +1,13 @@
 import { execFileSync } from 'node:child_process'
-import { chmodSync, existsSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -127,7 +135,8 @@ describe('vm-bootstrap.sh', () => {
   })
 
   test('clones into TURBOPANEL_DEV_ROOT and prints the console path there', () => {
-    expect(SOURCE).toContain('DEV_ROOT=${TURBOPANEL_DEV_ROOT:-$DEV_HOME}')
+    // Default ~/turbopanel/<repo>, never the bare home folder.
+    expect(SOURCE).toContain('DEV_ROOT=${TURBOPANEL_DEV_ROOT:-$DEV_HOME/turbopanel}')
     expect(SOURCE).toContain('"${DEV_ROOT}/${repo}"')
     expect(SOURCE).toContain('${DEV_ROOT}/dev/console')
     expect(SOURCE).toContain('export TURBOPANEL_DEV_ROOT=')
@@ -144,6 +153,32 @@ describe('vm-bootstrap.sh', () => {
       expect(changed).toBe(false)
     }
   )
+
+  test.each(['/srv/pat', '/srv/pat/work', '/srv/pat/turbopanel-old'])(
+    'refuses TURBOPANEL_DEV_ROOT=%s: the folder must be named turbopanel',
+    (root) => {
+      const { status, stderr, changed } = runStubbed({}, { TURBOPANEL_DEV_ROOT: root })
+      expect(status).toBe(1)
+      expect(stderr).toContain('is not a folder named turbopanel')
+      expect(stderr).toContain('run dev/scripts/setup.sh')
+      expect(changed).toBe(false)
+    }
+  )
+
+  test('stops with the move steps when the repos still sit in the home folder', () => {
+    const home = mkdtempSync(join(tmpdir(), 'vmb-home-'))
+    mkdirSync(join(home, 'dev'))
+    writeFileSync(join(home, 'dev', 'Vagrantfile'), '# dev checkout\n')
+    mkdirSync(join(home, 'turbopaneld'))
+    const { status, stderr, changed } = runStubbed({
+      getent: `echo "pat:x:1001:1001::${home}:/bin/sh"`,
+    })
+    expect(status).toBe(1)
+    expect(stderr).toContain('which is not a folder named turbopanel')
+    expect(stderr).toContain('mv tp-move turbopanel')
+    expect(stderr).toContain(`${home}/turbopanel/dev/scripts/setup.sh`)
+    expect(changed).toBe(false)
+  })
 
   test('rejects an option that needs a value', () => {
     expect(() => execFileSync('sh', [SCRIPT, '--lan-alias'], { stdio: 'pipe' })).toThrow(/Usage/)

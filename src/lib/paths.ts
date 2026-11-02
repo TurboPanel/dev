@@ -1,30 +1,30 @@
-export const TURBOPANEL_ROOT = "/opt/turbopanel";
+import { isVagrantGuest } from './vagrant-guest.ts'
+
+export const TURBOPANEL_ROOT = '/opt/turbopanel'
 
 /**
  * Co-located platform repo dir names (match GitHub repo names 1:1).
  * Env overrides stay `TURBOPANEL_DAEMON_REPO` / `TURBOPANEL_INSTANCE_REPO`
  * (see {@link platformRepoEnvKey}).
  */
-export const PLATFORM_REPO_DIRS = [
-  "turbopaneld",
-  "turbopanel",
-  "ui",
-  "website",
-] as const;
+export const PLATFORM_REPO_DIRS = ['turbopaneld', 'turbopanel', 'ui', 'website'] as const
 
 /** Every development checkout that may carry .githooks (dev console + platform repos). */
-export const ALL_DEV_CHECKOUT_DIRS = ["dev", ...PLATFORM_REPO_DIRS] as const;
+export const ALL_DEV_CHECKOUT_DIRS = ['dev', ...PLATFORM_REPO_DIRS] as const
 
 /**
- * Development source-repo root. Source repos live under this root — defaults to
- * the dev user's home (`$HOME`), overridable with `TURBOPANEL_DEV_ROOT`.
+ * Development source-repo root: the folder that holds the repos. Outside the
+ * Vagrant guest it is a folder named `turbopanel` (default `$HOME/turbopanel`);
+ * the guest mounts the host repos at `$HOME/<repo>`, so there it is `$HOME`.
+ * `TURBOPANEL_DEV_ROOT` overrides it (`./console` also reads the mode file
+ * setup.sh writes); `resolveCheckedDevRoot` in `dev-root.ts` enforces the name.
  */
 export function resolveDevRoot(): string {
-  return (
-    process.env.TURBOPANEL_DEV_ROOT?.trim() ||
-    process.env.HOME?.trim() ||
-    TURBOPANEL_ROOT
-  );
+  const explicit = process.env.TURBOPANEL_DEV_ROOT?.trim()
+  if (explicit) return explicit
+  const home = process.env.HOME?.trim()
+  if (!home) return TURBOPANEL_ROOT
+  return isVagrantGuest() ? home : `${home}/turbopanel`
 }
 
 /**
@@ -36,18 +36,18 @@ export function resolveDevRoot(): string {
  * every consumer derives `<TURBOPANEL_DEV_ROOT>/<dir>` when the key is unset.
  */
 export function platformRepoEnvKey(dir: string): string {
-  if (dir === "turbopaneld") return "TURBOPANEL_DAEMON_REPO";
-  if (dir === "turbopanel") return "TURBOPANEL_INSTANCE_REPO";
-  return `TURBOPANEL_${dir.toUpperCase()}_REPO`;
+  if (dir === 'turbopaneld') return 'TURBOPANEL_DAEMON_REPO'
+  if (dir === 'turbopanel') return 'TURBOPANEL_INSTANCE_REPO'
+  return `TURBOPANEL_${dir.toUpperCase()}_REPO`
 }
 
 /** Every per-repo override key ({@link platformRepoEnvKey} for each platform dir). */
 export function platformRepoEnvKeys(): string[] {
-  return PLATFORM_REPO_DIRS.map((dir) => platformRepoEnvKey(dir));
+  return PLATFORM_REPO_DIRS.map((dir) => platformRepoEnvKey(dir))
 }
 
 /** Production FHS default for vendored runtimes (`/opt/turbopanel/vendor`). */
-export const DEFAULT_RUNTIMES_DIR = `${TURBOPANEL_ROOT}/vendor`;
+export const DEFAULT_RUNTIMES_DIR = `${TURBOPANEL_ROOT}/vendor`
 
 /**
  * Resolve the vendored runtime root.
@@ -56,58 +56,58 @@ export const DEFAULT_RUNTIMES_DIR = `${TURBOPANEL_ROOT}/vendor`;
  */
 /** Strip trailing `/` without a regex (Sonar typescript:S8786). */
 function stripTrailingSlashes(dir: string): string {
-  let end = dir.length;
-  while (end > 0 && dir[end - 1] === "/") {
-    end -= 1;
+  let end = dir.length
+  while (end > 0 && dir[end - 1] === '/') {
+    end -= 1
   }
-  return end === 0 ? "/" : dir.slice(0, end);
+  return end === 0 ? '/' : dir.slice(0, end)
 }
 
 export function resolveRuntimesDir(): string {
-  const override = process.env.TURBOPANEL_RUNTIMES_DIR?.trim();
-  const dir = override || DEFAULT_RUNTIMES_DIR;
-  return stripTrailingSlashes(dir);
+  const override = process.env.TURBOPANEL_RUNTIMES_DIR?.trim()
+  const dir = override || DEFAULT_RUNTIMES_DIR
+  return stripTrailingSlashes(dir)
 }
 
-export const RUNTIMES_DIR = resolveRuntimesDir();
+export const RUNTIMES_DIR = resolveRuntimesDir()
 /** Pinned Node.js for the dev console (matches node-runtime Ansible role). */
-export const NODE_VERSION = "26.7.0";
-export const NODE_BIN = `${RUNTIMES_DIR}/node/current/bin/node`;
-export const PNPM_BIN = `${RUNTIMES_DIR}/node/current/bin/pnpm`;
+export const NODE_VERSION = '26.7.0'
+export const NODE_BIN = `${RUNTIMES_DIR}/node/current/bin/node`
+export const PNPM_BIN = `${RUNTIMES_DIR}/node/current/bin/pnpm`
 
 /** Co-located dev Ansible overlay under the dev checkout. */
 export function devOrchestrationDir(): string {
-  return `${resolveDevRoot()}/dev/orchestration`;
+  return `${resolveDevRoot()}/dev/orchestration`
 }
 
 /** FHS mutable dirs (dev shares the production paths, dev-owned at runtime). */
-export const CONFIG_DIR = "/etc/turbopanel";
-export const LOG_DIR = "/var/log/turbopanel";
-export const STATE_DIR = "/var/lib/turbopanel";
+export const CONFIG_DIR = '/etc/turbopanel'
+export const LOG_DIR = '/var/log/turbopanel'
+export const STATE_DIR = '/var/lib/turbopanel'
 
 export function instanceConfigDir(): string {
-  return `${CONFIG_DIR}/instance`;
+  return `${CONFIG_DIR}/instance`
 }
 
 export function instanceRuntimeEnvPath(): string {
-  return `${instanceConfigDir()}/runtime.env`;
+  return `${instanceConfigDir()}/runtime.env`
 }
 
 export function instanceRuntimeDevVarsPath(): string {
-  return `${instanceConfigDir()}/runtime.dev-vars`;
+  return `${instanceConfigDir()}/runtime.dev-vars`
 }
 
 /** Versioned keyring (`TURBOPANEL_SECRETS`); first entry is current/signing. */
 export function instanceSecretsPath(): string {
-  return `${instanceConfigDir()}/.instance_secrets`;
+  return `${instanceConfigDir()}/.instance_secrets`
 }
-export const UV_CACHE_DIR = `${RUNTIMES_DIR}/uv/cache`;
+export const UV_CACHE_DIR = `${RUNTIMES_DIR}/uv/cache`
 /** Pinned managed Python (matches daemon `PYTHON_VERSION`). */
-export const PYTHON_VERSION = "3.14.6";
-export const PYTHON_RUNTIME_DIR = `${RUNTIMES_DIR}/python/${PYTHON_VERSION}`;
-export const PYTHON_CURRENT_DIR = `${RUNTIMES_DIR}/python/current`;
+export const PYTHON_VERSION = '3.14.6'
+export const PYTHON_RUNTIME_DIR = `${RUNTIMES_DIR}/python/${PYTHON_VERSION}`
+export const PYTHON_CURRENT_DIR = `${RUNTIMES_DIR}/python/current`
 /** `UV_PYTHON_INSTALL_DIR` target for orchestration bootstrap. */
-export const PYTHON_INSTALL_DIR = PYTHON_RUNTIME_DIR;
+export const PYTHON_INSTALL_DIR = PYTHON_RUNTIME_DIR
 /**
  * Pinned Deno version for the dev console's bootstrap fallback + status label.
  *
@@ -117,30 +117,30 @@ export const PYTHON_INSTALL_DIR = PYTHON_RUNTIME_DIR;
  * host Deno is absent matches the one Ansible converges into
  * `/opt/turbopanel/vendor/deno`.
  */
-export const DENO_VERSION = "2.9.8";
-export const VENDORED_DENO_BIN = `${RUNTIMES_DIR}/deno/current/deno`;
+export const DENO_VERSION = '2.9.8'
+export const VENDORED_DENO_BIN = `${RUNTIMES_DIR}/deno/current/deno`
 
 /** Must stay in step with daemon `ANSIBLE_*` / `DEV_CONVERGE_STAMP_FILE` paths. */
-export const ANSIBLE_CURRENT_DIR = `${RUNTIMES_DIR}/ansible/current`;
-export const ANSIBLE_PLAYBOOK_BIN = `${ANSIBLE_CURRENT_DIR}/bin/ansible-playbook`;
-export const DEV_CONVERGE_STAMP_PATH = `${RUNTIMES_DIR}/ansible/dev-converge.stamp`;
+export const ANSIBLE_CURRENT_DIR = `${RUNTIMES_DIR}/ansible/current`
+export const ANSIBLE_PLAYBOOK_BIN = `${ANSIBLE_CURRENT_DIR}/bin/ansible-playbook`
+export const DEV_CONVERGE_STAMP_PATH = `${RUNTIMES_DIR}/ansible/dev-converge.stamp`
 
 /** Default checkout path — what every consumer derives from the dev root. */
 function defaultPlatformRepoPath(dir: string): string {
-  return `${resolveDevRoot()}/${dir}`;
+  return `${resolveDevRoot()}/${dir}`
 }
 
 export function platformRepoPath(dir: string): string {
-  const override = process.env[platformRepoEnvKey(dir)]?.trim();
-  return override || defaultPlatformRepoPath(dir);
+  const override = process.env[platformRepoEnvKey(dir)]?.trim()
+  return override || defaultPlatformRepoPath(dir)
 }
 
 export function daemonRepoPath(): string {
-  return platformRepoPath("turbopaneld");
+  return platformRepoPath('turbopaneld')
 }
 
 export function instanceRepoPath(): string {
-  return platformRepoPath("turbopanel");
+  return platformRepoPath('turbopanel')
 }
 
 /**
@@ -150,7 +150,7 @@ export function instanceRepoPath(): string {
  * tree (not the replaceable checkout `certs/ca.crt`).
  */
 export function platformCaCertPath(): string {
-  return `${STATE_DIR}/tls/ca-bundle.pem`;
+  return `${STATE_DIR}/tls/ca-bundle.pem`
 }
 
 /**
@@ -164,14 +164,14 @@ export function platformCaCertPath(): string {
  * consumes it, and persisting it would pin a stale root.
  */
 export function buildPlatformRepoEntries(): Record<string, string> {
-  const entries: Record<string, string> = {};
+  const entries: Record<string, string> = {}
   for (const dir of PLATFORM_REPO_DIRS) {
-    const override = process.env[platformRepoEnvKey(dir)]?.trim();
+    const override = process.env[platformRepoEnvKey(dir)]?.trim()
     if (override && override !== defaultPlatformRepoPath(dir)) {
-      entries[platformRepoEnvKey(dir)] = override;
+      entries[platformRepoEnvKey(dir)] = override
     }
   }
-  return entries;
+  return entries
 }
 
 /**
@@ -181,28 +181,28 @@ export function buildPlatformRepoEntries(): Record<string, string> {
  * (`/etc/turbopanel/daemon.env`, `EnvironmentFile=` on `turbopaneld.service`);
  * in dev it is dev-user-owned at runtime.
  */
-export const DAEMON_ENV_PATH = `${CONFIG_DIR}/daemon.env`;
+export const DAEMON_ENV_PATH = `${CONFIG_DIR}/daemon.env`
 
 export function daemonBootstrapScript(): string {
-  return `${daemonRepoPath()}/scripts/bootstrap-orchestration.ts`;
+  return `${daemonRepoPath()}/scripts/bootstrap-orchestration.ts`
 }
 
 export function daemonOrchestrationScript(): string {
-  return `${daemonRepoPath()}/scripts/run-orchestration-action.ts`;
+  return `${daemonRepoPath()}/scripts/run-orchestration-action.ts`
 }
 
 export function daemonDenoConfig(): string {
-  return `${daemonRepoPath()}/deno.json`;
+  return `${daemonRepoPath()}/deno.json`
 }
 
 /** Co-located dev only — git branch for platform checkouts and Upgrade System. Not written on release/binary daemon installs. */
-export const TURBOPANEL_TRUNK_BRANCH = "trunk";
-export const DAEMON_ENV_TRUNK_BRANCH_KEY = "TURBOPANEL_TRUNK_BRANCH" as const;
+export const TURBOPANEL_TRUNK_BRANCH = 'trunk'
+export const DAEMON_ENV_TRUNK_BRANCH_KEY = 'TURBOPANEL_TRUNK_BRANCH' as const
 
 export const DAEMON_REPO = {
-  dir: "turbopaneld",
-  repo: "TurboPanel/turbopaneld",
-} as const;
+  dir: 'turbopaneld',
+  repo: 'TurboPanel/turbopaneld',
+} as const
 
 /**
  * systemd unit name for the co-located dev daemon.
@@ -211,34 +211,29 @@ export const DAEMON_REPO = {
  * `SERVICE_NAME` in `scripts/install-daemon-systemd.sh`. Managed/production
  * installs run the same-named unit from `/opt/turbopanel/bin/turbopaneld`.
  */
-export const DAEMON_SYSTEMD_UNIT = "turbopaneld";
+export const DAEMON_SYSTEMD_UNIT = 'turbopaneld'
 
 export function consoleLogDir(): string {
-  return `${resolveDevRoot()}/.local/console`;
+  return `${resolveDevRoot()}/.local/console`
 }
 
-export const CONSOLE_LOG_DIR = consoleLogDir();
-export const CONVERGE_SERVICE_LOG_DIR = `${CONSOLE_LOG_DIR}/converge`;
-export const CONSOLE_LAST_TASK_ERROR_LOG =
-  `${CONSOLE_LOG_DIR}/last-task-error.log`;
+export const CONSOLE_LOG_DIR = consoleLogDir()
+export const CONVERGE_SERVICE_LOG_DIR = `${CONSOLE_LOG_DIR}/converge`
+export const CONSOLE_LAST_TASK_ERROR_LOG = `${CONSOLE_LOG_DIR}/last-task-error.log`
 /** Per-run Developer → Run tests transcripts. */
-export const CONSOLE_TEST_RUN_LOG_DIR = `${CONSOLE_LOG_DIR}/test-runs`;
+export const CONSOLE_TEST_RUN_LOG_DIR = `${CONSOLE_LOG_DIR}/test-runs`
 /** Latest Run tests transcript (overwritten each run). */
-export const CONSOLE_LAST_TEST_RUN_LOG = `${CONSOLE_LOG_DIR}/last-test-run.log`;
+export const CONSOLE_LAST_TEST_RUN_LOG = `${CONSOLE_LOG_DIR}/last-test-run.log`
 
 export function convergeServiceLogPath(serviceId: string): string {
-  return `${CONVERGE_SERVICE_LOG_DIR}/${serviceId}.log`;
+  return `${CONVERGE_SERVICE_LOG_DIR}/${serviceId}.log`
 }
 
 /** Timestamped path under {@link CONSOLE_TEST_RUN_LOG_DIR} for one suite run. */
-export function testRunLogPath(
-  repoId: string,
-  suiteId: string,
-  at: Date = new Date(),
-): string {
-  const stamp = at.toISOString().replaceAll(":", "-");
-  const suite = suiteId.replaceAll(":", "-");
-  return `${CONSOLE_TEST_RUN_LOG_DIR}/${repoId}-${suite}-${stamp}.log`;
+export function testRunLogPath(repoId: string, suiteId: string, at: Date = new Date()): string {
+  const stamp = at.toISOString().replaceAll(':', '-')
+  const suite = suiteId.replaceAll(':', '-')
+  return `${CONSOLE_TEST_RUN_LOG_DIR}/${repoId}-${suite}-${stamp}.log`
 }
 
 /**
@@ -247,9 +242,9 @@ export function testRunLogPath(
  * Dev and managed installs share the FHS log path (`/var/log/turbopanel/`);
  * in dev the console tails these dev-user-owned files.
  */
-export const DAEMON_LOG_PATH = `${LOG_DIR}/daemon.log`;
-export const DAEMON_ERR_LOG_PATH = `${LOG_DIR}/daemon.err.log`;
+export const DAEMON_LOG_PATH = `${LOG_DIR}/daemon.log`
+export const DAEMON_ERR_LOG_PATH = `${LOG_DIR}/daemon.err.log`
 
 export function sshRepoUrl(repo: string): string {
-  return `git@github.com:${repo}.git`;
+  return `git@github.com:${repo}.git`
 }

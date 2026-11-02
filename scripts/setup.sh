@@ -163,6 +163,11 @@ tp_resolve_dir() {
     "$DEV_CHECKOUT"/*) tp_die "${DIR} is inside the dev checkout ${DEV_CHECKOUT}; pick a folder outside it with --dir." ;;
     *) ;;
   esac
+  # In the old home-folder layout ~/turbopanel is the control plane checkout;
+  # cloning into it would nest a second set of repos inside a repo.
+  if [ -e "$DIR/.git" ]; then
+    tp_die "${DIR} is a git checkout, not the folder that holds the repos. If your repos sit directly in your home folder, move them into a folder named turbopanel first (cd ~ && mkdir tp-move && for r in dev turbopaneld turbopanel ui website .github; do [ ! -e \"\$r\" ] || mv \"\$r\" tp-move/; done && mv tp-move turbopanel), then rerun ~/turbopanel/dev/scripts/setup.sh."
+  fi
 }
 
 # ---------------------------------------------------------------- host facts
@@ -873,6 +878,11 @@ tp_choose_mode() {
     '') ;;
     direct)
       [ "$DIRECT_OK" -eq 1 ] || tp_die "direct mode is not available: ${DIRECT_WHY}."
+      # The console, vm-bootstrap.sh and the dev playbook refuse any other
+      # folder name outside the Vagrant guest (where the repos sit in $HOME).
+      if [ "${DIR##*/}" != turbopanel ] && [ ! -f /etc/profile.d/turbopanel-vagrant.sh ]; then
+        tp_die "direct mode keeps the repos in a folder named turbopanel (e.g. ~/turbopanel/<repo>), not ${DIR}; rerun with --dir \"\$HOME/turbopanel\" or another folder named turbopanel."
+      fi
       ;;
     vagrant)
       [ "$VAGRANT_OK" -eq 1 ] || tp_die "Vagrant mode is not available: ${VAGRANT_WHY}."
@@ -997,11 +1007,8 @@ tp_next_steps() {
     echo "  Edit and commit on this machine; the guest only runs the stack. Hooks here run the secret scan."
   elif [ "$MODE" = direct ]; then
     echo "  Log out and back in if setup just added you to the sudo group, then:"
-    if [ "$DIR" = "$HOME" ]; then
-      echo "  ~/dev/console"
-    else
-      echo "  TURBOPANEL_DEV_ROOT=$(tp_sq "$DIR") $(tp_sq "$DIR/dev/console")"
-    fi
+    # The console finds the folder from the mode file next to the repos.
+    echo "  $(tp_sq "$DIR/dev/console")"
   fi
   if [ -z "$GH_LOGIN" ]; then
     echo "  You are not logged in to GitHub, so the repos are read-only clones."

@@ -18,8 +18,8 @@ The nearest `AGENTS.md` to the file you edit applies on top of this one:
 - [`docs/testing.md`](./docs/testing.md) — test details: cross-repo pin tests, secret scan, command table, pre-commit hook, gate matrix.
 
 **This repo runs on Node, not Deno.** In dev the console bootstraps
-orchestration and runs the **daemon from the dev user's home checkout**
-(`~/turbopaneld`, derived from `TURBOPANEL_DEV_ROOT`; `TURBOPANEL_DAEMON_REPO` is an optional override) via Deno (`deno run main.ts`) — host Deno is
+orchestration and runs the **daemon from the dev user's checkout**
+(`~/turbopanel/turbopaneld`, or `~/turbopaneld` in the Vagrant guest, derived from `TURBOPANEL_DEV_ROOT`; `TURBOPANEL_DAEMON_REPO` is an optional override) via Deno (`deno run main.ts`) — host Deno is
 preferred, else the vendored runtime at
 `/opt/turbopanel/vendor/deno/current/deno`. It never runs a
 compiled daemon binary. Production installs (driven by `run.sh` + Ansible, **not**
@@ -117,7 +117,7 @@ Test details (pin tests, secret scan, command table, pre-commit hook, gate matri
 - `scripts/setup.sh` clones over **HTTPS** with `gh` as the credential helper (`gh auth setup-git`), and over **SSH** when your `gh` `git_protocol` or a `url.<ssh>.insteadOf https://github.com/` rule says so. The guest's daemon fallback clone (`platform-install.ts`) still uses SSH.
 - **`console` owns the Node runtime** (for this repo) and starting the TUI. It does **not** install Deno or other platform runtimes.
 - Contributors get the six sibling repos with `scripts/setup.sh` on the machine where they edit (the host in Vagrant mode); Vagrant mounts them into the guest under `$HOME`. The repo list lives in `repos.list` (`.github` is optional for `vagrant-up.sh` and the Vagrantfile).
-- **`TURBOPANEL_MODE=development`** during dev converge. Source repos live under `TURBOPANEL_DEV_ROOT` (default `$HOME`); every consumer derives `<dev_root>/<repo>` itself. Per-repo `TURBOPANEL_<DIR>_REPO` keys are **optional overrides only** — `buildPlatformRepoEntries()` writes one into `daemon.env` only when it is set and differs from the derived default, and `writeDaemonBaseEnv` / `writeDaemonInstanceEnv` remove any stale per-repo key on every write.
+- **`TURBOPANEL_MODE=development`** during dev converge. Source repos live under `TURBOPANEL_DEV_ROOT` (default `$HOME/turbopanel`; `$HOME` only in the Vagrant guest); every consumer derives `<dev_root>/<repo>` itself. Per-repo `TURBOPANEL_<DIR>_REPO` keys are **optional overrides only** — `buildPlatformRepoEntries()` writes one into `daemon.env` only when it is set and differs from the derived default, and `writeDaemonBaseEnv` / `writeDaemonInstanceEnv` remove any stale per-repo key on every write.
 - Daemon bootstrap, systemd units, and Docker containers run as the **current dev user** — no `tp` / `tpctrl` / `tpcache` service accounts are created in dev.
 - Purge/reset stops and removes the daemon systemd unit **`turbopaneld.service`**, dev FHS state under `/etc/turbopanel`, `/var/lib/turbopanel`, `/var/log/turbopanel`, `/run/turbopanel`, and runtimes under `/opt/turbopanel/vendor`.
 - Do not commit secrets or environment-specific config.
@@ -130,7 +130,7 @@ Test details (pin tests, secret scan, command table, pre-commit hook, gate matri
 - Repo cloning on the editing machine belongs in `scripts/setup.sh`. The one stated exception is `scripts/vm-bootstrap.sh --clone` (root-run, SSH, for a direct VM prepared on its own); inside the guest the TUI (`src/lib/platform-install.ts`) clones nothing but a missing daemon checkout.
 - Do not hardcode developer UID/GID — always read from `tp_resolve_dev_identity()` / `tp_require_dev_identity()` in shell scripts.
 - Do not reintroduce `pull.sh`.
-- Platform repos live under **`TURBOPANEL_DEV_ROOT`** (default `$HOME`, the Vagrant guest layout; a host-native checkout may use any folder such as `~/work/turbopanel`; `TURBOPANEL_<DIR>_REPO` only as an explicit override) — do not clone into `/opt/turbopanel/platform`. Never use the root as `HOME` for git, ssh or pnpm: that is `TURBOPANEL_DEV_HOME` / `turbopanel_dev_home`. Validation rules and the reason for them: `docs/dev-environment.md` (Repos Outside the Home Folder).
+- Platform repos live under **`TURBOPANEL_DEV_ROOT`** (a folder named `turbopanel`, default `~/turbopanel`, e.g. `~/work/turbopanel`; only the Vagrant guest uses `$HOME`, where the host repos are mounted; anything else is refused; `TURBOPANEL_<DIR>_REPO` only as an explicit override) — do not clone into `/opt/turbopanel/platform`. Never use the root as `HOME` for git, ssh or pnpm: that is `TURBOPANEL_DEV_HOME` / `turbopanel_dev_home`. Validation rules and the reason for them: `docs/dev-environment.md` (Repos Outside the Home Folder).
 - Do not bump the pinned Node version without updating `scripts/lib/paths.sh` and docs. Bump pnpm by updating `packageManager` in `package.json` only (keep the hashed Corepack pin), then run `pnpm install` so each sibling `pnpm-lock.yaml` records the `packageManagerDependencies` catalog — `--frozen-lockfile` (CI and Cloudflare) fails without it. Each pnpm checkout needs `pnpm-workspace.yaml` `allowBuilds` for packages whose postinstalls must run (`esbuild` / `workerd` for wrangler; this repo at least `esbuild`). pnpm 12 `strictDepBuilds` otherwise fails the install with `ERR_PNPM_IGNORED_BUILDS`. CI `pnpm/action-setup` must stay at **v6.1.0+** — v4 cannot install pnpm 12's native binary.
 - Do not commit directly to `trunk` — use a feature branch and open a PR.
 - Do not run unit tests, typecheck, or lint on the **host** checkout — use `vagrant ssh` (or the TUI Run tests / Services **T**). Host VirtFS trees lack a usable Node/pnpm/Deno `node_modules`.

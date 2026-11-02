@@ -1,6 +1,6 @@
 #!/bin/sh
 # Prepare a plain Debian 13 machine (Proxmox VM, bare metal, any hypervisor
-# without Vagrant) so a contributor can run ~/dev/console on it.
+# without Vagrant) so a contributor can run ~/turbopanel/dev/console on it.
 #
 # Run as root, or through sudo. Safe to run again: every step checks first.
 # Does only what the Vagrant guest setup does for the dev user; it never sets up
@@ -27,7 +27,7 @@ Usage: vm-bootstrap.sh [options] [DEV_USER]
   --lan-alias NAME    extra DNS name this VM answers to (repeatable); written to
                       /etc/turbopanel/dev-forward-hosts
   --clone             clone dev, turbopaneld, turbopanel, ui, website and .github
-                      over SSH into TURBOPANEL_DEV_ROOT, else the dev user's home
+                      over SSH into TURBOPANEL_DEV_ROOT, else ~/turbopanel
                       (skips existing folders)
   -h, --help          show this help
 USAGE
@@ -82,11 +82,13 @@ DEV_HOME=$(printf '%s\n' "$PASSWD_LINE" | cut -d: -f6)
 DEV_UID=$(printf '%s\n' "$PASSWD_LINE" | cut -d: -f3)
 
 # The folder that holds the repos: TURBOPANEL_DEV_ROOT (setup.sh passes it),
-# else the dev user's home. Same rules as tp_validate_dev_root in
+# else <home>/turbopanel. Same rules as tp_validate_dev_root in
 # scripts/lib/paths.sh: the value is written unquoted into the profile file,
 # env files, unit lines and Ansible vars, so only an absolute path of plain
-# characters without . or .. parts is accepted. Checked before anything changes.
-DEV_ROOT=${TURBOPANEL_DEV_ROOT:-$DEV_HOME}
+# characters without . or .. parts is accepted, and it must be a folder named
+# turbopanel (this script is never run in the Vagrant guest, the one place the
+# repos sit directly in the home folder). Checked before anything changes.
+DEV_ROOT=${TURBOPANEL_DEV_ROOT:-$DEV_HOME/turbopanel}
 while [ "${#DEV_ROOT}" -gt 1 ] && [ "${DEV_ROOT%/}" != "$DEV_ROOT" ]; do
   DEV_ROOT=${DEV_ROOT%/}
 done
@@ -104,6 +106,20 @@ case "$DEV_ROOT/" in
     ;;
   *) ;;
 esac
+if [ "${DEV_ROOT##*/}" != turbopanel ]; then
+  printf 'vm-bootstrap: TURBOPANEL_DEV_ROOT=%s is not a folder named turbopanel; the repos belong in one, e.g. ~/turbopanel/<repo> (run dev/scripts/setup.sh to set it up).\n' "$DEV_ROOT" >&2
+  exit 1
+fi
+# An older layout kept the repos directly in the home folder. Defaulting to
+# ~/turbopanel then would clone (or point the console at) a second, empty set,
+# so stop with the steps to move them instead. Only when no root was given.
+if [ -z "${TURBOPANEL_DEV_ROOT:-}" ] && [ ! -e "${DEV_ROOT}/dev" ] &&
+  { [ -f "${DEV_HOME}/dev/Vagrantfile" ] || [ -d "${DEV_HOME}/turbopaneld" ]; }; then
+  printf 'vm-bootstrap: the repos sit in %s, which is not a folder named turbopanel; they belong in one, e.g. ~/turbopanel/<repo>.\n' "$DEV_HOME" >&2
+  printf '  Move them, as %s:  cd %s && mkdir tp-move && for r in dev turbopaneld turbopanel ui website .github; do [ ! -e "$r" ] || mv "$r" tp-move/; done && mv tp-move turbopanel\n' "$DEV_USER" "$DEV_HOME" >&2
+  printf '  Then run:  %s/turbopanel/dev/scripts/setup.sh\n' "$DEV_HOME" >&2
+  exit 1
+fi
 
 export DEBIAN_FRONTEND=noninteractive
 
@@ -193,19 +209,17 @@ rm -f "$TMP" "$BACKUP"
 echo ">>> Writing /etc/profile.d/turbopanel-dev.sh"
 cat >/etc/profile.d/turbopanel-dev.sh <<'EOT'
 # TurboPanel development host defaults (sourced for login shells).
-# ./console also exports TURBOPANEL_MODE=development and repo paths under TURBOPANEL_DEV_ROOT (default $HOME).
+# ./console also exports TURBOPANEL_MODE=development and repo paths under TURBOPANEL_DEV_ROOT (default $HOME/turbopanel).
 export TURBOPANEL_MODE="${TURBOPANEL_MODE:-development}"
 EOT
-if [ "$DEV_ROOT" != "$DEV_HOME" ]; then
-  # Only for the dev user; DEV_ROOT and DEV_USER were checked above, so they are
-  # safe to write unquoted. An explicit TURBOPANEL_DEV_ROOT still wins.
-  cat >>/etc/profile.d/turbopanel-dev.sh <<EOT
+# Only for the dev user; DEV_ROOT and DEV_USER were checked above, so they are
+# safe to write unquoted. An explicit TURBOPANEL_DEV_ROOT still wins.
+cat >>/etc/profile.d/turbopanel-dev.sh <<EOT
 # The repos live in ${DEV_ROOT} for ${DEV_USER} (written by vm-bootstrap.sh).
 if [ "\$(id -un)" = "${DEV_USER}" ]; then
   export TURBOPANEL_DEV_ROOT="\${TURBOPANEL_DEV_ROOT:-${DEV_ROOT}}"
 fi
 EOT
-fi
 chmod 644 /etc/profile.d/turbopanel-dev.sh
 
 if [ "$DO_SWAP" -eq 1 ]; then

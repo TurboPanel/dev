@@ -12,9 +12,10 @@
 # (turbopanel/turbopaneli/turbopanelc, uid 9999/9998/9997) onto the single human
 # dev user, and:
 #   * source repos live under the dev source-repo root (turbopanel_dev_root,
-#     from TURBOPANEL_DEV_ROOT; defaults to the dev user's home, the Vagrant
-#     layout): <root>/turbopaneld, <root>/turbopanel, <root>/ui, <root>/website.
-#     A host-native checkout may keep them anywhere, e.g. ~/work/turbopanel.
+#     from TURBOPANEL_DEV_ROOT): <root>/turbopaneld, <root>/turbopanel,
+#     <root>/ui, <root>/website. The root is a folder named turbopanel
+#     (default ~/turbopanel, or e.g. ~/work/turbopanel); only the Vagrant
+#     guest uses the home folder itself, where the host repos are mounted.
 #   * git, ssh and pnpm still run with HOME = the dev user's real home
 #     (turbopanel_dev_home), never the repo folder.
 #   * every mutable dir is the shared FHS location (dev-user-owned at runtime):
@@ -46,8 +47,9 @@
     turbopanel_dev_gid: ""
     # Dev source-repo root: the folder that holds the repos. The daemon passes
     # TURBOPANEL_DEV_ROOT as an extra-var, which always wins. Without it (a
-    # direct run) a pre_task below falls back to the dev user's home from getent,
-    # because ansible_env.HOME is root's HOME under become. Passed on to every
+    # direct run) a pre_task below falls back to <home>/turbopanel (the home
+    # itself in the Vagrant guest), with the home from getent because
+    # ansible_env.HOME is root's HOME under become. Passed on to every
     # daemon role, which derive <root>/{turbopaneld,turbopanel,ui,website} from it.
     turbopanel_dev_root: "{{ ansible_env.HOME }}"
     instance_repo_url: https://github.com/TurboPanel/turbopanel
@@ -105,10 +107,21 @@
         key: "{{ turbopanel_dev_user }}"
       when: turbopanel_dev_user | length > 0
 
+    # The Vagrant guest (marked by the profile file its provisioner writes)
+    # mounts the host repos at $HOME/<repo>; everywhere else the repos sit in a
+    # folder named turbopanel, by default $HOME/turbopanel.
+    - name: Check for the Vagrant guest
+      ansible.builtin.stat:
+        path: /etc/profile.d/turbopanel-vagrant.sh
+      register: _turbopanel_vagrant_guest
+      when: turbopanel_dev_user | length > 0
+
     - name: Set dev home and default source-repo root from the dev user's home directory
       ansible.builtin.set_fact:
         turbopanel_dev_home: "{{ getent_passwd[turbopanel_dev_user][4] }}"
-        turbopanel_dev_root: "{{ getent_passwd[turbopanel_dev_user][4] }}"
+        turbopanel_dev_root: >-
+          {{ getent_passwd[turbopanel_dev_user][4] ~
+          ('' if (_turbopanel_vagrant_guest.stat.exists | default(false)) else '/turbopanel') }}
       when:
         - turbopanel_dev_user | length > 0
         - getent_passwd is defined
@@ -116,17 +129,23 @@
 
     # Same rules as dev/src/lib/dev-root.ts and tp_validate_dev_root: the root is
     # written unquoted into unit Environment= lines, env files, YAML vars and
-    # `-e key=value` pairs, so it must be an absolute path of plain characters.
+    # `-e key=value` pairs, so it must be an absolute path of plain characters;
+    # outside the Vagrant guest it must also be a folder named turbopanel.
     - name: Validate the dev source-repo root path
       ansible.builtin.assert:
         that:
           - turbopanel_dev_root is match('^/[A-Za-z0-9._@+/-]+\Z')
           - turbopanel_dev_root is not match('^/+$')
           - ('/' ~ turbopanel_dev_root ~ '/') is not search('/[.][.]?/')
+          - >-
+            (turbopanel_dev_root | basename) == 'turbopanel'
+            or (_turbopanel_vagrant_guest.stat.exists | default(false))
         fail_msg: >-
           turbopanel_dev_root ({{ turbopanel_dev_root }}) must be an absolute
           path of letters, digits and . _ @ + - / only, without . or ..
-          segments. Set TURBOPANEL_DEV_ROOT to the folder that holds the repos.
+          segments, and outside the Vagrant guest a folder named turbopanel
+          (e.g. ~/turbopanel/<repo>). Run dev/scripts/setup.sh, or set
+          TURBOPANEL_DEV_ROOT to the turbopanel folder that holds the repos.
         quiet: true
       when: turbopanel_dev_user | length > 0
 

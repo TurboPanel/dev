@@ -6,10 +6,12 @@
 # start the Ink console from the guest home: `dev/console`.
 #
 # Mounts sibling checkouts from the host workspace (parent of this repo) into the
-# guest home so default TURBOPANEL_DEV_ROOT=$HOME matches bare-metal layout
-# (confirmed against the daemon's Ansible roles: source lives at
-# "<dev_root>/<repo>" whenever turbopanel_dev_user is set; /opt/turbopanel is
-# vendor/bin/share only, never source).
+# guest home, so inside the guest TURBOPANEL_DEV_ROOT defaults to $HOME (the
+# guest is recognised by /etc/profile.d/turbopanel-vagrant.sh, written below).
+# Everywhere else the repos sit in a folder named turbopanel (~/turbopanel by
+# default). The daemon's Ansible roles put source at "<dev_root>/<repo>"
+# whenever turbopanel_dev_user is set; /opt/turbopanel is vendor/bin/share
+# only, never source.
 # Guest-only FHS paths (/etc|/var|/run|/opt/turbopanel) stay on the VM disk.
 #
 # Linux/libvirt uses Debian 13 (debian/trixie64). macOS/UTM uses Debian 12

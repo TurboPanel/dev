@@ -597,8 +597,26 @@ describe('setup.sh host checks', () => {
     // The fixture dev repo has no vm-bootstrap.sh, so this checkout's copy runs.
     expect(sudo).toContain(`${REPO_ROOT}/scripts/vm-bootstrap.sh`)
     expect(modeFile()).toContain("TURBOPANEL_DEV_ENV='direct'")
-    expect(out).toContain(`TURBOPANEL_DEV_ROOT='${work}'`)
+    // The console reads the folder from the mode file, so no env prefix.
+    expect(out).toContain(`'${work}/dev/console'`)
+    expect(out).not.toContain(`TURBOPANEL_DEV_ROOT='${work}'`)
     expect(out).not.toContain('until that lands')
+  })
+
+  test('refuses a folder that is itself a git checkout (the old home-folder layout)', () => {
+    mkdirSync(join(work, '.git'), { recursive: true })
+    const { status, out } = run(['--dir', work, '--yes', '--mode', 'vagrant'])
+    expect(status).toBe(1)
+    expect(out).toContain('is a git checkout, not the folder that holds the repos')
+    expect(out).toContain('mv tp-move turbopanel')
+  })
+
+  test('direct mode refuses a folder that is not named turbopanel', () => {
+    const other = join(root, 'repos')
+    const { status, out } = run(['--dir', other, '--yes', '--mode', 'direct'])
+    expect(status).toBe(1)
+    expect(out).toContain('folder named turbopanel')
+    expect(out).toContain(other)
   })
 })
 
