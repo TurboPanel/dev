@@ -14,8 +14,7 @@ turbopanel_state_dir: /var/lib/turbopanel
 turbopanel_log_dir: /var/log/turbopanel
 runtime_socket_dir: /run/turbopanel
 # Dev source-repo root: TURBOPANEL_DEV_ROOT (extra-var) or, on a direct run,
-# <home>/turbopanel (the home itself in the Vagrant guest) from the playbook's
-# getent pre_task.
+# <home>/turbopanel from the playbook's getent pre_task.
 turbopanel_dev_root: "{{ ansible_env.HOME }}"
 _dev_home_checkouts:
   - "{{ turbopanel_dev_root }}/turbopaneld"

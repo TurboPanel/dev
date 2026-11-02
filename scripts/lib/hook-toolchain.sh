@@ -23,7 +23,7 @@ tp_hook_dev_checkout() {
       return 0
     fi
   fi
-  printf '%s/dev' "${TURBOPANEL_DEV_ROOT:-$HOME}"
+  printf '%s/dev' "${TURBOPANEL_DEV_ROOT:-$HOME/turbopanel}"
 }
 
 tp_hook_source_dev_lib() {
