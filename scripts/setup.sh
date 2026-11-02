@@ -111,6 +111,13 @@ tp_role_key() {
   printf 'role_%s' "$(printf '%s' "$_rk_repo" | sed -e 's/^\.//' -e 's/[^A-Za-z0-9_]/_/g')"
 }
 
+# The same key without role_, for the ROLE_<suffix> shell variables.
+tp_role_suffix() {
+  _rsf_repo=$1
+  _rsf_key=$(tp_role_key "$_rsf_repo")
+  printf '%s' "${_rsf_key#role_}"
+}
+
 # ---------------------------------------------------------------- mode file
 
 tp_mode_file() {
@@ -854,7 +861,7 @@ tp_sync_repo() {
       tp_warn "${_sr_name}: core.hooksPath is ${_sr_hooks}, not .githooks; left as it is (git -C $(tp_sq "$_sr_path") config core.hooksPath .githooks)."
     fi
   fi
-  eval "ROLE_$(tp_role_key "$_sr_name" | sed 's/^role_//')=\$_sr_role"
+  eval "ROLE_$(tp_role_suffix "$_sr_name")=\$_sr_role"
   [ "$_sr_role" != contributor-fork ] || tp_set_gh_default "$_sr_name"
 }
 
@@ -1090,7 +1097,7 @@ tp_role_label() {
 tp_role_summary() {
   _rs_all=
   for _rs_name in $(tp_repo_names); do
-    eval "_rs_role=\${ROLE_$(tp_role_key "$_rs_name" | sed 's/^role_//'):-}"
+    eval "_rs_role=\${ROLE_$(tp_role_suffix "$_rs_name"):-}"
     if [ -z "$_rs_role" ] && tp_is_checkout "$DIR/$_rs_name"; then
       _rs_role=$(tp_layout_role "$DIR/$_rs_name" "$_rs_name")
     fi
@@ -1155,7 +1162,7 @@ tp_cmd_setup() {
   fi
   for _cs_name in $(tp_repo_names); do
     _cs_role=$(tp_detect_role "$_cs_name")
-    eval "ROLE_$(tp_role_key "$_cs_name" | sed 's/^role_//')=\$_cs_role"
+    eval "ROLE_$(tp_role_suffix "$_cs_name")=\$_cs_role"
     if [ -e "$DIR/$_cs_name" ]; then
       _cs_action="present: fetch, fast-forward ${_cs_name} $(tp_repo_branch "$_cs_name") only if clean"
     elif [ "$_cs_role" = contributor ]; then
@@ -1196,7 +1203,7 @@ tp_cmd_setup() {
     gh auth setup-git >/dev/null 2>&1 || tp_warn "gh auth setup-git failed; pushes over https may ask for a password."
   fi
   for _cs_name in $(tp_repo_names); do
-    eval "_cs_role=\$ROLE_$(tp_role_key "$_cs_name" | sed 's/^role_//')"
+    eval "_cs_role=\$ROLE_$(tp_role_suffix "$_cs_name")"
     tp_sync_repo "$_cs_name" "$(tp_repo_branch "$_cs_name")" "$_cs_role"
   done
   tp_write_mode_file
@@ -1223,7 +1230,7 @@ tp_cmd_setup() {
 tp_fork_repo() {
   _fo_name=$1
   _fo_path="$DIR/$_fo_name"
-  _fo_key=$(tp_role_key "$_fo_name" | sed 's/^role_//')
+  _fo_key=$(tp_role_suffix "$_fo_name")
   if ! tp_is_checkout "$_fo_path"; then
     tp_fail_repo "$_fo_name" "${_fo_path} is not a checkout; run setup first"
     return 0
