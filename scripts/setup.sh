@@ -322,9 +322,10 @@ tp_gh_missing_hint() {
 tp_gh_fetch_key() {
   _gf_out=$1
   if command -v curl >/dev/null 2>&1; then
-    curl -fsSL -o "$_gf_out" "$GH_KEY_URL"
+    # The key is served directly; refuse redirects and anything but HTTPS.
+    curl --proto '=https' --tlsv1.2 -fsS -o "$_gf_out" "$GH_KEY_URL"
   else
-    wget -q -O "$_gf_out" "$GH_KEY_URL"
+    wget -q --https-only --max-redirect=0 -O "$_gf_out" "$GH_KEY_URL"
   fi
 }
 
@@ -359,12 +360,10 @@ tp_install_gh_apt() {
   _ig_need=
   command -v curl >/dev/null 2>&1 || command -v wget >/dev/null 2>&1 || _ig_need=curl
   command -v gpg >/dev/null 2>&1 || _ig_need="${_ig_need:+${_ig_need} }gnupg"
-  if [ -n "$_ig_need" ]; then
-    # shellcheck disable=SC2086 # a space-separated list of package names
-    if ! { sudo apt-get update && sudo apt-get install -y $_ig_need; }; then
-      tp_error "could not install ${_ig_need}, needed to check the GitHub CLI signing key."
-      return 1
-    fi
+  # shellcheck disable=SC2086 # a space-separated list of package names
+  if [ -n "$_ig_need" ] && ! { sudo apt-get update && sudo apt-get install -y $_ig_need; }; then
+    tp_error "could not install ${_ig_need}, needed to check the GitHub CLI signing key."
+    return 1
   fi
   _ig_dir=$(mktemp -d) || return 1
   if ! tp_gh_fetch_key "$_ig_dir/keyring.gpg"; then
