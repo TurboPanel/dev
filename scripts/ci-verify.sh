@@ -46,7 +46,15 @@ Omits the SonarCloud upload. Default: every sibling repo.
 EOF
 }
 
+# The mode file setup.sh writes next to the repos says how this checkout runs.
+DEV_ENV=$(sed -n "s/^TURBOPANEL_DEV_ENV='\(.*\)'\$/\1/p" "$REPO_ROOT/../.turbopanel-dev-mode" 2>/dev/null | tail -n 1)
+
 if ! tp_in_guest; then
+  if [ "$DEV_ENV" = direct ]; then
+    echo "ci-verify: this machine runs the dev environment directly, but the vendored Node is missing." >&2
+    echo "  Run ${REPO_ROOT}/console once (it installs Node and pnpm), then rerun this script." >&2
+    exit 1
+  fi
   if ! command -v vagrant >/dev/null 2>&1; then
     echo "ci-verify: run inside the Vagrant guest (or install vagrant on the host)." >&2
     echo "  From the host dev checkout: vagrant ssh -c '\$HOME/dev/scripts/ci-verify.sh'" >&2

@@ -1,0 +1,12 @@
+# The TurboPanel repositories a contributor checks out, one per line:
+#   <name> <default branch> [optional]
+# scripts/setup.sh clones all of them into one folder. scripts/vagrant-up.sh
+# needs every line without "optional" next to this checkout; the Vagrantfile
+# mounts an optional repo only when it is present (Ansible clones .github in the
+# guest otherwise).
+dev trunk
+turbopanel trunk
+turbopaneld trunk
+ui trunk
+website trunk
+.github trunk optional
