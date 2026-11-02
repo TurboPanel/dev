@@ -303,8 +303,29 @@ describe('setup.sh roles', () => {
     expect(out).toContain('vagrant up')
   })
 
-  test('no push access: forks every repo but .github and adds upstream', () => {
+  test('no push access: read-only clones of TurboPanel and no forks', () => {
     const { status, out } = setup({ FAKE_GH_PUSH: 'false' })
+    expect(status, out).toBe(0)
+    for (const repo of REPOS) {
+      const path = join(work, repo)
+      expect(git(path, 'remote', 'get-url', 'origin')).toBe(
+        `file://${fixture}/TurboPanel/${repo}.git`
+      )
+      expect(git(path, 'remote')).toBe('origin')
+    }
+    expect(ghLog()).not.toContain('repo fork')
+    expect(ghLog()).not.toContain('set-default')
+    expect(modeFile()).toContain("role_turbopanel='contributor'")
+    expect(modeFile()).toContain("role_github='readonly'")
+    expect(out).toContain('setup.sh fork ui when you want to push')
+    expect(out).toContain(
+      `Your repos are read-only clones of TurboPanel. When you are ready to push in one, run: ${work}/dev/scripts/setup.sh fork <repo>`
+    )
+    expect(out).toContain('Except: .github (read-only).')
+  })
+
+  test('--fork-all forks every repo but .github at setup and adds upstream', () => {
+    const { status, out } = setup({ FAKE_GH_PUSH: 'false' }, ['--fork-all'])
     expect(status, out).toBe(0)
     for (const repo of REPOS.filter((name) => name !== '.github')) {
       const path = join(work, repo)
@@ -313,21 +334,14 @@ describe('setup.sh roles', () => {
         `file://${fixture}/TurboPanel/${repo}.git`
       )
       expect(git(path, 'rev-parse', '--abbrev-ref', 'trunk@{upstream}')).toBe('upstream/trunk')
-    }
-    expect(ghLog()).not.toContain('repo fork TurboPanel/.github')
-    expect(existsSync(join(fixture, 'octo', '.github.git'))).toBe(false)
-    expect(git(join(work, '.github'), 'remote')).toBe('origin')
-    expect(modeFile()).toContain("role_turbopanel='contributor'")
-    expect(modeFile()).toContain("role_github='readonly'")
-  })
-
-  test('fork checkouts get TurboPanel as the gh default and a plain summary', () => {
-    const { status, out } = setup({ FAKE_GH_PUSH: 'false' })
-    expect(status, out).toBe(0)
-    for (const repo of REPOS.filter((name) => name !== '.github')) {
       expect(ghLog()).toContain(`gh repo set-default TurboPanel/${repo}`)
     }
+    expect(ghLog()).not.toContain('repo fork TurboPanel/.github')
     expect(ghLog()).not.toContain('set-default TurboPanel/.github')
+    expect(existsSync(join(fixture, 'octo', '.github.git'))).toBe(false)
+    expect(git(join(work, '.github'), 'remote')).toBe('origin')
+    expect(modeFile()).toContain("role_turbopanel='contributor-fork'")
+    expect(modeFile()).toContain("role_github='readonly'")
     expect(out).toContain(
       'You work from your own fork. Your repos push to octo/<repo> (origin); TurboPanel is upstream.'
     )
@@ -343,7 +357,7 @@ describe('setup.sh roles', () => {
         '"auth setup-git") exit 0 ;;\n  "repo set-default") exit 1 ;;'
       )
     )
-    const { status, out } = setup({ FAKE_GH_PUSH: 'false' })
+    const { status, out } = setup({ FAKE_GH_PUSH: 'false' }, ['--fork-all'])
     expect(status, out).toBe(0)
     expect(out).toContain('ui: gh repo set-default TurboPanel/ui failed')
   })
@@ -351,16 +365,26 @@ describe('setup.sh roles', () => {
   test('push access: the summary says so once, with no exceptions', () => {
     const { out } = setup()
     expect(out).toContain('You can push to TurboPanel directly.')
-    expect(out).toContain('rerun with --fork')
+    expect(out).toContain(
+      `To work from your own fork instead, run: ${work}/dev/scripts/setup.sh fork <repo>`
+    )
     expect(out).not.toContain('Except:')
     expect(ghLog()).not.toContain('set-default')
   })
 
-  test('--fork makes a maintainer work like a contributor', () => {
+  test('--fork gives a maintainer the read-only clones a contributor gets', () => {
     const { status, out } = setup({}, ['--fork'])
     expect(status, out).toBe(0)
-    expect(git(join(work, 'ui'), 'remote', 'get-url', 'origin')).toContain('/octo/ui.git')
+    expect(git(join(work, 'ui'), 'remote', 'get-url', 'origin')).toContain('/TurboPanel/ui.git')
+    expect(ghLog()).not.toContain('repo fork')
     expect(modeFile()).toContain("role_ui='contributor'")
+  })
+
+  test('--fork with --fork-all forks even with push access', () => {
+    const { status, out } = setup({}, ['--fork', '--fork-all'])
+    expect(status, out).toBe(0)
+    expect(git(join(work, 'ui'), 'remote', 'get-url', 'origin')).toContain('/octo/ui.git')
+    expect(modeFile()).toContain("role_ui='contributor-fork'")
   })
 
   test('a fork that exists already is reused', () => {
@@ -372,7 +396,7 @@ describe('setup.sh roles', () => {
       join(fixture, 'octo', 'ui.git'),
     ])
     writeFileSync(join(fixture, 'forks.txt'), 'ui octo/ui\n')
-    expect(setup({ FAKE_GH_PUSH: 'false' }).status).toBe(0)
+    expect(setup({ FAKE_GH_PUSH: 'false' }, ['--fork-all']).status).toBe(0)
     expect(ghLog()).not.toContain('repo fork TurboPanel/ui')
   })
 
@@ -385,7 +409,7 @@ describe('setup.sh roles', () => {
       join(fixture, 'octo', 'my-ui.git'),
     ])
     writeFileSync(join(fixture, 'forks.txt'), 'ui octo/my-ui\n')
-    const { status, out } = setup({ FAKE_GH_PUSH: 'false' })
+    const { status, out } = setup({ FAKE_GH_PUSH: 'false' }, ['--fork-all'])
     expect(status, out).toBe(0)
     expect(git(join(work, 'ui'), 'remote', 'get-url', 'origin')).toBe(
       `file://${fixture}/octo/my-ui.git`
@@ -395,11 +419,10 @@ describe('setup.sh roles', () => {
 
   test('a fork that never appears fails that repo within the wait', () => {
     const started = Date.now()
-    const { status, out } = setup({
-      FAKE_GH_PUSH: 'false',
-      FAKE_GH_FORK_NOOP: '1',
-      TURBOPANEL_SETUP_FORK_WAIT: '0',
-    })
+    const { status, out } = setup(
+      { FAKE_GH_PUSH: 'false', FAKE_GH_FORK_NOOP: '1', TURBOPANEL_SETUP_FORK_WAIT: '0' },
+      ['--fork-all']
+    )
     expect(status).toBe(1)
     expect(out).toContain('your fork of TurboPanel/ui was not ready within 0s')
     expect(existsSync(join(work, 'ui'))).toBe(false)
@@ -467,14 +490,16 @@ describe('setup.sh reruns', () => {
     expect(existsSync(join(work, 'ui', 'wip.txt'))).toBe(true)
   })
 
-  test('logging in later turns read-only clones into fork checkouts', () => {
+  test('logging in later keeps read-only clones until fork', () => {
     setup({ FAKE_GH_LOGIN: '' })
     const { status, out } = setup({ FAKE_GH_PUSH: 'false' })
     expect(status, out).toBe(0)
     const ui = join(work, 'ui')
+    expect(git(ui, 'remote')).toBe('origin')
+    expect(modeFile()).toContain("role_ui='contributor'")
+    expect(run(['fork', 'ui', '--dir', work], { FAKE_GH_PUSH: 'false' }).status).toBe(0)
     expect(git(ui, 'remote', 'get-url', 'origin')).toContain('/octo/ui.git')
     expect(git(ui, 'remote', 'get-url', 'upstream')).toContain('/TurboPanel/ui.git')
-    expect(modeFile()).toContain("role_ui='contributor'")
   })
 
   test('an offline rerun keeps the login and roles and makes no GitHub call', () => {
@@ -766,6 +791,129 @@ describe('setup.sh GitHub CLI', () => {
   )
 })
 
+const count = (text: string, needle: string) => text.split(needle).length - 1
+
+describe('setup.sh fork', () => {
+  const fork = (names: string[], extra: Env = {}) =>
+    run(['fork', ...names, '--dir', work], { FAKE_GH_PUSH: 'false', ...extra })
+
+  test('forks only the named repo, keeps its branches and is a no-op the second time', () => {
+    setup({ FAKE_GH_PUSH: 'false' })
+    const ui = join(work, 'ui')
+    git(ui, 'switch', '--quiet', '-c', 'feature')
+    writeFileSync(join(ui, 'wip.txt'), 'wip\n')
+    git(ui, 'add', 'wip.txt')
+    git(ui, 'commit', '--quiet', '-m', 'wip')
+    const head = git(ui, 'rev-parse', 'HEAD')
+
+    const { status, out } = fork(['ui'])
+    expect(status, out).toBe(0)
+    expect(git(ui, 'remote', 'get-url', 'origin')).toBe(`file://${fixture}/octo/ui.git`)
+    expect(git(ui, 'remote', 'get-url', 'upstream')).toBe(`file://${fixture}/TurboPanel/ui.git`)
+    expect(git(ui, 'rev-parse', '--abbrev-ref', 'trunk@{upstream}')).toBe('upstream/trunk')
+    expect(git(ui, 'rev-parse', 'HEAD')).toBe(head)
+    expect(git(ui, 'branch', '--show-current')).toBe('feature')
+    expect(git(join(work, 'website'), 'remote')).toBe('origin')
+    expect(ghLog()).toContain('repo fork TurboPanel/ui')
+    expect(ghLog()).not.toContain('repo fork TurboPanel/website')
+    expect(ghLog()).toContain('repo set-default TurboPanel/ui')
+    expect(modeFile()).toContain("role_ui='contributor-fork'")
+    expect(modeFile()).toContain("role_website='contributor'")
+    expect(modeFile()).toContain("TURBOPANEL_DEV_ENV='vagrant'")
+
+    const again = fork(['ui'])
+    expect(again.status, again.out).toBe(0)
+    expect(again.out).toContain('ui: already forked')
+    expect(count(ghLog(), 'repo fork TurboPanel/ui')).toBe(1)
+
+    const table = run(['status', '--dir', work]).out
+    expect(table).toMatch(/^ui\s+forked\s+feature/m)
+    expect(table).toMatch(/^website\s+read-only\s+trunk/m)
+  })
+
+  test('refuses when not signed in to GitHub and changes nothing', () => {
+    setup({ FAKE_GH_PUSH: 'false' })
+    const { status, out } = fork(['ui'], { FAKE_GH_LOGIN: '' })
+    expect(status).toBe(1)
+    expect(out).toContain("you are not signed in to GitHub; run 'gh auth login'")
+    expect(git(join(work, 'ui'), 'remote')).toBe('origin')
+  })
+
+  test('refuses offline and changes nothing', () => {
+    setup({ FAKE_GH_PUSH: 'false' })
+    const { status, out } = fork(['ui'], { FAKE_GH_API_DOWN: '1' })
+    expect(status).toBe(1)
+    expect(out).toContain('GitHub did not answer')
+    expect(git(join(work, 'ui'), 'remote')).toBe('origin')
+    expect(ghLog()).not.toContain('repo fork')
+  })
+
+  test('finds a renamed fork through the fork list', () => {
+    setup({ FAKE_GH_PUSH: 'false' })
+    execFileSync('git', [
+      'clone',
+      '--quiet',
+      '--bare',
+      join(fixture, 'TurboPanel', 'ui.git'),
+      join(fixture, 'octo', 'my-ui.git'),
+    ])
+    writeFileSync(join(fixture, 'forks.txt'), 'ui octo/my-ui\n')
+    const { status, out } = fork(['ui'])
+    expect(status, out).toBe(0)
+    expect(git(join(work, 'ui'), 'remote', 'get-url', 'origin')).toBe(
+      `file://${fixture}/octo/my-ui.git`
+    )
+    expect(ghLog()).not.toContain('repo fork TurboPanel/ui')
+  })
+
+  test('a fork that never appears leaves the checkout as it was', () => {
+    setup({ FAKE_GH_PUSH: 'false' })
+    const { status, out } = fork(['ui'], {
+      FAKE_GH_FORK_NOOP: '1',
+      TURBOPANEL_SETUP_FORK_WAIT: '0',
+    })
+    expect(status).toBe(1)
+    expect(out).toContain('your fork of TurboPanel/ui was not ready within 0s')
+    expect(git(join(work, 'ui'), 'remote')).toBe('origin')
+    expect(modeFile()).toContain("role_ui='contributor'")
+  })
+
+  test('.github is forked only when named', () => {
+    setup({ FAKE_GH_PUSH: 'false' }, ['--fork-all'])
+    expect(ghLog()).not.toContain('repo fork TurboPanel/.github')
+    const { status, out } = fork(['.github'])
+    expect(status, out).toBe(0)
+    expect(git(join(work, '.github'), 'remote', 'get-url', 'origin')).toContain('/octo/.github.git')
+    expect(modeFile()).toContain("role_github='contributor-fork'")
+  })
+
+  test('needs repo names from repos.list and a setup first', () => {
+    expect(run(['fork', '--dir', work]).status).toBe(2)
+    expect(fork(['nope']).out).toContain('unknown repo nope')
+    expect(fork(['ui']).out).toContain('setup.sh first')
+  })
+
+  test('a fork checkout from an older mode file still counts as forked', () => {
+    setup({ FAKE_GH_PUSH: 'false' }, ['--fork-all'])
+    const file = join(work, '.turbopanel-dev-mode')
+    writeFileSync(file, modeFile().replaceAll("'contributor-fork'", "'contributor'"))
+    const table = run(['status', '--dir', work]).out
+    expect(table).toMatch(/^ui\s+forked/m)
+    const { status, out } = run(['doctor', '--dir', work])
+    expect(status, out).toBe(0)
+    expect(out).not.toContain('to push:')
+  })
+
+  test('doctor names the fork command for read-only clones and stays clean', () => {
+    setup({ FAKE_GH_PUSH: 'false' })
+    const { status, out } = run(['doctor', '--dir', work])
+    expect(status, out).toBe(0)
+    expect(out).toContain('ui (contributor, read-only)')
+    expect(out).toContain(`to push:    ${work}/dev/scripts/setup.sh fork ui`)
+    expect(out).toContain('No problems found.')
+  })
+})
+
 describe('setup.sh status and doctor', () => {
   test('status shows one row per repo, the open PR and the twin-branch order', () => {
     setup()
@@ -787,7 +935,7 @@ describe('setup.sh status and doctor', () => {
   })
 
   test('doctor reports and changes nothing', () => {
-    setup({ FAKE_GH_PUSH: 'false' })
+    setup({ FAKE_GH_PUSH: 'false' }, ['--fork-all'])
     const before = modeFile()
     git(join(work, 'ui'), 'config', '--unset', 'core.hooksPath')
     git(join(work, 'website'), 'remote', 'remove', 'upstream')
@@ -797,7 +945,7 @@ describe('setup.sh status and doctor', () => {
     expect(out).toContain('direct mode:  available')
     expect(out).toContain('login:        octo')
     expect(out).toContain('ui: core.hooksPath is unset')
-    expect(out).toContain('website: contributor checkout without upstream')
+    expect(out).toContain('website: fork checkout without upstream')
     expect(out).toContain('commit.gpgsign')
     expect(modeFile()).toBe(before)
     expect(() => git(join(work, 'ui'), 'config', 'core.hooksPath')).toThrow()
