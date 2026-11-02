@@ -18,12 +18,14 @@ TURBOPANEL_DEV_ROOT=${TURBOPANEL_DEV_ROOT:-$HOME}
 #   tp_load_dev_root_mode_file <dev checkout dir>
 # Print the symlink-free path of an existing folder; prints nothing otherwise.
 tp_physical_dir() {
-  (CDPATH='' cd -P -- "$1" 2>/dev/null && pwd) || true
+  _tp_pd_dir=$1
+  (CDPATH='' cd -P -- "$_tp_pd_dir" 2>/dev/null && pwd) || true
 }
 
 tp_load_dev_root_mode_file() {
   [ -z "$TP_DEV_ROOT_FROM_ENV" ] || return 0
-  _tp_lm_parent=$(CDPATH='' cd -- "$1/.." 2>/dev/null && pwd) || return 0
+  _tp_lm_dev=$1
+  _tp_lm_parent=$(CDPATH='' cd -- "$_tp_lm_dev/.." 2>/dev/null && pwd) || return 0
   _tp_lm_file=$_tp_lm_parent/.turbopanel-dev-mode
   [ -f "$_tp_lm_file" ] || return 0
   _tp_lm_root=$(sed -n "s/^dev_root='\(.*\)'\$/\1/p" "$_tp_lm_file" | tail -n 1 | sed "s/'\\\\''/'/g")
