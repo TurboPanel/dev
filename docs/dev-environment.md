@@ -14,10 +14,11 @@ then file-backs all guest RAM under `/var/lib/libvirt/qemu/ram` and guest
 memory churn causes severe host disk writeback/I/O pressure.
 UTM uses VirtFS. Synced folders map host siblings
 `../{turbopaneld,turbopanel,ui,website}` and this repo (`.`) to guest
-`$HOME/{dev,turbopaneld,turbopanel,ui,website}` so default
-`TURBOPANEL_DEV_ROOT=$HOME` matches bare metal — confirmed against the daemon's
-Ansible roles (`daemon-launch`, `instance-launch`, etc.): source always
-resolves to `<dev_root>/<repo>` when `turbopanel_dev_user` is set, and
+`$HOME/{dev,turbopaneld,turbopanel,ui,website}` so the default
+`TURBOPANEL_DEV_ROOT=$HOME` applies unchanged in the guest. The daemon's
+Ansible roles (`daemon-launch`, `instance-launch`, etc.) resolve source to
+`<dev_root>/<repo>` when `turbopanel_dev_user` is set (a host-native checkout
+can move the root, see Repos Outside the Home Folder below), and
 `/opt/turbopanel` in dev holds **only** vendored runtimes, the production
 binary, and the built static UI — never source checkouts. `../.github`
 (community health files) mounts to `$HOME/.github` when present on the host;
@@ -73,6 +74,15 @@ SAN is refused when the install command is minted.
 /opt/turbopanel/share/ui/ # static UI export (production build mode)
 ~/.local/console/         # console converge logs (consoleLogDir())
 ```
+
+### Repos Outside the Home Folder
+
+The Vagrant guest keeps the repos at `$HOME/<repo>`, and that stays the default. A host-native checkout can keep them in any folder instead, for example `~/work/turbopanel/{dev,turbopaneld,turbopanel,ui,website,.github}`: set `TURBOPANEL_DEV_ROOT` to that folder before `./console` starts (the setup script writes it for you). Keep all the repos together in one folder named `turbopanel`.
+
+- One value moves everything. `./console` exports it, the console writes it to `/etc/turbopanel/daemon.env`, and the daemon passes it to every playbook as `turbopanel_dev_root`, so the daemon, control plane, UI and website units, the development Caddyfile and the repo clones all resolve `<root>/<repo>`.
+- git, ssh and pnpm still run with `HOME` set to the developer's real home (`TURBOPANEL_DEV_HOME` in `daemon.env`, `turbopanel_dev_home` in Ansible), so SSH keys, `known_hosts`, git config and the pnpm store are found where they always were.
+- The value is checked once at start (`./console`, the TUI and the dev playbook): it must be an absolute path made only of letters, digits and `. _ @ + - /`, with no `.` or `..` parts, and it must be a folder the developer can read, or one they can create. Spaces and shell or YAML characters are refused because the value is written unquoted into systemd `Environment=` lines, `KEY=VALUE` env files, a YAML vars file, Caddyfile placeholders and Ansible `-e key=value` pairs, and any of them would break or split it.
+- The per-repo `TURBOPANEL_<DIR>_REPO` overrides still work and still win for a single repo.
 
 Node is a pinned `nodejs.org` tarball vendored under `/opt/turbopanel/vendor/node/<version>/` with a `current` symlink (same layout as deno/caddy). pnpm is provisioned via Corepack and pinned by the `packageManager` field in `package.json`. **Node 25+ no longer ships Corepack**, so `./console` (and the daemon `node-runtime` role) install it with the vendored `npm install -g corepack` into that prefix, then Corepack still activates the hashed pnpm pin. Deno is **host-provided in development** (preferred) or bootstrap-installed to `/opt/turbopanel/vendor/deno/current/deno` when host Deno is absent; the dev console always runs the daemon and orchestration **from the source checkout** via Deno. Production daemon installs use native `/opt/turbopanel/bin/turbopaneld` or, when that binary cannot execute on the host, `turbopaneld.js` via vendored Deno — driven by `run.sh` + Ansible, never by this console.
 

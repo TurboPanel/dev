@@ -5,6 +5,61 @@ TURBOPANEL_ROOT=/opt/turbopanel
 # Development source-repo root (turbopaneld/turbopanel/ui/website live here).
 # Defaults to the dev user's home; override with TURBOPANEL_DEV_ROOT.
 TURBOPANEL_DEV_ROOT=${TURBOPANEL_DEV_ROOT:-$HOME}
+# Check TURBOPANEL_DEV_ROOT (or $1) before anything uses it; prints the problem
+# and returns 1 when it is unusable. Without $1 it also drops trailing slashes
+# from TURBOPANEL_DEV_ROOT, matching the daemon's resolver. Mirrors src/lib/dev-root.ts. The value is
+# written unquoted into systemd Environment= lines, KEY=VALUE env files, a YAML
+# vars file, Caddyfile placeholders and Ansible `-e key=value` pairs, so it must
+# be an absolute path of plain characters (no spaces or shell/YAML characters),
+# and either a directory the user can read or one it can create.
+tp_validate_dev_root() {
+  _tp_vdr=${1-$TURBOPANEL_DEV_ROOT}
+  while [ "${#_tp_vdr}" -gt 1 ] && [ "${_tp_vdr%/}" != "$_tp_vdr" ]; do
+    _tp_vdr=${_tp_vdr%/}
+  done
+  _tp_vdr_err=
+  case $_tp_vdr in
+    /) _tp_vdr_err='must not be the filesystem root' ;;
+    /*) ;;
+    *) _tp_vdr_err='must be an absolute path' ;;
+  esac
+  if [ -z "$_tp_vdr_err" ]; then
+    case $_tp_vdr in
+      *[!A-Za-z0-9._@+/-]*) _tp_vdr_err='may only contain letters, digits and . _ @ + - / (no spaces or shell characters)' ;;
+    esac
+  fi
+  if [ -z "$_tp_vdr_err" ]; then
+    case "$_tp_vdr/" in
+      */./* | */../*) _tp_vdr_err='must not contain . or .. segments' ;;
+    esac
+  fi
+  if [ -z "$_tp_vdr_err" ]; then
+    if [ -d "$_tp_vdr" ]; then
+      if [ ! -r "$_tp_vdr" ] || [ ! -x "$_tp_vdr" ]; then
+        _tp_vdr_err='is not readable by the current user'
+      fi
+    else
+      _tp_vdr_parent=$_tp_vdr
+      while [ ! -e "$_tp_vdr_parent" ]; do
+        _tp_vdr_parent=$(dirname "$_tp_vdr_parent")
+      done
+      if [ ! -d "$_tp_vdr_parent" ]; then
+        _tp_vdr_err='is not a directory and cannot be created'
+      elif [ ! -w "$_tp_vdr_parent" ] || [ ! -x "$_tp_vdr_parent" ]; then
+        _tp_vdr_err="cannot be created: $_tp_vdr_parent is not writable by the current user"
+      fi
+    fi
+  fi
+  if [ -n "$_tp_vdr_err" ]; then
+    printf 'TURBOPANEL_DEV_ROOT=%s %s.\n' "$_tp_vdr" "$_tp_vdr_err" >&2
+    return 1
+  fi
+  if [ "$#" -eq 0 ]; then
+    TURBOPANEL_DEV_ROOT=$_tp_vdr
+  fi
+  return 0
+}
+
 # Development mode marker (published to daemon.env and the Node console).
 TURBOPANEL_MODE=${TURBOPANEL_MODE:-development}
 
