@@ -5,7 +5,7 @@ This file is generated from the resolved dependency graph. Do not edit it by han
 Third-party components remain under their own copyright and license terms and are not relicensed by TurboPanel Development Environment's repository license (AGPL-3.0-only).
 
 <!-- lockfiles
-pnpm-lock.yaml sha256:af8f014eab649d3f161edd9d27786506d5524eb3a35bc63ef5e961de50ab4b6f
+pnpm-lock.yaml sha256:17dcee68c8468c19af98d5f19f91ac58a24728a836ff8f84602cbff996985753
 -->
 
 ## Production dependencies
