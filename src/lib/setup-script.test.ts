@@ -107,6 +107,8 @@ function baseEnv(extra: Env = {}): Env {
     TURBOPANEL_SETUP_REMOTE_BASE: `file://${fixture}`,
     TURBOPANEL_SETUP_OS_RELEASE: osRelease,
     TURBOPANEL_SETUP_FORK_WAIT: '4',
+    // Never the host's file: a prepared dev VM has it and skips the bootstrap.
+    TURBOPANEL_DIRECT_PROFILE_MARKER: join(root, 'no-direct-profile'),
     FAKE_FIXTURE: fixture,
     FAKE_GH_LOG: join(root, 'gh.log'),
     FAKE_GH_LOGIN: 'octo',

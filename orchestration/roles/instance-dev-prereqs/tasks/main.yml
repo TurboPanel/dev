@@ -34,3 +34,9 @@
       ansible.builtin.apt:
         name: "{{ instance_dev_prereq_packages }}"
         state: present
+
+- name: Install developer command-line tools (Debian)
+  ansible.builtin.apt:
+    name: "{{ instance_dev_tool_packages }}"
+    state: present
+  when: ansible_os_family == 'Debian'
