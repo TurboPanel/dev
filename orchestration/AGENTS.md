@@ -13,10 +13,12 @@ The **`dev-shell-path`** role (dev-only) always installs `/etc/profile.d/turbopa
 Co-located hosts load **`orchestration/Caddyfile`** (not the managed
 `instance-launch` template) when `turbopanel_dev_user` is set — wired by the
 daemon `instance-launch` role via `turbopanel_caddyfile`. That file wins over
-the rendered production Caddyfile, so a development host has no per-hostname
-sites and refuses a Let's Encrypt hostname. That file owns:
+the rendered production Caddyfile. Its routing is the `(turbopanel_app)`
+snippet, imported by the bare `:8443` site and by every named site. That file
+owns:
 
 - HTTPS `:8443` (always on; Platform CA). There is no plaintext control-plane listener.
+- Named `<hostname>:8443` sites for the development panel's own hostnames: the file ends with `import {$TURBOPANEL_DEV_SITES_DIR:/etc/turbopanel/caddy/dev-sites}/*.caddy`, and the daemon renders `hostnames.caddy` there (`turbopaneld` `instance-launch` → `tasks/caddyfile-dev-sites.yml`, `templates/Caddyfile-dev-sites.j2`) on every hostname apply and converge: one site per uploaded or DNS-01 certificate, `tls uploaded-<cert_id>.{crt,key}` from `<instance checkout>/certs`, each importing `turbopanel_app`. The daemon validates the candidate against this file before installing it and reloads the unit on a change. A glob that matches no file is not an error. This is what lets the development panel serve a real certificate for its own hostname (split DNS on the LAN, and through a tunnel). HTTP-01 Let's Encrypt stays managed-install only: it needs the daemon's issuer on port 80.
 - Expo reverse_proxy when `TURBOPANEL_UI_MODE=dev` (with `expo-loading.html` for cold-start 502s; `flush_interval -1` so Fast Refresh `/hot` is unbuffered). Host edits on VirtioFS/9p need Metro poll watch in the UI repo (`scripts/metro-virtfs-poll-watch.cjs`) — inotify does not cross the share.
 - Optional wrangler upstream when `TURBOPANEL_INSTANCE_RUNTIME=workers`
 - `/downloads/daemon/*` (always — overlay catalog + artifacts; not gated on `TURBOPANEL_UI_MODE`) and the install script at **`/run.sh`** from the daemon checkout (`dist/` after Developer → **Rebuild daemon and upgrade connected servers** / `deno task release:dev`)

@@ -3,18 +3,22 @@
 # Loaded by turbopanel-caddy.service when turbopanel_dev_user is set
 # (`{{ turbopanel_dev_root }}/dev/orchestration/Caddyfile`). A managed host
 # renders turbopaneld orchestration/roles/instance-launch/templates/Caddyfile.j2
-# instead — never ship this file to managed hosts. This file has no
-# per-hostname sites, so instance Let's Encrypt is refused while it is loaded.
-# There is no plaintext listener; :8443 is the only control-plane port.
+# instead — never ship this file to managed hosts. There is no plaintext
+# listener; :8443 is the only control-plane port.
 #
 #   /api/*, /ws/*, /webhook/*  -> Deno socket or wrangler dev
 #   UI                          -> Expo (:8081) when UI_MODE=dev, else static export
 #   :8443                       -> the only control-plane listener (Platform CA)
+#   <hostname>:8443             -> named sites the daemon renders for uploaded
+#                                  and DNS-01 certificates (see the import at
+#                                  the end); HTTP-01 Let's Encrypt stays
+#                                  managed-install only
 #
-# The site ends in a catch-all that serves the UI, so ANY prefix the
-# instance owns must be matched before it. A missed prefix does not 404 — it
-# serves the SPA shell with HTTP 200, and a Git provider reads that as a
-# delivered webhook and never retries.
+# The routing lives in the (turbopanel_app) snippet so the bare :8443 site and
+# every named site serve the same thing. The snippet ends in a catch-all that
+# serves the UI, so ANY prefix the instance owns must be matched before it. A
+# missed prefix does not 404 — it serves the SPA shell with HTTP 200, and a Git
+# provider reads that as a delivered webhook and never retries.
 #
 # Env:
 #   TURBOPANEL_UI_MODE           "dev" | "static" (default: static)
@@ -27,6 +31,8 @@
 #   WRANGLER_DEV_PORT            wrangler dev port when runtime is workers
 #   CADDY_PORT                   HTTPS listen port (default: 8443)
 #   CADDY_TLS_CERT / CADDY_TLS_KEY
+#   TURBOPANEL_DEV_SITES_DIR     Directory of named :8443 sites the daemon renders
+#                                (default: /etc/turbopanel/caddy/dev-sites)
 {
 	auto_https off
 	# Localhost-only admin so `systemctl reload` / `caddy reload` can swap leaf
@@ -36,12 +42,9 @@
 	admin localhost:2019
 }
 
-# The only control-plane site. Daemons, /run.sh, and phones dial https://<host>:8443
-# and trust the Platform CA.
-
-:{$CADDY_PORT:8443} {
-	tls {$CADDY_TLS_CERT:./certs/self-signed.crt} {$CADDY_TLS_KEY:./certs/self-signed.key}
-
+# Everything the control plane serves, shared by the bare :8443 site below and
+# by every named site the daemon renders. Defined before those sites import it.
+(turbopanel_app) {
 	# Forwarding headers are believable only from a connector on this host — a
 	# `cloudflared` tunnel beside Caddy, or another local proxy. Strip any
 	# client-supplied copy so a daemon dialling this proxy over the network
@@ -174,3 +177,21 @@
 		file_server
 	}
 }
+
+# The always-on control-plane site. Daemons, /run.sh, and phones dial
+# https://<host>:8443 and trust the Platform CA. IPs and names without a
+# named site below land here.
+:{$CADDY_PORT:8443} {
+	tls {$CADDY_TLS_CERT:./certs/self-signed.crt} {$CADDY_TLS_KEY:./certs/self-signed.key}
+	import turbopanel_app
+}
+
+# Named :8443 sites for the development panel's own hostnames, chosen by SNI.
+# turbopaneld renders them (instance-launch, Caddyfile-dev-sites.j2) from the
+# applied hostname list on every hostname apply and converge: one site per
+# uploaded or DNS-01 certificate, `tls uploaded-<cert_id>.{crt,key}` from the
+# instance certs directory, each importing turbopanel_app. A glob that matches
+# no file is not an error, so a fresh checkout serves :8443 alone; Caddy logs
+# one "No files matching import glob pattern" warning until the first converge
+# renders hostnames.caddy (a header comment when there is no named hostname).
+import {$TURBOPANEL_DEV_SITES_DIR:/etc/turbopanel/caddy/dev-sites}/*.caddy
