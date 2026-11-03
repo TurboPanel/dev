@@ -1,58 +1,58 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { DevServiceStatus } from "../dev-services.ts";
-import {
-  daemonRepoPath,
-  DAEMON_SYSTEMD_UNIT,
-  RUNTIMES_DIR,
-  TURBOPANEL_ROOT,
-} from "./paths.ts";
-import { shellQuote } from "./shell-quote.ts";
-import type { DaemonSyncResult, SyncDevResponse } from "./developer-client.ts";
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { DevServiceStatus } from '../dev-services.ts'
+import { daemonRepoPath, DAEMON_SYSTEMD_UNIT, RUNTIMES_DIR, TURBOPANEL_ROOT } from './paths.ts'
+import { shellQuote } from './shell-quote.ts'
+import type { DaemonSyncResult, SyncDevResponse } from './developer-client.ts'
 
-vi.mock("../dev-services.ts", () => ({
+vi.mock('../dev-services.ts', () => ({
   isDaemonSystemdInstalled: vi.fn(() => true),
-}));
+}))
 
-vi.mock("./daemon-env.ts", () => ({
-  readInstanceRuntime: vi.fn(() => "deno"),
+vi.mock('./daemon-env.ts', () => ({
+  readInstanceRuntime: vi.fn(() => 'deno'),
   isDeveloperSurfaceInstance: vi.fn(() => true),
-}));
+}))
 
-vi.mock("./spawn-trusted.ts", () => ({
+vi.mock('./spawn-trusted.ts', () => ({
   spawnSyncTrustedText: vi.fn(() => ({
     status: 0,
-    stdout: "inactive",
-    stderr: "",
+    stdout: 'inactive',
+    stderr: '',
     pid: 1,
-    output: ["", "inactive", ""],
+    output: ['', 'inactive', ''],
     signal: null,
   })),
-}));
+}))
 
-vi.mock("./install-output.ts", () => ({
+vi.mock('./install-output.ts', () => ({
   runCaptured: vi.fn(async () => 0),
-}));
+}))
 
-vi.mock("./developer-client.ts", () => ({
+vi.mock('./developer-client.ts', () => ({
+  postDevHostAction: vi.fn(),
   syncDevToAllDaemons: vi.fn(),
   updateConnectedDaemons: vi.fn(),
-}));
+}))
 
-vi.mock("./daemon-exec.ts", () => ({
-  ensureOrchestrationDenoBin: vi.fn(async () => "/opt/turbopanel/vendor/deno/current/deno"),
-}));
+vi.mock('./daemon-exec.ts', () => ({
+  ensureOrchestrationDenoBin: vi.fn(async () => '/opt/turbopanel/vendor/deno/current/deno'),
+}))
 
-vi.mock("./run-repo-tests.ts", () => ({
-  testRunnerPathEnv: vi.fn(() => ({ PATH: "/opt/turbopanel/vendor/deno/current" })),
-}));
+vi.mock('./run-repo-tests.ts', () => ({
+  testRunnerPathEnv: vi.fn(() => ({ PATH: '/opt/turbopanel/vendor/deno/current' })),
+}))
 
-import { isDaemonSystemdInstalled } from "../dev-services.ts";
-import { isDeveloperSurfaceInstance, readInstanceRuntime } from "./daemon-env.ts";
-import { spawnSyncTrustedText } from "./spawn-trusted.ts";
-import { runCaptured } from "./install-output.ts";
-import { syncDevToAllDaemons, updateConnectedDaemons } from "./developer-client.ts";
-import { ensureOrchestrationDenoBin } from "./daemon-exec.ts";
-import { testRunnerPathEnv } from "./run-repo-tests.ts";
+import { isDaemonSystemdInstalled } from '../dev-services.ts'
+import { isDeveloperSurfaceInstance, readInstanceRuntime } from './daemon-env.ts'
+import { spawnSyncTrustedText } from './spawn-trusted.ts'
+import { runCaptured } from './install-output.ts'
+import {
+  postDevHostAction,
+  syncDevToAllDaemons,
+  updateConnectedDaemons,
+} from './developer-client.ts'
+import { ensureOrchestrationDenoBin } from './daemon-exec.ts'
+import { testRunnerPathEnv } from './run-repo-tests.ts'
 import {
   canRestartDaemon,
   cellTraceToggleLabel,
@@ -67,499 +67,552 @@ import {
   syncDevBuildToDaemons,
   waitForDaemonRunning,
   isDestructiveDaemonAction,
-} from "./daemon-actions.ts";
+  devHostRefusalMessage,
+  isDevHostAction,
+  startDevHostJob,
+} from './daemon-actions.ts'
 
-const mockedIsDaemonSystemdInstalled = vi.mocked(isDaemonSystemdInstalled);
-const mockedReadInstanceRuntime = vi.mocked(readInstanceRuntime);
-const mockedIsDeveloperSurfaceInstance = vi.mocked(isDeveloperSurfaceInstance);
-const mockedSpawnSyncTrustedText = vi.mocked(spawnSyncTrustedText);
-const mockedRunCaptured = vi.mocked(runCaptured);
-const mockedSyncDev = vi.mocked(syncDevToAllDaemons);
-const mockedUpdateDaemons = vi.mocked(updateConnectedDaemons);
-const mockedEnsureDeno = vi.mocked(ensureOrchestrationDenoBin);
+const mockedIsDaemonSystemdInstalled = vi.mocked(isDaemonSystemdInstalled)
+const mockedReadInstanceRuntime = vi.mocked(readInstanceRuntime)
+const mockedIsDeveloperSurfaceInstance = vi.mocked(isDeveloperSurfaceInstance)
+const mockedSpawnSyncTrustedText = vi.mocked(spawnSyncTrustedText)
+const mockedRunCaptured = vi.mocked(runCaptured)
+const mockedSyncDev = vi.mocked(syncDevToAllDaemons)
+const mockedUpdateDaemons = vi.mocked(updateConnectedDaemons)
+const mockedPostDevHostAction = vi.mocked(postDevHostAction)
+const mockedEnsureDeno = vi.mocked(ensureOrchestrationDenoBin)
 
 function textResult(stdout: string, status = 0) {
   return {
     status,
     stdout,
-    stderr: "",
+    stderr: '',
     pid: 1,
-    output: ["", stdout, ""] as [string, string, string],
+    output: ['', stdout, ''] as [string, string, string],
     signal: null,
-  };
+  }
 }
 
 function syncResponse(results: DaemonSyncResult[]): SyncDevResponse {
-  return { ok: true, results };
+  return { ok: true, results }
 }
 
 beforeEach(() => {
-  mockedIsDaemonSystemdInstalled.mockReturnValue(true);
-  mockedReadInstanceRuntime.mockReturnValue("deno");
-  mockedIsDeveloperSurfaceInstance.mockReturnValue(true);
-  mockedSpawnSyncTrustedText.mockReturnValue(textResult("inactive"));
-  mockedRunCaptured.mockResolvedValue(0);
-  mockedEnsureDeno.mockResolvedValue("/opt/turbopanel/vendor/deno/current/deno");
-});
+  mockedIsDaemonSystemdInstalled.mockReturnValue(true)
+  mockedReadInstanceRuntime.mockReturnValue('deno')
+  mockedIsDeveloperSurfaceInstance.mockReturnValue(true)
+  mockedSpawnSyncTrustedText.mockReturnValue(textResult('inactive'))
+  mockedRunCaptured.mockResolvedValue(0)
+  mockedEnsureDeno.mockResolvedValue('/opt/turbopanel/vendor/deno/current/deno')
+})
 
 afterEach(() => {
-  vi.useRealTimers();
-  mockedRunCaptured.mockReset();
-  mockedRunCaptured.mockResolvedValue(0);
-  mockedSyncDev.mockReset();
-  mockedUpdateDaemons.mockReset();
-});
+  vi.useRealTimers()
+  mockedRunCaptured.mockReset()
+  mockedRunCaptured.mockResolvedValue(0)
+  mockedSyncDev.mockReset()
+  mockedUpdateDaemons.mockReset()
+})
 
-describe("daemon menus", () => {
-  it("daemonMenuActions is empty for every status", () => {
+describe('daemon menus', () => {
+  it('daemonMenuActions is empty for every status', () => {
     const statuses: DevServiceStatus[] = [
-      "running",
-      "starting",
-      "failed",
-      "stopped",
-      "pending",
-      "uninstalled",
-    ];
+      'running',
+      'starting',
+      'failed',
+      'stopped',
+      'pending',
+      'uninstalled',
+    ]
     for (const status of statuses) {
-      expect(daemonMenuActions(status)).toEqual([]);
+      expect(daemonMenuActions(status)).toEqual([])
     }
-  });
+  })
 
-  it("developerMenuActions is empty until the daemon is installed", () => {
-    expect(developerMenuActions(undefined)).toEqual([]);
-    expect(developerMenuActions("uninstalled")).toEqual([]);
-  });
+  it('developerMenuActions is empty until the daemon is installed', () => {
+    expect(developerMenuActions(undefined)).toEqual([])
+    expect(developerMenuActions('uninstalled')).toEqual([])
+  })
 
-  it("includes Deno-only sync/rebuild when the instance runtime is deno", () => {
-    mockedReadInstanceRuntime.mockReturnValue("deno");
-    expect(developerMenuActions("running")).toEqual([
-      "repair",
-      "start-dev-env",
-      "optional-services",
-      "reset-dev-env",
-      "reset-dev-db",
-      "run-tests",
-      "toggle-cell-trace",
-      "view-cell-trace",
-      "open-duckdb-ui",
-      "sync-dev-build",
-      "rebuild-daemon-upgrade",
-      "purge",
-    ]);
-  });
+  it('includes Deno-only sync/rebuild when the instance runtime is deno', () => {
+    mockedReadInstanceRuntime.mockReturnValue('deno')
+    expect(developerMenuActions('running')).toEqual([
+      'update-restart',
+      'restart-only',
+      'repair',
+      'start-dev-env',
+      'optional-services',
+      'reset-dev-env',
+      'reset-dev-db',
+      'run-tests',
+      'toggle-cell-trace',
+      'view-cell-trace',
+      'open-duckdb-ui',
+      'sync-dev-build',
+      'rebuild-daemon-upgrade',
+      'purge',
+    ])
+  })
 
-  it("omits Deno-only actions on the Workers runtime", () => {
-    mockedReadInstanceRuntime.mockReturnValue("workers");
-    mockedIsDeveloperSurfaceInstance.mockReturnValue(false);
-    const actions = developerMenuActions("stopped");
-    expect(actions).not.toContain("open-duckdb-ui");
-    expect(actions).not.toContain("sync-dev-build");
-    expect(actions).not.toContain("rebuild-daemon-upgrade");
-    expect(actions).toContain("save-tier-catalogue");
-    expect(actions.at(-1)).toBe("purge");
-    expect(actions[0]).toBe("repair");
-  });
+  it('omits Deno-only actions on the Workers runtime', () => {
+    mockedReadInstanceRuntime.mockReturnValue('workers')
+    mockedIsDeveloperSurfaceInstance.mockReturnValue(false)
+    const actions = developerMenuActions('stopped')
+    expect(actions).not.toContain('open-duckdb-ui')
+    expect(actions).not.toContain('update-restart')
+    expect(actions).not.toContain('restart-only')
+    expect(actions).not.toContain('sync-dev-build')
+    expect(actions).not.toContain('rebuild-daemon-upgrade')
+    expect(actions).toContain('save-tier-catalogue')
+    expect(actions.at(-1)).toBe('purge')
+    expect(actions[0]).toBe('repair')
+  })
 
-  it("offers the tier catalogue save only where billing exists (Workers)", () => {
-    mockedReadInstanceRuntime.mockReturnValue("deno");
-    expect(developerMenuActions("running")).not.toContain("save-tier-catalogue");
-    expect(DAEMON_ACTION_LABELS["save-tier-catalogue"]).toContain("tiers.json");
-  });
+  it('offers the tier catalogue save only where billing exists (Workers)', () => {
+    mockedReadInstanceRuntime.mockReturnValue('deno')
+    expect(developerMenuActions('running')).not.toContain('save-tier-catalogue')
+    expect(DAEMON_ACTION_LABELS['save-tier-catalogue']).toContain('tiers.json')
+  })
 
-  it("hides open-duckdb-ui without the developer-surface build even on Deno", () => {
-    mockedReadInstanceRuntime.mockReturnValue("deno");
-    mockedIsDeveloperSurfaceInstance.mockReturnValue(false);
-    const actions = developerMenuActions("running");
-    expect(actions).not.toContain("open-duckdb-ui");
-    expect(actions).toContain("sync-dev-build");
-    expect(actions).toContain("rebuild-daemon-upgrade");
-  });
+  it('hides open-duckdb-ui without the developer-surface build even on Deno', () => {
+    mockedReadInstanceRuntime.mockReturnValue('deno')
+    mockedIsDeveloperSurfaceInstance.mockReturnValue(false)
+    const actions = developerMenuActions('running')
+    expect(actions).not.toContain('open-duckdb-ui')
+    expect(actions).toContain('sync-dev-build')
+    expect(actions).toContain('rebuild-daemon-upgrade')
+  })
 
-  it("uses a pre-read daemon.env snapshot instead of re-reading the file", () => {
-    mockedReadInstanceRuntime.mockReturnValue("deno");
-    mockedIsDeveloperSurfaceInstance.mockReturnValue(true);
-    mockedReadInstanceRuntime.mockClear();
-    mockedIsDeveloperSurfaceInstance.mockClear();
+  it('uses a pre-read daemon.env snapshot instead of re-reading the file', () => {
+    mockedReadInstanceRuntime.mockReturnValue('deno')
+    mockedIsDeveloperSurfaceInstance.mockReturnValue(true)
+    mockedReadInstanceRuntime.mockClear()
+    mockedIsDeveloperSurfaceInstance.mockClear()
     const env = {
-      runtime: "workers" as const,
-      uiMode: "static" as const,
-      runMode: "compiled" as const,
+      runtime: 'workers' as const,
+      uiMode: 'static' as const,
+      runMode: 'compiled' as const,
       devInstanceEnabled: false,
-    };
-    const actions = developerMenuActions("running", env);
-    expect(mockedReadInstanceRuntime).not.toHaveBeenCalled();
-    expect(mockedIsDeveloperSurfaceInstance).toHaveBeenCalledWith(env);
-    expect(actions).toContain("save-tier-catalogue");
-    expect(actions).not.toContain("sync-dev-build");
-    expect(actions).not.toContain("rebuild-daemon-upgrade");
-  });
-
-  it("labels every action id", () => {
-    mockedReadInstanceRuntime.mockReturnValue("deno");
-    for (const id of developerMenuActions("running")) {
-      expect(DAEMON_ACTION_LABELS[id].length).toBeGreaterThan(0);
     }
-  });
+    const actions = developerMenuActions('running', env)
+    expect(mockedReadInstanceRuntime).not.toHaveBeenCalled()
+    expect(mockedIsDeveloperSurfaceInstance).toHaveBeenCalledWith(env)
+    expect(actions).toContain('save-tier-catalogue')
+    expect(actions).not.toContain('sync-dev-build')
+    expect(actions).not.toContain('rebuild-daemon-upgrade')
+  })
 
-  it("re-exports cellTraceToggleLabel", () => {
-    expect(typeof cellTraceToggleLabel).toBe("function");
-  });
+  it('labels every action id', () => {
+    mockedReadInstanceRuntime.mockReturnValue('deno')
+    for (const id of developerMenuActions('running')) {
+      expect(DAEMON_ACTION_LABELS[id].length).toBeGreaterThan(0)
+    }
+  })
 
-  it("isDestructiveDaemonAction follows the warning table", () => {
-    expect(isDestructiveDaemonAction("purge")).toBe(true);
-    expect(isDestructiveDaemonAction("reset-dev-env")).toBe(true);
-    expect(isDestructiveDaemonAction("repair")).toBe(false);
-  });
-});
+  it('re-exports cellTraceToggleLabel', () => {
+    expect(typeof cellTraceToggleLabel).toBe('function')
+  })
 
-describe("canRestartDaemon / isDaemonServiceActive", () => {
-  it("canRestartDaemon follows the systemd unit probe", () => {
-    mockedIsDaemonSystemdInstalled.mockReturnValueOnce(true);
-    expect(canRestartDaemon()).toBe(true);
-    mockedIsDaemonSystemdInstalled.mockReturnValueOnce(false);
-    expect(canRestartDaemon()).toBe(false);
-  });
+  it('isDestructiveDaemonAction follows the warning table', () => {
+    expect(isDestructiveDaemonAction('purge')).toBe(true)
+    expect(isDestructiveDaemonAction('reset-dev-env')).toBe(true)
+    expect(isDestructiveDaemonAction('repair')).toBe(false)
+  })
+})
 
-  it("isDaemonServiceActive is true only for stdout active", () => {
-    mockedSpawnSyncTrustedText.mockReturnValue(textResult("active"));
-    expect(isDaemonServiceActive()).toBe(true);
+describe('canRestartDaemon / isDaemonServiceActive', () => {
+  it('canRestartDaemon follows the systemd unit probe', () => {
+    mockedIsDaemonSystemdInstalled.mockReturnValueOnce(true)
+    expect(canRestartDaemon()).toBe(true)
+    mockedIsDaemonSystemdInstalled.mockReturnValueOnce(false)
+    expect(canRestartDaemon()).toBe(false)
+  })
+
+  it('isDaemonServiceActive is true only for stdout active', () => {
+    mockedSpawnSyncTrustedText.mockReturnValue(textResult('active'))
+    expect(isDaemonServiceActive()).toBe(true)
     expect(mockedSpawnSyncTrustedText).toHaveBeenCalledWith(
-      "systemctl",
-      ["is-active", DAEMON_SYSTEMD_UNIT],
-      { stdio: ["ignore", "pipe", "ignore"] },
-    );
+      'systemctl',
+      ['is-active', DAEMON_SYSTEMD_UNIT],
+      { stdio: ['ignore', 'pipe', 'ignore'] }
+    )
 
-    mockedSpawnSyncTrustedText.mockReturnValue(textResult("  active\n"));
-    expect(isDaemonServiceActive()).toBe(true);
+    mockedSpawnSyncTrustedText.mockReturnValue(textResult('  active\n'))
+    expect(isDaemonServiceActive()).toBe(true)
 
-    mockedSpawnSyncTrustedText.mockReturnValue(textResult("inactive"));
-    expect(isDaemonServiceActive()).toBe(false);
+    mockedSpawnSyncTrustedText.mockReturnValue(textResult('inactive'))
+    expect(isDaemonServiceActive()).toBe(false)
 
     mockedSpawnSyncTrustedText.mockReturnValue({
-      ...textResult(""),
+      ...textResult(''),
       stdout: undefined as unknown as string,
-    });
-    expect(isDaemonServiceActive()).toBe(false);
-  });
-});
+    })
+    expect(isDaemonServiceActive()).toBe(false)
+  })
+})
 
-describe("waitForDaemonRunning", () => {
-  it("returns immediately when the unit is already active", async () => {
-    mockedSpawnSyncTrustedText.mockReturnValue(textResult("active"));
-    await expect(waitForDaemonRunning({ timeoutMs: 50, pollMs: 10 })).resolves.toBe(
-      true,
-    );
-  });
+describe('waitForDaemonRunning', () => {
+  it('returns immediately when the unit is already active', async () => {
+    mockedSpawnSyncTrustedText.mockReturnValue(textResult('active'))
+    await expect(waitForDaemonRunning({ timeoutMs: 50, pollMs: 10 })).resolves.toBe(true)
+  })
 
-  it("uses default timeout and poll when options are omitted", async () => {
-    mockedSpawnSyncTrustedText.mockReturnValue(textResult("active"));
-    await expect(waitForDaemonRunning()).resolves.toBe(true);
-  });
+  it('uses default timeout and poll when options are omitted', async () => {
+    mockedSpawnSyncTrustedText.mockReturnValue(textResult('active'))
+    await expect(waitForDaemonRunning()).resolves.toBe(true)
+  })
 
-  it("polls until active and reports elapsed time", async () => {
-    vi.useFakeTimers();
+  it('polls until active and reports elapsed time', async () => {
+    vi.useFakeTimers()
     mockedSpawnSyncTrustedText
-      .mockReturnValueOnce(textResult("inactive"))
-      .mockReturnValueOnce(textResult("active"));
-    const onPoll = vi.fn();
+      .mockReturnValueOnce(textResult('inactive'))
+      .mockReturnValueOnce(textResult('active'))
+    const onPoll = vi.fn()
     const pending = waitForDaemonRunning({
       timeoutMs: 5_000,
       pollMs: 250,
       onPoll,
-    });
-    await vi.advanceTimersByTimeAsync(250);
-    await expect(pending).resolves.toBe(true);
-    expect(onPoll).toHaveBeenCalled();
-    expect(onPoll.mock.calls[0]?.[0]).toBeGreaterThanOrEqual(0);
-  });
+    })
+    await vi.advanceTimersByTimeAsync(250)
+    await expect(pending).resolves.toBe(true)
+    expect(onPoll).toHaveBeenCalled()
+    expect(onPoll.mock.calls[0]?.[0]).toBeGreaterThanOrEqual(0)
+  })
 
-  it("returns the final probe after the timeout elapses", async () => {
-    vi.useFakeTimers();
-    mockedSpawnSyncTrustedText.mockReturnValue(textResult("inactive"));
-    const pending = waitForDaemonRunning({ timeoutMs: 400, pollMs: 200 });
-    await vi.advanceTimersByTimeAsync(1_000);
-    await expect(pending).resolves.toBe(false);
-  });
+  it('returns the final probe after the timeout elapses', async () => {
+    vi.useFakeTimers()
+    mockedSpawnSyncTrustedText.mockReturnValue(textResult('inactive'))
+    const pending = waitForDaemonRunning({ timeoutMs: 400, pollMs: 200 })
+    await vi.advanceTimersByTimeAsync(1_000)
+    await expect(pending).resolves.toBe(false)
+  })
 
-  it("probes, reports and sleeps once per poll interval before the final probe", async () => {
-    vi.useFakeTimers();
-    mockedSpawnSyncTrustedText.mockClear();
-    mockedSpawnSyncTrustedText.mockReturnValue(textResult("inactive"));
-    const onPoll = vi.fn();
-    const pending = waitForDaemonRunning({ timeoutMs: 400, pollMs: 200, onPoll });
-    await vi.advanceTimersByTimeAsync(1_000);
-    await expect(pending).resolves.toBe(false);
-    expect(onPoll.mock.calls.map(([elapsed]) => elapsed)).toEqual([0, 200]);
+  it('probes, reports and sleeps once per poll interval before the final probe', async () => {
+    vi.useFakeTimers()
+    mockedSpawnSyncTrustedText.mockClear()
+    mockedSpawnSyncTrustedText.mockReturnValue(textResult('inactive'))
+    const onPoll = vi.fn()
+    const pending = waitForDaemonRunning({ timeoutMs: 400, pollMs: 200, onPoll })
+    await vi.advanceTimersByTimeAsync(1_000)
+    await expect(pending).resolves.toBe(false)
+    expect(onPoll.mock.calls.map(([elapsed]) => elapsed)).toEqual([0, 200])
     // Two in-loop probes plus the final one after the deadline.
-    expect(mockedSpawnSyncTrustedText).toHaveBeenCalledTimes(3);
-  });
+    expect(mockedSpawnSyncTrustedText).toHaveBeenCalledTimes(3)
+  })
 
-  it("does not poll at all when the timeout is already spent", async () => {
-    mockedSpawnSyncTrustedText.mockClear();
-    mockedSpawnSyncTrustedText.mockReturnValue(textResult("inactive"));
-    const onPoll = vi.fn();
-    await expect(
-      waitForDaemonRunning({ timeoutMs: 0, pollMs: 200, onPoll }),
-    ).resolves.toBe(false);
-    expect(onPoll).not.toHaveBeenCalled();
-    expect(mockedSpawnSyncTrustedText).toHaveBeenCalledTimes(1);
-  });
+  it('does not poll at all when the timeout is already spent', async () => {
+    mockedSpawnSyncTrustedText.mockClear()
+    mockedSpawnSyncTrustedText.mockReturnValue(textResult('inactive'))
+    const onPoll = vi.fn()
+    await expect(waitForDaemonRunning({ timeoutMs: 0, pollMs: 200, onPoll })).resolves.toBe(false)
+    expect(onPoll).not.toHaveBeenCalled()
+    expect(mockedSpawnSyncTrustedText).toHaveBeenCalledTimes(1)
+  })
 
-  it("returns true when the unit becomes active on the post-timeout probe", async () => {
-    vi.useFakeTimers();
-    let probes = 0;
+  it('returns true when the unit becomes active on the post-timeout probe', async () => {
+    vi.useFakeTimers()
+    let probes = 0
     mockedSpawnSyncTrustedText.mockImplementation(() => {
-      probes += 1;
-      return textResult(probes >= 2 ? "active" : "inactive");
-    });
-    const pending = waitForDaemonRunning({ timeoutMs: 200, pollMs: 200 });
-    await vi.advanceTimersByTimeAsync(200);
-    await expect(pending).resolves.toBe(true);
-  });
-});
+      probes += 1
+      return textResult(probes >= 2 ? 'active' : 'inactive')
+    })
+    const pending = waitForDaemonRunning({ timeoutMs: 200, pollMs: 200 })
+    await vi.advanceTimersByTimeAsync(200)
+    await expect(pending).resolves.toBe(true)
+  })
+})
 
-describe("enableAndStartDaemon / requestDaemonRestart / purgeDaemon", () => {
-  it("enableAndStartDaemon runs systemctl enable --now", async () => {
-    const lines: string[] = [];
-    await enableAndStartDaemon((line) => lines.push(line));
+describe('enableAndStartDaemon / requestDaemonRestart / purgeDaemon', () => {
+  it('enableAndStartDaemon runs systemctl enable --now', async () => {
+    const lines: string[] = []
+    await enableAndStartDaemon((line) => lines.push(line))
     expect(mockedRunCaptured).toHaveBeenCalledWith(
-      ["sudo", "-n", "systemctl", "enable", "--now", DAEMON_SYSTEMD_UNIT],
-      expect.any(Function),
-    );
-    const append = mockedRunCaptured.mock.calls[0]?.[1];
-    append?.("Started.");
-    expect(lines).toEqual(["Started."]);
-  });
+      ['sudo', '-n', 'systemctl', 'enable', '--now', DAEMON_SYSTEMD_UNIT],
+      expect.any(Function)
+    )
+    const append = mockedRunCaptured.mock.calls[0]?.[1]
+    append?.('Started.')
+    expect(lines).toEqual(['Started.'])
+  })
 
-  it("enableAndStartDaemon throws the last output line on failure", async () => {
+  it('enableAndStartDaemon throws the last output line on failure', async () => {
     mockedRunCaptured.mockImplementation(async (_cmd, onLine) => {
-      onLine?.("permission denied");
-      return 1;
-    });
-    await expect(enableAndStartDaemon()).rejects.toThrow("permission denied");
-  });
+      onLine?.('permission denied')
+      return 1
+    })
+    await expect(enableAndStartDaemon()).rejects.toThrow('permission denied')
+  })
 
-  it("enableAndStartDaemon falls back to a default message when silent", async () => {
-    mockedRunCaptured.mockResolvedValue(1);
+  it('enableAndStartDaemon falls back to a default message when silent', async () => {
+    mockedRunCaptured.mockResolvedValue(1)
     await expect(enableAndStartDaemon()).rejects.toThrow(
-      `Failed to enable and start ${DAEMON_SYSTEMD_UNIT}`,
-    );
-  });
+      `Failed to enable and start ${DAEMON_SYSTEMD_UNIT}`
+    )
+  })
 
-  it("requestDaemonRestart uses --no-block", async () => {
-    await requestDaemonRestart();
+  it('requestDaemonRestart uses --no-block', async () => {
+    await requestDaemonRestart()
     expect(mockedRunCaptured).toHaveBeenCalledWith(
-      ["sudo", "systemctl", "restart", "--no-block", DAEMON_SYSTEMD_UNIT],
-      expect.any(Function),
-    );
-  });
+      ['sudo', 'systemctl', 'restart', '--no-block', DAEMON_SYSTEMD_UNIT],
+      expect.any(Function)
+    )
+  })
 
-  it("requestDaemonRestart throws last line or default", async () => {
+  it('requestDaemonRestart throws last line or default', async () => {
     mockedRunCaptured.mockImplementation(async (_cmd, onLine) => {
-      onLine?.("restart failed");
-      return 1;
-    });
-    await expect(requestDaemonRestart()).rejects.toThrow("restart failed");
+      onLine?.('restart failed')
+      return 1
+    })
+    await expect(requestDaemonRestart()).rejects.toThrow('restart failed')
 
-    mockedRunCaptured.mockResolvedValue(1);
-    await expect(requestDaemonRestart()).rejects.toThrow("Failed to restart daemon");
-  });
+    mockedRunCaptured.mockResolvedValue(1)
+    await expect(requestDaemonRestart()).rejects.toThrow('Failed to restart daemon')
+  })
 
-  it("purgeDaemon stops the unit and removes quoted trees", async () => {
-    await purgeDaemon();
-    const cmd = mockedRunCaptured.mock.calls[0]?.[0];
+  it('purgeDaemon stops the unit and removes quoted trees', async () => {
+    await purgeDaemon()
+    const cmd = mockedRunCaptured.mock.calls[0]?.[0]
     if (!Array.isArray(cmd)) {
-      throw new TypeError("expected purge argv");
+      throw new TypeError('expected purge argv')
     }
-    expect(cmd.slice(0, 3)).toEqual(["sudo", "bash", "-c"]);
-    const script = String(cmd[3]);
-    expect(script).toContain(`systemctl stop ${DAEMON_SYSTEMD_UNIT}`);
-    expect(script).toContain("systemctl daemon-reload");
-    expect(script).toContain(`rm -rf ${shellQuote(daemonRepoPath())}`);
-    expect(script).toContain(`rm -rf ${shellQuote(RUNTIMES_DIR)}`);
-    expect(script).toContain(`rm -rf ${shellQuote(`${TURBOPANEL_ROOT}/.cache`)}`);
-  });
+    expect(cmd.slice(0, 3)).toEqual(['sudo', 'bash', '-c'])
+    const script = String(cmd[3])
+    expect(script).toContain(`systemctl stop ${DAEMON_SYSTEMD_UNIT}`)
+    expect(script).toContain('systemctl daemon-reload')
+    expect(script).toContain(`rm -rf ${shellQuote(daemonRepoPath())}`)
+    expect(script).toContain(`rm -rf ${shellQuote(RUNTIMES_DIR)}`)
+    expect(script).toContain(`rm -rf ${shellQuote(`${TURBOPANEL_ROOT}/.cache`)}`)
+  })
 
-  it("purgeDaemon throws when the script fails", async () => {
-    mockedRunCaptured.mockResolvedValue(1);
-    await expect(purgeDaemon()).rejects.toThrow("Failed to purge daemon");
-  });
-});
+  it('purgeDaemon throws when the script fails', async () => {
+    mockedRunCaptured.mockResolvedValue(1)
+    await expect(purgeDaemon()).rejects.toThrow('Failed to purge daemon')
+  })
+})
 
-describe("syncDevBuildToDaemons", () => {
-  it("wraps API errors", async () => {
-    mockedSyncDev.mockRejectedValue(new Error("socket down"));
+describe('syncDevBuildToDaemons', () => {
+  it('wraps API errors', async () => {
+    mockedSyncDev.mockRejectedValue(new Error('socket down'))
     await expect(syncDevBuildToDaemons()).rejects.toThrow(
-      /Could not reach the instance developer API: socket down/,
-    );
+      /Could not reach the instance developer API: socket down/
+    )
 
-    mockedSyncDev.mockRejectedValue("nope");
+    mockedSyncDev.mockRejectedValue('nope')
     await expect(syncDevBuildToDaemons()).rejects.toThrow(
-      /Could not reach the instance developer API: nope/,
-    );
-  });
+      /Could not reach the instance developer API: nope/
+    )
+  })
 
-  it("reports when no daemons are connected", async () => {
-    mockedSyncDev.mockResolvedValue(syncResponse([]));
-    const lines: string[] = [];
-    await syncDevBuildToDaemons((line) => lines.push(line));
-    expect(lines.some((line) => /No attached daemons/.test(line))).toBe(true);
-  });
+  it('reports when no daemons are connected', async () => {
+    mockedSyncDev.mockResolvedValue(syncResponse([]))
+    const lines: string[] = []
+    await syncDevBuildToDaemons((line) => lines.push(line))
+    expect(lines.some((line) => /No attached daemons/.test(line))).toBe(true)
+  })
 
-  it("prints skipped / ok / failed rows and throws when any fail", async () => {
+  it('prints skipped / ok / failed rows and throws when any fail', async () => {
     mockedSyncDev.mockResolvedValue(
       syncResponse([
-        { daemonId: "a", ok: true, skipped: true },
-        { daemonId: "b", ok: false, error: "timeout" },
-        { daemonId: "c", ok: true },
-      ]),
-    );
-    const lines: string[] = [];
+        { daemonId: 'a', ok: true, skipped: true },
+        { daemonId: 'b', ok: false, error: 'timeout' },
+        { daemonId: 'c', ok: true },
+      ])
+    )
+    const lines: string[] = []
     await expect(syncDevBuildToDaemons((line) => lines.push(line))).rejects.toThrow(
-      /1 of 3 daemon\(s\) failed to sync/,
-    );
-    expect(lines.some((line) => line.includes("skipped") && line.includes("a"))).toBe(
-      true,
-    );
-    expect(lines.some((line) => line.includes("timeout"))).toBe(true);
-    expect(lines.some((line) => line.includes("synced") && line.includes("c"))).toBe(
-      true,
-    );
-  });
+      /1 of 3 daemon\(s\) failed to sync/
+    )
+    expect(lines.some((line) => line.includes('skipped') && line.includes('a'))).toBe(true)
+    expect(lines.some((line) => line.includes('timeout'))).toBe(true)
+    expect(lines.some((line) => line.includes('synced') && line.includes('c'))).toBe(true)
+  })
 
-  it("uses fallback copy when skip/fail omit error text", async () => {
+  it('uses fallback copy when skip/fail omit error text', async () => {
     mockedSyncDev.mockResolvedValue(
       syncResponse([
-        { daemonId: "local", ok: true, skipped: true },
-        { daemonId: "remote", ok: false },
-      ]),
-    );
-    const lines: string[] = [];
+        { daemonId: 'local', ok: true, skipped: true },
+        { daemonId: 'remote', ok: false },
+      ])
+    )
+    const lines: string[] = []
     await expect(syncDevBuildToDaemons((line) => lines.push(line))).rejects.toThrow(
-      /failed to sync/,
-    );
-    expect(lines.some((line) => /co-located dev daemon/.test(line))).toBe(true);
-    expect(lines.some((line) => /sync failed/.test(line))).toBe(true);
-  });
+      /failed to sync/
+    )
+    expect(lines.some((line) => /co-located dev daemon/.test(line))).toBe(true)
+    expect(lines.some((line) => /sync failed/.test(line))).toBe(true)
+  })
 
-  it("summarizes a successful remote sync", async () => {
+  it('summarizes a successful remote sync', async () => {
+    mockedSyncDev.mockResolvedValue(syncResponse([{ daemonId: 'remote-1', ok: true }]))
+    const lines: string[] = []
+    await syncDevBuildToDaemons((line) => lines.push(line))
+    expect(lines.at(-1)).toMatch(/Synced 1 daemon/)
+  })
+
+  it('explains when every connected daemon was skipped', async () => {
     mockedSyncDev.mockResolvedValue(
-      syncResponse([{ daemonId: "remote-1", ok: true }]),
-    );
-    const lines: string[] = [];
-    await syncDevBuildToDaemons((line) => lines.push(line));
-    expect(lines.at(-1)).toMatch(/Synced 1 daemon/);
-  });
+      syncResponse([{ daemonId: 'local', ok: true, skipped: true, error: 'co-located' }])
+    )
+    const lines: string[] = []
+    await syncDevBuildToDaemons((line) => lines.push(line))
+    expect(lines.at(-1)).toMatch(/No remote source checkouts to sync/)
+  })
 
-  it("explains when every connected daemon was skipped", async () => {
-    mockedSyncDev.mockResolvedValue(
-      syncResponse([{ daemonId: "local", ok: true, skipped: true, error: "co-located" }]),
-    );
-    const lines: string[] = [];
-    await syncDevBuildToDaemons((line) => lines.push(line));
-    expect(lines.at(-1)).toMatch(/No remote source checkouts to sync/);
-  });
+  it('treats missing results as empty', async () => {
+    mockedSyncDev.mockResolvedValue({ ok: true })
+    const lines: string[] = []
+    await syncDevBuildToDaemons((line) => lines.push(line))
+    expect(lines.some((line) => /No attached daemons/.test(line))).toBe(true)
+  })
+})
 
-  it("treats missing results as empty", async () => {
-    mockedSyncDev.mockResolvedValue({ ok: true });
-    const lines: string[] = [];
-    await syncDevBuildToDaemons((line) => lines.push(line));
-    expect(lines.some((line) => /No attached daemons/.test(line))).toBe(true);
-  });
-});
-
-describe("rebuildDaemonAndUpgradeConnectedServers", () => {
-  it("fails fast when release:dev exits non-zero", async () => {
-    mockedRunCaptured.mockResolvedValue(1);
+describe('rebuildDaemonAndUpgradeConnectedServers', () => {
+  it('fails fast when release:dev exits non-zero', async () => {
+    mockedRunCaptured.mockResolvedValue(1)
     await expect(rebuildDaemonAndUpgradeConnectedServers()).rejects.toThrow(
-      /Failed to package the local daemon overlay catalog/,
-    );
-    expect(mockedUpdateDaemons).not.toHaveBeenCalled();
-  });
+      /Failed to package the local daemon overlay catalog/
+    )
+    expect(mockedUpdateDaemons).not.toHaveBeenCalled()
+  })
 
-  it("runs deno task release:dev in the daemon checkout", async () => {
-    mockedUpdateDaemons.mockResolvedValue(syncResponse([]));
-    await rebuildDaemonAndUpgradeConnectedServers();
-    expect(mockedEnsureDeno).toHaveBeenCalled();
+  it('runs deno task release:dev in the daemon checkout', async () => {
+    mockedUpdateDaemons.mockResolvedValue(syncResponse([]))
+    await rebuildDaemonAndUpgradeConnectedServers()
+    expect(mockedEnsureDeno).toHaveBeenCalled()
     expect(mockedRunCaptured).toHaveBeenCalledWith(
-      ["/opt/turbopanel/vendor/deno/current/deno", "task", "release:dev"],
+      ['/opt/turbopanel/vendor/deno/current/deno', 'task', 'release:dev'],
       expect.any(Function),
-      { cwd: daemonRepoPath(), env: testRunnerPathEnv() },
-    );
-  });
+      { cwd: daemonRepoPath(), env: testRunnerPathEnv() }
+    )
+  })
 
-  it("wraps update API errors", async () => {
-    mockedUpdateDaemons.mockRejectedValue(new Error("401"));
+  it('wraps update API errors', async () => {
+    mockedUpdateDaemons.mockRejectedValue(new Error('401'))
     await expect(rebuildDaemonAndUpgradeConnectedServers()).rejects.toThrow(
-      /Could not reach the instance developer API: 401/,
-    );
+      /Could not reach the instance developer API: 401/
+    )
 
-    mockedUpdateDaemons.mockRejectedValue(42);
+    mockedUpdateDaemons.mockRejectedValue(42)
     await expect(rebuildDaemonAndUpgradeConnectedServers()).rejects.toThrow(
-      /Could not reach the instance developer API: 42/,
-    );
-  });
+      /Could not reach the instance developer API: 42/
+    )
+  })
 
-  it("reports an empty connected set", async () => {
-    mockedUpdateDaemons.mockResolvedValue(syncResponse([]));
-    const lines: string[] = [];
-    await rebuildDaemonAndUpgradeConnectedServers((line) => lines.push(line));
-    expect(lines.some((line) => /No attached daemons/.test(line))).toBe(true);
-  });
+  it('reports an empty connected set', async () => {
+    mockedUpdateDaemons.mockResolvedValue(syncResponse([]))
+    const lines: string[] = []
+    await rebuildDaemonAndUpgradeConnectedServers((line) => lines.push(line))
+    expect(lines.some((line) => /No attached daemons/.test(line))).toBe(true)
+  })
 
-  it("prints skipped / queued / failed rows and throws on failure", async () => {
+  it('prints skipped / queued / failed rows and throws on failure', async () => {
     mockedUpdateDaemons.mockResolvedValue(
       syncResponse([
-        { daemonId: "a", ok: true, skipped: true },
-        { daemonId: "b", ok: false, error: "offline" },
-        { daemonId: "c", ok: true },
-      ]),
-    );
-    const lines: string[] = [];
+        { daemonId: 'a', ok: true, skipped: true },
+        { daemonId: 'b', ok: false, error: 'offline' },
+        { daemonId: 'c', ok: true },
+      ])
+    )
+    const lines: string[] = []
     await expect(
-      rebuildDaemonAndUpgradeConnectedServers((line) => lines.push(line)),
-    ).rejects.toThrow(/1 of 3 daemon\(s\) failed to upgrade/);
-    expect(lines.some((line) => /upgrade queued/.test(line))).toBe(true);
-    expect(lines.some((line) => /offline/.test(line))).toBe(true);
-  });
+      rebuildDaemonAndUpgradeConnectedServers((line) => lines.push(line))
+    ).rejects.toThrow(/1 of 3 daemon\(s\) failed to upgrade/)
+    expect(lines.some((line) => /upgrade queued/.test(line))).toBe(true)
+    expect(lines.some((line) => /offline/.test(line))).toBe(true)
+  })
 
-  it("uses fallback copy when skip/fail omit error text", async () => {
+  it('uses fallback copy when skip/fail omit error text', async () => {
     mockedUpdateDaemons.mockResolvedValue(
       syncResponse([
-        { daemonId: "local", ok: true, skipped: true },
-        { daemonId: "remote", ok: false },
-      ]),
-    );
-    const lines: string[] = [];
+        { daemonId: 'local', ok: true, skipped: true },
+        { daemonId: 'remote', ok: false },
+      ])
+    )
+    const lines: string[] = []
     await expect(
-      rebuildDaemonAndUpgradeConnectedServers((line) => lines.push(line)),
-    ).rejects.toThrow(/failed to upgrade/);
-    expect(lines.some((line) => /co-located/.test(line))).toBe(true);
-    expect(lines.some((line) => /update failed/.test(line))).toBe(true);
-  });
+      rebuildDaemonAndUpgradeConnectedServers((line) => lines.push(line))
+    ).rejects.toThrow(/failed to upgrade/)
+    expect(lines.some((line) => /co-located/.test(line))).toBe(true)
+    expect(lines.some((line) => /update failed/.test(line))).toBe(true)
+  })
 
-  it("summarizes a successful remote upgrade", async () => {
+  it('summarizes a successful remote upgrade', async () => {
+    mockedUpdateDaemons.mockResolvedValue(syncResponse([{ daemonId: 'remote-1', ok: true }]))
+    const lines: string[] = []
+    await rebuildDaemonAndUpgradeConnectedServers((line) => lines.push(line))
+    expect(lines.at(-1)).toMatch(/Upgraded 1 remote daemon/)
+  })
+
+  it('explains when only the co-located daemon is present', async () => {
     mockedUpdateDaemons.mockResolvedValue(
-      syncResponse([{ daemonId: "remote-1", ok: true }]),
-    );
-    const lines: string[] = [];
-    await rebuildDaemonAndUpgradeConnectedServers((line) => lines.push(line));
-    expect(lines.at(-1)).toMatch(/Upgraded 1 remote daemon/);
-  });
+      syncResponse([{ daemonId: 'local', ok: true, skipped: true }])
+    )
+    const lines: string[] = []
+    await rebuildDaemonAndUpgradeConnectedServers((line) => lines.push(line))
+    expect(lines.at(-1)).toMatch(/No remote servers to upgrade/)
+  })
 
-  it("explains when only the co-located daemon is present", async () => {
-    mockedUpdateDaemons.mockResolvedValue(
-      syncResponse([{ daemonId: "local", ok: true, skipped: true }]),
-    );
-    const lines: string[] = [];
-    await rebuildDaemonAndUpgradeConnectedServers((line) => lines.push(line));
-    expect(lines.at(-1)).toMatch(/No remote servers to upgrade/);
-  });
+  it('treats missing update results as empty', async () => {
+    mockedUpdateDaemons.mockResolvedValue({ ok: true })
+    const lines: string[] = []
+    await rebuildDaemonAndUpgradeConnectedServers((line) => lines.push(line))
+    expect(lines.some((line) => /No attached daemons/.test(line))).toBe(true)
+  })
+})
 
-  it("treats missing update results as empty", async () => {
-    mockedUpdateDaemons.mockResolvedValue({ ok: true });
-    const lines: string[] = [];
-    await rebuildDaemonAndUpgradeConnectedServers((line) => lines.push(line));
-    expect(lines.some((line) => /No attached daemons/.test(line))).toBe(true);
-  });
-});
+describe('development host actions', () => {
+  it('labels both actions in book title case and tells them apart', () => {
+    expect(DAEMON_ACTION_LABELS['update-restart']).toBe('Update and Restart')
+    expect(DAEMON_ACTION_LABELS['restart-only']).toBe('Restart Only')
+    expect(isDevHostAction('update-restart')).toBe(true)
+    expect(isDevHostAction('restart-only')).toBe(true)
+    expect(isDevHostAction('rebuild-daemon-upgrade')).toBe(false)
+  })
+
+  it('asks for update or restart and returns the job id', async () => {
+    const post = vi.fn(async () => ({ ok: true as const, jobId: 'job-1' }))
+    await expect(startDevHostJob('update-restart', post)).resolves.toBe('job-1')
+    expect(post).toHaveBeenLastCalledWith('update')
+    await expect(startDevHostJob('restart-only', post)).resolves.toBe('job-1')
+    expect(post).toHaveBeenLastCalledWith('restart')
+  })
+
+  it('shows a refused job in plain words', async () => {
+    const post = vi.fn(async () => ({ ok: false as const, status: 409, error: 'job_running' }))
+    await expect(startDevHostJob('update-restart', post)).rejects.toThrow(/already running/)
+  })
+
+  it('names why the daemon is unavailable', () => {
+    const base = { ok: false as const, status: 503, error: 'daemon_unavailable' }
+    expect(devHostRefusalMessage(base)).toMatch(/not available/)
+    expect(devHostRefusalMessage({ ...base, reason: 'not_development' })).toMatch(
+      /TURBOPANEL_DEV_INSTANCE=1/
+    )
+    expect(devHostRefusalMessage({ ...base, reason: 'timeout' })).toMatch(/8 seconds/)
+    expect(devHostRefusalMessage({ ...base, reason: 'start_failed' })).toMatch(/start_failed/)
+    expect(devHostRefusalMessage({ ok: false, status: 401, error: 'Unauthorized' })).toBe(
+      'The control plane refused the request (HTTP 401: Unauthorized).'
+    )
+  })
+
+  it('says when the control plane cannot be reached', async () => {
+    const down = vi.fn(async () => {
+      throw new Error('instance Unix socket unavailable')
+    })
+    await expect(startDevHostJob('restart-only', down)).rejects.toThrow(
+      'Could not reach the control plane: instance Unix socket unavailable'
+    )
+    const odd = vi.fn(async () => {
+      throw 'boom' as unknown as Error
+    })
+    await expect(startDevHostJob('restart-only', odd)).rejects.toThrow(
+      'Could not reach the control plane: boom'
+    )
+  })
+
+  it('uses the developer client by default', async () => {
+    mockedPostDevHostAction.mockResolvedValueOnce({ ok: true, jobId: 'job-2' })
+    await expect(startDevHostJob('update-restart')).resolves.toBe('job-2')
+    expect(mockedPostDevHostAction).toHaveBeenCalledWith('update')
+  })
+})
