@@ -80,7 +80,58 @@ tp_download_node_release() {
   rm -rf "$_dnr_tmp"
 }
 
+# Shared libraries the nodejs.org Linux build links against that a minimal
+# Debian 13 install can lack, mapped to the apt package that ships them. Without
+# them `node --version` fails to load and the install looked like a sudo problem.
+tp_node_lib_package() {
+  case $1 in
+    libatomic.so.1) printf '%s' 'libatomic1' ;;
+    *) return 1 ;;
+  esac
+}
+
+# Install the apt packages for any shared library the vendored node binary
+# cannot load. Returns 1 when a library is missing that no known package
+# provides, or when the install fails; the caller's version check reports it.
+tp_ensure_node_shared_libs() {
+  [ -x "$NODE_BIN" ] || return 0
+  command -v ldd >/dev/null 2>&1 || return 0
+  _enl_missing=$(ldd "$NODE_BIN" 2>/dev/null | awk '/=> not found/ { print $1 }')
+  [ -n "$_enl_missing" ] || return 0
+
+  _enl_packages=
+  for _enl_lib in $_enl_missing; do
+    if ! _enl_package=$(tp_node_lib_package "$_enl_lib"); then
+      tp_error "Node needs ${_enl_lib}, which is not installed on this host."
+      return 1
+    fi
+    _enl_packages="${_enl_packages} ${_enl_package}"
+  done
+
+  if ! command -v apt-get >/dev/null 2>&1; then
+    tp_error "Node needs${_enl_packages} (install it with your package manager, then re-run ./console)."
+    return 1
+  fi
+
+  tp_info "Installing${_enl_packages} (shared libraries Node needs)…"
+  _enl_sudo=sudo
+  if [ "$(id -u)" -eq 0 ]; then
+    _enl_sudo=
+  fi
+  # shellcheck disable=SC2086 # word-split the package list on purpose
+  if $_enl_sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -q $_enl_packages >/dev/null; then
+    return 0
+  fi
+  # A fresh host may have stale or empty package lists; refresh once and retry.
+  # shellcheck disable=SC2086
+  $_enl_sudo env DEBIAN_FRONTEND=noninteractive apt-get update -q >/dev/null &&
+    $_enl_sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -q $_enl_packages >/dev/null
+}
+
 tp_install_node_runtime() {
+  # A present but unloadable node (missing shared library) is fixed in place
+  # rather than downloaded again.
+  tp_ensure_node_shared_libs || true
   if tp_node_runtime_usable; then
     return 0
   fi
@@ -99,6 +150,7 @@ tp_install_node_runtime() {
   fi
 
   tp_download_node_release
+  tp_ensure_node_shared_libs || true
 
   if ! tp_node_runtime_usable; then
     tp_error "Node install failed — expected v${NODE_VERSION} at ${NODE_BIN}"

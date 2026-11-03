@@ -16,3 +16,9 @@ instance_dev_prereq_specs:
   - libxfixes3
   - libxkbcommon0
   - libxrandr2
+
+# Command-line tools the dev repo's own scripts and tests call: the promote,
+# changelog, OSV and Sonar helpers use jq. CI runners ship it; a fresh Debian 13
+# dev box does not, and their tests fail with "jq: not found".
+instance_dev_tool_packages:
+  - jq

@@ -37,6 +37,10 @@ REPOS_LIST="$DEV_CHECKOUT/repos.list"
 # (scripts/lib/paths.sh reads the same file). TURBOPANEL_VAGRANT_GUEST_MARKER
 # exists only so tests can point it elsewhere.
 VAGRANT_GUEST_MARKER=${TURBOPANEL_VAGRANT_GUEST_MARKER:-/etc/profile.d/turbopanel-vagrant.sh}
+# The profile file vm-bootstrap.sh writes marks a prepared direct machine.
+# TURBOPANEL_DIRECT_PROFILE_MARKER exists only so tests can point it elsewhere
+# (on a prepared dev VM the real file made the direct-mode test skip bootstrap).
+DIRECT_PROFILE_MARKER=${TURBOPANEL_DIRECT_PROFILE_MARKER:-/etc/profile.d/turbopanel-dev.sh}
 REMOTE_BASE=${TURBOPANEL_SETUP_REMOTE_BASE:-}
 OS_RELEASE=${TURBOPANEL_SETUP_OS_RELEASE:-/etc/os-release}
 FORK_WAIT=${TURBOPANEL_SETUP_FORK_WAIT:-60}
@@ -1018,8 +1022,8 @@ tp_direct_bootstrap() {
   _db_user=$(id -un)
   _db_script="$DIR/dev/scripts/vm-bootstrap.sh"
   [ -f "$_db_script" ] || _db_script="$SCRIPT_DIR/vm-bootstrap.sh"
-  if [ -f /etc/profile.d/turbopanel-dev.sh ] && sudo -n true >/dev/null 2>&1; then
-    tp_info "This machine is already prepared (passwordless sudo and /etc/profile.d/turbopanel-dev.sh)."
+  if [ -f "$DIRECT_PROFILE_MARKER" ] && sudo -n true >/dev/null 2>&1; then
+    tp_info "This machine is already prepared (passwordless sudo and ${DIRECT_PROFILE_MARKER})."
     tp_info "To redo it: sudo env TURBOPANEL_DEV_ROOT=$(tp_sq "$DIR") sh $(tp_sq "$_db_script") ${_db_user}"
     return 0
   fi
