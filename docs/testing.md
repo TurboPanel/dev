@@ -40,7 +40,12 @@ Guest commands:
 until the toolchain can run inside the Vagrant guest (host VirtFS checkouts
 often lack a usable Node/pnpm tree). CI `verify.yml` still gates PRs.
 `./console` idempotently sets `core.hooksPath=.githooks` via
-`tp_ensure_git_hooks_path` in `scripts/lib/git-github-ssh.sh`.
+`tp_ensure_git_hooks_path` in `scripts/lib/git-github-ssh.sh`. Every repo's
+hook takes its root from `git rev-parse --show-toplevel`, never from its own
+path: with an absolute `core.hooksPath`, a commit from a worktree runs the main
+checkout's copy, and a root taken from that path would scan and restage the
+main checkout instead. `src/lib/pre-commit-root.test.ts` commits from a
+throwaway worktree that way with each repo's hook (siblings included in CI).
 
 **Gate matrix** (one policy with the daemon repo):
 
