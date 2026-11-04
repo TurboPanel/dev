@@ -117,7 +117,6 @@ export function developerMenuActions(
   const workersActions: DaemonActionId[] = runtime === 'workers' ? ['save-tier-catalogue'] : []
 
   return [
-    ...devHostActions,
     'repair',
     'start-dev-env',
     'optional-services',
@@ -129,6 +128,8 @@ export function developerMenuActions(
     'view-cell-trace',
     ...developerSurfaceActions,
     ...denoActions,
+    // Last before Purge, so the default cursor never sits on a restart.
+    ...devHostActions,
     'purge',
   ]
 }

@@ -14,6 +14,8 @@ import {
   devHostRowSuffix,
   devHostRowSuffixes,
   devHostStepLabel,
+  devHostStatusJobLine,
+  devHostViewKey,
   isDevHostJobRunning,
   isDevHostStatusStale,
   parseDevHostStatus,
@@ -370,11 +372,55 @@ describe('labels and running state', () => {
     expect(devHostActionLabel('update')).toBe('Update and Restart')
   })
 
-  it('knows when a job runs', () => {
-    const status = { parts: [], job: job(), lastFetchAt: null, writtenAt: null }
-    expect(isDevHostJobRunning(status)).toBe(true)
-    expect(isDevHostJobRunning({ ...status, job: job({ state: 'done' }) })).toBe(false)
-    expect(isDevHostJobRunning({ ...status, job: null })).toBe(false)
-    expect(isDevHostJobRunning(null)).toBe(false)
+  it('knows when a job runs, and ignores a running job in a stale file', () => {
+    const fresh = new Date(NOW - 1_000).toISOString()
+    const status = { parts: [], job: job(), lastFetchAt: null, writtenAt: fresh }
+    expect(isDevHostJobRunning(status, NOW)).toBe(true)
+    expect(isDevHostJobRunning(status, NOW + DEV_HOST_STALE_MS + 1_000)).toBe(false)
+    expect(isDevHostJobRunning({ ...status, writtenAt: null }, NOW)).toBe(false)
+    expect(isDevHostJobRunning({ ...status, job: job({ state: 'done' }) }, NOW)).toBe(false)
+    expect(isDevHostJobRunning({ ...status, job: null }, NOW)).toBe(false)
+    expect(isDevHostJobRunning(null, NOW)).toBe(false)
+  })
+})
+
+describe('devHostStatusJobLine', () => {
+  const fresh = new Date(NOW - 1_000).toISOString()
+
+  it('shows a fresh running job and hides it once the file is stale', () => {
+    const status = { parts: [], job: job(), lastFetchAt: null, writtenAt: fresh }
+    expect(devHostStatusJobLine(status, NOW)?.failed).toBe(false)
+    expect(devHostStatusJobLine(status, NOW + DEV_HOST_STALE_MS + 1_000)).toBeNull()
+  })
+
+  it('still shows a recent failure from a stale file, and nothing without a job', () => {
+    const failed = job({
+      state: 'failed',
+      step: 'fetch',
+      endedAt: new Date(NOW - 60_000).toISOString(),
+    })
+    const status = { parts: [], job: failed, lastFetchAt: null, writtenAt: null }
+    expect(devHostStatusJobLine(status, NOW)?.failed).toBe(true)
+    expect(devHostStatusJobLine({ ...status, job: null }, NOW)).toBeNull()
+    expect(devHostStatusJobLine(null, NOW)).toBeNull()
+  })
+})
+
+describe('devHostViewKey', () => {
+  it('changes when the same content turns stale or its job line expires', () => {
+    const fresh = new Date(NOW - 1_000).toISOString()
+    const status = { parts: [], job: job(), lastFetchAt: null, writtenAt: fresh }
+    const later = NOW + DEV_HOST_STALE_MS + 1_000
+    expect(devHostViewKey(status, NOW)).toBe(devHostViewKey({ ...status }, NOW))
+    expect(devHostViewKey(status, later)).not.toBe(devHostViewKey(status, NOW))
+    const failed = {
+      ...status,
+      writtenAt: null,
+      job: job({ state: 'failed', endedAt: new Date(NOW).toISOString() }),
+    }
+    expect(devHostViewKey(failed, NOW + DEV_HOST_FAILED_VISIBLE_MS + 1)).not.toBe(
+      devHostViewKey(failed, NOW)
+    )
+    expect(devHostViewKey(null, NOW)).toBe('null')
   })
 })

@@ -1,4 +1,9 @@
-import { type DevHostStatus, isDevHostJobRunning, readDevHostStatus } from './dev-host-status.ts'
+import {
+  type DevHostStatus,
+  devHostViewKey,
+  isDevHostJobRunning,
+  readDevHostStatus,
+} from './dev-host-status.ts'
 
 /** The usual re-read, the same pace as the Services rows. */
 export const DEV_HOST_POLL_MS = 15_000
@@ -26,8 +31,9 @@ const defaultDeps: DevHostStoreDeps = {
  *
  * It reads one small file (no subprocess) only while something on screen
  * subscribes: every {@link DEV_HOST_POLL_MS}, and every
- * {@link DEV_HOST_FAST_POLL_MS} while a job runs. Listeners hear only real
- * changes, so an unchanged file never repaints Ink.
+ * {@link DEV_HOST_FAST_POLL_MS} while a fresh file shows a running job.
+ * Listeners hear only changes to what the screen shows (content, staleness,
+ * job line), so an unchanged file repaints Ink only when it turns stale.
  */
 export class DevHostStatusStore {
   readonly #deps: DevHostStoreDeps
@@ -82,16 +88,21 @@ export class DevHostStatusStore {
   }
 
   #apply(next: DevHostStatus | null): void {
-    const key = JSON.stringify(next)
+    // The key includes staleness and job-line visibility at this moment, so a
+    // file that stopped changing still repaints once when it turns stale.
+    const key = devHostViewKey(next, this.#deps.now())
     if (key === this.#key) return
     this.#key = key
-    this.#status = next
+    // A fresh object even for the same content: useSyncExternalStore only
+    // re-renders when the snapshot reference changes.
+    this.#status = next ? { ...next } : null
     for (const listener of this.#listeners) listener()
   }
 
   #schedule(): void {
     if (this.#listeners.size === 0) return
-    const fast = isDevHostJobRunning(this.#status) || this.#deps.now() < this.#expectJobUntil
+    const now = this.#deps.now()
+    const fast = isDevHostJobRunning(this.#status, now) || now < this.#expectJobUntil
     this.#timer = this.#deps.setTimer(
       () => {
         this.#timer = null

@@ -107,9 +107,10 @@ export type DeveloperView = 'menu' | 'cell-trace' | 'run-tests'
 export async function runDevHostAction(
   action: 'update-restart' | 'restart-only',
   store: Pick<typeof devHostStatusStore, 'getSnapshot' | 'expectJob'> = devHostStatusStore,
-  start: typeof startDevHostJob = startDevHostJob
+  start: typeof startDevHostJob = startDevHostJob,
+  now: () => number = Date.now
 ): Promise<string> {
-  if (isDevHostJobRunning(store.getSnapshot())) {
+  if (isDevHostJobRunning(store.getSnapshot(), now())) {
     throw new Error(
       'A development host job is already running. Wait for it to finish, then try again.'
     )

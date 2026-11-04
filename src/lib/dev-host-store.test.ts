@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { DevHostStatus } from './dev-host-status.ts'
+import { DEV_HOST_STALE_MS } from './dev-host-status.ts'
 import {
   DEV_HOST_EXPECT_JOB_MS,
   DEV_HOST_FAST_POLL_MS,
@@ -39,7 +40,7 @@ type Timer = { fn: () => void; ms: number; cleared: boolean }
 
 function harness(reads: Array<DevHostStatus | null | Error>) {
   const timers: Timer[] = []
-  let now = 1_000
+  let now = Date.parse('2026-11-03T12:00:10Z')
   const read = vi.fn(async () => {
     const next = reads.length > 1 ? reads.shift() : reads[0]
     if (next instanceof Error) throw next
@@ -168,5 +169,27 @@ describe('DevHostStatusStore', () => {
     devHostStatusStore.expectJob()
     await settle()
     unsubscribe()
+  })
+})
+
+describe('DevHostStatusStore staleness', () => {
+  it('notifies once when an unchanged file turns stale and drops back to the slow poll', async () => {
+    const h = harness([status('running')])
+    const listener = vi.fn()
+    h.store.subscribe(listener)
+    await settle()
+    expect(listener).toHaveBeenCalledTimes(1)
+    expect(h.live().map((timer) => timer.ms)).toEqual([DEV_HOST_FAST_POLL_MS])
+    const before = h.store.getSnapshot()
+    h.advance(DEV_HOST_STALE_MS + 1_000)
+    h.fire()
+    await settle()
+    expect(listener).toHaveBeenCalledTimes(2)
+    expect(h.store.getSnapshot()).not.toBe(before)
+    expect(h.store.getSnapshot()).toEqual(before)
+    expect(h.live().map((timer) => timer.ms)).toEqual([DEV_HOST_POLL_MS])
+    h.fire()
+    await settle()
+    expect(listener).toHaveBeenCalledTimes(2)
   })
 })

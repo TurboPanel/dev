@@ -205,8 +205,10 @@ function branchNote(part: DevHostPart): string {
 
 /**
  * The short note after a Services row, only when the part needs something,
- * e.g. `↓3 · restart · install · migrate 1 · local changes` or
- * `on branch fix-x · restart`. Empty when nothing needs doing.
+ * e.g. `↓3 · restart · install · local changes` or `on branch fix-x · restart`.
+ * `migrate N` shows only when the status carries `setupNeeded.migrate`: the
+ * control plane fills it, the daemon's `status.json` does not today.
+ * Empty when nothing needs doing.
  */
 export function devHostRowSuffix(part: DevHostPart | null): string {
   if (!part?.headCommit) return ''
@@ -281,6 +283,33 @@ export function devHostJobLine(job: DevHostJob | null, nowMs: number): DevHostJo
   return null
 }
 
-export function isDevHostJobRunning(status: DevHostStatus | null): boolean {
-  return status?.job?.state === 'running'
+/**
+ * True when a fresh status shows a running job. A stale file that still says
+ * `running` (the daemon stopped writing mid-job) does not count, so actions
+ * are not refused and polling does not stay fast forever.
+ */
+export function isDevHostJobRunning(status: DevHostStatus | null, nowMs: number): boolean {
+  return status?.job?.state === 'running' && !isDevHostStatusStale(status, nowMs)
+}
+
+/** The job line for a whole status: a stale file's running job shows nothing. */
+export function devHostStatusJobLine(
+  status: DevHostStatus | null,
+  nowMs: number
+): DevHostJobLine | null {
+  if (!status?.job) return null
+  if (status.job.state === 'running' && !isDevHostJobRunning(status, nowMs)) return null
+  return devHostJobLine(status.job, nowMs)
+}
+
+/**
+ * What the screen shows from a status at `nowMs`: the content plus whether it
+ * is stale and whether a job line shows. When any of these changes the store
+ * notifies, so notes and lines also disappear when only the clock moved.
+ */
+export function devHostViewKey(status: DevHostStatus | null, nowMs: number): string {
+  if (!status) return 'null'
+  const stale = isDevHostStatusStale(status, nowMs)
+  const line = devHostStatusJobLine(status, nowMs) !== null
+  return `${stale ? 'stale' : 'fresh'}|${line ? 'line' : 'noline'}|${JSON.stringify(status)}`
 }

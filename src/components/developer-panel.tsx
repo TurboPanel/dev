@@ -6,6 +6,7 @@ import {
   cellTraceToggleLabel,
   DAEMON_ACTION_LABELS,
   developerMenuActions,
+  isDevHostAction,
   type DaemonActionId,
 } from '../lib/daemon-actions.ts'
 import type { ConsoleLogLine } from '../lib/service-restart.ts'
@@ -13,7 +14,7 @@ import type { ServiceLogByteFloor } from '../lib/service-log.ts'
 import type { DaemonOperation } from '../lib/spinners.ts'
 import { useLogScroll } from '../hooks/use-log-scroll.ts'
 import { useServiceLog } from '../hooks/use-service-log.ts'
-import { LIST_SELECT_BG, LIST_SELECT_FG } from '../theme.ts'
+import { LIST_SELECT_BG, LIST_SELECT_FG, STATUS_RUNNING } from '../theme.ts'
 import { CellTraceView } from './cell-trace-view.tsx'
 import { DevHostJobLine, useDevHostJobLine } from './dev-host-job-line.tsx'
 import { PlainLogView } from './plain-log-view.tsx'
@@ -101,11 +102,14 @@ function DeveloperMenuPanel({
   )
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [message, setMessage] = useState<string | null>(null)
+  /** A short success note, e.g. after a development host job was started. */
+  const [notice, setNotice] = useState<string | null>(null)
   const devHostJob = useDevHostJobLine()
 
   useEffect(() => {
     setSelectedIndex(0)
     setMessage(null)
+    setNotice(null)
   }, [daemonStatus])
 
   useEffect(() => {
@@ -141,10 +145,16 @@ function DeveloperMenuPanel({
     if (key.return) {
       const action = actions[selectedIndex]
       if (action) {
-        void Promise.resolve(onDaemonAction(action)).catch((error: unknown) => {
-          const text = error instanceof Error ? error.message : String(error)
-          setMessage(text)
-        })
+        setMessage(null)
+        setNotice(null)
+        void Promise.resolve(onDaemonAction(action))
+          .then(() => {
+            if (isDevHostAction(action)) setNotice(`Started ${DAEMON_ACTION_LABELS[action]}…`)
+          })
+          .catch((error: unknown) => {
+            const text = error instanceof Error ? error.message : String(error)
+            setMessage(text)
+          })
       }
     }
   })
@@ -152,14 +162,19 @@ function DeveloperMenuPanel({
   return (
     <Box flexDirection="column" width={width} height={height} paddingX={1} paddingY={1}>
       <Text bold>Developer</Text>
-      <Box marginTop={1}>
-        <Text dimColor>TurboPanel development console</Text>
+      {/*
+        One row for the subtitle, a started-job note or the job progress line,
+        so a job never pushes the action list past a short terminal.
+      */}
+      <Box marginTop={1} height={1}>
+        {devHostJob ? (
+          <DevHostJobLine line={devHostJob} width={Math.max(1, width - 2)} inset={false} />
+        ) : (
+          <Text color={notice ? STATUS_RUNNING : undefined} dimColor={!notice} wrap="truncate">
+            {notice ?? 'TurboPanel development console'}
+          </Text>
+        )}
       </Box>
-      {devHostJob && (
-        <Box marginTop={1}>
-          <DevHostJobLine line={devHostJob} width={Math.max(1, width - 2)} />
-        </Box>
-      )}
 
       {actions.length > 0 && (
         <Box marginTop={1} flexDirection="column">

@@ -137,8 +137,6 @@ describe('daemon menus', () => {
   it('includes Deno-only sync/rebuild when the instance runtime is deno', () => {
     mockedReadInstanceRuntime.mockReturnValue('deno')
     expect(developerMenuActions('running')).toEqual([
-      'update-restart',
-      'restart-only',
       'repair',
       'start-dev-env',
       'optional-services',
@@ -150,6 +148,8 @@ describe('daemon menus', () => {
       'open-duckdb-ui',
       'sync-dev-build',
       'rebuild-daemon-upgrade',
+      'update-restart',
+      'restart-only',
       'purge',
     ])
   })

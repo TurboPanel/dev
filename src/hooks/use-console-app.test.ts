@@ -812,11 +812,11 @@ describe('useConsoleApp', () => {
   })
 })
 
-function runningStatus(): DevHostStatus {
+function runningStatus(writtenAt: string | null = new Date().toISOString()): DevHostStatus {
   return {
     parts: [],
     lastFetchAt: null,
-    writtenAt: null,
+    writtenAt,
     job: {
       id: 'job-1',
       action: 'update',
@@ -852,5 +852,14 @@ describe('runDevHostAction', () => {
     })
     await expect(runDevHostAction('update-restart', idle, refused)).rejects.toThrow('refused')
     expect(idle.expectJob).not.toHaveBeenCalled()
+  })
+
+  it('allows a new job when the file that says running has gone stale', async () => {
+    const written = '2026-11-03T12:00:00Z'
+    const stale = { getSnapshot: vi.fn(() => runningStatus(written)), expectJob: vi.fn() }
+    const start = vi.fn(async () => 'job-10')
+    const now = () => Date.parse(written) + 10 * 60_000
+    await expect(runDevHostAction('update-restart', stale, start, now)).resolves.toBe('job-10')
+    expect(stale.expectJob).toHaveBeenCalledTimes(1)
   })
 })

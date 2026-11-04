@@ -22,14 +22,16 @@ describe('useDevHostStatus', () => {
   it('renders null first, then the status the store read', async () => {
     const store = new DevHostStatusStore({
       read: async () => STATUS,
+      now: () => Date.parse(STATUS.writtenAt!),
       setTimer: () => null,
       clearTimer: () => undefined,
     })
     mounted = mountHook(() => useDevHostStatus(store))
     expect(mounted.get()).toBeNull()
-    await mounted.flush()
-    await new Promise((resolve) => setTimeout(resolve, 5))
-    await mounted.flush()
+    // Wait for the condition, not for a fixed time: flush until it lands.
+    for (let attempt = 0; attempt < 100 && mounted.get() === null; attempt += 1) {
+      await mounted.flush()
+    }
     expect(mounted.get()).toEqual(STATUS)
   })
 })
