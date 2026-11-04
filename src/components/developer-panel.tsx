@@ -1,25 +1,27 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { useDaemonEnv } from "../hooks/use-daemon-env.ts";
-import { Box, Text, useInput } from "ink";
-import type { DevServiceStatus } from "../dev-services.ts";
+import React, { useEffect, useMemo, useState } from 'react'
+import { useDaemonEnv } from '../hooks/use-daemon-env.ts'
+import { Box, Text, useInput } from 'ink'
+import type { DevServiceStatus } from '../dev-services.ts'
 import {
   cellTraceToggleLabel,
   DAEMON_ACTION_LABELS,
   developerMenuActions,
+  isDevHostAction,
   type DaemonActionId,
-} from "../lib/daemon-actions.ts";
-import type { ConsoleLogLine } from "../lib/service-restart.ts";
-import type { ServiceLogByteFloor } from "../lib/service-log.ts";
-import type { DaemonOperation } from "../lib/spinners.ts";
-import { useLogScroll } from "../hooks/use-log-scroll.ts";
-import { useServiceLog } from "../hooks/use-service-log.ts";
-import { LIST_SELECT_BG, LIST_SELECT_FG } from "../theme.ts";
-import { CellTraceView } from "./cell-trace-view.tsx";
-import { PlainLogView } from "./plain-log-view.tsx";
-import { PurgeDaemonPanel } from "./purge-daemon-panel.tsx";
-import { RunTestsView } from "./run-tests-view.tsx";
+} from '../lib/daemon-actions.ts'
+import type { ConsoleLogLine } from '../lib/service-restart.ts'
+import type { ServiceLogByteFloor } from '../lib/service-log.ts'
+import type { DaemonOperation } from '../lib/spinners.ts'
+import { useLogScroll } from '../hooks/use-log-scroll.ts'
+import { useServiceLog } from '../hooks/use-service-log.ts'
+import { LIST_SELECT_BG, LIST_SELECT_FG, STATUS_RUNNING } from '../theme.ts'
+import { CellTraceView } from './cell-trace-view.tsx'
+import { DevHostJobLine, useDevHostJobLine } from './dev-host-job-line.tsx'
+import { PlainLogView } from './plain-log-view.tsx'
+import { PurgeDaemonPanel } from './purge-daemon-panel.tsx'
+import { RunTestsView } from './run-tests-view.tsx'
 
-const RESTART_HEADER_ROWS = 2;
+const RESTART_HEADER_ROWS = 2
 
 function DeveloperRestartOverlay({
   width,
@@ -30,39 +32,33 @@ function DeveloperRestartOverlay({
   logFollowResetKey,
   instanceLogByteFloor,
 }: Readonly<{
-  width: number;
-  height: number;
-  restartLabel: string;
-  restartOverlayServiceId: string;
-  restartLogOverlay: ConsoleLogLine[];
-  logFollowResetKey?: number;
-  instanceLogByteFloor?: ServiceLogByteFloor | null;
+  width: number
+  height: number
+  restartLabel: string
+  restartOverlayServiceId: string
+  restartLogOverlay: ConsoleLogLine[]
+  logFollowResetKey?: number
+  instanceLogByteFloor?: ServiceLogByteFloor | null
 }>) {
-  const { lines: fileLogLines } = useServiceLog(restartOverlayServiceId, instanceLogByteFloor);
+  const { lines: fileLogLines } = useServiceLog(restartOverlayServiceId, instanceLogByteFloor)
   const logLines = useMemo(
     () => [
       ...fileLogLines,
       ...restartLogOverlay.map((line) => ({ text: line.text, time: line.time })),
     ],
-    [fileLogLines, restartLogOverlay],
-  );
-  const logHeight = Math.max(1, height - RESTART_HEADER_ROWS);
+    [fileLogLines, restartLogOverlay]
+  )
+  const logHeight = Math.max(1, height - RESTART_HEADER_ROWS)
   const { scrollIndex: logScrollIndex } = useLogScroll({
     lineCount: logLines.length,
     viewportHeight: logHeight,
     focused: false,
     resetKey: restartOverlayServiceId,
     followResetKey: logFollowResetKey,
-  });
+  })
 
   return (
-    <Box
-      flexDirection="column"
-      width={width}
-      height={height}
-      paddingX={1}
-      paddingY={1}
-    >
+    <Box flexDirection="column" width={width} height={height} paddingX={1} paddingY={1}>
       <Text bold>Restarting {restartLabel}</Text>
       <Box marginTop={1} flexGrow={1}>
         <PlainLogView
@@ -74,14 +70,14 @@ function DeveloperRestartOverlay({
         />
       </Box>
     </Box>
-  );
+  )
 }
 
 function developerActionLabel(action: DaemonActionId): string {
-  if (action === "toggle-cell-trace") {
-    return cellTraceToggleLabel();
+  if (action === 'toggle-cell-trace') {
+    return cellTraceToggleLabel()
   }
-  return DAEMON_ACTION_LABELS[action];
+  return DAEMON_ACTION_LABELS[action]
 }
 
 function DeveloperMenuPanel({
@@ -91,85 +87,99 @@ function DeveloperMenuPanel({
   onDaemonAction,
   inputBlocked = false,
 }: Readonly<{
-  width: number;
-  height: number;
-  daemonStatus?: DevServiceStatus;
-  onDaemonAction?: (action: DaemonActionId) => void | Promise<void>;
-  inputBlocked?: boolean;
+  width: number
+  height: number
+  daemonStatus?: DevServiceStatus
+  onDaemonAction?: (action: DaemonActionId) => void | Promise<void>
+  inputBlocked?: boolean
 }>) {
   // Memoized: `developerMenuActions` reads daemon.env, so calling it in the
   // render body cost ~54ms per repaint on hosts where that needs sudo.
-  const daemonEnv = useDaemonEnv();
+  const daemonEnv = useDaemonEnv()
   const actions = useMemo(
     () => developerMenuActions(daemonStatus, daemonEnv),
-    [daemonStatus, daemonEnv],
-  );
-  const [selectedIndex, setSelectedIndex] = useState(0);
-  const [message, setMessage] = useState<string | null>(null);
+    [daemonStatus, daemonEnv]
+  )
+  const [selectedIndex, setSelectedIndex] = useState(0)
+  const [message, setMessage] = useState<string | null>(null)
+  /** A short success note, e.g. after a development host job was started. */
+  const [notice, setNotice] = useState<string | null>(null)
+  const devHostJob = useDevHostJobLine()
 
   useEffect(() => {
-    setSelectedIndex(0);
-    setMessage(null);
-  }, [daemonStatus]);
+    setSelectedIndex(0)
+    setMessage(null)
+    setNotice(null)
+  }, [daemonStatus])
 
   useEffect(() => {
     if (selectedIndex >= actions.length) {
-      setSelectedIndex(Math.max(0, actions.length - 1));
+      setSelectedIndex(Math.max(0, actions.length - 1))
     }
-  }, [actions.length, selectedIndex]);
+  }, [actions.length, selectedIndex])
 
   useInput((_input, key) => {
     if (inputBlocked) {
-      return;
+      return
     }
     if (actions.length === 0 || !onDaemonAction) {
-      return;
+      return
     }
 
-    const lastIndex = actions.length - 1;
+    const lastIndex = actions.length - 1
     if (key.upArrow) {
-      setSelectedIndex((index) => Math.max(0, index - 1));
-      setMessage(null);
+      setSelectedIndex((index) => Math.max(0, index - 1))
+      setMessage(null)
     }
     if (key.downArrow) {
-      setSelectedIndex((index) => Math.min(lastIndex, index + 1));
-      setMessage(null);
+      setSelectedIndex((index) => Math.min(lastIndex, index + 1))
+      setMessage(null)
     }
-    if (_input.toLowerCase() === "u" && actions.includes("rebuild-daemon-upgrade")) {
-      void Promise.resolve(onDaemonAction("rebuild-daemon-upgrade")).catch((error: unknown) => {
-        const text = error instanceof Error ? error.message : String(error);
-        setMessage(text);
-      });
-      return;
+    if (_input.toLowerCase() === 'u' && actions.includes('rebuild-daemon-upgrade')) {
+      void Promise.resolve(onDaemonAction('rebuild-daemon-upgrade')).catch((error: unknown) => {
+        const text = error instanceof Error ? error.message : String(error)
+        setMessage(text)
+      })
+      return
     }
     if (key.return) {
-      const action = actions[selectedIndex];
+      const action = actions[selectedIndex]
       if (action) {
-        void Promise.resolve(onDaemonAction(action)).catch((error: unknown) => {
-          const text = error instanceof Error ? error.message : String(error);
-          setMessage(text);
-        });
+        setMessage(null)
+        setNotice(null)
+        void Promise.resolve(onDaemonAction(action))
+          .then(() => {
+            if (isDevHostAction(action)) setNotice(`Started ${DAEMON_ACTION_LABELS[action]}…`)
+          })
+          .catch((error: unknown) => {
+            const text = error instanceof Error ? error.message : String(error)
+            setMessage(text)
+          })
       }
     }
-  });
+  })
 
   return (
-    <Box
-      flexDirection="column"
-      width={width}
-      height={height}
-      paddingX={1}
-      paddingY={1}
-    >
+    <Box flexDirection="column" width={width} height={height} paddingX={1} paddingY={1}>
       <Text bold>Developer</Text>
-      <Box marginTop={1}>
-        <Text dimColor>TurboPanel development console</Text>
+      {/*
+        One row for the subtitle, a started-job note or the job progress line,
+        so a job never pushes the action list past a short terminal.
+      */}
+      <Box marginTop={1} height={1}>
+        {devHostJob ? (
+          <DevHostJobLine line={devHostJob} width={Math.max(1, width - 2)} inset={false} />
+        ) : (
+          <Text color={notice ? STATUS_RUNNING : undefined} dimColor={!notice} wrap="truncate">
+            {notice ?? 'TurboPanel development console'}
+          </Text>
+        )}
       </Box>
 
       {actions.length > 0 && (
         <Box marginTop={1} flexDirection="column">
           {actions.map((action, index) => {
-            const selected = index === selectedIndex;
+            const selected = index === selectedIndex
             return (
               <Box
                 key={action}
@@ -181,7 +191,7 @@ function DeveloperMenuPanel({
                   {developerActionLabel(action)}
                 </Text>
               </Box>
-            );
+            )
           })}
         </Box>
       )}
@@ -192,7 +202,7 @@ function DeveloperMenuPanel({
         </Box>
       )}
     </Box>
-  );
+  )
 }
 
 export function DeveloperPanel({
@@ -200,7 +210,7 @@ export function DeveloperPanel({
   height,
   daemonStatus,
   daemonOperation,
-  developerView = "menu",
+  developerView = 'menu',
   onCloseDeveloperView,
   onDaemonAction,
   onPurgeDone,
@@ -212,36 +222,30 @@ export function DeveloperPanel({
   instanceLogByteFloor,
   inputBlocked = false,
 }: Readonly<{
-  width: number;
-  height: number;
-  daemonStatus?: DevServiceStatus;
-  daemonOperation?: DaemonOperation | null;
-  developerView?: "menu" | "cell-trace" | "run-tests";
-  onCloseDeveloperView?: () => void;
-  onDaemonAction?: (action: DaemonActionId) => void | Promise<void>;
-  onPurgeDone?: () => void;
-  onRefreshServices?: () => void;
-  restartInProgress?: string | null;
-  restartOverlayServiceId?: string | null;
-  restartLogOverlay?: ConsoleLogLine[];
-  logFollowResetKey?: number;
-  instanceLogByteFloor?: ServiceLogByteFloor | null;
-  inputBlocked?: boolean;
+  width: number
+  height: number
+  daemonStatus?: DevServiceStatus
+  daemonOperation?: DaemonOperation | null
+  developerView?: 'menu' | 'cell-trace' | 'run-tests'
+  onCloseDeveloperView?: () => void
+  onDaemonAction?: (action: DaemonActionId) => void | Promise<void>
+  onPurgeDone?: () => void
+  onRefreshServices?: () => void
+  restartInProgress?: string | null
+  restartOverlayServiceId?: string | null
+  restartLogOverlay?: ConsoleLogLine[]
+  logFollowResetKey?: number
+  instanceLogByteFloor?: ServiceLogByteFloor | null
+  inputBlocked?: boolean
 }>) {
   useEffect(() => {
     if (restartInProgress) {
-      onRefreshServices?.();
+      onRefreshServices?.()
     }
-  }, [restartInProgress, onRefreshServices]);
+  }, [restartInProgress, onRefreshServices])
 
-  if (daemonOperation === "purge" && onPurgeDone) {
-    return (
-      <PurgeDaemonPanel
-        width={width}
-        height={height}
-        onDone={onPurgeDone}
-      />
-    );
+  if (daemonOperation === 'purge' && onPurgeDone) {
+    return <PurgeDaemonPanel width={width} height={height} onDone={onPurgeDone} />
   }
 
   if (restartInProgress && restartOverlayServiceId) {
@@ -255,29 +259,15 @@ export function DeveloperPanel({
         logFollowResetKey={logFollowResetKey}
         instanceLogByteFloor={instanceLogByteFloor}
       />
-    );
+    )
   }
 
-  if (developerView === "cell-trace" && onCloseDeveloperView) {
-    return (
-      <CellTraceView
-        width={width}
-        height={height}
-        focused
-        onClose={onCloseDeveloperView}
-      />
-    );
+  if (developerView === 'cell-trace' && onCloseDeveloperView) {
+    return <CellTraceView width={width} height={height} focused onClose={onCloseDeveloperView} />
   }
 
-  if (developerView === "run-tests" && onCloseDeveloperView) {
-    return (
-      <RunTestsView
-        width={width}
-        height={height}
-        focused
-        onClose={onCloseDeveloperView}
-      />
-    );
+  if (developerView === 'run-tests' && onCloseDeveloperView) {
+    return <RunTestsView width={width} height={height} focused onClose={onCloseDeveloperView} />
   }
 
   return (
@@ -288,5 +278,5 @@ export function DeveloperPanel({
       onDaemonAction={onDaemonAction}
       inputBlocked={inputBlocked}
     />
-  );
+  )
 }

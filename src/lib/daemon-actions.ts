@@ -1,84 +1,89 @@
-import type { DevServiceStatus } from "../dev-services.ts";
-import { isDaemonSystemdInstalled } from "../dev-services.ts";
-import {
-  daemonRepoPath,
-  DAEMON_SYSTEMD_UNIT,
-  RUNTIMES_DIR,
-  TURBOPANEL_ROOT,
-} from "./paths.ts";
+import type { DevServiceStatus } from '../dev-services.ts'
+import { isDaemonSystemdInstalled } from '../dev-services.ts'
+import { daemonRepoPath, DAEMON_SYSTEMD_UNIT, RUNTIMES_DIR, TURBOPANEL_ROOT } from './paths.ts'
 import {
   isDeveloperSurfaceInstance,
   readInstanceRuntime,
   type DaemonEnvSnapshot,
-} from "./daemon-env.ts";
-import { spawnSyncTrustedText } from "./spawn-trusted.ts";
-import { type InstallOutputHandler, runCaptured } from "./install-output.ts";
-import { syncDevToAllDaemons, updateConnectedDaemons } from "./developer-client.ts";
-import { shellQuote } from "./shell-quote.ts";
-import { ensureOrchestrationDenoBin } from "./daemon-exec.ts";
-import { testRunnerPathEnv } from "./run-repo-tests.ts";
+} from './daemon-env.ts'
+import { spawnSyncTrustedText } from './spawn-trusted.ts'
+import { type InstallOutputHandler, runCaptured } from './install-output.ts'
+import {
+  type DevHostActionName,
+  type DevHostActionResult,
+  postDevHostAction,
+  syncDevToAllDaemons,
+  updateConnectedDaemons,
+} from './developer-client.ts'
+import { shellQuote } from './shell-quote.ts'
+import { ensureOrchestrationDenoBin } from './daemon-exec.ts'
+import { testRunnerPathEnv } from './run-repo-tests.ts'
 
 export type DaemonActionId =
-  | "install"
-  | "repair"
-  | "restart"
-  | "purge"
-  | "start-dev-env"
-  | "optional-services"
-  | "reset-dev-env"
-  | "reset-dev-db"
-  | "save-tier-catalogue"
-  | "toggle-cell-trace"
-  | "view-cell-trace"
-  | "run-tests"
-  | "sync-dev-build"
-  | "rebuild-daemon-upgrade"
-  | "open-duckdb-ui";
+  | 'install'
+  | 'repair'
+  | 'restart'
+  | 'purge'
+  | 'start-dev-env'
+  | 'optional-services'
+  | 'reset-dev-env'
+  | 'reset-dev-db'
+  | 'save-tier-catalogue'
+  | 'toggle-cell-trace'
+  | 'view-cell-trace'
+  | 'run-tests'
+  | 'sync-dev-build'
+  | 'rebuild-daemon-upgrade'
+  | 'open-duckdb-ui'
+  | 'update-restart'
+  | 'restart-only'
 
-const DAEMON_UNIT = DAEMON_SYSTEMD_UNIT;
-const DEFAULT_WAIT_TIMEOUT_MS = 120_000;
-const DEFAULT_WAIT_POLL_MS = 500;
+const DAEMON_UNIT = DAEMON_SYSTEMD_UNIT
+const DEFAULT_WAIT_TIMEOUT_MS = 120_000
+const DEFAULT_WAIT_POLL_MS = 500
 
 export const DAEMON_ACTION_LABELS: Record<DaemonActionId, string> = {
-  install: "Install",
-  repair: "Repair install",
-  restart: "Restart",
-  purge: "Purge completely",
-  "start-dev-env": "Converge / re-converge development environment",
-  "optional-services": "Optional services…",
-  "reset-dev-env": "Reset development environment",
-  "reset-dev-db": "Reset dev database",
-  "save-tier-catalogue": "Save tier catalogue to dev/local/tiers.json",
-  "toggle-cell-trace": "Toggle verbose cell trace",
-  "view-cell-trace": "View cell trace log",
-  "run-tests": "Run tests…",
-  "sync-dev-build": "Sync source to attached checkouts",
-  "rebuild-daemon-upgrade": "Rebuild daemon and upgrade connected servers",
-  "open-duckdb-ui": "Open DuckDB UI (metrics)",
-};
+  install: 'Install',
+  repair: 'Repair install',
+  restart: 'Restart',
+  purge: 'Purge completely',
+  'start-dev-env': 'Converge / re-converge development environment',
+  'optional-services': 'Optional services…',
+  'reset-dev-env': 'Reset development environment',
+  'reset-dev-db': 'Reset dev database',
+  'save-tier-catalogue': 'Save tier catalogue to dev/local/tiers.json',
+  'toggle-cell-trace': 'Toggle verbose cell trace',
+  'view-cell-trace': 'View cell trace log',
+  'run-tests': 'Run tests…',
+  'sync-dev-build': 'Sync source to attached checkouts',
+  'rebuild-daemon-upgrade': 'Rebuild daemon and upgrade connected servers',
+  'open-duckdb-ui': 'Open DuckDB UI (metrics)',
+  'update-restart': 'Update and Restart',
+  'restart-only': 'Restart Only',
+}
 
 /**
  * Warning copy for actions that destroy state. Any action listed here must be
  * confirmed in the console before it runs.
  */
 export const DESTRUCTIVE_ACTION_WARNINGS: Partial<Record<DaemonActionId, string>> = {
-  "reset-dev-env":
-    "Stops all platform services, removes their Docker containers and volumes, and hard-resets every attached checkout to origin/trunk — uncommitted changes in those repos are lost. The stack is then rebuilt from scratch.",
-  "reset-dev-db":
-    "Drops the entire dev Postgres schema — all data is lost. Migrations are re-applied and the instance restarts into the install wizard.",
+  'reset-dev-env':
+    'Stops all platform services, removes their Docker containers and volumes, and hard-resets every attached checkout to origin/trunk — uncommitted changes in those repos are lost. The stack is then rebuilt from scratch.',
+  'reset-dev-db':
+    'Drops the entire dev Postgres schema — all data is lost. Migrations are re-applied and the instance restarts into the install wizard.',
   purge:
-    "Stops and removes the daemon service and deletes its checkout, runtimes, and caches. The console exits when the purge finishes.",
-};
+    'Stops and removes the daemon service and deletes its checkout, runtimes, and caches. The console exits when the purge finishes.',
+}
 
 export function isDestructiveDaemonAction(action: DaemonActionId): boolean {
-  return action in DESTRUCTIVE_ACTION_WARNINGS;
+  return action in DESTRUCTIVE_ACTION_WARNINGS
 }
 
 export function daemonMenuActions(_status: DevServiceStatus): DaemonActionId[] {
-  return [];
+  return []
 }
 
-export { cellTraceToggleLabel } from "./instance-trace-env.ts";
+export { cellTraceToggleLabel } from './instance-trace-env.ts'
 
 /**
  * @param env Pre-read `daemon.env` snapshot. Pass it from React: without it this
@@ -87,155 +92,147 @@ export { cellTraceToggleLabel } from "./instance-trace-env.ts";
  */
 export function developerMenuActions(
   status: DevServiceStatus | undefined,
-  env?: DaemonEnvSnapshot,
+  env?: DaemonEnvSnapshot
 ): DaemonActionId[] {
-  if (!status || status === "uninstalled") {
-    return [];
+  if (!status || status === 'uninstalled') {
+    return []
   }
 
-  const runtime = env ? env.runtime : readInstanceRuntime();
+  const runtime = env ? env.runtime : readInstanceRuntime()
 
-  // Open DuckDB UI needs /api/developer/v1/metrics/duckdb-ui, which only the
-  // developer-surface build (src/deno-dev.ts) mounts — compiled and static
-  // Deno builds run src/deno.ts and must not offer the action.
-  const onDeveloperSurface = env
-    ? isDeveloperSurfaceInstance(env)
-    : isDeveloperSurfaceInstance();
-  const developerSurfaceActions: DaemonActionId[] = onDeveloperSurface
-    ? ["open-duckdb-ui"]
-    : [];
+  // Open DuckDB UI and the development host actions need developer-API routes
+  // that only the developer-surface build (src/deno-dev.ts) mounts — compiled
+  // and static Deno builds run src/deno.ts and must not offer them.
+  const onDeveloperSurface = env ? isDeveloperSurfaceInstance(env) : isDeveloperSurfaceInstance()
+  const developerSurfaceActions: DaemonActionId[] = onDeveloperSurface ? ['open-duckdb-ui'] : []
+  const devHostActions: DaemonActionId[] = onDeveloperSurface
+    ? ['update-restart', 'restart-only']
+    : []
 
-  const denoActions: DaemonActionId[] = runtime === "deno"
-    ? ["sync-dev-build", "rebuild-daemon-upgrade"]
-    : [];
+  const denoActions: DaemonActionId[] =
+    runtime === 'deno' ? ['sync-dev-build', 'rebuild-daemon-upgrade'] : []
 
   // Tiers exist only where billing does (the Workers build). The saved copy is
   // restored by the dev overlay role on converge; this is the write side.
-  const workersActions: DaemonActionId[] = runtime === "workers"
-    ? ["save-tier-catalogue"]
-    : [];
+  const workersActions: DaemonActionId[] = runtime === 'workers' ? ['save-tier-catalogue'] : []
 
   return [
-    "repair",
-    "start-dev-env",
-    "optional-services",
-    "reset-dev-env",
-    "reset-dev-db",
+    'repair',
+    'start-dev-env',
+    'optional-services',
+    'reset-dev-env',
+    'reset-dev-db',
     ...workersActions,
-    "run-tests",
-    "toggle-cell-trace",
-    "view-cell-trace",
+    'run-tests',
+    'toggle-cell-trace',
+    'view-cell-trace',
     ...developerSurfaceActions,
     ...denoActions,
-    "purge",
-  ];
+    // Last before Purge, so the default cursor never sits on a restart.
+    ...devHostActions,
+    'purge',
+  ]
 }
 
 export function canRestartDaemon(): boolean {
-  return isDaemonSystemdInstalled();
+  return isDaemonSystemdInstalled()
 }
 
 export function isDaemonServiceActive(): boolean {
-  const result = spawnSyncTrustedText("systemctl", ["is-active", DAEMON_UNIT], {
-    stdio: ["ignore", "pipe", "ignore"],
-  });
-  return (result.stdout ?? "").trim() === "active";
+  const result = spawnSyncTrustedText('systemctl', ['is-active', DAEMON_UNIT], {
+    stdio: ['ignore', 'pipe', 'ignore'],
+  })
+  return (result.stdout ?? '').trim() === 'active'
 }
 
 function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 export function waitForDaemonRunning(
   options: {
-    timeoutMs?: number;
-    pollMs?: number;
-    onPoll?: (elapsedMs: number) => void;
-  } = {},
+    timeoutMs?: number
+    pollMs?: number
+    onPoll?: (elapsedMs: number) => void
+  } = {}
 ): Promise<boolean> {
-  const timeoutMs = options.timeoutMs ?? DEFAULT_WAIT_TIMEOUT_MS;
-  const pollMs = options.pollMs ?? DEFAULT_WAIT_POLL_MS;
-  const started = Date.now();
+  const timeoutMs = options.timeoutMs ?? DEFAULT_WAIT_TIMEOUT_MS
+  const pollMs = options.pollMs ?? DEFAULT_WAIT_POLL_MS
+  const started = Date.now()
 
   const pollUntilActive = async (): Promise<boolean> => {
     if (Date.now() - started >= timeoutMs) {
-      return isDaemonServiceActive();
+      return isDaemonServiceActive()
     }
     if (isDaemonServiceActive()) {
-      return true;
+      return true
     }
-    options.onPoll?.(Date.now() - started);
-    await sleep(pollMs);
-    return pollUntilActive();
-  };
+    options.onPoll?.(Date.now() - started)
+    await sleep(pollMs)
+    return pollUntilActive()
+  }
 
-  return pollUntilActive();
+  return pollUntilActive()
 }
 
 /** First activation after opt-in — enable the unit and start it (not a restart). */
-export async function enableAndStartDaemon(
-  onOutput?: InstallOutputHandler,
-): Promise<void> {
-  const lines: string[] = [];
+export async function enableAndStartDaemon(onOutput?: InstallOutputHandler): Promise<void> {
+  const lines: string[] = []
   const append = (line: string) => {
-    lines.push(line);
-    onOutput?.(line);
-  };
+    lines.push(line)
+    onOutput?.(line)
+  }
 
   const code = await runCaptured(
-    ["sudo", "-n", "systemctl", "enable", "--now", DAEMON_UNIT],
-    append,
-  );
+    ['sudo', '-n', 'systemctl', 'enable', '--now', DAEMON_UNIT],
+    append
+  )
   if (code !== 0) {
-    throw new Error(lines.at(-1) ?? `Failed to enable and start ${DAEMON_UNIT}`);
+    throw new Error(lines.at(-1) ?? `Failed to enable and start ${DAEMON_UNIT}`)
   }
 }
 
 /** Queue a daemon restart without blocking until the service is active again. */
-export async function requestDaemonRestart(
-  onOutput?: InstallOutputHandler,
-): Promise<void> {
-  const lines: string[] = [];
+export async function requestDaemonRestart(onOutput?: InstallOutputHandler): Promise<void> {
+  const lines: string[] = []
   const append = (line: string) => {
-    lines.push(line);
-    onOutput?.(line);
-  };
+    lines.push(line)
+    onOutput?.(line)
+  }
 
   const code = await runCaptured(
-    ["sudo", "systemctl", "restart", "--no-block", DAEMON_UNIT],
-    append,
-  );
+    ['sudo', 'systemctl', 'restart', '--no-block', DAEMON_UNIT],
+    append
+  )
   if (code !== 0) {
-    throw new Error(lines.at(-1) ?? "Failed to restart daemon");
+    throw new Error(lines.at(-1) ?? 'Failed to restart daemon')
   }
 }
 
-export async function purgeDaemon(
-  onOutput?: InstallOutputHandler,
-): Promise<void> {
+export async function purgeDaemon(onOutput?: InstallOutputHandler): Promise<void> {
   const pathsToRemove = [
     daemonRepoPath(),
     RUNTIMES_DIR,
     `${TURBOPANEL_ROOT}/.cache`,
     `${TURBOPANEL_ROOT}/.ansible`,
     `${TURBOPANEL_ROOT}/.local`,
-  ].map(shellQuote);
+  ].map(shellQuote)
 
   // Stop/remove the daemon systemd unit.
-  const units = [DAEMON_UNIT];
+  const units = [DAEMON_UNIT]
   const command = [
     ...units.flatMap((unit) => [
       `systemctl stop ${unit} 2>/dev/null || true`,
       `systemctl disable ${unit} 2>/dev/null || true`,
       `rm -f /etc/systemd/system/${unit}.service`,
     ]),
-    "systemctl daemon-reload",
+    'systemctl daemon-reload',
     ...pathsToRemove.map((path) => `rm -rf ${path}`),
-  ].join(" && ");
+  ].join(' && ')
 
-  const code = await runCaptured(["sudo", "bash", "-c", command], onOutput);
+  const code = await runCaptured(['sudo', 'bash', '-c', command], onOutput)
   if (code !== 0) {
-    throw new Error("Failed to purge daemon");
+    throw new Error('Failed to purge daemon')
   }
 }
 
@@ -245,53 +242,49 @@ export async function purgeDaemon(
  * the old local `release:package` binary build — the daemon runs from source and
  * dev pushes are streamed/unpacked by each daemon.
  */
-export async function syncDevBuildToDaemons(
-  onOutput?: InstallOutputHandler,
-): Promise<void> {
-  const append = (line: string) => onOutput?.(line);
+export async function syncDevBuildToDaemons(onOutput?: InstallOutputHandler): Promise<void> {
+  const append = (line: string) => onOutput?.(line)
 
-  append("Packaging local daemon source and syncing to attached daemons…");
+  append('Packaging local daemon source and syncing to attached daemons…')
 
-  let response;
+  let response
   try {
-    response = await syncDevToAllDaemons();
+    response = await syncDevToAllDaemons()
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    throw new Error(`Could not reach the instance developer API: ${message}`);
+    const message = err instanceof Error ? err.message : String(err)
+    throw new Error(`Could not reach the instance developer API: ${message}`)
   }
 
-  const results = response.results ?? [];
+  const results = response.results ?? []
   if (results.length === 0) {
-    append("No attached daemons are currently connected.");
-    return;
+    append('No attached daemons are currently connected.')
+    return
   }
 
   for (const result of results) {
     if (result.skipped) {
-      append(`– ${result.daemonId}: skipped (${result.error ?? "co-located dev daemon"})`);
+      append(`– ${result.daemonId}: skipped (${result.error ?? 'co-located dev daemon'})`)
     } else if (result.ok) {
-      append(`✓ ${result.daemonId}: synced`);
+      append(`✓ ${result.daemonId}: synced`)
     } else {
-      append(`✗ ${result.daemonId}: ${result.error ?? "sync failed"}`);
+      append(`✗ ${result.daemonId}: ${result.error ?? 'sync failed'}`)
     }
   }
 
-  const failed = results.filter((result) => !result.ok);
+  const failed = results.filter((result) => !result.ok)
   if (failed.length > 0) {
-    throw new Error(
-      `${failed.length} of ${results.length} daemon(s) failed to sync`,
-    );
+    throw new Error(`${failed.length} of ${results.length} daemon(s) failed to sync`)
   }
 
-  const synced = results.filter((result) => result.ok && !result.skipped);
+  const synced = results.filter((result) => result.ok && !result.skipped)
   if (synced.length > 0) {
-    append(`Synced ${synced.length} daemon(s) successfully.`);
-    return;
+    append(`Synced ${synced.length} daemon(s) successfully.`)
+    return
   }
 
   append(
-    "No remote source checkouts to sync. Managed installs (compiled turbopaneld) and this co-located daemon skip Sync Dev Build — they update via Rebuild daemon and upgrade connected servers / local edits.",
-  );
+    'No remote source checkouts to sync. Managed installs (compiled turbopaneld) and this co-located daemon skip Sync Dev Build — they update via Rebuild daemon and upgrade connected servers / local edits.'
+  )
 }
 
 /**
@@ -300,62 +293,114 @@ export async function syncDevBuildToDaemons(
  * connected **remote** servers. The co-located daemon keeps running from source.
  */
 export async function rebuildDaemonAndUpgradeConnectedServers(
-  onOutput?: InstallOutputHandler,
+  onOutput?: InstallOutputHandler
 ): Promise<void> {
-  const append = (line: string) => onOutput?.(line);
+  const append = (line: string) => onOutput?.(line)
 
-  append("Compiling daemon release artifacts from the local checkout…");
-  const denoBin = await ensureOrchestrationDenoBin(append);
-  const cwd = daemonRepoPath();
-  const code = await runCaptured(
-    [denoBin, "task", "release:dev"],
-    append,
-    { cwd, env: testRunnerPathEnv() },
-  );
+  append('Compiling daemon release artifacts from the local checkout…')
+  const denoBin = await ensureOrchestrationDenoBin(append)
+  const cwd = daemonRepoPath()
+  const code = await runCaptured([denoBin, 'task', 'release:dev'], append, {
+    cwd,
+    env: testRunnerPathEnv(),
+  })
   if (code !== 0) {
-    throw new Error("Failed to package the local daemon overlay catalog");
+    throw new Error('Failed to package the local daemon overlay catalog')
   }
 
-  append("Triggering overlay updates on connected remote servers…");
+  append('Triggering overlay updates on connected remote servers…')
 
-  let response;
+  let response
   try {
-    response = await updateConnectedDaemons();
+    response = await updateConnectedDaemons()
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    throw new Error(`Could not reach the instance developer API: ${message}`);
+    const message = err instanceof Error ? err.message : String(err)
+    throw new Error(`Could not reach the instance developer API: ${message}`)
   }
 
-  const results = response.results ?? [];
+  const results = response.results ?? []
   if (results.length === 0) {
-    append("No attached daemons are currently connected.");
-    return;
+    append('No attached daemons are currently connected.')
+    return
   }
 
   for (const result of results) {
     if (result.skipped) {
-      append(`– ${result.daemonId}: skipped (${result.error ?? "co-located"})`);
+      append(`– ${result.daemonId}: skipped (${result.error ?? 'co-located'})`)
     } else if (result.ok) {
-      append(`✓ ${result.daemonId}: upgrade queued`);
+      append(`✓ ${result.daemonId}: upgrade queued`)
     } else {
-      append(`✗ ${result.daemonId}: ${result.error ?? "update failed"}`);
+      append(`✗ ${result.daemonId}: ${result.error ?? 'update failed'}`)
     }
   }
 
-  const failed = results.filter((result) => !result.ok);
+  const failed = results.filter((result) => !result.ok)
   if (failed.length > 0) {
-    throw new Error(
-      `${failed.length} of ${results.length} daemon(s) failed to upgrade`,
-    );
+    throw new Error(`${failed.length} of ${results.length} daemon(s) failed to upgrade`)
   }
 
-  const upgraded = results.filter((result) => result.ok && !result.skipped);
+  const upgraded = results.filter((result) => result.ok && !result.skipped)
   if (upgraded.length > 0) {
-    append(`Upgraded ${upgraded.length} remote daemon(s).`);
-    return;
+    append(`Upgraded ${upgraded.length} remote daemon(s).`)
+    return
   }
 
   append(
-    "No remote servers to upgrade. This co-located daemon runs from source — connect a managed server first.",
-  );
+    'No remote servers to upgrade. This co-located daemon runs from source — connect a managed server first.'
+  )
+}
+
+export type DevHostActionId = 'update-restart' | 'restart-only'
+
+const DEV_HOST_ACTIONS: Record<DevHostActionId, DevHostActionName> = {
+  'update-restart': 'update',
+  'restart-only': 'restart',
+}
+
+export function isDevHostAction(action: DaemonActionId): action is DevHostActionId {
+  return action in DEV_HOST_ACTIONS
+}
+
+/** Plain words for a refused development host action. */
+export function devHostRefusalMessage(result: Extract<DevHostActionResult, { ok: false }>): string {
+  if (result.error === 'job_running') {
+    return "A development host job or the web interface's Build and Push Daemon is already running. Wait for it to finish, then try again."
+  }
+  if (result.error === 'daemon_unavailable') {
+    switch (result.reason) {
+      case 'not_development':
+        return 'The daemon refused: this host is not a development install with TURBOPANEL_DEV_INSTANCE=1.'
+      case 'timeout':
+        return 'The daemon did not answer within 8 seconds. Check that it is running, then try again.'
+      case undefined:
+        return 'The daemon is not available: it is offline, not connected to the control plane, or too old for development host updates.'
+      default:
+        return `The daemon could not start the job (${result.reason}).`
+    }
+  }
+  return `The control plane refused the request (HTTP ${result.status}: ${result.error}).`
+}
+
+/**
+ * Developer → Update and Restart / Restart Only. Asks the control plane, which
+ * asks the co-located daemon to run the job; the daemon does every git, pnpm
+ * and systemctl step and reports progress in its status file. Returns the
+ * started job id, or throws with plain words when the job was refused or the
+ * control plane cannot be reached.
+ */
+export async function startDevHostJob(
+  action: DevHostActionId,
+  post: (action: DevHostActionName) => Promise<DevHostActionResult> = postDevHostAction
+): Promise<string> {
+  let result: DevHostActionResult
+  try {
+    result = await post(DEV_HOST_ACTIONS[action])
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    throw new Error(`Could not reach the control plane: ${message}`)
+  }
+  if (!result.ok) {
+    throw new Error(devHostRefusalMessage(result))
+  }
+  return result.jobId
 }
