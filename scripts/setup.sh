@@ -285,16 +285,28 @@ tp_same_slug() {
   [ "$_ss_a" = "$_ss_b" ]
 }
 
-# GH_LOGIN is empty only when gh has no token. With a token but no answer from
-# GitHub (offline), the login and roles from the last run are kept.
+# GH_LOGIN is empty when gh has no token, or when GitHub refuses the token
+# (HTTP 401: revoked or expired), which is not being offline. With a token but
+# no answer from GitHub (offline), the login and roles from the last run are
+# kept.
 tp_detect_login() {
   GH_LOGIN=
   GH_OFFLINE=0
   command -v gh >/dev/null 2>&1 || return 0
   gh auth token >/dev/null 2>&1 || return 0
-  if GH_LOGIN=$(gh api user --jq .login 2>/dev/null) && [ -n "$GH_LOGIN" ]; then
-    return 0
-  fi
+  _dl_errf=$(mktemp)
+  GH_LOGIN=$(gh api user --jq .login 2>"$_dl_errf") || GH_LOGIN=
+  _dl_err=$(cat "$_dl_errf")
+  rm -f "$_dl_errf"
+  [ -z "$GH_LOGIN" ] || return 0
+  case "$_dl_err" in
+    *"HTTP 401"* | *"Bad credentials"*)
+      GH_LOGIN=
+      tp_warn "GitHub refused the saved gh token (revoked or expired); setup goes on as not logged in. Log in again with: ${TP_GH_LOGIN_CMD}"
+      return 0
+      ;;
+    *) ;;
+  esac
   GH_OFFLINE=1
   GH_LOGIN=$(tp_mode_get github_login)
   tp_warn "GitHub did not answer (offline?); keeping the login and roles from the last run${GH_LOGIN:+ (${GH_LOGIN})}."
@@ -569,6 +581,12 @@ tp_url_slug() {
       _us_path=${_us_url#*github.com}
       _us_path=${_us_path#[:/]}
       ;;
+    # GitHub's SSH over the HTTPS port: ssh://git@ssh.github.com:443/owner/repo
+    ssh://git@ssh.github.com:443/* | ssh://ssh.github.com:443/* | ssh://git@ssh.github.com/* | ssh://ssh.github.com/*)
+      _us_path=${_us_url#*ssh.github.com}
+      _us_path=${_us_path#:443}
+      _us_path=${_us_path#/}
+      ;;
     *)
       _us_path=
       if [ -n "$REMOTE_BASE" ]; then
@@ -588,6 +606,13 @@ tp_remote_slug() {
   _rs_remote=$2
   _ru=$(git -C "$_rs_path" remote get-url "$_rs_remote" 2>/dev/null) || return 0
   tp_url_slug "$_ru"
+}
+
+# Why an origin that names no GitHub repo is flagged. An ssh config host alias
+# for github.com is not resolved: setup reads only the URL in git's config.
+tp_unknown_origin_text() {
+  printf 'origin %s is not a GitHub address setup recognises (https://github.com/<owner>/<repo>, git@github.com:<owner>/<repo> or ssh://git@ssh.github.com:443/<owner>/<repo>; an ssh config host alias is not followed)' \
+    "$(git -C "$1" remote get-url origin 2>/dev/null)"
 }
 
 tp_has_remote() {
@@ -874,6 +899,8 @@ tp_reconcile_remotes() {
   if [ -n "$_rr_origin" ] && ! tp_same_slug "$_rr_origin" "$_rr_canon_slug" &&
     ! tp_same_slug "$_rr_origin" "${_rr_fork:-?}"; then
     tp_warn "${_rr_name}: origin points to ${_rr_origin}; left as it is." >&2
+  elif [ -z "$_rr_origin" ] && tp_has_remote "$_rr_path" origin; then
+    tp_warn "${_rr_name}: $(tp_unknown_origin_text "$_rr_path"); left as it is." >&2
   fi
   printf '%s' "$_rr_role"
 }
@@ -1130,7 +1157,7 @@ tp_role_sentence() {
       echo "Your repos are read-only clones of ${TP_ORG}. When you are ready to push in one, run: ${DIR}/dev/scripts/setup.sh fork <repo>"
       ;;
     contributor-fork)
-      echo "You work from your own fork. Your repos push to ${GH_LOGIN:-<your login>}/<repo> (origin); ${TP_ORG} is upstream. Push branches to your fork and open pull requests into ${TP_ORG}."
+      echo "You work from your own fork. Your repos push to your fork of each ${TP_ORG} repo (origin); ${TP_ORG} is upstream. Push branches to your fork and open pull requests into ${TP_ORG}."
       ;;
     readonly)
       if [ -z "$GH_LOGIN" ]; then
@@ -1231,7 +1258,7 @@ tp_cmd_setup() {
     elif [ "$_cs_role" = contributor ]; then
       _cs_action="clone ${TP_ORG}/${_cs_name} read-only as origin (setup.sh fork ${_cs_name} when you want to push)"
     elif [ "$_cs_role" = contributor-fork ]; then
-      _cs_action="fork to ${GH_LOGIN}/${_cs_name} if needed, clone it as origin, upstream = ${TP_ORG}/${_cs_name}, gh repo set-default ${TP_ORG}/${_cs_name}"
+      _cs_action="fork ${TP_ORG}/${_cs_name} to your account (or reuse your fork, renamed or not), clone it as origin, upstream = ${TP_ORG}/${_cs_name}, gh repo set-default ${TP_ORG}/${_cs_name}"
     else
       _cs_action="clone ${TP_ORG}/${_cs_name} as origin"
     fi
@@ -1495,6 +1522,8 @@ tp_cmd_doctor() {
     fi
     if [ "$_dr_role" = maintainer ] && ! tp_same_slug "$(tp_remote_slug "$_dr_path" origin)" "${TP_ORG}/${_dr_name}"; then
       tp_problem "${_dr_name}: maintainer checkout whose origin is not ${TP_ORG}/${_dr_name}"
+    elif tp_has_remote "$_dr_path" origin && [ -z "$(tp_remote_slug "$_dr_path" origin)" ]; then
+      tp_warn "${_dr_name}: $(tp_unknown_origin_text "$_dr_path")"
     fi
     if [ -f "$_dr_path/.githooks/pre-commit" ]; then
       _dr_hooks=$(git -C "$_dr_path" config --get core.hooksPath 2>/dev/null || true)

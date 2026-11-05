@@ -53,6 +53,11 @@ case "$1 $2" in
 esac
 if [ "$1" = api ]; then
   [ -z "$FAKE_GH_API_DOWN" ] || exit 1
+  if [ -n "$FAKE_GH_TOKEN_REVOKED" ]; then
+    echo '{"message":"Bad credentials","status":"401"}'
+    echo 'gh: Bad credentials (HTTP 401)' >&2
+    exit 1
+  fi
   shift
   [ "$1" != --paginate ] || shift
   case "$1" in
@@ -116,6 +121,7 @@ function baseEnv(extra: Env = {}): Env {
     FAKE_GH_PROTOCOL: 'https',
     FAKE_GH_PR: '',
     FAKE_GH_API_DOWN: '',
+    FAKE_GH_TOKEN_REVOKED: '',
     FAKE_UNAME_S: 'Linux',
     FAKE_BIN: bin,
     FAKE_GH_SOURCE: join(root, 'gh-fake'),
@@ -354,7 +360,7 @@ describe('setup.sh roles', () => {
     expect(modeFile()).toContain("role_turbopanel='contributor-fork'")
     expect(modeFile()).toContain("role_github='readonly'")
     expect(out).toContain(
-      'You work from your own fork. Your repos push to octo/<repo> (origin); TurboPanel is upstream.'
+      'You work from your own fork. Your repos push to your fork of each TurboPanel repo (origin); TurboPanel is upstream.'
     )
     expect(out).toContain('Except: .github (read-only).')
     expect(out.split('You work from your own fork').length - 1).toBe(1)
@@ -532,6 +538,37 @@ describe('setup.sh reruns', () => {
     expect(ghLog()).not.toContain('repo fork')
     expect(ghLog()).not.toContain('api repos/')
     expect(ghLog()).not.toContain('setup-git')
+  })
+
+  test('a revoked token reads as logged out, not offline', () => {
+    setup({ FAKE_GH_PUSH: 'false' })
+    const { status, out } = setup({ FAKE_GH_TOKEN_REVOKED: '1' })
+    expect(status, out).toBe(0)
+    expect(out).toContain('GitHub refused the saved gh token (revoked or expired)')
+    expect(out).toContain('gh auth login --hostname github.com')
+    expect(out).not.toContain('GitHub did not answer')
+    expect(modeFile()).toContain("github_login=''")
+  })
+
+  test('an origin setup cannot read as GitHub is warned about and kept', () => {
+    setup()
+    const ui = join(work, 'ui')
+    git(ui, 'remote', 'set-url', 'origin', 'git@gh-alias:TurboPanel/ui.git')
+    const { out } = setup()
+    expect(out).toContain(
+      'ui: origin git@gh-alias:TurboPanel/ui.git is not a GitHub address setup recognises'
+    )
+    expect(out).toContain('an ssh config host alias is not followed); left as it is.')
+    expect(git(ui, 'remote', 'get-url', 'origin')).toBe('git@gh-alias:TurboPanel/ui.git')
+  })
+
+  test('the fork plan names no fork address, since a fork can be renamed', () => {
+    const { status, out } = run(['--dir', work, '--dry-run', '--fork-all'], {
+      FAKE_GH_PUSH: 'false',
+    })
+    expect(status, out).toBe(0)
+    expect(out).toContain('fork TurboPanel/ui to your account (or reuse your fork, renamed or not)')
+    expect(out).not.toContain('octo/ui')
   })
 
   test('a trunk checked out in a linked worktree is never moved', () => {
@@ -1054,6 +1091,36 @@ describe('setup.sh status and doctor', () => {
     expect(out).toContain('commit.gpgsign')
     expect(modeFile()).toBe(before)
     expect(() => git(join(work, 'ui'), 'config', 'core.hooksPath')).toThrow()
+  })
+
+  test('doctor warns about an origin it cannot read for every role and reads the port 443 form', () => {
+    setup({ FAKE_GH_PUSH: 'false' })
+    git(join(work, 'ui'), 'remote', 'set-url', 'origin', 'git@gh-alias:TurboPanel/ui.git')
+    git(
+      join(work, 'website'),
+      'remote',
+      'set-url',
+      'origin',
+      'ssh://git@ssh.github.com:443/TurboPanel/website.git'
+    )
+    const { status, out } = run(['doctor', '--dir', work])
+    expect(status, out).toBe(0)
+    expect(out).toContain('ui: origin git@gh-alias:TurboPanel/ui.git is not a GitHub address')
+    expect(out).not.toContain('website: origin')
+  })
+
+  test('doctor reads the port 443 form as TurboPanel for a maintainer', () => {
+    setup()
+    git(
+      join(work, 'website'),
+      'remote',
+      'set-url',
+      'origin',
+      'ssh://git@ssh.github.com:443/TurboPanel/website.git'
+    )
+    const { status, out } = run(['doctor', '--dir', work])
+    expect(status, out).toBe(0)
+    expect(out).not.toContain('website: maintainer checkout whose origin')
   })
 
   test('doctor flags a direct-mode file on a host that cannot run it', () => {
