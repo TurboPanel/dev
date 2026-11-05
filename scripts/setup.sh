@@ -294,15 +294,16 @@ tp_detect_login() {
   GH_OFFLINE=0
   command -v gh >/dev/null 2>&1 || return 0
   gh auth token >/dev/null 2>&1 || return 0
-  _dl_errf=$(mktemp)
-  GH_LOGIN=$(gh api user --jq .login 2>"$_dl_errf") || GH_LOGIN=
-  _dl_err=$(cat "$_dl_errf")
-  rm -f "$_dl_errf"
-  [ -z "$GH_LOGIN" ] || return 0
-  case "$_dl_err" in
+  # One call, both streams: on success the login is the last line (gh writes
+  # nothing else to a pipe); on failure the text says why.
+  if _dl_out=$(gh api user --jq .login 2>&1); then
+    GH_LOGIN=$(printf '%s\n' "$_dl_out" | tail -n 1)
+    [ -z "$GH_LOGIN" ] || return 0
+  fi
+  case "$_dl_out" in
     *"HTTP 401"* | *"Bad credentials"*)
       GH_LOGIN=
-      tp_warn "GitHub refused the saved gh token (revoked or expired); setup goes on as not logged in. Log in again with: ${TP_GH_LOGIN_CMD}"
+      tp_warn "GitHub refused the saved gh token (revoked or expired); continuing as not logged in. Log in again with: ${TP_GH_LOGIN_CMD}"
       return 0
       ;;
     *) ;;
@@ -608,11 +609,19 @@ tp_remote_slug() {
   tp_url_slug "$_ru"
 }
 
+# A remote URL for messages, without any user:password@ part (an https URL
+# can carry a token there).
+tp_url_for_display() {
+  _ud_url=$1
+  printf '%s' "$_ud_url" | sed -e 's#^\([A-Za-z][A-Za-z0-9+.-]*://\)[^/@]*@#\1#'
+}
+
 # Why an origin that names no GitHub repo is flagged. An ssh config host alias
 # for github.com is not resolved: setup reads only the URL in git's config.
 tp_unknown_origin_text() {
+  _uo_path=$1
   printf 'origin %s is not a GitHub address setup recognises (https://github.com/<owner>/<repo>, git@github.com:<owner>/<repo> or ssh://git@ssh.github.com:443/<owner>/<repo>; an ssh config host alias is not followed)' \
-    "$(git -C "$1" remote get-url origin 2>/dev/null)"
+    "$(tp_url_for_display "$(git -C "$_uo_path" remote get-url origin 2>/dev/null)")"
 }
 
 tp_has_remote() {
@@ -877,6 +886,9 @@ tp_reconcile_remotes() {
   _rr_canon_slug="${TP_ORG}/${_rr_name}"
   _rr_origin=$(tp_remote_slug "$_rr_path" origin)
   _rr_upstream=$(tp_remote_slug "$_rr_path" upstream)
+  if [ -z "$_rr_origin" ] && tp_has_remote "$_rr_path" origin; then
+    tp_warn "${_rr_name}: $(tp_unknown_origin_text "$_rr_path"); left as it is." >&2
+  fi
   if tp_same_slug "$_rr_upstream" "$_rr_canon_slug" && ! tp_same_slug "$_rr_origin" "$_rr_canon_slug"; then
     # Already fork-shaped; keep it even for a maintainer.
     printf contributor-fork
@@ -899,8 +911,6 @@ tp_reconcile_remotes() {
   if [ -n "$_rr_origin" ] && ! tp_same_slug "$_rr_origin" "$_rr_canon_slug" &&
     ! tp_same_slug "$_rr_origin" "${_rr_fork:-?}"; then
     tp_warn "${_rr_name}: origin points to ${_rr_origin}; left as it is." >&2
-  elif [ -z "$_rr_origin" ] && tp_has_remote "$_rr_path" origin; then
-    tp_warn "${_rr_name}: $(tp_unknown_origin_text "$_rr_path"); left as it is." >&2
   fi
   printf '%s' "$_rr_role"
 }
@@ -1510,9 +1520,9 @@ tp_cmd_doctor() {
     fi
     _dr_role=$(tp_layout_role "$_dr_path" "$_dr_name")
     echo "  ${_dr_name} (${_dr_role}, $(tp_role_word "$_dr_role"))"
-    echo "    origin:     $(git -C "$_dr_path" remote get-url origin 2>/dev/null || echo none)"
+    echo "    origin:     $(tp_url_for_display "$(git -C "$_dr_path" remote get-url origin 2>/dev/null || echo none)")"
     if tp_has_remote "$_dr_path" upstream; then
-      echo "    upstream:   $(git -C "$_dr_path" remote get-url upstream)"
+      echo "    upstream:   $(tp_url_for_display "$(git -C "$_dr_path" remote get-url upstream)")"
     fi
     if [ "$_dr_role" = contributor-fork ] && ! tp_same_slug "$(tp_remote_slug "$_dr_path" upstream)" "${TP_ORG}/${_dr_name}"; then
       tp_problem "${_dr_name}: fork checkout without upstream = ${TP_ORG}/${_dr_name}"

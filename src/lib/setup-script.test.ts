@@ -566,6 +566,24 @@ describe('setup.sh reruns', () => {
     expect(git(ui, 'remote', 'get-url', 'origin')).toBe('git@gh-alias:TurboPanel/ui.git')
   })
 
+  test('an unreadable origin on a fork-shaped checkout is warned about too', () => {
+    setup()
+    const ui = join(work, 'ui')
+    git(ui, 'remote', 'add', 'upstream', git(ui, 'remote', 'get-url', 'origin'))
+    setOrigin('ui', 'git@gh-alias:octo/ui.git')
+    const { out } = setup()
+    expect(out).toContain('ui: origin git@gh-alias:octo/ui.git is not a GitHub address')
+  })
+
+  test('a token in an unreadable origin is never printed', () => {
+    setup()
+    setOrigin('ui', 'https://x-access-token:s3cr3tvalue@git.example.invalid/TurboPanel/ui.git')
+    const { out } = setup()
+    expect(out).toContain('origin https://git.example.invalid/TurboPanel/ui.git is not a GitHub')
+    expect(out).not.toContain('s3cr3tvalue')
+    expect(run(['doctor', '--dir', work]).out).not.toContain('s3cr3tvalue')
+  })
+
   test('the fork plan names no fork address, since a fork can be renamed', () => {
     const { status, out } = run(['--dir', work, '--dry-run', '--fork-all'], {
       FAKE_GH_PUSH: 'false',
@@ -1107,12 +1125,17 @@ describe('setup.sh status and doctor', () => {
     expect(out).not.toContain('website: origin')
   })
 
-  test('doctor reads the port 443 form as TurboPanel for a maintainer', () => {
+  test.each([
+    PORT_443_WEBSITE,
+    'ssh://ssh.github.com:443/TurboPanel/website.git',
+    'ssh://git@ssh.github.com/TurboPanel/website.git',
+  ])('doctor reads %s as TurboPanel for a maintainer', (url) => {
     setup()
-    setOrigin('website', PORT_443_WEBSITE)
+    setOrigin('website', url)
     const { status, out } = run(['doctor', '--dir', work])
     expect(status, out).toBe(0)
     expect(out).not.toContain('website: maintainer checkout whose origin')
+    expect(out).not.toContain('website: origin')
   })
 
   test('doctor flags a direct-mode file on a host that cannot run it', () => {
