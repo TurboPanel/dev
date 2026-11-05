@@ -140,8 +140,14 @@ describe('vm-bootstrap.sh', () => {
     expect(SOURCE).toContain('"${DEV_ROOT}/${repo}"')
     expect(SOURCE).toContain('${DEV_ROOT}/dev/console')
     expect(SOURCE).toContain('export TURBOPANEL_DEV_ROOT=')
-    // git still runs with the real home, where the SSH keys are.
+    // git still runs with the real home, where the user's git config is.
     expect(SOURCE).toContain('"HOME=${DEV_HOME}"')
+  })
+
+  test('clones over HTTPS without a prompt, never over SSH by default', () => {
+    expect(SOURCE).toContain('git clone "https://github.com/TurboPanel/${repo}.git"')
+    expect(SOURCE).toContain('GIT_TERMINAL_PROMPT=0')
+    expect(SOURCE).not.toContain('git@github.com:')
   })
 
   test.each(['relative/turbopanel', '/srv/my repos', '/srv/a$b', '/srv/../root', '/'])(
