@@ -204,6 +204,10 @@ function withoutGh(): Env {
 const sudoLog = () =>
   existsSync(join(root, 'gh.log.sudo')) ? readFileSync(join(root, 'gh.log.sudo'), 'utf8') : ''
 
+const PORT_443_WEBSITE = 'ssh://git@ssh.github.com:443/TurboPanel/website.git'
+const setOrigin = (repo: string, url: string) =>
+  git(join(work, repo), 'remote', 'set-url', 'origin', url)
+
 const modeFile = () => readFileSync(join(work, '.turbopanel-dev-mode'), 'utf8')
 const ghLog = () =>
   existsSync(join(root, 'gh.log')) ? readFileSync(join(root, 'gh.log'), 'utf8') : ''
@@ -553,7 +557,7 @@ describe('setup.sh reruns', () => {
   test('an origin setup cannot read as GitHub is warned about and kept', () => {
     setup()
     const ui = join(work, 'ui')
-    git(ui, 'remote', 'set-url', 'origin', 'git@gh-alias:TurboPanel/ui.git')
+    setOrigin('ui', 'git@gh-alias:TurboPanel/ui.git')
     const { out } = setup()
     expect(out).toContain(
       'ui: origin git@gh-alias:TurboPanel/ui.git is not a GitHub address setup recognises'
@@ -1095,14 +1099,8 @@ describe('setup.sh status and doctor', () => {
 
   test('doctor warns about an origin it cannot read for every role and reads the port 443 form', () => {
     setup({ FAKE_GH_PUSH: 'false' })
-    git(join(work, 'ui'), 'remote', 'set-url', 'origin', 'git@gh-alias:TurboPanel/ui.git')
-    git(
-      join(work, 'website'),
-      'remote',
-      'set-url',
-      'origin',
-      'ssh://git@ssh.github.com:443/TurboPanel/website.git'
-    )
+    setOrigin('ui', 'git@gh-alias:TurboPanel/ui.git')
+    setOrigin('website', PORT_443_WEBSITE)
     const { status, out } = run(['doctor', '--dir', work])
     expect(status, out).toBe(0)
     expect(out).toContain('ui: origin git@gh-alias:TurboPanel/ui.git is not a GitHub address')
@@ -1111,13 +1109,7 @@ describe('setup.sh status and doctor', () => {
 
   test('doctor reads the port 443 form as TurboPanel for a maintainer', () => {
     setup()
-    git(
-      join(work, 'website'),
-      'remote',
-      'set-url',
-      'origin',
-      'ssh://git@ssh.github.com:443/TurboPanel/website.git'
-    )
+    setOrigin('website', PORT_443_WEBSITE)
     const { status, out } = run(['doctor', '--dir', work])
     expect(status, out).toBe(0)
     expect(out).not.toContain('website: maintainer checkout whose origin')
