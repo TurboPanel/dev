@@ -165,7 +165,7 @@ export async function installDaemonSystemd(
   const dev = resolveDevIdentity()
   const envPrefix = [
     'TURBOPANEL_SKIP_DAEMON_START=1',
-    `TURBOPANEL_DEV_USER=${dev.user}`,
+    `TURBOPANEL_DEV_USER=${shellQuote(dev.user)}`,
     `TURBOPANEL_DEV_UID=${dev.uid}`,
     `TURBOPANEL_DEV_GID=${dev.gid}`,
     `TURBOPANEL_DEV_ROOT=${shellQuote(resolveDevRoot())}`,
