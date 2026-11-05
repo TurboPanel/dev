@@ -165,11 +165,11 @@ export async function installDaemonSystemd(
   const dev = resolveDevIdentity()
   const envPrefix = [
     'TURBOPANEL_SKIP_DAEMON_START=1',
-    `TURBOPANEL_DEV_USER=${dev.user}`,
+    `TURBOPANEL_DEV_USER=${shellQuote(dev.user)}`,
     `TURBOPANEL_DEV_UID=${dev.uid}`,
     `TURBOPANEL_DEV_GID=${dev.gid}`,
-    `TURBOPANEL_DEV_ROOT=${resolveDevRoot()}`,
-    `TURBOPANEL_DAEMON_ROOT=${DAEMON_DIR}`,
+    `TURBOPANEL_DEV_ROOT=${shellQuote(resolveDevRoot())}`,
+    `TURBOPANEL_DAEMON_ROOT=${shellQuote(DAEMON_DIR)}`,
   ].join(' ')
 
   const command = `cd ${shellQuote(DAEMON_DIR)} && ${envPrefix} exec bash ${shellQuote('scripts/install-daemon-systemd.sh')}`

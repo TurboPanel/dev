@@ -27,8 +27,8 @@ Usage: vm-bootstrap.sh [options] [DEV_USER]
   --lan-alias NAME    extra DNS name this VM answers to (repeatable); written to
                       /etc/turbopanel/dev-forward-hosts
   --clone             clone dev, turbopaneld, turbopanel, ui, website and .github
-                      over SSH into TURBOPANEL_DEV_ROOT, else ~/turbopanel
-                      (skips existing folders)
+                      over HTTPS into TURBOPANEL_DEV_ROOT, else ~/turbopanel
+                      (skips existing folders; no SSH key needed)
   -h, --help          show this help
 USAGE
 }
@@ -273,15 +273,19 @@ if [ "$DO_CLONE" -eq 1 ]; then
     printf 'vm-bootstrap: %s cannot create or use %s.\n' "$DEV_USER" "$DEV_ROOT" >&2
     exit 1
   fi
-  # sudo drops SSH_AUTH_SOCK unless kept; pass it on when present so a forwarded
-  # key (ssh -A) can fetch from GitHub. HOME stays the real home (SSH keys).
+  # HTTPS, the same default as setup.sh: the repos are public, so no key or
+  # login is needed. HOME stays the real home, so the user's git config applies
+  # (the gh credential helper, or a url.<ssh>.insteadOf rule that sends clones
+  # over SSH; sudo drops SSH_AUTH_SOCK unless kept, so it is passed on when
+  # present). GIT_TERMINAL_PROMPT=0: a clone that wants a password fails
+  # instead of waiting for one.
   for repo in dev turbopaneld turbopanel ui website .github; do
     if [ -e "${DEV_ROOT}/${repo}" ]; then
       echo "    ${repo}: ${DEV_ROOT}/${repo} already exists, skipping"
       continue
     fi
-    runuser -u "$DEV_USER" -- env "HOME=${DEV_HOME}" "SSH_AUTH_SOCK=${SSH_AUTH_SOCK:-}" \
-      git clone "git@github.com:TurboPanel/${repo}.git" "${DEV_ROOT}/${repo}"
+    runuser -u "$DEV_USER" -- env "HOME=${DEV_HOME}" "SSH_AUTH_SOCK=${SSH_AUTH_SOCK:-}" GIT_TERMINAL_PROMPT=0 \
+      git clone "https://github.com/TurboPanel/${repo}.git" "${DEV_ROOT}/${repo}"
   done
 fi
 
