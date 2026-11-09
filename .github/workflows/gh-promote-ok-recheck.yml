@@ -7,11 +7,21 @@
 # open trunk -> staging and staging -> live PRs
 # (scripts/promote/promote-recheck.sh). promote-ok looks once and ends, so
 # this is how a "not yet" turns green: a run still waiting for a runner after
-# its evaluation already looked and failed is force-cancelled and re-run, so
+# its evaluation may already have looked is force-cancelled and re-run, so
 # none is left red with no later recheck. A re-run reports on the same head
 # commit, under the same check name and app (GitHub Actions), so the ruleset
-# that requires `promote-ok` sees the new result. No Checks API, no commit statuses: the PR's own run is the one
-# source of the check.
+# that requires `promote-ok` sees the new result. No Checks API, no commit
+# statuses: the PR's own run is the one source of the check.
+#
+# It then does the same for the commit the triggering run was for, when that
+# commit is no longer a PR's head: the RC PR moved on to a newer trunk commit
+# before this one's canary finished, and its check would otherwise stay red.
+# It reads that commit from the caller's own event (a reusable workflow sees
+# the caller's `github` context), so callers pass nothing for it. A run that
+# another run started (the canary) carries the branch tip as its head, not
+# the commit it built, so the caller's canary workflow names that commit in
+# its `run-name` ("Canary <commit>"); without it, only the PR heads are
+# re-checked.
 #
 # It never reports a check named promote-ok itself, and never fails its own
 # run (a warning says what it could not do). `dry-run: true` only reports.
@@ -59,7 +69,10 @@ jobs:
   recheck:
     name: recheck
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # Worst case: three commits, each 21 pauses of 10 s (promote-recheck.sh)
+    # plus the API calls between them; the script never fails, so this only
+    # stops a hung call.
+    timeout-minutes: 25
     steps:
       - name: Check out the promotion scripts (TurboPanel/dev)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -78,4 +91,7 @@ jobs:
           REPO: ${{ github.repository }}
           WORKFLOW: ${{ inputs.check-workflow }}
           DRY_RUN: ${{ inputs.dry-run }}
+          TRIGGER_SHA: ${{ github.event.workflow_run.head_sha }}
+          TRIGGER_EVENT: ${{ github.event.workflow_run.event }}
+          TRIGGER_TITLE: ${{ github.event.workflow_run.display_title }}
         run: sh .promote/scripts/promote/promote-recheck.sh

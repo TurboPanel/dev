@@ -88,7 +88,7 @@ trunk_ci_state() {
   gh api "repos/$REPO/actions/workflows/$CI_WORKFLOW/runs?head_sha=$HEAD_SHA&branch=trunk&per_page=20" \
     --jq '[.workflow_runs[] | select(.event == "push" or .event == "workflow_dispatch")]
           | sort_by(.created_at) | last
-          | if . == null then "missing" elif .status != "completed" then "pending" else .conclusion end'
+          | if . == null then "missing" elif .status != "completed" then "pending" else .conclusion end' || return 1
   return 0
 }
 
@@ -135,7 +135,7 @@ version_key() {
 }
 
 check_trunk_ci() {
-  _state="$(trunk_ci_state)"
+  _state="$(trunk_ci_state)" || fail "could not read the trunk $CI_WORKFLOW runs of $SHORT (GitHub API error); the next recheck tries again, or re-run this check."
   case "$_state" in
     success) echo "trunk $CI_WORKFLOW passed on $SHORT" ;;
     pending) fail "waiting for the trunk $CI_WORKFLOW run of $SHORT to finish; this re-checks automatically when it does." ;;
