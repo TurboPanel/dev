@@ -210,7 +210,14 @@ tp_ensure_git_hooks_path() {
     git -C "$_eghp_root" config --local core.hooksPath .githooks
   fi
 
-  chmod +x "$_eghp_root"/.githooks/* 2>/dev/null || true
+  # Only the hook this function wires. A glob over .githooks would also flip
+  # the mode of files that are not hooks (a guide kept next to them), which
+  # shows up as a mode change in that checkout. Nothing to do when the hook
+  # is already executable.
+  _eghp_hook="$_eghp_root/.githooks/pre-commit"
+  if [ ! -x "$_eghp_hook" ]; then
+    chmod +x "$_eghp_hook" 2>/dev/null || true
+  fi
 }
 
 # Wire core.hooksPath for every co-located development checkout (dev + platform
