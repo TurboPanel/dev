@@ -501,32 +501,69 @@ describe('promote-recheck.sh', () => {
     expect(r.out).toContain('staging -> live: no open PR')
   })
 
+  /** `gh run view <id> --json jobs`: the caller's evaluate and fan-in jobs. */
+  const jobs = (status: string, conclusion: string): Route => ({
+    match: /^run view 11 --repo o\/r --json jobs/,
+    body: {
+      jobs: [
+        { name: 'evaluate / evaluate', status, conclusion },
+        { name: 'promote-ok', status: 'queued', conclusion: '' },
+      ],
+    },
+  })
+  const forceCancel: Route = {
+    match: /^api -X POST repos\/o\/r\/actions\/runs\/11\/force-cancel/,
+    body: {},
+  }
+  const stuck = (...after: unknown[][]): Route => ({
+    match: new RegExp(`^run list .*--commit ${HEAD}`),
+    sequence: [
+      [{ databaseId: 11, status: 'queued', conclusion: '' }],
+      [{ databaseId: 11, status: 'queued', conclusion: '' }],
+      [{ databaseId: 11, status: 'queued', conclusion: '' }],
+      ...after,
+    ],
+  })
+
   // promote-ok looks once and ends in seconds. A run still going after the
-  // wait may have looked before the canary existed; left alone it would stay
-  // red with no later recheck, so it is cancelled and re-run.
-  test('cancels and re-runs a check still going after the wait', () => {
+  // wait whose evaluation already failed only has its fan-in left, which a
+  // plain cancel would still run (`if: always()`); left alone it would stay
+  // red with no later recheck, so it is force-cancelled and re-run.
+  test('force-cancels and re-runs a check that looked too early and waits for a runner', () => {
     const r = run(
       RECHECK,
       [
         ...prs([{ number: 5, headRefOid: HEAD }], []),
-        {
-          match: new RegExp(`^run list .*--commit ${HEAD}`),
-          sequence: [
-            [{ databaseId: 11, status: 'queued', conclusion: '' }],
-            [{ databaseId: 11, status: 'queued', conclusion: '' }],
-            [{ databaseId: 11, status: 'queued', conclusion: '' }],
-            [{ databaseId: 11, status: 'completed', conclusion: 'cancelled' }],
-          ],
-        },
-        { match: /^run cancel /, body: {} },
+        stuck([{ databaseId: 11, status: 'completed', conclusion: 'cancelled' }]),
+        jobs('completed', 'failure'),
+        forceCancel,
         rerunRoute,
       ],
       env
     )
     expect(r.status).toBe(0)
-    const acted = r.calls.filter((c) => /^run (cancel|rerun) /.test(c))
-    expect(acted).toEqual(['run cancel 11 --repo o/r', 'run rerun 11 --repo o/r'])
+    const acted = r.calls.filter((c) => /force-cancel|^run rerun /.test(c))
+    expect(acted).toEqual([
+      'api -X POST repos/o/r/actions/runs/11/force-cancel',
+      'run rerun 11 --repo o/r',
+    ])
     expect(r.out).toContain('PR #5: re-ran the failed promote-ok run 11')
+  })
+
+  test('leaves a check alone that has not evaluated yet, or already passed', () => {
+    for (const [status, conclusion, said] of [
+      ['queued', '', 'has not evaluated yet (queued '],
+      ['completed', 'success', 'has passed its evaluation'],
+    ]) {
+      const r = run(
+        RECHECK,
+        [...prs([{ number: 5, headRefOid: HEAD }], []), stuck(), jobs(status, conclusion)],
+        env
+      )
+      expect(r.status).toBe(0)
+      expect(r.out).toContain(said)
+      expect(r.calls.join('\n')).not.toMatch(/force-cancel|run rerun/)
+    }
   })
 
   test('a check that passes while it is being cancelled is left green', () => {
@@ -534,16 +571,9 @@ describe('promote-recheck.sh', () => {
       RECHECK,
       [
         ...prs([{ number: 5, headRefOid: HEAD }], []),
-        {
-          match: new RegExp(`^run list .*--commit ${HEAD}`),
-          sequence: [
-            [{ databaseId: 11, status: 'in_progress', conclusion: '' }],
-            [{ databaseId: 11, status: 'in_progress', conclusion: '' }],
-            [{ databaseId: 11, status: 'in_progress', conclusion: '' }],
-            [{ databaseId: 11, status: 'completed', conclusion: 'success' }],
-          ],
-        },
-        { match: /^run cancel /, exit: 1, stderr: 'run already completed' },
+        stuck([{ databaseId: 11, status: 'completed', conclusion: 'success' }]),
+        jobs('completed', 'failure'),
+        { ...forceCancel, body: undefined, exit: 1, stderr: 'run already completed' },
       ],
       env
     )
@@ -552,13 +582,14 @@ describe('promote-recheck.sh', () => {
     expect(r.out).toContain('PR #5: promote-ok is already green')
   })
 
-  test('warns without failing when a cancelled check never stops', () => {
+  test('warns without failing when a cancelled check never stops, or its jobs cannot be read', () => {
     const r = run(
       RECHECK,
       [
         ...prs([{ number: 5, headRefOid: HEAD }], []),
-        runs(HEAD, [{ databaseId: 11, status: 'in_progress', conclusion: '' }]),
-        { match: /^run cancel /, body: {} },
+        stuck(),
+        jobs('completed', 'failure'),
+        forceCancel,
       ],
       env
     )
@@ -566,21 +597,24 @@ describe('promote-recheck.sh', () => {
     // Three looks before the cancel, three after it (WAIT_POLLS 2).
     expect(r.calls.filter((c) => c.startsWith('run list'))).toHaveLength(6)
     expect(r.calls.join('\n')).not.toContain('run rerun')
-    expect(r.out).toContain("still 'in_progress' after it was cancelled")
+    expect(r.out).toContain("still 'queued' after it was cancelled")
+    const unread = run(RECHECK, [...prs([{ number: 5, headRefOid: HEAD }], []), stuck()], env)
+    expect(unread.status).toBe(0)
+    expect(unread.out).toContain('its jobs could not be read')
+    expect(unread.calls.join('\n')).not.toMatch(/force-cancel|run rerun/)
   })
 
-  test('a dry run names the still-running check it would restart', () => {
+  test('a dry run names the check it would force-cancel and re-run', () => {
     const r = run(
       RECHECK,
-      [
-        ...prs([{ number: 5, headRefOid: HEAD }], []),
-        runs(HEAD, [{ databaseId: 11, status: 'in_progress', conclusion: '' }]),
-      ],
+      [...prs([{ number: 5, headRefOid: HEAD }], []), stuck(), jobs('completed', 'failure')],
       { ...env, DRY_RUN: 'true' }
     )
     expect(r.status).toBe(0)
-    expect(r.out).toContain('would cancel and re-run the still-running promote-ok run 11 (dry run)')
-    expect(r.calls.join('\n')).not.toMatch(/run (cancel|rerun)/)
+    expect(r.out).toContain(
+      "would force-cancel and re-run promote-ok run 11, whose evaluation ended 'failure' (dry run)"
+    )
+    expect(r.calls.join('\n')).not.toMatch(/force-cancel|run rerun/)
   })
 
   test('never fails: no run yet, or a refused re-run, is a warning', () => {

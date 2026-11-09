@@ -16,10 +16,10 @@
 # result. A run still in progress is waited for (it may have started before
 # the missing piece appeared) and then re-run if it did not pass. promote-ok
 # looks once and ends in seconds, so a run still going after that wait is
-# queued for a runner or is an older build that waits in place, and it may
-# have looked before the missing piece appeared: it is cancelled and re-run,
-# so nothing is left red with no later recheck to fix it. A re-run is the
-# whole run (it is two short jobs), which also restarts a cancelled one.
+# waiting for a runner. If its evaluate job already looked and failed, it is
+# force-cancelled and re-run, so nothing is left red with no later recheck to
+# fix it (see restart). A re-run is the whole run (it is two short jobs),
+# which also restarts a cancelled one.
 #
 # Best effort: it never fails its own run. Anything it cannot do is reported
 # as a warning; re-running the failed check by hand does the same thing.
@@ -106,17 +106,40 @@ act() {
   return 0
 }
 
-# A run still going after the wait: cancel it, wait for the cancel to land,
-# then re-run it so it takes a fresh look.
+# A run still going after the wait. Its evaluate job decides what to do:
+#   not finished   it looks on its own once it gets a runner, which is after
+#                  the trigger: leave it.
+#   passed         only the fan-in job is waiting for a runner: leave it.
+#   failed         it looked before what it waits for existed, and only the
+#                  fan-in is left: force-cancel the run (a plain cancel still
+#                  runs the caller's `if: always()` fan-in, so it would wait
+#                  for a runner all the same), then re-run it for a fresh look.
 restart() {
   _label="$1"
   _id="$2"
+  _eval="$(gh run view "$_id" --repo "$REPO" --json jobs \
+    --jq '[.jobs[] | select(.name | test("evaluate"))][0] | select(. != null) | "\(.status) \(.conclusion)"' 2>/dev/null)" || _eval=""
+  case "$_eval" in
+    "completed success")
+      echo "$_label: promote-ok run $_id has passed its evaluation; it reports green once its last job gets a runner"
+      return 0
+      ;;
+    completed\ *) ;;
+    "")
+      warn "$_label: promote-ok run $_id is still going and its jobs could not be read — re-run it by hand if it ends red"
+      return 0
+      ;;
+    *)
+      echo "$_label: promote-ok run $_id has not evaluated yet ($_eval); it looks on its own once it gets a runner"
+      return 0
+      ;;
+  esac
   if [ "$DRY_RUN" = "true" ]; then
-    echo "$_label: would cancel and re-run the still-running promote-ok run $_id (dry run)"
+    echo "$_label: would force-cancel and re-run promote-ok run $_id, whose evaluation ended '${_eval#completed }' (dry run)"
     return 0
   fi
   # A cancel that fails is usually a run that just ended; the look below says.
-  gh run cancel "$_id" --repo "$REPO" >/dev/null 2>&1 || true
+  gh api -X POST "repos/$REPO/actions/runs/$_id/force-cancel" >/dev/null 2>&1 || true
   act "$_label" "$(settled_run "$_sha")" gave_up
   return 0
 }
