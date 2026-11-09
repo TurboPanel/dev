@@ -8,6 +8,10 @@ import { afterEach, describe, expect, test } from 'vitest'
 const HERE = dirname(fileURLToPath(import.meta.url))
 const LIB_DIR = join(HERE, '../../scripts/lib')
 
+// A throwaway repo only: no global or system git config of the person running
+// the test (no signing key, hooks path or identity).
+const GIT_ENV = { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' }
+
 const dirs: string[] = []
 
 afterEach(() => {
@@ -17,7 +21,7 @@ afterEach(() => {
 })
 
 function git(cwd: string, args: string[]): string {
-  const result = spawnSync('git', ['-C', cwd, ...args], { encoding: 'utf8' })
+  const result = spawnSync('git', ['-C', cwd, ...args], { encoding: 'utf8', env: GIT_ENV })
   expect(result.status, result.stderr).toBe(0)
   return result.stdout
 }
@@ -53,7 +57,7 @@ function ensureHooksPath(root: string): void {
       LIB_DIR,
       root,
     ],
-    { encoding: 'utf8' }
+    { encoding: 'utf8', env: GIT_ENV }
   )
   expect(result.status, result.stderr || result.stdout).toBe(0)
 }
@@ -95,6 +99,7 @@ describe('tp_ensure_git_hooks_path file modes', () => {
     expect(
       spawnSync('git', ['-C', root, 'config', '--local', '--get', 'core.hooksPath'], {
         encoding: 'utf8',
+        env: GIT_ENV,
       }).stdout.trim()
     ).toBe('')
   })
