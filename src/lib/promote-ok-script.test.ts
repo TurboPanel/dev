@@ -17,8 +17,8 @@ const START = join(ROOT, 'scripts', 'promote', 'start-version.sh')
  * script's filters are exercised); `file` is what `gh release download
  * --output` writes; `exit` fails the call. `sequence`, when set, answers with
  * `body` `sequence[0]`, then `sequence[1]`, … on each successive match of
- * this route, holding on the last entry once exhausted — for proving a retry
- * loop polls more than once before it settles.
+ * this route, holding on the last entry once exhausted — for proving a check
+ * looks only once, or a recheck looks again.
  */
 type Route = {
   match: RegExp
@@ -118,17 +118,14 @@ const tags = (...names: string[]): Route => ({
   body: names.map((name) => ({ ref: `refs/tags/${name}` })),
 })
 
-// Every "not ready yet" case is a single check here: the deadline is already
-// past before the first look, so it fails on the same look it always did, and
-// the fail message — proven byte-identical to before the retry loop existed —
-// is the same one production would eventually give up with too.
+// The check looks once and ends: every "not ready yet" case is red on that one
+// look, and the recheck workflow re-runs it later.
 const checkEnv = (base: string, kind = 'instance') => ({
   REPO: 'o/r',
   REPO_KIND: kind,
   CI_WORKFLOW: 'build.yml',
   BASE: base,
   HEAD_SHA: HEAD,
-  MAX_WAIT_SECONDS: '0',
 })
 
 const ciRuns = (...runs: Record<string, string>[]): Route => ({
@@ -193,7 +190,7 @@ describe('promote-ok.sh — Release Candidate PR (base staging)', () => {
     )
     expect(r.status).toBe(1)
     expect(r.out).toContain(
-      'timed out after 0 min waiting for the canary of aaaaaaa (no manifest-X.Y.Z-canary.N.json on the canary release names it yet). Its build run may be missing, queued behind a stuck run, or failed; see the run lines above. Re-run or cancel the stuck canary run; this re-checks automatically.'
+      'waiting for the canary of aaaaaaa (no manifest-X.Y.Z-canary.N.json on the canary release names it yet); this re-checks automatically when its canary build finishes. If that build failed or is stuck, see the run lines above, then re-run or cancel it.'
     )
     expect(r.out).toContain('::error title=promote-ok::')
   })
@@ -206,14 +203,14 @@ describe('promote-ok.sh — Release Candidate PR (base staging)', () => {
     )
     expect(pending.status).toBe(1)
     expect(pending.out).toContain(
-      'waiting for the trunk build.yml run of aaaaaaa to finish (state: pending); this re-checks automatically.'
+      'waiting for the trunk build.yml run of aaaaaaa to finish; this re-checks automatically when it does.'
     )
     const missing = run(CHECK, [ciRuns(run1({ event: 'pull_request' }))], checkEnv('staging'))
     expect(missing.status).toBe(1)
     expect(missing.out).toContain('none has started yet')
   })
 
-  test('says what it waits for while polling, and names the canary run on timeout', () => {
+  test('names the canary run it waits for, and the runs ahead of it', () => {
     const canaryRuns = {
       match: /^api repos\/o\/r\/actions\/workflows\/canary\.yml\/runs\?head_sha=/,
       body: {
@@ -240,67 +237,49 @@ describe('promote-ok.sh — Release Candidate PR (base staging)', () => {
         ],
       },
     }
-    const r = run(CHECK, [ciRuns(run1({})), canaryAssets(), canaryRuns, groupRuns], {
-      ...checkEnv('staging'),
-      MAX_WAIT_SECONDS: '2',
-      PROGRESS_INTERVAL_SECONDS: '0',
-    })
+    const r = run(
+      CHECK,
+      [ciRuns(run1({})), canaryAssets(), canaryRuns, groupRuns],
+      checkEnv('staging')
+    )
     expect(r.status).toBe(1)
-    expect(r.out).toContain('promote-ok: still waiting')
     expect(r.out).toContain('canary.yml run for aaaaaaa: run 77 is queued')
     expect(r.out).toContain('https://github.com/o/r/actions/runs/77')
     expect(r.out).toContain('run 70 in_progress')
-    expect(r.out).toContain('timed out after 0 min waiting for the canary')
+    expect(r.out).toContain('waiting for the canary of aaaaaaa')
   })
 
   test('a canary run lookup that fails gives the plain note and the same verdict', () => {
-    const r = run(CHECK, [ciRuns(run1({})), canaryAssets()], {
-      ...checkEnv('staging'),
-      MAX_WAIT_SECONDS: '2',
-      PROGRESS_INTERVAL_SECONDS: '0',
-    })
+    const r = run(CHECK, [ciRuns(run1({})), canaryAssets()], checkEnv('staging'))
     expect(r.status).toBe(1)
     expect(r.out).toContain('canary.yml run for aaaaaaa: could not be read')
     expect(r.out).toContain('runs not finished (oldest first): could not be read')
-    expect(r.out).toContain('timed out after 0 min waiting for the canary')
+    expect(r.out).toContain('waiting for the canary of aaaaaaa')
   })
 
-  test('polls in place instead of failing once: a still-running trunk run that then succeeds', () => {
+  // It used to poll in place for up to an hour; those idle jobs held the
+  // runners the builds they waited for needed. One look, then it ends.
+  test('looks once and ends: a trunk run still going is red at once, never waited for', () => {
     const runsRoute = {
       match: /^api repos\/o\/r\/actions\/workflows\/build\.yml\/runs\?/,
       sequence: [
         { workflow_runs: [run1({ status: 'in_progress', conclusion: '' })] },
-        { workflow_runs: [run1({ status: 'in_progress', conclusion: '' })] },
         { workflow_runs: [run1({})] },
       ],
     }
-    const r = run(CHECK, [runsRoute], {
-      ...checkEnv('staging', 'notes-only'),
-      MAX_WAIT_SECONDS: '60',
-    })
-    expect(r.status).toBe(0)
-    expect(r.out).toContain('PASS')
-    // Never printed a red X while it was still waiting.
-    expect(r.out).not.toContain('::error')
+    const r = run(CHECK, [runsRoute], checkEnv('staging', 'notes-only'))
+    expect(r.status).toBe(1)
+    expect(r.out).toContain('waiting for the trunk build.yml run of aaaaaaa to finish')
     const looks = r.calls.filter((c) => c.startsWith('api repos/o/r/actions/workflows'))
-    expect(looks.length).toBeGreaterThanOrEqual(3)
+    expect(looks).toHaveLength(1)
   })
 
-  test('still red after really running out of time, not on the first look', () => {
-    const alwaysPending = {
-      match: /^api repos\/o\/r\/actions\/workflows\/build\.yml\/runs\?/,
-      sequence: [{ workflow_runs: [run1({ status: 'in_progress', conclusion: '' })] }],
-    }
-    const r = run(CHECK, [alwaysPending], {
-      ...checkEnv('staging', 'notes-only'),
-      MAX_WAIT_SECONDS: '1',
-    })
-    expect(r.status).toBe(1)
-    expect(r.out).toContain(
-      'waiting for the trunk build.yml run of aaaaaaa to finish (state: pending); this re-checks automatically.'
-    )
-    const looks = r.calls.filter((c) => c.startsWith('api repos/o/r/actions/workflows'))
-    expect(looks.length).toBeGreaterThanOrEqual(1)
+  test('never sleeps or polls in the job, and the job may not run long', () => {
+    const script = readFileSync(CHECK, 'utf8')
+    expect(script).not.toMatch(/^\s*sleep\b/m)
+    expect(script).not.toMatch(/while :/)
+    const workflow = readFileSync(join(ROOT, '.github', 'workflows', 'gh-promote-ok.yml'), 'utf8')
+    expect(workflow).toMatch(/^ {4}timeout-minutes: 5$/m)
   })
 
   test('red, plainly, when the trunk run failed (no canary will ever come)', () => {
@@ -404,23 +383,17 @@ describe('promote-ok.sh — Release PR (base live)', () => {
     )
   })
 
-  // 2026-10-12: the Release PR's head moved when the RC PR merged, before
-  // Publish Release Candidate had pushed the new rc tag. A check that read
-  // the newest rc once locked onto the previous one and waited out the hour.
-  test('re-reads the newest rc while it waits: an rc published after the check started', () => {
-    const tagRefs = (...names: string[]) => names.map((name) => ({ ref: `refs/tags/${name}` }))
+  // 2026-10-12: the Release PR's head moves when the RC PR merges, before
+  // Publish Release Candidate has pushed the new rc tag. One look then sees
+  // the previous rc and says "not yet"; Publish Release Candidate finishing
+  // re-runs the check, which then reads the new tag.
+  test('an rc tag not pushed yet is one red look, not a wait', () => {
     const r = run(
       CHECK,
       [
+        tags(...released, 'v0.1.4-rc.2'),
         {
-          match: /^api --paginate repos\/o\/r\/git\/matching-refs\/tags\/ /,
-          sequence: [
-            tagRefs(...released, 'v0.1.4-rc.2'),
-            tagRefs(...released, 'v0.1.4-rc.2', 'v0.1.4-rc.3'),
-          ],
-        },
-        {
-          match: /^api repos\/o\/r\/releases\/tags\/v0\.1\.4-rc\.[23] /,
+          match: /^api repos\/o\/r\/releases\/tags\/v0\.1\.4-rc\.2 /,
           body: { draft: false },
         },
         {
@@ -430,51 +403,16 @@ describe('promote-ok.sh — Release PR (base live)', () => {
             base_commit: { sha: RC, commit: { tree: { sha: 'tree-0' } } },
           },
         },
-        {
-          match: /^api repos\/o\/r\/compare\/v0\.1\.4-rc\.3\.\.\./,
-          body: {
-            behind_by: 0,
-            base_commit: { sha: RC, commit: { tree: { sha: 'tree-1' } } },
-          },
-        },
         headTree,
       ],
-      { ...checkEnv('live'), MAX_WAIT_SECONDS: '60' }
+      checkEnv('live')
     )
-    expect(r.status).toBe(0)
+    expect(r.status).toBe(1)
     expect(r.out).toContain(
-      'v0.1.4-rc.3 is published and staging (aaaaaaa) is exactly its content; merging releases v0.1.4 from it.'
+      'staging (aaaaaaa) has changes that are not in v0.1.4-rc.2 (the newest rc). Waiting for Publish Release Candidate to publish the next rc'
     )
-    expect(r.out).not.toContain('::error')
-    const compared = r.calls.filter((c) => c.startsWith('api repos/o/r/compare/'))
-    expect(compared[0]).toContain('v0.1.4-rc.2...')
-    expect(compared.at(-1)).toContain('v0.1.4-rc.3...')
-  })
-
-  test('a tag listing that fails while it waits is retried, not fatal', () => {
-    const r = run(
-      CHECK,
-      [
-        {
-          // A string cannot be iterated by `.[].ref`, so the first listing fails.
-          match: /^api --paginate repos\/o\/r\/git\/matching-refs\/tags\/ /,
-          sequence: [
-            'not a tag list',
-            [...released, 'v0.1.4-rc.10'].map((name) => ({
-              ref: `refs/tags/${name}`,
-            })),
-          ],
-        },
-        published,
-        compare(0, 'tree-1'),
-        headTree,
-      ],
-      { ...checkEnv('live'), MAX_WAIT_SECONDS: '60' }
-    )
-    expect(r.status).toBe(0)
-    expect(r.out).toContain('v0.1.4-rc.10 is published')
     const listed = r.calls.filter((c) => c.includes('matching-refs/tags/'))
-    expect(listed.length).toBeGreaterThanOrEqual(2)
+    expect(listed).toHaveLength(1)
   })
 
   test('red when the tags cannot be listed', () => {
@@ -540,7 +478,7 @@ describe('promote-recheck.sh', () => {
       env
     )
     expect(r.status).toBe(0)
-    expect(r.calls).toContain('run rerun 11 --repo o/r --failed')
+    expect(r.calls).toContain('run rerun 11 --repo o/r')
     expect(r.calls.join('\n')).not.toContain('run rerun 12')
     expect(r.out).toContain('PR #6: promote-ok is already green')
     expect(r.calls.some((c) => c.includes('--workflow promote-ok.yml --event pull_request'))).toBe(
@@ -563,18 +501,86 @@ describe('promote-recheck.sh', () => {
     expect(r.out).toContain('staging -> live: no open PR')
   })
 
-  test('waits for a running check, then warns without failing if it never settles', () => {
+  // promote-ok looks once and ends in seconds. A run still going after the
+  // wait may have looked before the canary existed; left alone it would stay
+  // red with no later recheck, so it is cancelled and re-run.
+  test('cancels and re-runs a check still going after the wait', () => {
+    const r = run(
+      RECHECK,
+      [
+        ...prs([{ number: 5, headRefOid: HEAD }], []),
+        {
+          match: new RegExp(`^run list .*--commit ${HEAD}`),
+          sequence: [
+            [{ databaseId: 11, status: 'queued', conclusion: '' }],
+            [{ databaseId: 11, status: 'queued', conclusion: '' }],
+            [{ databaseId: 11, status: 'queued', conclusion: '' }],
+            [{ databaseId: 11, status: 'completed', conclusion: 'cancelled' }],
+          ],
+        },
+        { match: /^run cancel /, body: {} },
+        rerunRoute,
+      ],
+      env
+    )
+    expect(r.status).toBe(0)
+    const acted = r.calls.filter((c) => /^run (cancel|rerun) /.test(c))
+    expect(acted).toEqual(['run cancel 11 --repo o/r', 'run rerun 11 --repo o/r'])
+    expect(r.out).toContain('PR #5: re-ran the failed promote-ok run 11')
+  })
+
+  test('a check that passes while it is being cancelled is left green', () => {
+    const r = run(
+      RECHECK,
+      [
+        ...prs([{ number: 5, headRefOid: HEAD }], []),
+        {
+          match: new RegExp(`^run list .*--commit ${HEAD}`),
+          sequence: [
+            [{ databaseId: 11, status: 'in_progress', conclusion: '' }],
+            [{ databaseId: 11, status: 'in_progress', conclusion: '' }],
+            [{ databaseId: 11, status: 'in_progress', conclusion: '' }],
+            [{ databaseId: 11, status: 'completed', conclusion: 'success' }],
+          ],
+        },
+        { match: /^run cancel /, exit: 1, stderr: 'run already completed' },
+      ],
+      env
+    )
+    expect(r.status).toBe(0)
+    expect(r.calls.join('\n')).not.toContain('run rerun')
+    expect(r.out).toContain('PR #5: promote-ok is already green')
+  })
+
+  test('warns without failing when a cancelled check never stops', () => {
+    const r = run(
+      RECHECK,
+      [
+        ...prs([{ number: 5, headRefOid: HEAD }], []),
+        runs(HEAD, [{ databaseId: 11, status: 'in_progress', conclusion: '' }]),
+        { match: /^run cancel /, body: {} },
+      ],
+      env
+    )
+    expect(r.status).toBe(0)
+    // Three looks before the cancel, three after it (WAIT_POLLS 2).
+    expect(r.calls.filter((c) => c.startsWith('run list'))).toHaveLength(6)
+    expect(r.calls.join('\n')).not.toContain('run rerun')
+    expect(r.out).toContain("still 'in_progress' after it was cancelled")
+  })
+
+  test('a dry run names the still-running check it would restart', () => {
     const r = run(
       RECHECK,
       [
         ...prs([{ number: 5, headRefOid: HEAD }], []),
         runs(HEAD, [{ databaseId: 11, status: 'in_progress', conclusion: '' }]),
       ],
-      env
+      { ...env, DRY_RUN: 'true' }
     )
     expect(r.status).toBe(0)
-    expect(r.calls.filter((c) => c.startsWith('run list'))).toHaveLength(3)
-    expect(r.out).toContain("still 'in_progress' after waiting")
+    expect(r.out).toContain('would cancel and re-run the still-running promote-ok run 11 (dry run)')
+    expect(r.calls.join('\n')).not.toMatch(/run (cancel|rerun)/)
   })
 
   test('never fails: no run yet, or a refused re-run, is a warning', () => {

@@ -5,10 +5,13 @@
 # piece — the trunk CI, the canary publish, and Publish Release Candidate —
 # and this job re-runs the failed promote-ok run of the current head of the
 # open trunk -> staging and staging -> live PRs
-# (scripts/promote/promote-recheck.sh). A re-run reports on the same head
-# commit, under the same check name and app (GitHub Actions), so the ruleset
-# that requires `promote-ok` sees the new result. No Checks API, no commit
-# statuses: the PR's own run is the one source of the check.
+# (scripts/promote/promote-recheck.sh). promote-ok looks once and ends, so
+# this is how a "not yet" turns green: a run still going after a short wait
+# is cancelled and re-run, so none is left red with no later recheck. A
+# re-run reports on the same head commit, under the same check name and app
+# (GitHub Actions), so the ruleset that requires `promote-ok` sees the new
+# result. No Checks API, no commit statuses: the PR's own run is the one
+# source of the check.
 #
 # It never reports a check named promote-ok itself, and never fails its own
 # run (a warning says what it could not do). `dry-run: true` only reports.
@@ -20,10 +23,11 @@
 #     actions: write
 #     pull-requests: read
 #
-# actions: write re-runs the failed promote-ok run (GITHUB_TOKEN may re-run
-# runs in its own repository). pull-requests: read finds the open promotion
-# PRs. contents: read checks out nothing of the caller but is the floor every
-# job has. A caller job that grants less than this workflow declares fails
+# actions: write re-runs the failed promote-ok run, and cancels one still
+# going before re-running it (GITHUB_TOKEN may do both to runs in its own
+# repository). pull-requests: read finds the open promotion PRs.
+# contents: read checks out nothing of the caller but is the floor every job
+# has. A caller job that grants less than this workflow declares fails
 # before any step runs.
 
 name: Promote OK Recheck

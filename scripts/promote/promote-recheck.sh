@@ -14,7 +14,12 @@
 # A re-run keeps the check on the same head commit, under the same name and
 # the same app (GitHub Actions), so a ruleset that requires it sees the new
 # result. A run still in progress is waited for (it may have started before
-# the missing piece appeared) and then re-run if it failed.
+# the missing piece appeared) and then re-run if it did not pass. promote-ok
+# looks once and ends in seconds, so a run still going after that wait is
+# queued for a runner or is an older build that waits in place, and it may
+# have looked before the missing piece appeared: it is cancelled and re-run,
+# so nothing is left red with no later recheck to fix it. A re-run is the
+# whole run (it is two short jobs), which also restarts a cancelled one.
 #
 # Best effort: it never fails its own run. Anything it cannot do is reported
 # as a warning; re-running the failed check by hand does the same thing.
@@ -75,11 +80,52 @@ rerun() {
     echo "$_label: would re-run the failed promote-ok run $_id (dry run)"
     return 0
   fi
-  if gh run rerun "$_id" --repo "$REPO" --failed >/dev/null 2>&1; then
+  if gh run rerun "$_id" --repo "$REPO" >/dev/null 2>&1; then
     echo "$_label: re-ran the failed promote-ok run $_id"
   else
     warn "$_label: could not re-run promote-ok run $_id — re-run its failed jobs by hand"
   fi
+  return 0
+}
+
+# What to do with a head's newest run ("<id> <status> <conclusion>"): nothing
+# when it passed, re-run it when it ended any other way. $3 is what to do
+# when it is still going.
+act() {
+  _label="$1"
+  _run="$2"
+  _still="$3"
+  _id="$(echo "$_run" | cut -d' ' -f1)"
+  _status="$(echo "$_run" | cut -d' ' -f2)"
+  _conclusion="$(echo "$_run" | cut -d' ' -f3)"
+  case "$_status:$_conclusion" in
+    completed:success) echo "$_label: promote-ok is already green on $_sha" ;;
+    completed:*) rerun "$_label" "$_id" ;;
+    *) "$_still" "$_label" "$_id" "$_status" ;;
+  esac
+  return 0
+}
+
+# A run still going after the wait: cancel it, wait for the cancel to land,
+# then re-run it so it takes a fresh look.
+restart() {
+  _label="$1"
+  _id="$2"
+  if [ "$DRY_RUN" = "true" ]; then
+    echo "$_label: would cancel and re-run the still-running promote-ok run $_id (dry run)"
+    return 0
+  fi
+  # A cancel that fails is usually a run that just ended; the look below says.
+  gh run cancel "$_id" --repo "$REPO" >/dev/null 2>&1 || true
+  act "$_label" "$(settled_run "$_sha")" gave_up
+  return 0
+}
+
+gave_up() {
+  _label="$1"
+  _id="$2"
+  _status="$3"
+  warn "$_label: promote-ok run $_id is still '$_status' after it was cancelled and waited for — re-run it by hand once it ends"
   return 0
 }
 
@@ -98,14 +144,7 @@ recheck() {
     warn "$_label: no promote-ok run for its head $_sha yet (the PR predates promote-ok.yml?) — push to it, or close and reopen it, to start one"
     return 0
   fi
-  _id="$(echo "$_run" | cut -d' ' -f1)"
-  _status="$(echo "$_run" | cut -d' ' -f2)"
-  _conclusion="$(echo "$_run" | cut -d' ' -f3)"
-  case "$_status:$_conclusion" in
-    completed:success) echo "$_label: promote-ok is already green on $_sha" ;;
-    completed:*) rerun "$_label" "$_id" ;;
-    *) warn "$_label: promote-ok run $_id is still '$_status' after waiting — it reports on its own when it ends" ;;
-  esac
+  act "$_label" "$_run" restart
   return 0
 }
 
