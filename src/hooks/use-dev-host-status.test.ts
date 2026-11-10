@@ -22,6 +22,8 @@ describe('useDevHostStatus', () => {
   it('renders null first, then the status the store read', async () => {
     const store = new DevHostStatusStore({
       read: async () => STATUS,
+      // Never the real control plane socket from a test.
+      readMigrate: async () => null,
       now: () => Date.parse(STATUS.writtenAt!),
       setTimer: () => null,
       clearTimer: () => undefined,

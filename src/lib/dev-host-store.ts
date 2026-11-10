@@ -148,8 +148,9 @@ export class DevHostStatusStore {
     const key = devHostViewKey(next, this.#deps.now())
     if (key === this.#key) return
     this.#key = key
-    // A fresh object even for the same content: useSyncExternalStore only
-    // re-renders when the snapshot reference changes.
+    // A fresh object even for the same content (withDevHostMigrate always
+    // spreads a new one): useSyncExternalStore only re-renders when the
+    // snapshot reference changes.
     this.#status = next
     for (const listener of this.#listeners) listener()
   }
