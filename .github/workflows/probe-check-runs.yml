@@ -1,0 +1,59 @@
+name: Probe Check Runs
+
+# Temporary: shows how a check run written through the Checks API with the
+# job token behaves. Removed before review.
+
+on:
+  push:
+    branches: [ci/promote-ok-pending-check]
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      checks: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      SHA: ${{ github.sha }}
+      ATTEMPT: ${{ github.run_attempt }}
+    steps:
+      - name: Probe
+        run: |
+          set -u
+          api() { gh api "$@" 2>&1; echo "  -> exit $?"; }
+          echo "== attempt $ATTEMPT on $SHA"
+          echo "== existing probe-gate runs (filter=all)"
+          api "repos/$REPO/commits/$SHA/check-runs?check_name=probe-gate&filter=all" --jq '.check_runs[] | "\(.id) \(.status) \(.conclusion) app=\(.app.id) slug=\(.app.slug) started=\(.started_at)"'
+          if [ "$ATTEMPT" != "1" ]; then
+            _first="$(gh api "repos/$REPO/commits/$SHA/check-runs?check_name=probe-gate&filter=all" --jq '[.check_runs[]] | sort_by(.id) | first | .id')"
+            echo "== rerun token patches the first run $_first to success"
+            api -X PATCH "repos/$REPO/check-runs/$_first" -f status=completed -f conclusion=success -f 'output[title]=patched by attempt 2' -f 'output[summary]=x' --jq '"\(.id) \(.status) \(.conclusion)"'
+            exit 0
+          fi
+          echo "== create A in_progress"
+          A="$(gh api -X POST "repos/$REPO/check-runs" -f name=probe-gate -f head_sha="$SHA" -f status=in_progress -f external_id=staging -f 'output[title]=waiting' -f 'output[summary]=waiting for the build' --jq .id)"
+          echo "A=$A"
+          api "repos/$REPO/check-runs/$A" --jq '"\(.id) \(.status) app=\(.app.id) slug=\(.app.slug) suite=\(.check_suite.id) url=\(.html_url)"'
+          echo "== PATCH A -> success"
+          api -X PATCH "repos/$REPO/check-runs/$A" -f status=completed -f conclusion=success -f 'output[title]=ready' -f 'output[summary]=ready' --jq '"\(.status) \(.conclusion)"'
+          echo "== PATCH A -> in_progress again"
+          api -X PATCH "repos/$REPO/check-runs/$A" -f status=in_progress -f 'output[title]=waiting again' -f 'output[summary]=x' --jq '"\(.status) \(.conclusion)"'
+          echo "== PATCH A -> in_progress with conclusion cleared"
+          api -X PATCH "repos/$REPO/check-runs/$A" -f status=in_progress -F conclusion=null --jq '"\(.status) \(.conclusion)"'
+          echo "== create B same name, completed failure"
+          B="$(gh api -X POST "repos/$REPO/check-runs" -f name=probe-gate -f head_sha="$SHA" -f status=completed -f conclusion=failure -f external_id=live -f 'output[title]=B' -f 'output[summary]=B' --jq .id)"
+          echo "B=$B"
+          echo "== filter=latest"
+          api "repos/$REPO/commits/$SHA/check-runs?check_name=probe-gate&filter=latest" --jq '.check_runs[] | "\(.id) \(.status) \(.conclusion) ext=\(.external_id)"'
+          echo "== filter=all"
+          api "repos/$REPO/commits/$SHA/check-runs?check_name=probe-gate&filter=all" --jq '.check_runs[] | "\(.id) \(.status) \(.conclusion) ext=\(.external_id)"'
+          echo "== PATCH A -> success while B (newer) is failure"
+          api -X PATCH "repos/$REPO/check-runs/$A" -f status=completed -f conclusion=success --jq '"\(.status) \(.conclusion)"'
+          echo "== filter=latest after"
+          api "repos/$REPO/commits/$SHA/check-runs?check_name=probe-gate&filter=latest" --jq '.check_runs[] | "\(.id) \(.status) \(.conclusion) ext=\(.external_id)"'
