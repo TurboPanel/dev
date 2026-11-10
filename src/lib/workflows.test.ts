@@ -146,10 +146,13 @@ describe('.github/workflows', () => {
     const step = text.slice(text.indexOf('- name: Move the canary tag'))
     expect(step).toContain('GH_TOKEN="${TAG_TOKEN:-$GH_TOKEN}" gh api --method PATCH')
     expect(step).toContain('TAG_TOKEN: ${{ steps.app-token.outputs.token }}')
-    // An App token that still fails is an error; GITHUB_TOKEN failing is a warning.
+    // A tag move that fails only warns, with the App token or without it:
+    // nothing reads the tag's commit, so it must never turn a trunk build red.
     expect(step).toMatch(
-      /if \[ -n "\$\{TAG_TOKEN:-\}" \]; then\n\s+echo "::error::[^\n]+\n\s+exit 1\n\s+fi\n\s+echo "::warning::/
+      /if \[ -n "\$\{TAG_TOKEN:-\}" \]; then\n\s+echo "::warning::[^\n]+\n\s+else\n\s+echo "::warning::/
     )
+    expect(step).not.toContain('::error::')
+    expect(step).not.toMatch(/^\s+exit 1$/m)
   })
 
   test('promote-ok reads, and writes nothing but its own check run', () => {
