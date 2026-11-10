@@ -1,0 +1,37 @@
+name: Probe Check Runs
+
+# Temporary: does an in_progress check run written with the job token stay
+# pending after the job ends, and can a later run's token complete it?
+# Removed before review.
+
+on:
+  push:
+    branches: [ci/promote-ok-pending-check]
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      checks: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      SHA: ${{ github.sha }}
+      ATTEMPT: ${{ github.run_attempt }}
+    steps:
+      - name: Probe
+        run: |
+          set -u
+          echo "== attempt $ATTEMPT on $SHA"
+          gh api "repos/$REPO/commits/$SHA/check-runs?check_name=probe-pending&filter=all" --jq '.check_runs[] | "\(.id) \(.status) \(.conclusion) app=\(.app.id)"' || true
+          if [ "$ATTEMPT" = "1" ]; then
+            gh api -X POST "repos/$REPO/check-runs" -f name=probe-pending -f head_sha="$SHA" -f status=in_progress -f 'output[title]=waiting' -f 'output[summary]=left pending' --jq '"created \(.id) \(.status)"'
+          else
+            _id="$(gh api "repos/$REPO/commits/$SHA/check-runs?check_name=probe-pending&filter=all" --jq '[.check_runs[]] | sort_by(.id) | last | .id')"
+            gh api -X PATCH "repos/$REPO/check-runs/$_id" -f status=completed -f conclusion=success --jq '"patched \(.id) \(.status) \(.conclusion)"' || echo "patch failed"
+          fi
