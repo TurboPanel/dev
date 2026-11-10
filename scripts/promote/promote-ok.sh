@@ -12,12 +12,15 @@
 #       file). Green only when that rc has a published GitHub release and
 #       staging's head holds exactly its content (the rc commit is in staging
 #       and the trees are identical).
-#       The newest rc is re-read on every look while it waits: Publish
-#       Release Candidate can still be pushing the next rc when this starts.
 #
-# Read-only and fast: it looks at runs, releases, tags and commits; it never
-# re-runs tests. Red means "not yet" (or "cannot ever", said plainly); the
-# caller's recheck workflow re-runs it when the missing piece appears.
+# Read-only and fast: it looks once at runs, releases, tags and commits and
+# ends; it never waits for a build and never re-runs tests. Red means "not
+# yet" (it names what is missing) or "cannot ever" (said plainly). The
+# caller's recheck workflow (gh-promote-ok-recheck.yml) re-runs it when what
+# it waits for may exist: the trunk CI, the canary build and Publish Release
+# Candidate finishing. It once polled in place for up to an hour; with many
+# merges a day those idle jobs held the runners the canary builds they waited
+# for needed.
 #
 # Environment:
 #   REPO           owner/name
@@ -26,36 +29,12 @@
 #   BASE, HEAD_SHA the PR's base branch and head commit, or
 #   PR_NUMBER      a PR to read them from (the manual dry run)
 #   GITHUB_STEP_SUMMARY  optional; the verdict is appended to it
-#   MAX_WAIT_SECONDS, POLL_INTERVAL_SECONDS  optional; see below
-#   PROGRESS_INTERVAL_SECONDS  optional; how often a waiting check says what it
-#                  is waiting for (default 60)
 #   CANARY_WORKFLOW  optional; the workflow file whose run builds the canary
-#                  (default: canary.yml for instance repos, CI_WORKFLOW for daemon)
+#                  (default: canary.yml for instance and ui repos, CI_WORKFLOW for daemon)
 set -eu
 
 # Versions come from tags and the canary release, never a file (version.sh).
 VERSION_SH="$(dirname "$0")/version.sh"
-
-# "Not ready yet, but on its way" (a trunk run still running, a canary still
-# building, an rc still publishing) polls in place — the check stays running
-# ("in progress" on the PR) instead of reporting a red X and waiting for the
-# caller's recheck workflow to try again later. Only a real, permanent problem
-# (a failed trunk run, an rc that will never exist for this base, a listing
-# call that errors) fails immediately, on the first look. One exception: on a
-# Release PR the tag listing behind "which rc is newest" is re-read on every
-# look, and a failed read there is retried until the deadline (see
-# check_release_pr). Default 55 minutes:
-# a few minutes past publish-rc.yml's own 45-minute canary wait. Tests set
-# MAX_WAIT_SECONDS=0 so every case is still a single, instant check.
-MAX_WAIT_SECONDS=${MAX_WAIT_SECONDS:-3300}
-POLL_INTERVAL_SECONDS=${POLL_INTERVAL_SECONDS:-30}
-PROGRESS_INTERVAL_SECONDS=${PROGRESS_INTERVAL_SECONDS:-60}
-_started=0
-_last_progress=0
-
-now_s() {
-  date +%s
-}
 
 say_summary() {
   _line="$1"
@@ -109,17 +88,18 @@ trunk_ci_state() {
   gh api "repos/$REPO/actions/workflows/$CI_WORKFLOW/runs?head_sha=$HEAD_SHA&branch=trunk&per_page=20" \
     --jq '[.workflow_runs[] | select(.event == "push" or .event == "workflow_dispatch")]
           | sort_by(.created_at) | last
-          | if . == null then "missing" elif .status != "completed" then "pending" else .conclusion end'
+          | if . == null then "missing" elif .status != "completed" then "pending" else .conclusion end' || return 1
   return 0
 }
 
-# What the canary build of HEAD_SHA is doing, as plain lines. Best effort: any
-# lookup that fails prints a short note and never changes the verdict.
+# What the canary build of HEAD_SHA is doing, as plain lines, so a "not yet"
+# names the run it waits for. Best effort: any lookup that fails prints a
+# short note and never changes the verdict.
 canary_status() {
   _wf="${CANARY_WORKFLOW:-}"
   if [ -z "$_wf" ]; then
     case "$REPO_KIND" in
-      instance) _wf="canary.yml" ;;
+      instance | ui) _wf="canary.yml" ;;
       daemon) _wf="$CI_WORKFLOW" ;;
       *) _wf="" ;;
     esac
@@ -146,20 +126,6 @@ EOF2
   return 0
 }
 
-# Say, about once a minute, exactly what this check is waiting for. $1 is the
-# thing waited for; the canary run state is added for an rc check.
-progress() {
-  _t="$(now_s)"
-  [ "$_started" -gt 0 ] || _started="$_t"
-  if [ "$_last_progress" -gt 0 ] && [ $((_t - _last_progress)) -lt "$PROGRESS_INTERVAL_SECONDS" ]; then
-    return 0
-  fi
-  _last_progress="$_t"
-  echo "promote-ok: still waiting ($(((_t - _started) / 60)) min of $((MAX_WAIT_SECONDS / 60)) so far): $1"
-  [ "${2:-}" = "canary" ] && canary_status
-  return 0
-}
-
 # One key of a version.sh answer (key=value lines).
 version_key() {
   _key="$1"
@@ -169,23 +135,14 @@ version_key() {
 }
 
 check_trunk_ci() {
-  _deadline=$(($(now_s) + MAX_WAIT_SECONDS))
-  while :; do
-    _state="$(trunk_ci_state)"
-    case "$_state" in
-      success) echo "trunk $CI_WORKFLOW passed on $SHORT"; return 0 ;;
-      pending | missing) ;;
-      *) fail "the trunk $CI_WORKFLOW run of $SHORT ended '$_state', so it will never get a canary. Merge a fix to trunk (or re-run that run); this PR then re-checks automatically." ;;
-    esac
-    if [ "$(now_s)" -ge "$_deadline" ]; then
-      case "$_state" in
-        missing) fail "timed out after $((MAX_WAIT_SECONDS / 60)) min waiting for a trunk $CI_WORKFLOW run of $SHORT (none has started yet); this re-checks automatically." ;;
-        *) fail "timed out after $((MAX_WAIT_SECONDS / 60)) min waiting for the trunk $CI_WORKFLOW run of $SHORT to finish (state: $_state); this re-checks automatically." ;;
-      esac
-    fi
-    progress "the trunk $CI_WORKFLOW run of $SHORT to finish (state: $_state)"
-    sleep "$POLL_INTERVAL_SECONDS"
-  done
+  _state="$(trunk_ci_state)" || fail "could not read the trunk $CI_WORKFLOW runs of $SHORT (GitHub API error). Re-run this check; it is also re-run when the trunk CI, the canary build or Publish Release Candidate next finishes."
+  case "$_state" in
+    success) echo "trunk $CI_WORKFLOW passed on $SHORT" ;;
+    pending) fail "waiting for the trunk $CI_WORKFLOW run of $SHORT to finish; this re-checks automatically when it does." ;;
+    missing) fail "waiting for a trunk $CI_WORKFLOW run of $SHORT (none has started yet); this re-checks automatically when it finishes." ;;
+    *) fail "the trunk $CI_WORKFLOW run of $SHORT ended '$_state', so it will never get a canary. Merge a fix to trunk (or re-run that run); this PR then re-checks automatically." ;;
+  esac
+  return 0
 }
 
 check_rc_pr() {
@@ -193,22 +150,15 @@ check_rc_pr() {
   if [ "$REPO_KIND" = "notes-only" ]; then
     pass "trunk $CI_WORKFLOW passed on $SHORT; merging tags it as the next rc (notes-only repo, no canary)."
   fi
-  _deadline=$(($(now_s) + MAX_WAIT_SECONDS))
-  while :; do
-    _answer="$(GITHUB_OUTPUT="" sh "$VERSION_SH" canary-of "$HEAD_SHA")" || fail "could not read $REPO's canary release"
-    _manifest="$(version_key asset "$_answer")"
-    _version="$(version_key base "$_answer")"
-    if [ -n "$_manifest" ]; then
-      pass "canary $_manifest was built from $SHORT; merging publishes the next $_version rc from those bytes."
-    fi
-    if [ "$(now_s)" -ge "$_deadline" ]; then
-      echo "promote-ok: gave up after $((MAX_WAIT_SECONDS / 60)) min waiting for the canary of $SHORT:"
-      canary_status
-      fail "timed out after $((MAX_WAIT_SECONDS / 60)) min waiting for the canary of $SHORT (no manifest-X.Y.Z-canary.N.json on the canary release names it yet). Its build run may be missing, queued behind a stuck run, or failed; see the run lines above. Re-run or cancel the stuck canary run; this re-checks automatically."
-    fi
-    progress "the canary of $SHORT (a manifest-X.Y.Z-canary.N.json on the canary release naming commit $HEAD_SHA)" canary
-    sleep "$POLL_INTERVAL_SECONDS"
-  done
+  _answer="$(GITHUB_OUTPUT="" sh "$VERSION_SH" canary-of "$HEAD_SHA")" || fail "could not read $REPO's canary release"
+  _manifest="$(version_key asset "$_answer")"
+  _version="$(version_key base "$_answer")"
+  if [ -n "$_manifest" ]; then
+    pass "canary $_manifest was built from $SHORT; merging publishes the next $_version rc from those bytes."
+  fi
+  echo "promote-ok: the canary of $SHORT is not on the canary release yet:"
+  canary_status
+  fail "waiting for the canary of $SHORT (no manifest-X.Y.Z-canary.N.json on the canary release names it yet); this re-checks automatically when its canary build finishes. If that build failed or is stuck, see the run lines above, then re-run or cancel it."
 }
 
 # One look at whether $_rc is ready to release: sets _ready=1, or _msg to why
@@ -218,10 +168,12 @@ check_rc_release() {
   _msg="waiting for the $_rc GitHub release to be published; this re-checks automatically."
   _draft="$(gh api "repos/$REPO/releases/tags/$_rc" --jq .draft 2>/dev/null || echo missing)"
   [ "$_draft" = "false" ] || return 0
-  _cmp="$(gh api "repos/$REPO/compare/$_rc...$HEAD_SHA" --jq '"\(.behind_by) \(.base_commit.commit.tree.sha)"')"
+  _cmp="$(gh api "repos/$REPO/compare/$_rc...$HEAD_SHA" --jq '"\(.behind_by) \(.base_commit.commit.tree.sha)"')" ||
+    fail "could not compare $_rc with staging ($SHORT) (GitHub API error). Re-run this check."
   _behind="${_cmp%% *}"
   _rc_tree="${_cmp#* }"
-  _head_tree="$(gh api "repos/$REPO/git/commits/$HEAD_SHA" --jq .tree.sha)"
+  _head_tree="$(gh api "repos/$REPO/git/commits/$HEAD_SHA" --jq .tree.sha)" ||
+    fail "could not read the tree of staging ($SHORT) (GitHub API error). Re-run this check."
   if [ "$_behind" != "0" ]; then
     _msg="staging ($SHORT) does not contain $_rc (the newest rc), so merging would release bytes that are not on staging. Waiting for staging to be moved to $_rc; this re-checks automatically."
   elif [ "$_rc_tree" != "$_head_tree" ]; then
@@ -232,38 +184,23 @@ check_rc_release() {
   return 0
 }
 
-# Every readiness condition here (the rc's release published, staging holding
-# exactly its bytes) can still be settling while `publish-rc.yml` finishes.
-# Which rc is "the newest" can too: merging the Release Candidate PR moves
-# staging (and so this PR's head) before Publish Release Candidate has pushed
-# the new rc tag, so a check that read the newest rc once, up front, locked
-# onto the previous rc and waited out the whole deadline comparing staging
-# with the wrong one (2026-10-12, twice). So every pass re-reads the newest rc
-# from the tags. A version.sh call that fails is retried like any other "not
-# yet" until the deadline. Only "no rc newer than the latest release exists at
-# all" cannot resolve on its own (an rc comes from merging the Release
-# Candidate PR, which this check does not wait for), so it fails at once.
+# Which rc is "the newest" is read from the tags on this one look. Merging the
+# Release Candidate PR moves staging (and so this PR's head) before Publish
+# Release Candidate has pushed the new rc tag, so this look can still see the
+# previous rc and report "not yet"; Publish Release Candidate finishing
+# re-runs it. "No rc newer than the latest release exists at all" cannot
+# resolve on its own (an rc comes from merging the Release Candidate PR).
 check_release_pr() {
-  _deadline=$(($(now_s) + MAX_WAIT_SECONDS))
-  while :; do
-    _ready=0
-    if _answer="$(GITHUB_OUTPUT="" sh "$VERSION_SH" release-rc)"; then
-      _rc="$(version_key rc-tag "$_answer")"
-      _version="$(version_key version "$_answer")"
-      [ -n "$_rc" ] || fail "no rc newer than the latest release exists yet; merge the Release Candidate PR first. This re-checks automatically."
-      check_rc_release
-    else
-      _msg="could not work out the newest rc from $REPO's tags (version.sh release-rc was still failing at the deadline); this re-checks automatically."
-    fi
-    if [ "$_ready" = 1 ]; then
-      pass "$_rc is published and staging ($SHORT) is exactly its content; merging releases v$_version from it."
-    fi
-    if [ "$(now_s)" -ge "$_deadline" ]; then
-      fail "timed out after $((MAX_WAIT_SECONDS / 60)) min: $_msg"
-    fi
-    progress "${_rc:-the newest rc}: $_msg"
-    sleep "$POLL_INTERVAL_SECONDS"
-  done
+  _ready=0
+  _answer="$(GITHUB_OUTPUT="" sh "$VERSION_SH" release-rc)" || fail "could not work out the newest rc from $REPO's tags (version.sh release-rc failed); this re-checks automatically, or re-run this check."
+  _rc="$(version_key rc-tag "$_answer")"
+  _version="$(version_key version "$_answer")"
+  [ -n "$_rc" ] || fail "no rc newer than the latest release exists yet; merge the Release Candidate PR first. This re-checks automatically."
+  check_rc_release
+  if [ "$_ready" = 1 ]; then
+    pass "$_rc is published and staging ($SHORT) is exactly its content; merging releases v$_version from it."
+  fi
+  fail "$_msg"
 }
 
 main() {
