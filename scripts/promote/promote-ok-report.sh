@@ -101,11 +101,9 @@ EOF
     echo "$SHORT ($BASE): $CHECK_NAME is already green from a later look; this older 'not yet' is dropped"
     exit 0
   fi
-  if [ "$_lext" = "$_external" ]; then
-    if [ "$_lstatus" != "completed" ] || [ "$_status" = "completed" ]; then
-      _id="$_lid"
-      _mode=update
-    fi
+  if [ "$_lext" = "$_external" ] && { [ "$_lstatus" != "completed" ] || [ "$_status" = "completed" ]; }; then
+    _id="$_lid"
+    _mode=update
   fi
 fi
 
