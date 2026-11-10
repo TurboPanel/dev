@@ -173,7 +173,7 @@ jobs_moving() {
   case "$_st" in
     in_progress\ *) return 0 ;;
     "completed success "*) return 1 ;;
-    completed\ *\ none | completed\ *\ in_progress) return 0 ;;
+    completed\ *\ none | completed\ *\ in_progress | completed\ *\ pending | completed\ *\ requested) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -188,9 +188,10 @@ jobs_moving() {
 #                          EVAL_POLLS looks, then decide as below. Still
 #                          running after that: warn, never cancel.
 #   evaluate failed        it looked before what it waits for existed.
-#     promote-ok queued    force-cancel the run (a plain cancel still runs the
-#                          caller's `if: always()` fan-in, so it would wait for
-#                          a runner all the same), then re-run it.
+#     promote-ok queued    (or waiting) force-cancel the run (a plain cancel
+#                          still runs the caller's `if: always()` fan-in, so it
+#                          would wait for a runner all the same), check that
+#                          the job did not end skipped, then re-run it.
 #     promote-ok finished  the run has ended: re-run it as usual.
 #     promote-ok not yet   (after the wait) warn, never cancel.
 restart() {
@@ -226,9 +227,10 @@ EOF
       ;;
   esac
   case "$_f_status" in
-    queued | waiting | pending | requested) ;;
+    queued | waiting) ;;
     completed)
-      _run="$(settled_run "$_sha" 0)" || _run=""
+      # It may still read in_progress for a moment after its last job ends.
+      _run="$(settled_run "$_sha" "$CANCEL_POLLS")" || _run=""
       if [ -z "$_run" ]; then
         warn "$_label: promote-ok run $_id has ended but could not be read again — re-run it by hand if it is red"
       else
@@ -250,11 +252,28 @@ EOF
   gh api -X POST "repos/$REPO/actions/runs/$_id/force-cancel" >/dev/null 2>&1 || true
   AFTER_CANCEL=1
   if _run="$(settled_run "$_sha" "$CANCEL_POLLS")" && [ -n "$_run" ]; then
+    check_not_skipped "$_label" "$_id"
     act "$_label" "$_run" gave_up
   else
     error "$_label: force-cancelled promote-ok run $_id but could not read it again — re-run it by hand now"
   fi
   AFTER_CANCEL=0
+  return 0
+}
+
+# After a force-cancel: a promote-ok job that ended skipped reads as passing
+# until the re-run replaces it, so say so loudly. It should not happen (the
+# run is only cancelled once that job is queued), which is why it is an error.
+check_not_skipped() {
+  _label="$1"
+  _id="$2"
+  _fan="$(gh run view "$_id" --repo "$REPO" --json jobs \
+    --jq '[.jobs[] | select(.name == "promote-ok")][0] | if . == null then "none" else (.conclusion // "-") end' 2>/dev/null)" || _fan="unreadable"
+  case "$_fan" in
+    skipped) error "$_label: force-cancelled promote-ok run $_id ended its promote-ok job skipped, which reads as passing — check that the re-run below replaced it" ;;
+    unreadable) warn "$_label: could not read the jobs of force-cancelled promote-ok run $_id to check that its promote-ok job did not end skipped" ;;
+    *) ;;
+  esac
   return 0
 }
 
