@@ -726,8 +726,12 @@ describe('promote-recheck.sh', () => {
       env
     )
     expect(failed.status).toBe(0)
-    // The cancel comes only after the look that sees the fan-in queued.
-    expect(failed.calls.filter((c) => c.startsWith('run view 11'))).toHaveLength(3)
+    // The cancel comes only after the look that sees the fan-in queued (the
+    // look after it checks that the fan-in did not end skipped).
+    const cancelAt = failed.calls.findIndex((c) => c.includes('force-cancel'))
+    expect(failed.calls.slice(0, cancelAt).filter((c) => c.startsWith('run view 11'))).toHaveLength(
+      3
+    )
     expect(changes(failed)).toEqual([
       'api -X POST repos/o/r/actions/runs/11/force-cancel',
       'run rerun 11 --repo o/r',
@@ -760,6 +764,90 @@ describe('promote-recheck.sh', () => {
     )
     expect(r.status).toBe(0)
     expect(changes(r)).toEqual(['run rerun 11 --repo o/r'])
+  })
+
+  test('a run still finishing just after its fan-in ended is looked at again, then re-run', () => {
+    const r = run(
+      RECHECK,
+      [
+        ...prs([{ number: 5, headRefOid: HEAD }], []),
+        stuck(
+          [{ databaseId: 11, status: 'in_progress', conclusion: '' }],
+          [{ databaseId: 11, status: 'completed', conclusion: 'failure' }]
+        ),
+        jobs('completed', 'failure', 'completed'),
+        forceCancel,
+        rerunRoute,
+      ],
+      env
+    )
+    expect(r.status).toBe(0)
+    expect(changes(r)).toEqual(['run rerun 11 --repo o/r'])
+    expect(r.out).not.toContain('::warning')
+  })
+
+  test('only a promote-ok job that is queued or waiting lets the run be cancelled', () => {
+    for (const fanIn of ['pending', 'requested']) {
+      const r = run(
+        RECHECK,
+        [
+          ...prs([{ number: 5, headRefOid: HEAD }], []),
+          stuck(),
+          jobs('completed', 'failure', fanIn),
+          forceCancel,
+        ],
+        env
+      )
+      expect(r.status).toBe(0)
+      expect(changes(r)).toEqual([])
+      expect(r.out).toContain(`its promote-ok job is not queued yet (${fanIn})`)
+    }
+    const waiting = run(
+      RECHECK,
+      [
+        ...prs([{ number: 5, headRefOid: HEAD }], []),
+        stuck([{ databaseId: 11, status: 'completed', conclusion: 'cancelled' }]),
+        jobs('completed', 'failure', 'waiting'),
+        forceCancel,
+        rerunRoute,
+      ],
+      env
+    )
+    expect(changes(waiting)).toEqual([
+      'api -X POST repos/o/r/actions/runs/11/force-cancel',
+      'run rerun 11 --repo o/r',
+    ])
+  })
+
+  test('fails red when a force-cancel ended the promote-ok job skipped, and still re-runs', () => {
+    const skipped = {
+      jobs: [
+        { name: 'evaluate / evaluate', status: 'completed', conclusion: 'failure' },
+        { name: 'promote-ok', status: 'completed', conclusion: 'skipped' },
+      ],
+    }
+    const r = run(
+      RECHECK,
+      [
+        ...prs([{ number: 5, headRefOid: HEAD }], []),
+        stuck([{ databaseId: 11, status: 'completed', conclusion: 'cancelled' }]),
+        {
+          match: /^run view 11 --repo o\/r --json jobs/,
+          sequence: [jobList('completed', 'failure', 'queued'), skipped],
+        },
+        forceCancel,
+        rerunRoute,
+      ],
+      env
+    )
+    expect(r.status).toBe(1)
+    expect(r.out).toContain(
+      '::error title=promote-ok recheck::PR #5: force-cancelled promote-ok run 11 ended its promote-ok job skipped'
+    )
+    expect(changes(r)).toEqual([
+      'api -X POST repos/o/r/actions/runs/11/force-cancel',
+      'run rerun 11 --repo o/r',
+    ])
   })
 
   test('fails red when a force-cancelled run cannot be re-run', () => {
