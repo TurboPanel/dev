@@ -9,7 +9,10 @@ import {
   type DevHostJob,
   type DevHostPart,
   devHostActionLabel,
+  devHostDatabaseLine,
+  devHostDetailLines,
   devHostJobLine,
+  devHostPartLine,
   devHostPartForService,
   devHostRowSuffix,
   devHostRowSuffixes,
@@ -18,8 +21,10 @@ import {
   devHostViewKey,
   isDevHostJobRunning,
   isDevHostStatusStale,
+  parseDevHostMigrate,
   parseDevHostStatus,
   readDevHostStatus,
+  withDevHostMigrate,
 } from './dev-host-status.ts'
 
 const NOW = Date.parse('2026-11-03T12:00:00Z')
@@ -422,5 +427,155 @@ describe('devHostViewKey', () => {
       devHostViewKey(failed, NOW)
     )
     expect(devHostViewKey(null, NOW)).toBe('null')
+  })
+})
+
+describe('database counts from the control plane', () => {
+  it('parseDevHostMigrate needs whole applied and total counts', () => {
+    expect(parseDevHostMigrate({ pending: 2, applied: 23, total: 25 })).toEqual({
+      pending: 2,
+      applied: 23,
+      total: 25,
+    })
+    expect(parseDevHostMigrate({ applied: 0, total: 0 })).toEqual({
+      pending: 0,
+      applied: 0,
+      total: 0,
+    })
+    expect(parseDevHostMigrate({ pending: 0 })).toBeNull()
+    expect(parseDevHostMigrate({ applied: 1.5, total: 2 })).toBeNull()
+    expect(parseDevHostMigrate({ applied: -1, total: 2 })).toBeNull()
+    expect(parseDevHostMigrate({ applied: '1', total: 2 })).toBeNull()
+    expect(parseDevHostMigrate(null)).toBeNull()
+    expect(parseDevHostMigrate([1, 2])).toBeNull()
+  })
+
+  it('withDevHostMigrate raises only the control plane part to the pending count', () => {
+    const status = {
+      parts: [part(), part({ name: 'daemon', unit: 'turbopaneld' })],
+      job: null,
+      lastFetchAt: null,
+      writtenAt: null,
+    }
+    const merged = withDevHostMigrate(status, { pending: 2, applied: 23, total: 25 })
+    expect(merged.parts.map((entry) => entry.migratePending)).toEqual([2, 0])
+    expect(merged.migrate).toEqual({ pending: 2, applied: 23, total: 25 })
+    expect(status.parts[0]!.migratePending).toBe(0)
+    const kept = withDevHostMigrate(
+      { ...status, parts: [part({ migratePending: 5 })] },
+      { pending: 1, applied: 1, total: 2 }
+    )
+    expect(kept.parts[0]!.migratePending).toBe(5)
+    expect(withDevHostMigrate(status, null).migrate).toBeUndefined()
+  })
+
+  it('reads the database line in the web interface bar words', () => {
+    expect(devHostDatabaseLine({ pending: 2, applied: 23, total: 25 })).toBe(
+      'Database: 23 of 25 migrations applied'
+    )
+    expect(devHostDatabaseLine({ pending: 0, applied: 1, total: 1 })).toBe(
+      'Database: 1 of 1 migration applied'
+    )
+    expect(devHostDatabaseLine(null)).toBeNull()
+    expect(devHostDatabaseLine(undefined)).toBeNull()
+  })
+})
+
+describe('devHostPartLine', () => {
+  it("uses the daemon's exact reason when it sent one", () => {
+    expect(
+      devHostPartLine(
+        part({
+          onTrunk: false,
+          branch: '',
+          behindBy: 19,
+          blockedReason: 'detached at 4f7b5ed, 19 behind trunk; not pulled',
+        })
+      )
+    ).toBe('Control Plane: detached at 4f7b5ed, 19 behind trunk, will not pull')
+    expect(
+      devHostPartLine(
+        part({
+          name: 'website',
+          dirtyBlocking: true,
+          dirtyFiles: 1,
+          blockedReason: 'local changes in a.ts; not pulled',
+        })
+      )
+    ).toBe('Website: local changes in a.ts, will not pull')
+    // A refused fast-forward names git's line; the count of new commits stays.
+    expect(
+      devHostPartLine(
+        part({ behindBy: 2, blockedReason: 'fatal: Not possible to fast-forward, aborting.' })
+      )
+    ).toBe(
+      'Control Plane: fatal: Not possible to fast-forward, aborting, will not pull, 2 new commits on trunk'
+    )
+  })
+
+  it('lists commits, packages, migrations and a restart', () => {
+    expect(
+      devHostPartLine(
+        part({ behindBy: 3, installNeeded: true, migratePending: 1, restartNeeded: true })
+      )
+    ).toBe(
+      'Control Plane: 3 new commits on trunk, packages to install, 1 migration pending, restart needed'
+    )
+    expect(devHostPartLine(part({ name: 'daemon', restartNeeded: true }))).toBe(
+      'Daemon: restart needed'
+    )
+    expect(devHostPartLine(part({ migratePending: 2 }))).toBe('Control Plane: 2 migrations pending')
+  })
+
+  it('reports content changes and another branch as the bar does', () => {
+    expect(devHostPartLine(part({ name: 'website', dirtyBlocking: true, behindBy: 2 }))).toBe(
+      'Website: local changes, will not pull'
+    )
+    expect(devHostPartLine(part({ name: 'website', dirtyBlocking: true }))).toBe(
+      'Website: local changes'
+    )
+    const branch = part({ name: 'web-interface', onTrunk: false, branch: 'fix/x' })
+    expect(devHostPartLine({ ...branch, behindBy: 4 })).toBe(
+      'Web Interface: on branch fix/x, will not pull'
+    )
+    expect(devHostPartLine({ ...branch, branch: '', behindBy: 1 })).toBe(
+      'Web Interface: on branch unknown, will not pull'
+    )
+    expect(devHostPartLine(branch)).toBeNull()
+    expect(devHostPartLine(part())).toBeNull()
+  })
+})
+
+describe('devHostDetailLines', () => {
+  const fresh = {
+    parts: [part({ behindBy: 1 }), part({ name: 'website', unit: 'turbopanel-website' })],
+    job: null,
+    lastFetchAt: null,
+    writtenAt: new Date(NOW - 1000).toISOString(),
+    migrate: { pending: 0, applied: 25, total: 26 },
+  }
+
+  it('shows the part line and, on the control plane row, the database line', () => {
+    expect(devHostDetailLines(fresh, 'instance', NOW)).toEqual([
+      { text: 'Control Plane: 1 new commit on trunk', database: false },
+      { text: 'Database: 25 of 26 migrations applied', database: true },
+    ])
+    expect(devHostDetailLines(fresh, 'website', NOW)).toEqual([])
+    expect(devHostDetailLines(fresh, 'postgres', NOW)).toEqual([])
+  })
+
+  it('shows the database line alone when the control plane needs nothing', () => {
+    expect(devHostDetailLines({ ...fresh, parts: [part()] }, 'instance', NOW)).toEqual([
+      { text: 'Database: 25 of 26 migrations applied', database: true },
+    ])
+    expect(devHostDetailLines({ ...fresh, migrate: null }, 'instance', NOW)).toEqual([
+      { text: 'Control Plane: 1 new commit on trunk', database: false },
+    ])
+  })
+
+  it('shows nothing from a stale file or no status', () => {
+    const stale = { ...fresh, writtenAt: new Date(NOW - DEV_HOST_STALE_MS - 1).toISOString() }
+    expect(devHostDetailLines(stale, 'instance', NOW)).toEqual([])
+    expect(devHostDetailLines(null, 'instance', NOW)).toEqual([])
   })
 })

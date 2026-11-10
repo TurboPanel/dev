@@ -42,7 +42,8 @@ import { serviceStatusColor } from './service-status.tsx'
 import { prewarmTitleArt } from './service-title.tsx'
 import { DevHostJobLine, useDevHostJobLine } from './dev-host-job-line.tsx'
 import { useDevHostStatus } from '../hooks/use-dev-host-status.ts'
-import { devHostRowSuffixes } from '../lib/dev-host-status.ts'
+import { devHostDetailLines, devHostRowSuffixes } from '../lib/dev-host-status.ts'
+import { DevHostDetailLines } from './dev-host-detail-lines.tsx'
 
 /**
  * Wait for the list cursor to settle before swapping the detail pane.
@@ -364,10 +365,6 @@ export function ServicesPanel({
   // Banner when only the daemon is up and converge is not already showing.
   const needsConvergeHint = shouldShowConvergeHint(displayServices, convergeSummaryVisible)
   const devHostJobRows = devHostJob ? 1 : 0
-  const serviceDetailHeight = Math.max(
-    1,
-    height - convergePanelHeight - (needsConvergeHint ? 2 : 0) - devHostJobRows
-  )
 
   // Local list cursor — updating this must NOT call into useConsoleApp or the
   // whole Ink tree (menu/status/detail) re-renders (~250ms per keypress).
@@ -394,6 +391,18 @@ export function ServicesPanel({
   // Detail tracks the cursor directly — the mount is ~10ms once the parent
   // reconcile is off the hot path (Hypothesis K, confirmed), so no debounce.
   const settledService = services[listIndex] ?? null
+  const devHostLines = useMemo(
+    () => (settledService ? devHostDetailLines(devHost, settledService.id, Date.now()) : []),
+    [devHost, settledService]
+  )
+  const serviceDetailHeight = Math.max(
+    1,
+    height -
+      convergePanelHeight -
+      (needsConvergeHint ? 2 : 0) -
+      devHostJobRows -
+      devHostLines.length
+  )
   const displaySelectedIndex = useMemo(() => {
     const index = visibleFullIndices.indexOf(listIndex)
     return Math.max(index, 0)
@@ -584,6 +593,7 @@ export function ServicesPanel({
             </Box>
           )}
           <DevHostJobLine line={devHostJob} width={detailWidth} />
+          <DevHostDetailLines lines={devHostLines} width={detailWidth} />
           {needsConvergeHint && (
             <Box width={detailWidth} height={2} paddingX={1} flexShrink={0}>
               <Text color={MENU_BLUE}>

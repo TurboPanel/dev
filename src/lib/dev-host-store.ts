@@ -1,8 +1,12 @@
+import { getDevHostMigrate } from './developer-client.ts'
 import {
+  DEV_HOST_STALE_MS,
+  type DevHostMigrate,
   type DevHostStatus,
   devHostViewKey,
   isDevHostJobRunning,
   readDevHostStatus,
+  withDevHostMigrate,
 } from './dev-host-status.ts'
 
 /** The usual re-read, the same pace as the Services rows. */
@@ -11,9 +15,15 @@ export const DEV_HOST_POLL_MS = 15_000
 export const DEV_HOST_FAST_POLL_MS = 2_000
 /** After starting a job, poll fast this long even before the file shows it. */
 export const DEV_HOST_EXPECT_JOB_MS = 30_000
+/**
+ * The control plane's migration counts are asked for at most this often (its
+ * own answer is cached as long), and again as soon as a job ends.
+ */
+export const DEV_HOST_MIGRATE_POLL_MS = 30_000
 
 export type DevHostStoreDeps = {
   read: () => Promise<DevHostStatus | null>
+  readMigrate: () => Promise<DevHostMigrate | null>
   now: () => number
   setTimer: (fn: () => void, ms: number) => unknown
   clearTimer: (handle: unknown) => void
@@ -21,6 +31,7 @@ export type DevHostStoreDeps = {
 
 const defaultDeps: DevHostStoreDeps = {
   read: () => readDevHostStatus(),
+  readMigrate: () => getDevHostMigrate(),
   now: Date.now,
   setTimer: (fn, ms) => setTimeout(fn, ms),
   clearTimer: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
@@ -34,12 +45,24 @@ const defaultDeps: DevHostStoreDeps = {
  * {@link DEV_HOST_FAST_POLL_MS} while a fresh file shows a running job.
  * Listeners hear only changes to what the screen shows (content, staleness,
  * job line), so an unchanged file repaints Ink only when it turns stale.
+ *
+ * The database counts come from the control plane (one signed request over
+ * its socket, at most every {@link DEV_HOST_MIGRATE_POLL_MS}, only while the
+ * file is there). That read runs beside the file read and never holds it up:
+ * the file keeps moving while the control plane restarts. A failed read keeps
+ * the last counts until they are {@link DEV_HOST_STALE_MS} old.
  */
 export class DevHostStatusStore {
   readonly #deps: DevHostStoreDeps
   readonly #listeners = new Set<() => void>()
   #status: DevHostStatus | null = null
+  #file: DevHostStatus | null = null
   #key = 'null'
+  #migrate: DevHostMigrate | null = null
+  #migrateAt = 0
+  #migrateTriedAt: number | null = null
+  #migrateBusy = false
+  #jobRunning = false
   #timer: unknown = null
   #busy = false
   #pending = false
@@ -75,7 +98,9 @@ export class DevHostStatusStore {
     this.#busy = true
     this.#stopTimer()
     try {
-      this.#apply(await this.#deps.read().catch(() => null))
+      this.#file = await this.#deps.read().catch(() => null)
+      this.#apply()
+      this.#maybeReadMigrate()
     } finally {
       this.#busy = false
     }
@@ -87,7 +112,37 @@ export class DevHostStatusStore {
     this.#schedule()
   }
 
-  #apply(next: DevHostStatus | null): void {
+  #maybeReadMigrate(): void {
+    const now = this.#deps.now()
+    const running = isDevHostJobRunning(this.#file, now)
+    // A job that just ended may have migrated: ask again now.
+    if (this.#jobRunning && !running) this.#migrateTriedAt = null
+    this.#jobRunning = running
+    if (this.#migrateBusy || !this.#file) return
+    if (this.#migrateTriedAt !== null && now - this.#migrateTriedAt < DEV_HOST_MIGRATE_POLL_MS) {
+      return
+    }
+    this.#migrateBusy = true
+    this.#migrateTriedAt = now
+    void this.#deps
+      .readMigrate()
+      .then(
+        (migrate) => {
+          this.#migrate = migrate
+          this.#migrateAt = this.#deps.now()
+        },
+        () => undefined
+      )
+      .finally(() => {
+        this.#migrateBusy = false
+        this.#apply()
+      })
+  }
+
+  #apply(): void {
+    const fresh = this.#deps.now() - this.#migrateAt <= DEV_HOST_STALE_MS
+    const migrate = fresh ? this.#migrate : null
+    const next = this.#file ? withDevHostMigrate(this.#file, migrate) : null
     // The key includes staleness and job-line visibility at this moment, so a
     // file that stopped changing still repaints once when it turns stale.
     const key = devHostViewKey(next, this.#deps.now())
@@ -95,7 +150,7 @@ export class DevHostStatusStore {
     this.#key = key
     // A fresh object even for the same content: useSyncExternalStore only
     // re-renders when the snapshot reference changes.
-    this.#status = next ? { ...next } : null
+    this.#status = next
     for (const listener of this.#listeners) listener()
   }
 

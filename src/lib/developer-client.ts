@@ -2,6 +2,7 @@ import { createHash, createHmac } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { request as httpRequest, type IncomingMessage } from 'node:http'
 import { readInstanceRuntime } from './daemon-env.ts'
+import { type DevHostMigrate, parseDevHostMigrate } from './dev-host-status.ts'
 import { instanceSecretsPath } from './paths.ts'
 
 /**
@@ -185,7 +186,12 @@ function jsonHeaders(
   return headers
 }
 
-function requestViaSocket(path: string, method: string, bodyText: string): Promise<RawResponse> {
+function requestViaSocket(
+  path: string,
+  method: string,
+  bodyText: string,
+  timeoutMs: number
+): Promise<RawResponse> {
   return new Promise((resolve, reject) => {
     const req = httpRequest(
       {
@@ -193,7 +199,7 @@ function requestViaSocket(path: string, method: string, bodyText: string): Promi
         path,
         method,
         headers: jsonHeaders(path, method, bodyText),
-        timeout: REQUEST_TIMEOUT_MS,
+        timeout: timeoutMs,
       },
       (res) => {
         collectBody(res)
@@ -215,7 +221,7 @@ function requestViaSocket(path: string, method: string, bodyText: string): Promi
  */
 async function developerRequest(
   path: string,
-  init?: { method: string; body?: unknown }
+  init?: { method: string; body?: unknown; timeoutMs?: number }
 ): Promise<RawResponse> {
   if (readInstanceRuntime() === 'workers') {
     throw new Error(
@@ -231,7 +237,7 @@ async function developerRequest(
   const bodyText = init?.body === undefined ? '' : JSON.stringify(init.body)
 
   try {
-    return await requestViaSocket(path, method, bodyText)
+    return await requestViaSocket(path, method, bodyText, init?.timeoutMs ?? REQUEST_TIMEOUT_MS)
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     throw new Error(`instance Unix socket unavailable (${INSTANCE_SOCKET}): ${message}`)
@@ -322,6 +328,26 @@ export async function postDevHostAction(action: DevHostActionName): Promise<DevH
   const error = typeof body.error === 'string' ? body.error : `HTTP ${raw.status}`
   const reason = typeof body.reason === 'string' ? body.reason : undefined
   return { ok: false, status: raw.status, error, ...(reason ? { reason } : {}) }
+}
+
+/** The status read is a background poll: it gives up quickly so a hung socket never stalls it. */
+export const DEV_HOST_STATUS_TIMEOUT_MS = 5_000
+
+/**
+ * The database's migration counts from the control plane's development view
+ * (`GET /api/developer/v1/dev-host/status`, `host.migrate`), the source the
+ * web interface's Development Host bar reads. Null when the control plane
+ * answered without them (no word from the co-located daemon, or the counts
+ * cannot be read); throws when it could not be asked or refused.
+ */
+export async function getDevHostMigrate(): Promise<DevHostMigrate | null> {
+  const path = `${DEVELOPER_API}/dev-host/status`
+  const raw = await developerRequest(path, { method: 'GET', timeoutMs: DEV_HOST_STATUS_TIMEOUT_MS })
+  if (raw.status < 200 || raw.status >= 300) throw new Error(`${path} failed: HTTP ${raw.status}`)
+  const host = parseJsonObject(raw.body).host
+  const migrate =
+    host !== null && typeof host === 'object' ? (host as { migrate?: unknown }).migrate : null
+  return parseDevHostMigrate(migrate)
 }
 
 export type DuckdbUiResponse = {

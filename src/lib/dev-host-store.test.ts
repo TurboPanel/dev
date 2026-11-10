@@ -1,19 +1,26 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { DevHostStatus } from './dev-host-status.ts'
+import type { DevHostMigrate, DevHostStatus } from './dev-host-status.ts'
 import { DEV_HOST_STALE_MS } from './dev-host-status.ts'
 import {
   DEV_HOST_EXPECT_JOB_MS,
   DEV_HOST_FAST_POLL_MS,
+  DEV_HOST_MIGRATE_POLL_MS,
   DEV_HOST_POLL_MS,
   DevHostStatusStore,
   devHostStatusStore,
 } from './dev-host-store.ts'
 import { readDevHostStatus } from './dev-host-status.ts'
+import { getDevHostMigrate } from './developer-client.ts'
 
 // The shared store's default reader must never touch the real state folder.
 vi.mock('./dev-host-status.ts', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./dev-host-status.ts')>()),
   readDevHostStatus: vi.fn(async () => null),
+}))
+
+// Nor may it ask the real control plane socket.
+vi.mock('./developer-client.ts', () => ({
+  getDevHostMigrate: vi.fn(async () => null),
 }))
 
 function status(jobState: string | null = null): DevHostStatus {
@@ -38,7 +45,10 @@ function status(jobState: string | null = null): DevHostStatus {
 
 type Timer = { fn: () => void; ms: number; cleared: boolean }
 
-function harness(reads: Array<DevHostStatus | null | Error>) {
+function harness(
+  reads: Array<DevHostStatus | null | Error>,
+  migrateReads: Array<DevHostMigrate | null | Error | Promise<DevHostMigrate | null>> = [null]
+) {
   const timers: Timer[] = []
   let now = Date.parse('2026-11-03T12:00:10Z')
   const read = vi.fn(async () => {
@@ -46,8 +56,14 @@ function harness(reads: Array<DevHostStatus | null | Error>) {
     if (next instanceof Error) throw next
     return next ?? null
   })
+  const readMigrate = vi.fn(async () => {
+    const next = migrateReads.length > 1 ? migrateReads.shift() : migrateReads[0]
+    if (next instanceof Error) throw next
+    return (await next) ?? null
+  })
   const store = new DevHostStatusStore({
     read,
+    readMigrate,
     now: () => now,
     setTimer: (fn, ms) => {
       const timer = { fn, ms, cleared: false }
@@ -61,6 +77,7 @@ function harness(reads: Array<DevHostStatus | null | Error>) {
   return {
     store,
     read,
+    readMigrate,
     timers,
     live: () => timers.filter((timer) => !timer.cleared),
     /** Fire the one pending timer, as the clock would. */
@@ -191,5 +208,91 @@ describe('DevHostStatusStore staleness', () => {
     h.fire()
     await settle()
     expect(listener).toHaveBeenCalledTimes(2)
+  })
+})
+
+const COUNTS: DevHostMigrate = { pending: 1, applied: 24, total: 25 }
+
+describe('DevHostStatusStore database counts', () => {
+  it('adds the control plane counts to the file status', async () => {
+    const h = harness([status()], [COUNTS])
+    const listener = vi.fn()
+    h.store.subscribe(listener)
+    await settle()
+    expect(h.readMigrate).toHaveBeenCalledTimes(1)
+    expect(h.store.getSnapshot()?.migrate).toEqual(COUNTS)
+    expect(listener).toHaveBeenCalledTimes(2)
+  })
+
+  it('asks the control plane at most every 30 s, and at once after a job ends', async () => {
+    const h = harness([status(), status(), status('running'), status('done')], [COUNTS])
+    h.store.subscribe(() => undefined)
+    await settle()
+    h.fire()
+    await settle()
+    expect(h.read).toHaveBeenCalledTimes(2)
+    expect(h.readMigrate).toHaveBeenCalledTimes(1)
+    h.advance(DEV_HOST_MIGRATE_POLL_MS)
+    h.fire()
+    await settle()
+    expect(h.readMigrate).toHaveBeenCalledTimes(2)
+    h.advance(1_000)
+    h.fire()
+    await settle()
+    expect(h.store.getSnapshot()?.job?.state).toBe('done')
+    expect(h.readMigrate).toHaveBeenCalledTimes(3)
+  })
+
+  it('does not ask while there is no status file', async () => {
+    const h = harness([null], [COUNTS])
+    h.store.subscribe(() => undefined)
+    await settle()
+    expect(h.readMigrate).not.toHaveBeenCalled()
+    expect(h.store.getSnapshot()).toBeNull()
+  })
+
+  it('keeps the file read moving while the control plane does not answer', async () => {
+    const hung = new Promise<DevHostMigrate | null>(() => undefined)
+    const h = harness([status(), status('running')], [hung])
+    h.store.subscribe(() => undefined)
+    await settle()
+    h.fire()
+    await settle()
+    expect(h.read).toHaveBeenCalledTimes(2)
+    expect(h.store.getSnapshot()?.job?.state).toBe('running')
+    expect(h.readMigrate).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps the last counts through a failed read until they are stale', async () => {
+    const h = harness([status()], [COUNTS, new Error('socket down')])
+    h.store.subscribe(() => undefined)
+    await settle()
+    h.advance(DEV_HOST_MIGRATE_POLL_MS)
+    h.fire()
+    await settle()
+    expect(h.readMigrate).toHaveBeenCalledTimes(2)
+    expect(h.store.getSnapshot()?.migrate).toEqual(COUNTS)
+    h.advance(DEV_HOST_STALE_MS)
+    h.fire()
+    await settle()
+    expect(h.store.getSnapshot()?.migrate).toBeUndefined()
+  })
+
+  it('drops the counts when the control plane answers without them', async () => {
+    const h = harness([status()], [COUNTS, null])
+    h.store.subscribe(() => undefined)
+    await settle()
+    h.advance(DEV_HOST_MIGRATE_POLL_MS)
+    h.fire()
+    await settle()
+    expect(h.store.getSnapshot()?.migrate).toBeUndefined()
+  })
+
+  it('the shared store asks through the developer client', async () => {
+    vi.mocked(readDevHostStatus).mockResolvedValueOnce(status())
+    const unsubscribe = devHostStatusStore.subscribe(() => undefined)
+    await settle()
+    expect(getDevHostMigrate).toHaveBeenCalledWith()
+    unsubscribe()
   })
 })
