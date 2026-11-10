@@ -16,9 +16,11 @@
 # next merge moved the PR on; its promote-ok check stays on that commit. It
 # turns green when its canary exists, and is otherwise closed as neutral
 # ("superseded"): no PR can merge it any more, so it must not stay pending
-# (or red) for good. Neutral is written only once every open PR into staging
-# and live was listed and the commit heads none of them, and a neutral one is
-# looked at again on the next trigger (its canary may come after its build).
+# (or red) for good. Neutral is decided after the look: only when the commit
+# is not ready and, read again right then, heads no open PR into staging or
+# live (forks included) and is not the tip of trunk or staging; any read that
+# fails means no write. A neutral one is looked at again on the next trigger
+# (its canary may come after its build).
 #
 # Nothing is re-run and nothing waits: each look takes seconds. The caller
 # queues rechecks one at a time; a look that finishes after a newer one never
@@ -60,19 +62,21 @@ error() {
   return 0
 }
 
-# "<number> <head sha>" of the open PR base <- head, nothing when there is
+# "<number> <head sha>" of the open promotion PR base <- head (from this
+# repository, never a fork's branch of the same name), nothing when there is
 # none; fails when the PRs cannot be listed.
 open_pr() {
   _pr_base="$1"
   _pr_head="$2"
   gh pr list --repo "$REPO" --base "$_pr_base" --head "$_pr_head" --state open \
-    --json number,headRefOid --jq '.[0] | select(. != null) | "\(.number) \(.headRefOid)"' 2>/dev/null || return 1
+    --json number,headRefOid,isCrossRepository \
+    --jq '[.[] | select(.isCrossRepository != true)][0] | select(. != null) | "\(.number) \(.headRefOid)"' 2>/dev/null || return 1
   return 0
 }
 
-# Every open PR's head into $1 (one per line); fails when they cannot be
-# listed. A commit that heads any open PR into staging or live (the manual
-# promote/v... route too) is never closed as superseded.
+# Every open PR's head into $1 (one per line, forks included); fails when
+# they cannot be listed. A commit that heads any open PR into staging or live
+# (the manual promote/v... route too) is never closed as superseded.
 open_heads() {
   _heads_base="$1"
   gh pr list --repo "$REPO" --base "$_heads_base" --state open --limit 100 \
@@ -80,25 +84,51 @@ open_heads() {
   return 0
 }
 
-# Judge $2 for base $1 and write the verdict ($3, when set, replaces a
-# verdict that is not pass: "superseded").
-judge() {
-  _base="$1"
-  _sha="$2"
-  _instead="${3:-}"
-  _file="$(mktemp)"
-  # Its lines (what it waits for, the canary run) stay in this run's log.
-  BASE="$_base" HEAD_SHA="$_sha" VERDICT_FILE="$_file" GITHUB_STEP_SUMMARY="" \
-    sh "$HERE/promote-ok.sh" 2>&1 || true
-  _verdict=""
-  if [ -n "$_instead" ] && ! grep -qx 'verdict=pass' "$_file"; then
-    _verdict="$_instead"
-  fi
-  if ! VERDICT="$_verdict" BASE="$_base" HEAD_SHA="$_sha" VERDICT_FILE="$_file" \
+# Judge $2 for base $1; prints the path of a new verdict file. Its lines
+# (what it waits for, the canary run) go to this run's log.
+evaluate() {
+  _eval_base="$1"
+  _eval_sha="$2"
+  _eval_file="$(mktemp)"
+  BASE="$_eval_base" HEAD_SHA="$_eval_sha" VERDICT_FILE="$_eval_file" GITHUB_STEP_SUMMARY="" \
+    sh "$HERE/promote-ok.sh" >&2 || true
+  printf '%s\n' "$_eval_file"
+  return 0
+}
+
+# Write the verdict in file $3 for $2 (base $1); $4, when set, replaces it.
+report() {
+  _rep_base="$1"
+  _rep_sha="$2"
+  _rep_file="$3"
+  _rep_instead="${4:-}"
+  if ! VERDICT="$_rep_instead" BASE="$_rep_base" HEAD_SHA="$_rep_sha" VERDICT_FILE="$_rep_file" \
     sh "$HERE/promote-ok-report.sh"; then
-    error "could not write the promote-ok check of $_sha ($_base) — re-run this recheck"
+    error "could not write the promote-ok check of $_rep_sha ($_rep_base) — re-run this recheck"
   fi
-  rm -f "$_file"
+  rm -f "$_rep_file"
+  return 0
+}
+
+# Whether $1 may still be merged by a promotion: it heads an open PR into
+# staging or live (listed now, forks included) or is the tip of trunk or
+# staging. Fails when any of that cannot be read, so nothing is closed then.
+still_live() {
+  _live_sha="$1"
+  _live=""
+  for _b in staging live; do
+    _more="$(open_heads "$_b")" || return 1
+    _live="$_live $(printf '%s' "$_more" | tr '\n' ' ')"
+  done
+  for _b in trunk staging; do
+    _tip="$(gh api "repos/$REPO/branches/$_b" --jq .commit.sha 2>/dev/null)" || return 1
+    [ -n "$_tip" ] || return 1
+    _live="$_live $_tip"
+  done
+  case " $_live " in
+    *" $_live_sha "*) echo yes ;;
+    *) echo no ;;
+  esac
   return 0
 }
 
@@ -117,7 +147,7 @@ recheck() {
   _sha="${_pr#* }"
   HEADS="$HEADS $_sha"
   echo "PR #${_pr%% *} ($_head -> $_base): head $_sha"
-  judge "$_base" "$_sha"
+  report "$_base" "$_sha" "$(evaluate "$_base" "$_sha")"
   return 0
 }
 
@@ -149,19 +179,6 @@ recheck_superseded() {
       return 0
       ;;
   esac
-  for _b in staging live; do
-    if _more="$(open_heads "$_b")"; then
-      HEADS="$HEADS $(printf '%s' "$_more" | tr '\n' ' ')"
-    else
-      LISTED=0
-    fi
-  done
-  case " $HEADS " in
-    *" $_sha "*)
-      echo "trigger $_sha: heads another open PR into staging or live; not closed as superseded"
-      return 0
-      ;;
-  esac
   if [ "$LISTED" != 1 ]; then
     warn "trigger $_sha: the open PRs could not be listed, so it is not closed as superseded"
     return 0
@@ -189,7 +206,24 @@ EOF
     return 0
   fi
   echo "trigger $_sha: no longer a promotion PR's head; promote-ok is $_status ($_conclusion)"
-  judge "${_ext#promote-ok:}" "$_sha" superseded
+  _sbase="${_ext#promote-ok:}"
+  _sfile="$(evaluate "$_sbase" "$_sha")"
+  if grep -qx 'verdict=pass' "$_sfile"; then
+    report "$_sbase" "$_sha" "$_sfile"
+    return 0
+  fi
+  # Not ready: close it only if, read again now, nothing can still promote it.
+  if ! _state="$(still_live "$_sha")"; then
+    rm -f "$_sfile"
+    warn "trigger $_sha: the open PRs or the branch tips could not be read, so it is not closed as superseded"
+    return 0
+  fi
+  if [ "$_state" = yes ]; then
+    rm -f "$_sfile"
+    echo "trigger $_sha: still heads an open PR into staging or live, or is the tip of trunk or staging; not closed as superseded"
+    return 0
+  fi
+  report "$_sbase" "$_sha" "$_sfile" superseded
   return 0
 }
 

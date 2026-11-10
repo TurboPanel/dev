@@ -643,6 +643,8 @@ describe('promote-recheck.sh', () => {
     { match: /^pr list .*--base live --head staging/, body: release },
     { match: /^pr list --repo o\/r --base staging --state open --limit 100/, body: rc },
     { match: /^pr list --repo o\/r --base live --state open --limit 100/, body: release },
+    { match: /^api repos\/o\/r\/branches\/trunk /, body: { commit: { sha: 'f'.repeat(40) } } },
+    { match: /^api repos\/o\/r\/branches\/staging /, body: { commit: { sha: 'e'.repeat(40) } } },
   ]
   const ci = (sha: string, status: string, conclusion: string): Route => ({
     match: new RegExp(`^api repos/o/r/actions/workflows/build\\.yml/runs\\?head_sha=${sha}`),
@@ -823,7 +825,63 @@ describe('promote-recheck.sh', () => {
     )
     expect(r.status).toBe(0)
     expect(writes(r)).toHaveLength(0)
-    expect(r.out).toContain('heads another open PR into staging or live')
+    expect(r.out).toContain('still heads an open PR into staging or live')
+  })
+
+  test('never closes the tip of trunk or staging, or when a tip cannot be read', () => {
+    for (const tip of ['trunk', 'staging']) {
+      const r = run(
+        RECHECK,
+        [
+          {
+            match: new RegExp(`^api repos/o/r/branches/${tip} `),
+            body: { commit: { sha: OTHER } },
+          },
+          ...prs([], []),
+          ci(OTHER, 'completed', 'cancelled'),
+          checks(OTHER, [ours(30, 'in_progress', null)]),
+          patch,
+        ],
+        { ...env, TRIGGER_SHA: OTHER, TRIGGER_EVENT: 'push' }
+      )
+      expect(r.status).toBe(0)
+      expect(writes(r)).toHaveLength(0)
+      expect(r.out).toContain('is the tip of trunk or staging')
+    }
+    const unread = run(
+      RECHECK,
+      [
+        { match: /^api repos\/o\/r\/branches\/staging /, exit: 1 },
+        ...prs([], []),
+        ci(OTHER, 'completed', 'cancelled'),
+        checks(OTHER, [ours(30, 'in_progress', null)]),
+        patch,
+      ],
+      { ...env, TRIGGER_SHA: OTHER, TRIGGER_EVENT: 'push' }
+    )
+    expect(writes(unread)).toHaveLength(0)
+    expect(unread.out).toContain('branch tips could not be read')
+  })
+
+  test('a fork PR from a branch named trunk is never taken for the promotion PR', () => {
+    const r = run(
+      RECHECK,
+      [
+        ...prs(
+          [
+            { number: 9, headRefOid: OTHER, isCrossRepository: true },
+            { number: 5, headRefOid: HEAD, isCrossRepository: false },
+          ],
+          []
+        ),
+        ci(HEAD, 'completed', 'success'),
+        checks(HEAD, []),
+        post,
+      ],
+      env
+    )
+    expect(r.out).toContain('PR #5 (trunk -> staging): head ' + HEAD)
+    expect(r.calls.join('\n')).not.toContain(`commits/${OTHER}/check-runs`)
   })
 
   test('never closes a commit as superseded when the PRs could not be listed', () => {

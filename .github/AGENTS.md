@@ -102,8 +102,9 @@ on one commit, the newest counts (checked with a temporary probe on a dev
 branch: the commit's check rollup and `filter=latest` both report only the
 newest), so a completed run is never reopened: going back to pending is a new
 run, and a green run is never turned back to pending. An earlier trunk
-commit whose canary never came is closed as neutral by the recheck once it
-is no longer any open promotion PR's head. Break-glass is flipping a
+commit whose canary never came is closed as neutral by the recheck, decided
+after its look and only when, read again right then, it heads no open PR into
+staging or live (forks included) and is not the tip of trunk or staging. Break-glass is flipping a
 ruleset's enforcement to Disabled in the repo settings, pushing, and
 re-enabling. The "TurboPanel Release" GitHub App
 (App ID 5089081, `RELEASE_APP_BYPASS`) is the only bypass: on `staging & live:
