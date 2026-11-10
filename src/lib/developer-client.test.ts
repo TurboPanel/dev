@@ -571,3 +571,53 @@ describe('postDevHostAction', () => {
     await expect(postDevHostAction('update')).resolves.toMatchObject({ ok: false })
   })
 })
+
+describe('getDevHostMigrate', () => {
+  beforeEach(() => {
+    mockedReadFileSync.mockReset()
+    mockedHttpRequest.mockReset()
+    vi.resetModules()
+    vi.doMock('./daemon-env.ts', () => ({
+      readInstanceRuntime: () => 'deno',
+    }))
+    mockFsMap([[instanceSecretsPath(), `1:${CURRENT_SECRET}`]])
+  })
+
+  it('GETs the development host view with a short timeout and returns its counts', async () => {
+    mockSocketHttpResponse(
+      200,
+      JSON.stringify({
+        ok: true,
+        host: { parts: [], migrate: { pending: 2, applied: 23, total: 25 } },
+      })
+    )
+    const { DEV_HOST_STATUS_TIMEOUT_MS, getDevHostMigrate } = await import('./developer-client.ts')
+    await expect(getDevHostMigrate()).resolves.toEqual({ pending: 2, applied: 23, total: 25 })
+    expect(mockedHttpRequest.mock.calls[0]?.[0]).toMatchObject({
+      path: '/api/developer/v1/dev-host/status',
+      method: 'GET',
+      timeout: DEV_HOST_STATUS_TIMEOUT_MS,
+    })
+    expect(DEV_HOST_STATUS_TIMEOUT_MS).toBeLessThan(10_000)
+  })
+
+  it('returns null when the view has no host or no counts', async () => {
+    const { getDevHostMigrate } = await import('./developer-client.ts')
+    mockSocketHttpResponse(200, JSON.stringify({ ok: true, host: null }))
+    await expect(getDevHostMigrate()).resolves.toBeNull()
+    mockSocketHttpResponse(200, JSON.stringify({ ok: true, host: { parts: [], migrate: null } }))
+    await expect(getDevHostMigrate()).resolves.toBeNull()
+    mockSocketHttpResponse(200, 'not json')
+    await expect(getDevHostMigrate()).resolves.toBeNull()
+  })
+
+  it('throws on a refused answer or a socket failure', async () => {
+    const { getDevHostMigrate } = await import('./developer-client.ts')
+    mockSocketHttpResponse(404, JSON.stringify({ ok: false }))
+    await expect(getDevHostMigrate()).rejects.toThrow(
+      '/api/developer/v1/dev-host/status failed: HTTP 404'
+    )
+    mockSocketHttpError(new Error('connect ENOENT'))
+    await expect(getDevHostMigrate()).rejects.toThrow(/instance Unix socket unavailable/)
+  })
+})

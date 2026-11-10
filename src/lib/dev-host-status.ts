@@ -51,11 +51,28 @@ export type DevHostJob = {
   logTail: string[]
 }
 
+/**
+ * The database's migration counts, from the control plane's development view
+ * (`GET /api/developer/v1/dev-host/status`, `host.migrate`), the same numbers
+ * the web interface's Development Host bar shows. The daemon cannot read the
+ * database, so `status.json` never carries them.
+ */
+export type DevHostMigrate = {
+  /** Migrations in the control plane checkout the database has not applied. */
+  pending: number
+  /** Migrations the database has applied. */
+  applied: number
+  /** Migrations trunk ships. */
+  total: number
+}
+
 export type DevHostStatus = {
   parts: DevHostPart[]
   job: DevHostJob | null
   lastFetchAt: string | null
   writtenAt: string | null
+  /** Added by the store from the control plane; absent in the file. */
+  migrate?: DevHostMigrate | null
 }
 
 const PART_NAMES: ReadonlySet<string> = new Set([
@@ -106,6 +123,40 @@ function strOrNull(value: unknown): string | null {
 
 function count(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) && value > 0 ? Math.floor(value) : 0
+}
+
+function wholeNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : null
+}
+
+/**
+ * The `migrate` block of a development view; null unless both `applied` and
+ * `total` are whole numbers (the bar's rule for showing the database line).
+ */
+export function parseDevHostMigrate(value: unknown): DevHostMigrate | null {
+  const raw = asObject(value)
+  const applied = wholeNumber(raw?.applied)
+  const total = wholeNumber(raw?.total)
+  if (applied === null || total === null) return null
+  return { pending: count(raw?.pending), applied, total }
+}
+
+/**
+ * The status with the control plane's counts added: `migrate`, and the
+ * control plane part's `migratePending` raised to the control plane's pending
+ * count (the bar counts it the same way).
+ */
+export function withDevHostMigrate(
+  status: DevHostStatus,
+  migrate: DevHostMigrate | null
+): DevHostStatus {
+  if (!migrate) return { ...status, migrate: undefined }
+  const parts = status.parts.map((part) =>
+    part.name === 'control-plane' && migrate.pending > part.migratePending
+      ? { ...part, migratePending: migrate.pending }
+      : part
+  )
+  return { ...status, parts, migrate }
 }
 
 function parsePart(value: unknown): DevHostPart | null {
@@ -206,9 +257,8 @@ function branchNote(part: DevHostPart): string {
 /**
  * The short note after a Services row, only when the part needs something,
  * e.g. `↓3 · restart · install · local changes` or `on branch fix-x · restart`.
- * `migrate N` shows only when the status carries `setupNeeded.migrate`: the
- * control plane fills it, the daemon's `status.json` does not today.
- * Empty when nothing needs doing.
+ * `migrate N` comes from the control plane's counts (the daemon's
+ * `status.json` has none). Empty when nothing needs doing.
  */
 export function devHostRowSuffix(part: DevHostPart | null): string {
   if (!part?.headCommit) return ''
@@ -236,6 +286,111 @@ export function devHostRowSuffixes(
     if (suffix) suffixes.set(id, suffix)
   }
   return suffixes
+}
+
+const PART_LABELS: Readonly<Record<DevHostPartName, string>> = {
+  'control-plane': 'Control Plane',
+  'web-interface': 'Web Interface',
+  website: 'Website',
+  daemon: 'Daemon',
+}
+
+function plural(value: number, one: string, many: string): string {
+  return `${value} ${value === 1 ? one : many}`
+}
+
+function partNeedsWork(part: DevHostPart): boolean {
+  return (
+    part.behindBy > 0 ||
+    part.restartNeeded ||
+    part.installNeeded ||
+    part.migratePending > 0 ||
+    part.dirtyBlocking
+  )
+}
+
+/**
+ * The daemon's reason in its own words, ending "will not pull": a trailing
+ * "; not pulled" and full stops are dropped. Null when it gave none.
+ */
+function blockedFragment(reason: string | null): string | null {
+  let text = reason?.trim() ?? ''
+  const suffix = 'not pulled'
+  if (text.endsWith(suffix)) {
+    const head = text.slice(0, -suffix.length).trimEnd()
+    if (head.endsWith(';')) text = head.slice(0, -1)
+  }
+  while (text.endsWith('.')) text = text.slice(0, -1)
+  return text === '' ? null : `${text}, will not pull`
+}
+
+function stateFragment(part: DevHostPart): string | null {
+  const behind = part.behindBy > 0
+  if (behind && !part.onTrunk) return `on branch ${part.branch || 'unknown'}, will not pull`
+  if (part.dirtyBlocking) return behind ? 'local changes, will not pull' : 'local changes'
+  if (behind) return `${plural(part.behindBy, 'new commit', 'new commits')} on trunk`
+  return null
+}
+
+/**
+ * One line for a part that needs something, in the same words as the web
+ * interface's Development Host bar: "Control Plane: 3 new commits on trunk, 1
+ * migration pending", "Control Plane: detached at 4f7b5ed, 19 behind trunk,
+ * will not pull", "Website: local changes in a.ts, will not pull". The
+ * daemon's `blockedReason` is used when it sent one. Null when it needs
+ * nothing.
+ */
+export function devHostPartLine(part: DevHostPart): string | null {
+  if (!partNeedsWork(part)) return null
+  const fragments: string[] = []
+  const blocked = blockedFragment(part.blockedReason)
+  if (blocked === null) {
+    const state = stateFragment(part)
+    if (state !== null) fragments.push(state)
+  } else {
+    fragments.push(blocked)
+    if (part.behindBy > 0 && !blocked.includes('behind trunk')) {
+      fragments.push(`${plural(part.behindBy, 'new commit', 'new commits')} on trunk`)
+    }
+  }
+  if (part.installNeeded) fragments.push('packages to install')
+  if (part.migratePending > 0) {
+    fragments.push(`${plural(part.migratePending, 'migration', 'migrations')} pending`)
+  }
+  if (part.restartNeeded) fragments.push('restart needed')
+  return `${PART_LABELS[part.name]}: ${fragments.join(', ')}`
+}
+
+/** "Database: 23 of 25 migrations applied" (the total is what trunk ships); null without counts. */
+export function devHostDatabaseLine(migrate: DevHostMigrate | null | undefined): string | null {
+  if (!migrate) return null
+  return `Database: ${migrate.applied} of ${plural(migrate.total, 'migration', 'migrations')} applied`
+}
+
+/** One line above a Services row's detail; `database` marks the database line. */
+export type DevHostDetailLine = { text: string; database: boolean }
+
+/**
+ * The full lines above a Services row's detail, from a fresh status only:
+ * the part's line when it needs something and, on the control plane row, the
+ * database line. Row notes are cut to fit the list; these take the detail
+ * pane's width.
+ */
+export function devHostDetailLines(
+  status: DevHostStatus | null,
+  serviceId: string,
+  nowMs: number
+): DevHostDetailLine[] {
+  if (!status || isDevHostStatusStale(status, nowMs)) return []
+  const lines: DevHostDetailLine[] = []
+  const part = devHostPartForService(status, serviceId)
+  const partLine = part?.headCommit ? devHostPartLine(part) : null
+  if (partLine !== null) lines.push({ text: partLine, database: false })
+  if (SERVICE_PARTS[serviceId] === 'control-plane') {
+    const database = devHostDatabaseLine(status.migrate)
+    if (database !== null) lines.push({ text: database, database: true })
+  }
+  return lines
 }
 
 export function devHostStepLabel(step: string): string {
