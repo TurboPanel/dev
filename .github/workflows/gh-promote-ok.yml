@@ -15,18 +15,27 @@
 #                 staging and the trees match).
 #
 # It never re-runs tests, and it never waits: it looks once and ends in
-# seconds. While what a PR would publish is still being built (the trunk run,
-# the canary, the rc) the check is red and says what it waits for;
+# seconds. It reports the required check itself: a check run named
+# `promote-ok` on the PR's head commit, written through the Checks API with
+# the job token (so it belongs to the GitHub Actions app the rulesets pin it
+# to) by scripts/promote/promote-ok-report.sh:
+#
+#   ready      success
+#   not yet    in_progress: pending, so the PR cannot merge, and the trunk
+#              commit that is the Release Candidate PR's head shows a pending
+#              dot, not a red X (a "not yet" is never a failure)
+#   never      failure (or the look itself failed)
+#
 # gh-promote-ok-recheck.yml, which the caller runs when the trunk CI, the
-# canary build or Publish Release Candidate finishes, re-runs it then. It used
-# to poll in place for up to an hour, and with many merges a day those idle
-# jobs held the runners the canary builds they waited for needed. The logic is
-# scripts/promote/promote-ok.sh (unit tests in
+# canary build or Publish Release Candidate finishes, looks again then and
+# updates the same check. It used to poll in place for up to an hour, and with
+# many merges a day those idle jobs held the runners the canary builds they
+# waited for needed. The logic is scripts/promote/promote-ok.sh (unit tests in
 # src/lib/promote-ok-script.test.ts).
 #
-# The required check is the caller's own fan-in job named `promote-ok` (a job
-# inside a reusable workflow reports as "<caller job> / <job>", never as a bare
-# name). A caller looks like:
+# No job here or in the caller may be named promote-ok: a job can only end
+# success, failure, cancelled or skipped, and skipped passes a required check.
+# A caller looks like:
 #
 #   on:
 #     pull_request:
@@ -41,16 +50,11 @@
 #       with: { repo-kind: …, ci-workflow: …, dev-ref: <sha>,
 #               base: ${{ github.event.pull_request.base.ref }},
 #               head-sha: ${{ github.event.pull_request.head.sha }} }
-#     promote-ok:
-#       name: promote-ok
-#       needs: [evaluate]
-#       if: always()
-#       … exit 1 unless needs.evaluate.result == 'success'
+#       permissions: { contents: read, actions: read, pull-requests: read, checks: write }
 #
 # Never add workflow_dispatch to that caller: a dispatch run on trunk would
-# put a `promote-ok` check (even a skipped one, which counts as passing) on
-# the trunk head, which IS the Release Candidate PR's head. The manual dry run
-# lives in the recheck caller and passes `pr-number` instead.
+# judge the trunk head without a PR. The manual dry run lives in the recheck
+# caller and passes `pr-number` instead; a dry run writes no check.
 
 # Permissions — the caller's job must grant at least:
 #
@@ -58,13 +62,14 @@
 #     contents: read
 #     actions: read
 #     pull-requests: read
+#     checks: write
 #
 # contents: the canary release and its manifests, tags, releases and commits.
 # actions: the trunk CI run of the head commit.
 # pull-requests: only the dry run, which reads base and head from a PR number.
-# It writes nothing. A caller job that grants less than this workflow declares
-# fails before any step runs ("The nested job … is requesting …, but is only
-# allowed …").
+# checks: the promote-ok check run (never written by a dry run). A caller job
+# that grants less than this workflow declares fails before any step runs
+# ("The nested job … is requesting …, but is only allowed …").
 
 name: Promote OK
 
@@ -103,6 +108,7 @@ permissions:
   contents: read
   actions: read
   pull-requests: read
+  checks: write
 
 jobs:
   evaluate:
@@ -122,7 +128,7 @@ jobs:
           sparse-checkout: scripts/promote
           sparse-checkout-cone-mode: false
 
-      - name: Check that what this PR publishes exists
+      - name: Check that what this PR publishes exists, and report promote-ok
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
@@ -131,4 +137,14 @@ jobs:
           BASE: ${{ inputs.base }}
           HEAD_SHA: ${{ inputs.head-sha }}
           PR_NUMBER: ${{ inputs.pr-number }}
-        run: sh .promote/scripts/promote/promote-ok.sh
+          DETAILS_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          VERDICT_FILE="$(mktemp)"
+          export VERDICT_FILE
+          rc=0
+          sh .promote/scripts/promote/promote-ok.sh || rc=$?
+          # A dry run (pr-number) only shows the verdict, as this step's result.
+          if [ -n "$PR_NUMBER" ]; then
+            exit "$rc"
+          fi
+          sh .promote/scripts/promote/promote-ok-report.sh

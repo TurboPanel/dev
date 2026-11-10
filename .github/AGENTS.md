@@ -89,9 +89,21 @@ staging/live, `require_extra_approval_for_unattributed_changes` explicitly
 false. On `staging` and `live` the applied ruleset also requires
 `promote-ok` from the same app; this script does not set that check yet, so
 re-running it as it stands would drop it. Only a pull request's current
-head needs a green `promote-ok`: an earlier trunk or staging commit whose
-check stays red blocks nothing (the recheck re-runs the commit its trigger
-was for, and goes back no further). Break-glass is flipping a
+head needs a green `promote-ok`. Since the check-run change, `promote-ok` is
+not an Actions job: `gh-promote-ok.yml` and its recheck write it as a check
+run through the Checks API with the job token
+(`scripts/promote/promote-ok-report.sh`), so it still belongs to the GitHub
+Actions app: success when ready, `in_progress` (pending, never red) while
+what the PR publishes is still being built, failure only when it can never
+pass or the look failed. A pending required check blocks the merge exactly
+as a red one did, but the trunk commit that is the Release Candidate PR's
+head no longer shows a red X while it waits. Of several runs with that name
+on one commit, the newest counts (checked with a temporary probe on a dev
+branch: the commit's check rollup and `filter=latest` both report only the
+newest), so a completed run is never reopened: going back to pending is a new
+run, and a green run is never turned back to pending. An earlier trunk
+commit whose canary never came is closed as neutral by the recheck once it
+is no longer any open promotion PR's head. Break-glass is flipping a
 ruleset's enforcement to Disabled in the repo settings, pushing, and
 re-enabling. The "TurboPanel Release" GitHub App
 (App ID 5089081, `RELEASE_APP_BYPASS`) is the only bypass: on `staging & live:

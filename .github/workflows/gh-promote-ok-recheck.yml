@@ -1,81 +1,78 @@
-# Reusable "promote-ok" recheck — re-runs the red promote-ok check of the open
-# promotion PRs when what they were waiting for may now exist.
+# Reusable "promote-ok" recheck — looks again at the promote-ok check of the
+# open promotion PRs when what they were waiting for may now exist.
 #
 # The caller triggers it with `workflow_run` on whatever produces the missing
 # piece — the trunk CI, the canary publish, and Publish Release Candidate —
-# and this job re-runs the failed promote-ok run of the current head of the
-# open trunk -> staging and staging -> live PRs
-# (scripts/promote/promote-recheck.sh). promote-ok looks once and ends, so
-# this is how a "not yet" turns green: a run whose evaluation failed and
-# whose promote-ok job still waits for a runner is force-cancelled and
-# re-run, so none is left red with no later recheck. It never cancels a run
-# before that job is queued (a force-cancel ends a never-queued job as
-# skipped, and a skipped promote-ok reads as passing); an evaluation still
-# running is waited for instead. A re-run reports on the same head
-# commit, under the same check name and app (GitHub Actions), so the ruleset
-# that requires `promote-ok` sees the new result. No Checks API, no commit
-# statuses: the PR's own run is the one source of the check.
+# and this job judges the current head of the open trunk -> staging and
+# staging -> live PRs again (scripts/promote/promote-recheck.sh, which runs
+# promote-ok.sh) and writes the verdict to the head's `promote-ok` check run
+# (promote-ok-report.sh): green once what the PR publishes exists, still
+# pending while it does not. Nothing is re-run, cancelled or waited for; each
+# look takes seconds.
 #
 # It then does the same for the commit the triggering run was for, when that
 # commit is no longer a PR's head: the RC PR moved on to a newer trunk commit
-# before this one's canary finished, and its check would otherwise stay red.
-# It reads that commit from the caller's own event (a reusable workflow sees
-# the caller's `github` context), so callers pass nothing for it. A run that
+# before this one's canary finished. That commit's check turns green if its
+# canary now exists and is otherwise closed as neutral (superseded), so no
+# trunk commit keeps a pending or red promote-ok it can never lose. It reads
+# that commit from the caller's own event (a reusable workflow sees the
+# caller's `github` context), so callers pass nothing for it. A run that
 # another run started (the canary) carries the branch tip as its head, not
 # the commit it built, so the caller's canary workflow names that commit in
 # its `run-name` ("Canary <commit>"); without it, only the PR heads are
-# re-checked.
+# looked at.
 #
-# It never reports a check named promote-ok itself. It fails its own run only
-# when a run it force-cancelled could not be re-run, so a person notices;
-# anything else it cannot do is a warning. `dry-run: true` only reports.
+# It fails its own run only when it could not write a verdict, so a person
+# notices; anything it cannot read is a warning. `dry-run: true` only reports.
 
 # Permissions — the caller's job must grant at least:
 #
 #   permissions:
 #     contents: read
-#     actions: write
+#     actions: read
 #     pull-requests: read
+#     checks: write
 #
-# actions: write re-runs the failed promote-ok run, and force-cancels one
-# stuck waiting for a runner before re-running it (GITHUB_TOKEN may do both to
-# runs in its own repository). pull-requests: read finds the open promotion PRs.
-# contents: read checks out nothing of the caller but is the floor every job
-# has. A caller job that grants less than this workflow declares fails
-# before any step runs.
+# contents: the canary release, tags, releases and commits promote-ok.sh reads.
+# actions: the trunk CI runs. pull-requests: finds the open promotion PRs.
+# checks: writes the promote-ok check runs. A caller job that grants less than
+# this workflow declares fails before any step runs.
 
 name: Promote OK Recheck
 
 on:
   workflow_call:
     inputs:
+      repo-kind:
+        description: daemon | instance | ui | notes-only (as for gh-promote-ok.yml)
+        required: true
+        type: string
+      ci-workflow:
+        description: The trunk CI workflow file (as for gh-promote-ok.yml)
+        required: true
+        type: string
       dev-ref:
         description: The TurboPanel/dev commit this workflow was called at (must equal the `uses:` pin — the script lives there)
         required: true
         type: string
-      check-workflow:
-        description: The caller's promote-ok workflow file
-        required: false
-        type: string
-        default: promote-ok.yml
       dry-run:
-        description: Report what would be re-run and change nothing
+        description: Report what would be written and change nothing
         required: false
         type: boolean
         default: false
 
 permissions:
   contents: read
-  actions: write
+  actions: read
   pull-requests: read
+  checks: write
 
 jobs:
   recheck:
     name: recheck
     runs-on: ubuntu-latest
-    # Worst case: three commits, each 42 pauses of 10 s (promote-recheck.sh),
-    # plus the API calls between them; this only stops a hung call.
-    timeout-minutes: 35
+    # A few looks of seconds each; this only stops a hung call.
+    timeout-minutes: 10
     steps:
       - name: Check out the promotion scripts (TurboPanel/dev)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -88,12 +85,14 @@ jobs:
           sparse-checkout: scripts/promote
           sparse-checkout-cone-mode: false
 
-      - name: Re-run the red promote-ok check of the open promotion PRs
+      - name: Judge the open promotion PRs again and report promote-ok
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
-          WORKFLOW: ${{ inputs.check-workflow }}
+          REPO_KIND: ${{ inputs.repo-kind }}
+          CI_WORKFLOW: ${{ inputs.ci-workflow }}
           DRY_RUN: ${{ inputs.dry-run }}
+          DETAILS_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           TRIGGER_SHA: ${{ github.event.workflow_run.head_sha }}
           TRIGGER_EVENT: ${{ github.event.workflow_run.event }}
           TRIGGER_TITLE: ${{ github.event.workflow_run.display_title }}
