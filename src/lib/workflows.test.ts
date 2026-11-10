@@ -155,23 +155,26 @@ describe('.github/workflows', () => {
     expect(step).not.toMatch(/^\s+exit 1$/m)
   })
 
-  test('promote-ok only reads, and its recheck only re-runs runs', () => {
-    expect(topLevelPermissions(read('gh-promote-ok.yml'))).toEqual([
-      'contents: read',
-      'actions: read',
-      'pull-requests: read',
-    ])
+  test('promote-ok reads, and writes nothing but its own check run', () => {
+    for (const file of ['gh-promote-ok.yml', 'gh-promote-ok-recheck.yml']) {
+      expect(topLevelPermissions(read(file))).toEqual([
+        'contents: read',
+        'actions: read',
+        'pull-requests: read',
+        'checks: write',
+      ])
+    }
     expect(read('gh-promote-ok.yml')).toMatch(
-      /run: sh \.promote\/scripts\/promote\/promote-ok\.sh$/m
+      /sh \.promote\/scripts\/promote\/promote-ok\.sh \|\| rc=\$\?$/m
     )
-    expect(
-      topLevelPermissions(read('gh-promote-ok-recheck.yml')).filter((p) => p.endsWith('write'))
-    ).toEqual(['actions: write'])
+    expect(read('gh-promote-ok-recheck.yml')).toMatch(
+      /run: sh \.promote\/scripts\/promote\/promote-recheck\.sh$/m
+    )
   })
 
-  test('neither promote-ok workflow reports a check named promote-ok itself', () => {
-    // The required check is the caller's fan-in job; a job here would report
-    // as "<caller job> / <job>" anyway, and the recheck must never report one.
+  test('no job in either promote-ok workflow is named promote-ok', () => {
+    // The required check is the check run promote-ok-report.sh writes; a job
+    // can only end success, failure, cancelled or skipped, and skipped passes.
     for (const file of ['gh-promote-ok.yml', 'gh-promote-ok-recheck.yml']) {
       expect(read(file)).not.toMatch(/^ {4}name: promote-ok$/m)
     }

@@ -8,6 +8,7 @@ import { describe, expect, test } from 'vitest'
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 const CHECK = join(ROOT, 'scripts', 'promote', 'promote-ok.sh')
 const RECHECK = join(ROOT, 'scripts', 'promote', 'promote-recheck.sh')
+const REPORT = join(ROOT, 'scripts', 'promote', 'promote-ok-report.sh')
 const VERSION = join(ROOT, 'scripts', 'promote', 'version.sh')
 const START = join(ROOT, 'scripts', 'promote', 'start-version.sh')
 
@@ -118,8 +119,8 @@ const tags = (...names: string[]): Route => ({
   body: names.map((name) => ({ ref: `refs/tags/${name}` })),
 })
 
-// The check looks once and ends: every "not ready yet" case is red on that one
-// look, and the recheck workflow re-runs it later.
+// The check looks once and ends: every "not ready yet" case is pending (exit
+// 2) on that one look, and the recheck workflow looks again later.
 const checkEnv = (base: string, kind = 'instance') => ({
   REPO: 'o/r',
   REPO_KIND: kind,
@@ -178,7 +179,7 @@ describe('promote-ok.sh — Release Candidate PR (base staging)', () => {
     expect(r.calls.join('\n')).not.toContain('contents/')
   })
 
-  test('red, waiting, while no canary names the head commit yet', () => {
+  test('pending, not red, while no canary names the head commit yet', () => {
     const r = run(
       CHECK,
       [
@@ -188,25 +189,25 @@ describe('promote-ok.sh — Release Candidate PR (base staging)', () => {
       ],
       checkEnv('staging')
     )
-    expect(r.status).toBe(1)
+    expect(r.status).toBe(2)
     expect(r.out).toContain(
       'waiting for the canary of aaaaaaa (no manifest-X.Y.Z-canary.N.json on the canary release names it yet); this re-checks automatically when its canary build finishes. If that build failed or is stuck, see the run lines above, then re-run or cancel it.'
     )
-    expect(r.out).toContain('::error title=promote-ok::')
+    expect(r.out).toContain('::notice title=promote-ok::')
   })
 
-  test('red, waiting, while the trunk run is still going or has not started', () => {
+  test('pending, not red, while the trunk run is still going or has not started', () => {
     const pending = run(
       CHECK,
       [ciRuns(run1({ status: 'in_progress', conclusion: '' }))],
       checkEnv('staging')
     )
-    expect(pending.status).toBe(1)
+    expect(pending.status).toBe(2)
     expect(pending.out).toContain(
       'waiting for the trunk build.yml run of aaaaaaa to finish; this re-checks automatically when it does.'
     )
     const missing = run(CHECK, [ciRuns(run1({ event: 'pull_request' }))], checkEnv('staging'))
-    expect(missing.status).toBe(1)
+    expect(missing.status).toBe(2)
     expect(missing.out).toContain('none has started yet')
   })
 
@@ -242,7 +243,7 @@ describe('promote-ok.sh — Release Candidate PR (base staging)', () => {
       [ciRuns(run1({})), canaryAssets(), canaryRuns, groupRuns],
       checkEnv('staging')
     )
-    expect(r.status).toBe(1)
+    expect(r.status).toBe(2)
     expect(r.out).toContain('canary.yml run for aaaaaaa: run 77 is queued')
     expect(r.out).toContain('https://github.com/o/r/actions/runs/77')
     expect(r.out).toContain('run 70 in_progress')
@@ -251,7 +252,7 @@ describe('promote-ok.sh — Release Candidate PR (base staging)', () => {
 
   test('a canary run lookup that fails gives the plain note and the same verdict', () => {
     const r = run(CHECK, [ciRuns(run1({})), canaryAssets()], checkEnv('staging'))
-    expect(r.status).toBe(1)
+    expect(r.status).toBe(2)
     expect(r.out).toContain('canary.yml run for aaaaaaa: could not be read')
     expect(r.out).toContain('runs not finished (oldest first): could not be read')
     expect(r.out).toContain('waiting for the canary of aaaaaaa')
@@ -259,7 +260,7 @@ describe('promote-ok.sh — Release Candidate PR (base staging)', () => {
 
   // It used to poll in place for up to an hour; those idle jobs held the
   // runners the builds they waited for needed. One look, then it ends.
-  test('looks once and ends: a trunk run still going is red at once, never waited for', () => {
+  test('looks once and ends: a trunk run still going is pending at once, never waited for', () => {
     const runsRoute = {
       match: /^api repos\/o\/r\/actions\/workflows\/build\.yml\/runs\?/,
       sequence: [
@@ -268,7 +269,7 @@ describe('promote-ok.sh — Release Candidate PR (base staging)', () => {
       ],
     }
     const r = run(CHECK, [runsRoute], checkEnv('staging', 'notes-only'))
-    expect(r.status).toBe(1)
+    expect(r.status).toBe(2)
     expect(r.out).toContain('waiting for the trunk build.yml run of aaaaaaa to finish')
     const looks = r.calls.filter((c) => c.startsWith('api repos/o/r/actions/workflows'))
     expect(looks).toHaveLength(1)
@@ -392,26 +393,26 @@ describe('promote-ok.sh — Release PR (base live)', () => {
     expect(r.out).toContain('merging releases v0.1.4 from it.')
   })
 
-  test('red when staging has changes the newest rc lacks', () => {
+  test('pending when staging has changes the newest rc lacks', () => {
     const r = run(CHECK, [rcTags, published, compare(0, 'tree-0'), headTree], checkEnv('live'))
-    expect(r.status).toBe(1)
+    expect(r.status).toBe(2)
     expect(r.out).toContain(
       'has changes that are not in v0.1.4-rc.10 (the newest rc). Waiting for Publish Release Candidate'
     )
   })
 
-  test('red when staging does not contain the newest rc', () => {
+  test('pending when staging does not contain the newest rc', () => {
     const r = run(CHECK, [rcTags, published, compare(3, 'tree-1'), headTree], checkEnv('live'))
-    expect(r.status).toBe(1)
+    expect(r.status).toBe(2)
     expect(r.out).toContain('does not contain v0.1.4-rc.10')
   })
 
-  test('red while the rc has no published release, or every rc has shipped', () => {
+  test('pending while the rc has no published release, or every rc has shipped', () => {
     const draft = run(CHECK, [rcTags, { ...published, body: { draft: true } }], checkEnv('live'))
-    expect(draft.status).toBe(1)
+    expect(draft.status).toBe(2)
     expect(draft.out).toContain('waiting for the v0.1.4-rc.10 GitHub release')
     const shipped = run(CHECK, [tags(...released, 'v0.1.4-rc.10', 'v0.1.4')], checkEnv('live'))
-    expect(shipped.status).toBe(1)
+    expect(shipped.status).toBe(2)
     expect(shipped.out).toContain(
       'no rc newer than the latest release exists yet; merge the Release Candidate PR first.'
     )
@@ -421,7 +422,7 @@ describe('promote-ok.sh — Release PR (base live)', () => {
   // Publish Release Candidate has pushed the new rc tag. One look then sees
   // the previous rc and says "not yet"; Publish Release Candidate finishing
   // re-runs the check, which then reads the new tag.
-  test('an rc tag not pushed yet is one red look, not a wait', () => {
+  test('an rc tag not pushed yet is one pending look, not a wait', () => {
     const r = run(
       CHECK,
       [
@@ -441,7 +442,7 @@ describe('promote-ok.sh — Release PR (base live)', () => {
       ],
       checkEnv('live')
     )
-    expect(r.status).toBe(1)
+    expect(r.status).toBe(2)
     expect(r.out).toContain(
       'staging (aaaaaaa) has changes that are not in v0.1.4-rc.2 (the newest rc). Waiting for Publish Release Candidate to publish the next rc'
     )
@@ -488,584 +489,465 @@ describe('promote-ok.sh — inputs', () => {
   })
 })
 
-describe('promote-recheck.sh', () => {
-  const env = {
-    REPO: 'o/r',
-    WORKFLOW: 'promote-ok.yml',
-    WAIT_POLLS: '2',
-    EVAL_POLLS: '2',
-    CANCEL_POLLS: '2',
+describe('promote-ok-report.sh', () => {
+  const verdictFile = (verdict: string, message: string): string => {
+    const dir = mkdtempSync(join(tmpdir(), 'promote-ok-verdict-'))
+    const file = join(dir, 'verdict')
+    writeFileSync(file, `verdict=${verdict}\nmessage=${message}\n`)
+    return file
   }
+  const env = (base: string, file: string, over: Record<string, string> = {}) => ({
+    REPO: 'o/r',
+    HEAD_SHA: HEAD,
+    BASE: base,
+    VERDICT_FILE: file,
+    ...over,
+  })
+  const existing = (...runs: Record<string, unknown>[]): Route => ({
+    match: new RegExp(`^api repos/o/r/commits/${HEAD}/check-runs\\?check_name=promote-ok`),
+    body: { check_runs: runs },
+  })
+  const ours = (id: number, status: string, conclusion: string | null, base = 'staging') => ({
+    id,
+    status,
+    conclusion,
+    external_id: `promote-ok:${base}`,
+    app: { id: 15368 },
+  })
+  const post: Route = { match: /^api -X POST repos\/o\/r\/check-runs /, body: { id: 900 } }
+  const patch: Route = { match: /^api -X PATCH repos\/o\/r\/check-runs\/\d+ /, body: { id: 1 } }
+  const writes = (r: Result) => r.calls.filter((c) => / -X (POST|PATCH) /.test(c))
+
+  test('ready: a new completed success check named promote-ok, marked with its base', () => {
+    const r = run(
+      REPORT,
+      [existing(), post],
+      env('staging', verdictFile('pass', 'canary is there'))
+    )
+    expect(r.status).toBe(0)
+    const [call] = writes(r)
+    expect(call).toContain('-X POST repos/o/r/check-runs -f name=promote-ok')
+    expect(call).toContain(`-f head_sha=${HEAD}`)
+    expect(call).toContain('-f external_id=promote-ok:staging')
+    expect(call).toContain('-f status=completed')
+    expect(call).toContain('-f conclusion=success')
+    expect(call).toContain('-f output[summary]=canary is there')
+  })
+
+  test('not yet: pending (in_progress, no conclusion), never red', () => {
+    const r = run(REPORT, [existing(), post], env('staging', verdictFile('wait', 'waiting')))
+    expect(r.status).toBe(0)
+    const [call] = writes(r)
+    expect(call).toContain('-f status=in_progress')
+    expect(call).not.toContain('conclusion=')
+    expect(r.out).toContain('promote-ok is in_progress')
+  })
+
+  test('updates its own pending check in place', () => {
+    const r = run(
+      REPORT,
+      [existing(ours(41, 'in_progress', null)), patch, post],
+      env('staging', verdictFile('pass', 'ready'))
+    )
+    expect(r.status).toBe(0)
+    expect(writes(r)).toHaveLength(1)
+    expect(writes(r)[0]).toMatch(/^api -X PATCH repos\/o\/r\/check-runs\/41 /)
+    expect(writes(r)[0]).toContain('-f conclusion=success')
+  })
+
+  test('a completed check cannot go back to pending, so "not yet" after a red one is a new check', () => {
+    const r = run(
+      REPORT,
+      [existing(ours(41, 'completed', 'failure')), patch, post],
+      env('staging', verdictFile('wait', 'waiting'))
+    )
+    expect(r.status).toBe(0)
+    expect(writes(r)).toHaveLength(1)
+    expect(writes(r)[0]).toMatch(/^api -X POST /)
+  })
+
+  test('an older "not yet" never turns a green check back to pending', () => {
+    const r = run(
+      REPORT,
+      [existing(ours(40, 'completed', 'failure'), ours(41, 'completed', 'success')), patch, post],
+      env('staging', verdictFile('wait', 'waiting'))
+    )
+    expect(r.status).toBe(0)
+    expect(writes(r)).toHaveLength(0)
+    expect(r.out).toContain('already green from a later look')
+  })
+
+  test("another base's check, an Actions job's check or another app's never count as its own", () => {
+    for (const newest of [
+      ours(41, 'completed', 'success', 'staging'),
+      { id: 42, status: 'completed', conclusion: 'success', external_id: null, app: { id: 15368 } },
+    ]) {
+      const r = run(REPORT, [existing(newest), patch, post], env('live', verdictFile('wait', 'w')))
+      expect(r.status).toBe(0)
+      expect(writes(r)).toHaveLength(1)
+      expect(writes(r)[0]).toMatch(/^api -X POST .*-f external_id=promote-ok:live/)
+    }
+    const other = run(
+      REPORT,
+      [existing({ ...ours(43, 'in_progress', null), app: { id: 999 } }), patch, post],
+      env('staging', verdictFile('pass', 'ready'))
+    )
+    expect(writes(other)[0]).toMatch(/^api -X POST /)
+  })
+
+  test('fails closed: no verdict is a red check, and a failed write fails the step', () => {
+    const none = run(REPORT, [existing(), post], env('staging', '/nonexistent/verdict'))
+    expect(none.status).toBe(0)
+    expect(writes(none)[0]).toContain('-f conclusion=failure')
+    expect(writes(none)[0]).toContain('ended without a verdict')
+    const broken = run(
+      REPORT,
+      [existing(), { ...post, body: undefined, exit: 1 }],
+      env('staging', verdictFile('pass', 'ready'))
+    )
+    expect(broken.status).toBe(1)
+    expect(broken.out).toContain('could not create the promote-ok check run')
+    const unread = run(
+      REPORT,
+      [{ ...existing(), exit: 1 }],
+      env('staging', verdictFile('pass', 'x'))
+    )
+    expect(unread.status).toBe(1)
+    expect(writes(unread)).toHaveLength(0)
+  })
+
+  test('superseded is neutral; a dry run writes nothing; the base must be staging or live', () => {
+    const neutral = run(
+      REPORT,
+      [existing(ours(41, 'in_progress', null)), patch],
+      env('staging', verdictFile('wait', 'w'), { VERDICT: 'superseded' })
+    )
+    expect(writes(neutral)[0]).toContain('-f conclusion=neutral')
+    const dry = run(
+      REPORT,
+      [existing(), post],
+      env('staging', verdictFile('pass', 'ready'), { DRY_RUN: 'true' })
+    )
+    expect(dry.status).toBe(0)
+    expect(writes(dry)).toHaveLength(0)
+    expect(dry.out).toContain('would create the promote-ok check')
+    const trunk = run(REPORT, [], env('trunk', verdictFile('pass', 'x')))
+    expect(trunk.status).toBe(1)
+  })
+})
+
+describe('promote-recheck.sh', () => {
+  const env = { REPO: 'o/r', REPO_KIND: 'notes-only', CI_WORKFLOW: 'build.yml' }
   const prs = (rc: unknown[], release: unknown[]): Route[] => [
     { match: /^pr list .*--base staging --head trunk/, body: rc },
     { match: /^pr list .*--base live --head staging/, body: release },
+    { match: /^pr list --repo o\/r --base staging --state open --limit 100/, body: rc },
+    { match: /^pr list --repo o\/r --base live --state open --limit 100/, body: release },
+    { match: /^api repos\/o\/r\/branches\/trunk /, body: { commit: { sha: 'f'.repeat(40) } } },
+    { match: /^api repos\/o\/r\/branches\/staging /, body: { commit: { sha: 'e'.repeat(40) } } },
   ]
-  const runs = (sha: string, body: unknown[]): Route => ({
-    match: new RegExp(`^run list .*--commit ${sha}`),
-    body,
+  const ci = (sha: string, status: string, conclusion: string): Route => ({
+    match: new RegExp(`^api repos/o/r/actions/workflows/build\\.yml/runs\\?head_sha=${sha}`),
+    body: { workflow_runs: [run1({ status, conclusion })] },
   })
-  const rerunRoute: Route = { match: /^run rerun /, body: {} }
-
-  test("re-runs the failed promote-ok run of each open PR's head", () => {
-    const r = run(
-      RECHECK,
-      [
-        ...prs([{ number: 5, headRefOid: HEAD }], [{ number: 6, headRefOid: OTHER }]),
-        runs(HEAD, [{ databaseId: 11, status: 'completed', conclusion: 'failure' }]),
-        runs(OTHER, [{ databaseId: 12, status: 'completed', conclusion: 'success' }]),
-        rerunRoute,
-      ],
-      env
-    )
-    expect(r.status).toBe(0)
-    expect(r.calls).toContain('run rerun 11 --repo o/r')
-    expect(r.calls.join('\n')).not.toContain('run rerun 12')
-    expect(r.out).toContain('PR #6: promote-ok is already green')
-    expect(r.calls.some((c) => c.includes('--workflow promote-ok.yml --event pull_request'))).toBe(
-      true
-    )
+  const checks = (sha: string, runs: Record<string, unknown>[]): Route => ({
+    match: new RegExp(`^api repos/o/r/commits/${sha}/check-runs\\?check_name=promote-ok`),
+    body: { check_runs: runs },
   })
+  const ours = (id: number, status: string, conclusion: string | null, base = 'staging') => ({
+    id,
+    status,
+    conclusion,
+    external_id: `promote-ok:${base}`,
+    app: { id: 15368 },
+  })
+  const post: Route = { match: /^api -X POST repos\/o\/r\/check-runs /, body: { id: 900 } }
+  const patch: Route = { match: /^api -X PATCH repos\/o\/r\/check-runs\/\d+ /, body: { id: 1 } }
+  const writes = (r: Result) => r.calls.filter((c) => / -X (POST|PATCH) /.test(c))
 
-  test('dry run reports and changes nothing', () => {
+  test("judges each open PR's head again and writes promote-ok; never re-runs or cancels", () => {
     const r = run(
       RECHECK,
       [
         ...prs([{ number: 5, headRefOid: HEAD }], []),
-        runs(HEAD, [{ databaseId: 11, status: 'completed', conclusion: 'failure' }]),
+        ci(HEAD, 'completed', 'success'),
+        checks(HEAD, [ours(41, 'in_progress', null)]),
+        patch,
       ],
-      { ...env, DRY_RUN: 'true' }
+      env
     )
     expect(r.status).toBe(0)
-    expect(r.out).toContain('would re-run the failed promote-ok run 11 (dry run)')
-    expect(r.calls.join('\n')).not.toContain('run rerun')
+    expect(writes(r)).toEqual([
+      expect.stringMatching(/^api -X PATCH repos\/o\/r\/check-runs\/41 .*conclusion=success/),
+    ])
+    expect(r.out).toContain('PR #5 (trunk -> staging): head ' + HEAD)
     expect(r.out).toContain('staging -> live: no open PR')
+    expect(r.calls.join('\n')).not.toMatch(/run rerun|force-cancel|run list/)
   })
 
-  /**
-   * `gh run view <id> --json jobs`: the caller's evaluate job and its
-   * promote-ok fan-in job (`fanIn` null: not created yet, as while evaluate
-   * still runs).
-   */
-  const jobList = (status: string, conclusion: string, fanIn: string | null = 'queued') => ({
-    jobs: [
-      { name: 'evaluate / evaluate', status, conclusion },
-      ...(fanIn === null ? [] : [{ name: 'promote-ok', status: fanIn, conclusion: '' }]),
-    ],
-  })
-  const jobs = (status: string, conclusion: string, fanIn: string | null = 'queued'): Route => ({
-    match: /^run view 11 --repo o\/r --json jobs/,
-    body: jobList(status, conclusion, fanIn),
-  })
-  const forceCancel: Route = {
-    match: /^api -X POST repos\/o\/r\/actions\/runs\/11\/force-cancel/,
-    body: {},
-  }
-  const stuck = (...after: unknown[][]): Route => ({
-    match: new RegExp(`^run list .*--commit ${HEAD}`),
-    sequence: [
-      [{ databaseId: 11, status: 'queued', conclusion: '' }],
-      [{ databaseId: 11, status: 'queued', conclusion: '' }],
-      [{ databaseId: 11, status: 'queued', conclusion: '' }],
-      ...after,
-    ],
-  })
-
-  // promote-ok looks once and ends in seconds. A run still going after the
-  // wait whose evaluation already failed only has its fan-in left, which a
-  // plain cancel would still run (`if: always()`); left alone it would stay
-  // red with no later recheck, so it is force-cancelled and re-run.
-  test('force-cancels and re-runs a check that looked too early and waits for a runner', () => {
+  test('still not ready: the check stays pending', () => {
     const r = run(
       RECHECK,
       [
         ...prs([{ number: 5, headRefOid: HEAD }], []),
-        stuck([{ databaseId: 11, status: 'completed', conclusion: 'cancelled' }]),
-        jobs('completed', 'failure'),
-        forceCancel,
-        rerunRoute,
+        ci(HEAD, 'in_progress', ''),
+        checks(HEAD, [ours(41, 'in_progress', null)]),
+        patch,
       ],
       env
     )
     expect(r.status).toBe(0)
-    const acted = r.calls.filter((c) => /force-cancel|^run rerun /.test(c))
-    expect(acted).toEqual([
-      'api -X POST repos/o/r/actions/runs/11/force-cancel',
-      'run rerun 11 --repo o/r',
-    ])
-    expect(r.out).toContain('PR #5: re-ran the failed promote-ok run 11')
+    expect(writes(r)[0]).toContain('-f status=in_progress')
+    expect(writes(r)[0]).not.toContain('conclusion=')
   })
 
-  test('leaves a check alone that has not evaluated yet, or already passed', () => {
-    for (const [status, conclusion, said] of [
-      ['queued', '', 'has not evaluated yet (queued)'],
-      ['completed', 'success', 'has passed its evaluation'],
-    ]) {
-      const r = run(
-        RECHECK,
-        [...prs([{ number: 5, headRefOid: HEAD }], []), stuck(), jobs(status, conclusion)],
-        env
-      )
-      expect(r.status).toBe(0)
-      expect(r.out).toContain(said)
-      expect(r.calls.join('\n')).not.toMatch(/force-cancel|run rerun/)
-    }
-  })
-
-  test('a check that passes while it is being cancelled is left green', () => {
+  test('the Release PR is judged against live', () => {
     const r = run(
       RECHECK,
       [
-        ...prs([{ number: 5, headRefOid: HEAD }], []),
-        stuck([{ databaseId: 11, status: 'completed', conclusion: 'success' }]),
-        jobs('completed', 'failure'),
-        { ...forceCancel, body: undefined, exit: 1, stderr: 'run already completed' },
+        ...prs([], [{ number: 6, headRefOid: OTHER }]),
+        { ...tags(), exit: 1 },
+        checks(OTHER, []),
+        post,
       ],
       env
     )
     expect(r.status).toBe(0)
-    expect(r.calls.join('\n')).not.toContain('run rerun')
-    expect(r.out).toContain('PR #5: promote-ok is already green')
+    expect(writes(r)[0]).toContain('-f external_id=promote-ok:live')
+    expect(writes(r)[0]).toContain('-f conclusion=failure')
   })
 
-  test('fails red when a force-cancelled check never stops; warns when its jobs cannot be read', () => {
+  test('an earlier head turns green when its canary now exists', () => {
     const r = run(
       RECHECK,
       [
         ...prs([{ number: 5, headRefOid: HEAD }], []),
-        stuck(),
-        jobs('completed', 'failure'),
-        forceCancel,
+        ci(OTHER, 'completed', 'success'),
+        ci(HEAD, 'in_progress', ''),
+        checks(OTHER, [ours(30, 'in_progress', null)]),
+        checks(HEAD, [ours(41, 'in_progress', null)]),
+        patch,
       ],
-      env
-    )
-    expect(r.status).toBe(1)
-    // Three looks before the cancel, three after it (WAIT_POLLS 2).
-    expect(r.calls.filter((c) => c.startsWith('run list'))).toHaveLength(6)
-    expect(r.calls.join('\n')).not.toContain('run rerun')
-    expect(r.out).toContain(
-      "::error title=promote-ok recheck::PR #5: promote-ok run 11 is still 'queued' after it was force-cancelled"
-    )
-    const unread = run(RECHECK, [...prs([{ number: 5, headRefOid: HEAD }], []), stuck()], env)
-    expect(unread.status).toBe(0)
-    expect(unread.out).toContain('its jobs could not be read')
-    expect(unread.calls.join('\n')).not.toMatch(/force-cancel|run rerun/)
-  })
-
-  test('a dry run names the check it would force-cancel and re-run', () => {
-    const r = run(
-      RECHECK,
-      [...prs([{ number: 5, headRefOid: HEAD }], []), stuck(), jobs('completed', 'failure')],
-      { ...env, DRY_RUN: 'true' }
-    )
-    expect(r.status).toBe(0)
-    expect(r.out).toContain(
-      "would force-cancel and re-run promote-ok run 11, which ended its evaluation 'failure' (dry run)"
-    )
-    expect(r.calls.join('\n')).not.toMatch(/force-cancel|run rerun/)
-  })
-
-  /** The jobs as successive looks see them: [evaluate status, conclusion, fan-in]. */
-  const jobsSeq = (...looks: [string, string, string | null][]): Route => ({
-    match: /^run view 11 --repo o\/r --json jobs/,
-    sequence: looks.map(([status, conclusion, fanIn]) => jobList(status, conclusion, fanIn)),
-  })
-  const changes = (r: Result) => r.calls.filter((c) => /force-cancel|^run rerun /.test(c))
-
-  // A force-cancel ends jobs that were never queued as skipped, and a skipped
-  // promote-ok fan-in reads as passing. While evaluate runs, the fan-in is not
-  // queued yet, so the run is waited for and never cancelled.
-  test('never cancels a run whose evaluation is still running; waits, then warns', () => {
-    const r = run(
-      RECHECK,
-      [
-        ...prs([{ number: 5, headRefOid: HEAD }], []),
-        stuck(),
-        jobs('in_progress', '', null),
-        forceCancel,
-      ],
-      env
-    )
-    expect(r.status).toBe(0)
-    // One look, then EVAL_POLLS (2) more.
-    expect(r.calls.filter((c) => c.startsWith('run view 11'))).toHaveLength(3)
-    expect(changes(r)).toEqual([])
-    expect(r.out).toContain('is still evaluating after the wait; it is not cancelled')
-  })
-
-  test('never cancels a failed evaluation whose promote-ok job is not queued yet', () => {
-    const r = run(
-      RECHECK,
-      [
-        ...prs([{ number: 5, headRefOid: HEAD }], []),
-        stuck(),
-        jobs('completed', 'failure', null),
-        forceCancel,
-      ],
-      env
-    )
-    expect(r.status).toBe(0)
-    expect(r.calls.filter((c) => c.startsWith('run view 11'))).toHaveLength(3)
-    expect(changes(r)).toEqual([])
-    expect(r.out).toContain('its promote-ok job is not queued yet (none)')
-  })
-
-  test('an evaluation that ends while waited for decides: failed is redone, passed is left', () => {
-    const failed = run(
-      RECHECK,
-      [
-        ...prs([{ number: 5, headRefOid: HEAD }], []),
-        stuck([{ databaseId: 11, status: 'completed', conclusion: 'cancelled' }]),
-        jobsSeq(
-          ['in_progress', '', null],
-          ['completed', 'failure', null],
-          ['completed', 'failure', 'queued']
-        ),
-        forceCancel,
-        rerunRoute,
-      ],
-      env
-    )
-    expect(failed.status).toBe(0)
-    // The cancel comes only after the look that sees the fan-in queued (the
-    // look after it checks that the fan-in did not end skipped).
-    const cancelAt = failed.calls.findIndex((c) => c.includes('force-cancel'))
-    expect(failed.calls.slice(0, cancelAt).filter((c) => c.startsWith('run view 11'))).toHaveLength(
-      3
-    )
-    expect(changes(failed)).toEqual([
-      'api -X POST repos/o/r/actions/runs/11/force-cancel',
-      'run rerun 11 --repo o/r',
-    ])
-    expect(failed.out).toContain("ended its evaluation 'failure' and its promote-ok job is queued")
-    const passed = run(
-      RECHECK,
-      [
-        ...prs([{ number: 5, headRefOid: HEAD }], []),
-        stuck(),
-        jobsSeq(['in_progress', '', null], ['completed', 'success', null]),
-      ],
-      env
-    )
-    expect(passed.out).toContain('has passed its evaluation')
-    expect(changes(passed)).toEqual([])
-  })
-
-  test('a run that ends while its fan-in is waited for is re-run without a cancel', () => {
-    const r = run(
-      RECHECK,
-      [
-        ...prs([{ number: 5, headRefOid: HEAD }], []),
-        stuck([{ databaseId: 11, status: 'completed', conclusion: 'failure' }]),
-        jobsSeq(['completed', 'failure', 'in_progress'], ['completed', 'failure', 'completed']),
-        forceCancel,
-        rerunRoute,
-      ],
-      env
-    )
-    expect(r.status).toBe(0)
-    expect(changes(r)).toEqual(['run rerun 11 --repo o/r'])
-  })
-
-  test('a run still finishing just after its fan-in ended is looked at again, then re-run', () => {
-    const r = run(
-      RECHECK,
-      [
-        ...prs([{ number: 5, headRefOid: HEAD }], []),
-        stuck(
-          [{ databaseId: 11, status: 'in_progress', conclusion: '' }],
-          [{ databaseId: 11, status: 'completed', conclusion: 'failure' }]
-        ),
-        jobs('completed', 'failure', 'completed'),
-        forceCancel,
-        rerunRoute,
-      ],
-      env
-    )
-    expect(r.status).toBe(0)
-    expect(changes(r)).toEqual(['run rerun 11 --repo o/r'])
-    expect(r.out).not.toContain('::warning')
-  })
-
-  test('only a promote-ok job that is queued or waiting lets the run be cancelled', () => {
-    for (const fanIn of ['pending', 'requested']) {
-      const r = run(
-        RECHECK,
-        [
-          ...prs([{ number: 5, headRefOid: HEAD }], []),
-          stuck(),
-          jobs('completed', 'failure', fanIn),
-          forceCancel,
-        ],
-        env
-      )
-      expect(r.status).toBe(0)
-      expect(changes(r)).toEqual([])
-      expect(r.out).toContain(`its promote-ok job is not queued yet (${fanIn})`)
-    }
-    const waiting = run(
-      RECHECK,
-      [
-        ...prs([{ number: 5, headRefOid: HEAD }], []),
-        stuck([{ databaseId: 11, status: 'completed', conclusion: 'cancelled' }]),
-        jobs('completed', 'failure', 'waiting'),
-        forceCancel,
-        rerunRoute,
-      ],
-      env
-    )
-    expect(changes(waiting)).toEqual([
-      'api -X POST repos/o/r/actions/runs/11/force-cancel',
-      'run rerun 11 --repo o/r',
-    ])
-  })
-
-  test('fails red when a force-cancel ended the promote-ok job skipped, and still re-runs', () => {
-    const skipped = {
-      jobs: [
-        { name: 'evaluate / evaluate', status: 'completed', conclusion: 'failure' },
-        { name: 'promote-ok', status: 'completed', conclusion: 'skipped' },
-      ],
-    }
-    const r = run(
-      RECHECK,
-      [
-        ...prs([{ number: 5, headRefOid: HEAD }], []),
-        stuck([{ databaseId: 11, status: 'completed', conclusion: 'cancelled' }]),
-        {
-          match: /^run view 11 --repo o\/r --json jobs/,
-          sequence: [jobList('completed', 'failure', 'queued'), skipped],
-        },
-        forceCancel,
-        rerunRoute,
-      ],
-      env
-    )
-    expect(r.status).toBe(1)
-    expect(r.out).toContain(
-      '::error title=promote-ok recheck::PR #5: force-cancelled promote-ok run 11 ended its promote-ok job skipped'
-    )
-    expect(changes(r)).toEqual([
-      'api -X POST repos/o/r/actions/runs/11/force-cancel',
-      'run rerun 11 --repo o/r',
-    ])
-  })
-
-  test('fails red when a force-cancelled run cannot be re-run', () => {
-    const r = run(
-      RECHECK,
-      [
-        ...prs([{ number: 5, headRefOid: HEAD }], []),
-        stuck([{ databaseId: 11, status: 'completed', conclusion: 'cancelled' }]),
-        jobs('completed', 'failure'),
-        forceCancel,
-        { match: /^run rerun /, exit: 1 },
-      ],
-      env
-    )
-    expect(r.status).toBe(1)
-    expect(r.out).toContain(
-      '::error title=promote-ok recheck::PR #5: force-cancelled promote-ok run 11 but could not re-run it'
-    )
-  })
-
-  test('a failed read of the PRs or their runs is a warning, never read as "nothing there"', () => {
-    const noPrs = run(RECHECK, [{ match: /^pr list /, exit: 1 }], env)
-    expect(noPrs.status).toBe(0)
-    expect(noPrs.out).toContain(
-      '::warning title=promote-ok recheck::trunk -> staging: could not list the open PRs'
-    )
-    expect(noPrs.out).not.toContain('no open PR')
-    const noRuns = run(
-      RECHECK,
-      [...prs([{ number: 5, headRefOid: HEAD }], []), { match: /^run list /, exit: 1 }],
       { ...env, TRIGGER_SHA: OTHER, TRIGGER_EVENT: 'push' }
     )
-    expect(noRuns.status).toBe(0)
-    expect(noRuns.out).toContain('PR #5: could not list the promote-ok runs of its head')
-    expect(noRuns.out).toContain('earlier head bbbbbbb: could not list the promote-ok runs')
-    expect(noRuns.out).not.toContain('no promote-ok run for its head')
-    expect(noRuns.out).not.toContain("was never a promotion PR's head")
+    expect(r.status).toBe(0)
+    expect(writes(r)).toContainEqual(
+      expect.stringMatching(/^api -X PATCH repos\/o\/r\/check-runs\/30 .*conclusion=success/)
+    )
   })
 
-  test('leaves a run alone whose evaluate job does not exist yet', () => {
+  test('an earlier head that will never be ready is closed as neutral, not left pending', () => {
     const r = run(
       RECHECK,
       [
         ...prs([{ number: 5, headRefOid: HEAD }], []),
-        stuck(),
-        { match: /^run view 11 --repo o\/r --json jobs/, body: { jobs: [] } },
+        ci(OTHER, 'completed', 'cancelled'),
+        ci(HEAD, 'completed', 'success'),
+        checks(OTHER, [ours(30, 'in_progress', null)]),
+        checks(HEAD, [ours(41, 'in_progress', null)]),
+        patch,
+      ],
+      { ...env, TRIGGER_SHA: OTHER, TRIGGER_EVENT: 'push' }
+    )
+    expect(r.status).toBe(0)
+    expect(writes(r)).toContainEqual(
+      expect.stringMatching(/^api -X PATCH repos\/o\/r\/check-runs\/30 .*conclusion=neutral/)
+    )
+    expect(r.out).toContain('no longer a promotion PR')
+  })
+
+  test('the canary names the commit it built in its title', () => {
+    const r = run(
+      RECHECK,
+      [
+        ...prs([], []),
+        ci(OTHER, 'completed', 'success'),
+        checks(OTHER, [ours(30, 'completed', 'failure')]),
+        patch,
+      ],
+      { ...env, TRIGGER_SHA: HEAD, TRIGGER_EVENT: 'workflow_run', TRIGGER_TITLE: `Canary ${OTHER}` }
+    )
+    expect(writes(r)).toEqual([expect.stringMatching(/check-runs\/30 .*conclusion=success/)])
+  })
+
+  test('leaves alone a commit with no check of its own, or one already green', () => {
+    for (const runs of [
+      [],
+      [
+        {
+          id: 9,
+          status: 'completed',
+          conclusion: 'failure',
+          external_id: null,
+          app: { id: 15368 },
+        },
+      ],
+      [ours(30, 'completed', 'success')],
+    ]) {
+      const r = run(RECHECK, [...prs([], []), checks(OTHER, runs), post, patch], {
+        ...env,
+        TRIGGER_SHA: OTHER,
+        TRIGGER_EVENT: 'push',
+      })
+      expect(r.status).toBe(0)
+      expect(writes(r)).toHaveLength(0)
+    }
+  })
+
+  test('a neutral earlier head is looked at again and turns green once its canary exists', () => {
+    const r = run(
+      RECHECK,
+      [
+        ...prs([], []),
+        ci(OTHER, 'completed', 'success'),
+        checks(OTHER, [ours(30, 'completed', 'neutral')]),
+        patch,
+      ],
+      { ...env, TRIGGER_SHA: OTHER, TRIGGER_EVENT: 'push' }
+    )
+    expect(writes(r)).toEqual([expect.stringMatching(/check-runs\/30 .*conclusion=success/)])
+  })
+
+  test('never closes a commit as superseded while it heads any other open PR into staging or live', () => {
+    const r = run(
+      RECHECK,
+      [
+        {
+          match: /^pr list --repo o\/r --base live --state open --limit 100/,
+          body: [{ headRefOid: OTHER }],
+        },
+        ...prs([], []),
+        ci(OTHER, 'completed', 'cancelled'),
+        checks(OTHER, [ours(30, 'in_progress', null)]),
+        patch,
+      ],
+      { ...env, TRIGGER_SHA: OTHER, TRIGGER_EVENT: 'push' }
+    )
+    expect(r.status).toBe(0)
+    expect(writes(r)).toHaveLength(0)
+    expect(r.out).toContain('still heads an open PR into staging or live')
+  })
+
+  test('never closes the tip of trunk or staging, or when a tip cannot be read', () => {
+    for (const tip of ['trunk', 'staging']) {
+      const r = run(
+        RECHECK,
+        [
+          {
+            match: new RegExp(`^api repos/o/r/branches/${tip} `),
+            body: { commit: { sha: OTHER } },
+          },
+          ...prs([], []),
+          ci(OTHER, 'completed', 'cancelled'),
+          checks(OTHER, [ours(30, 'in_progress', null)]),
+          patch,
+        ],
+        { ...env, TRIGGER_SHA: OTHER, TRIGGER_EVENT: 'push' }
+      )
+      expect(r.status).toBe(0)
+      expect(writes(r)).toHaveLength(0)
+      expect(r.out).toContain('is the tip of trunk or staging')
+    }
+    const unread = run(
+      RECHECK,
+      [
+        { match: /^api repos\/o\/r\/branches\/staging /, exit: 1 },
+        ...prs([], []),
+        ci(OTHER, 'completed', 'cancelled'),
+        checks(OTHER, [ours(30, 'in_progress', null)]),
+        patch,
+      ],
+      { ...env, TRIGGER_SHA: OTHER, TRIGGER_EVENT: 'push' }
+    )
+    expect(writes(unread)).toHaveLength(0)
+    expect(unread.out).toContain('branch tips could not be read')
+  })
+
+  test('a fork PR from a branch named trunk is never taken for the promotion PR', () => {
+    const r = run(
+      RECHECK,
+      [
+        ...prs(
+          [
+            { number: 9, headRefOid: OTHER, isCrossRepository: true },
+            { number: 5, headRefOid: HEAD, isCrossRepository: false },
+          ],
+          []
+        ),
+        ci(HEAD, 'completed', 'success'),
+        checks(HEAD, []),
+        post,
       ],
       env
     )
+    expect(r.out).toContain('PR #5 (trunk -> staging): head ' + HEAD)
+    expect(r.calls.join('\n')).not.toContain(`commits/${OTHER}/check-runs`)
+  })
+
+  test('never closes a commit as superseded when the PRs could not be listed', () => {
+    const r = run(
+      RECHECK,
+      [
+        { match: /^pr list .*--base staging --head trunk/, exit: 1 },
+        { match: /^pr list .*--base live --head staging/, body: [] },
+        checks(OTHER, [ours(30, 'in_progress', null)]),
+        ci(OTHER, 'completed', 'cancelled'),
+        patch,
+      ],
+      { ...env, TRIGGER_SHA: OTHER, TRIGGER_EVENT: 'push' }
+    )
     expect(r.status).toBe(0)
-    expect(r.out).toContain('has not evaluated yet (none)')
-    expect(r.out).not.toContain('::warning')
-    expect(r.calls.join('\n')).not.toMatch(/force-cancel|run rerun/)
+    expect(writes(r)).toHaveLength(0)
+    expect(r.out).toContain('could not list the open PRs')
+    expect(r.out).toContain('not closed as superseded')
   })
 
-  // The RC PR's head moves on with every trunk merge; the canary of the
-  // commit it left finishes later. That commit's own check is re-run too.
-  describe('the commit the triggering run was for', () => {
-    const NEWER = 'c'.repeat(40)
-    const OLD = 'd'.repeat(40)
-    const rcAt = (sha: string) => prs([{ number: 5, headRefOid: sha }], [])
-    const green = (sha: string) =>
-      runs(sha, [{ databaseId: 30, status: 'completed', conclusion: 'success' }])
-    /** Every call that changes something: only re-runs, never a new check. */
-    const writes = (r: Result) => r.calls.filter((c) => !/^(pr list|run list|run view) /.test(c))
-
-    test('re-runs the failed check of a trunk commit the PR has moved past', () => {
-      const r = run(
-        RECHECK,
-        [
-          ...rcAt(NEWER),
-          green(NEWER),
-          runs(OLD, [{ databaseId: 21, status: 'completed', conclusion: 'failure' }]),
-          rerunRoute,
-        ],
-        { ...env, TRIGGER_SHA: OLD, TRIGGER_EVENT: 'push', TRIGGER_TITLE: 'fix: something' }
-      )
-      expect(r.status).toBe(0)
-      expect(writes(r)).toEqual(['run rerun 21 --repo o/r'])
-      expect(r.out).toContain('earlier head ddddddd: re-ran the failed promote-ok run 21')
-      expect(
-        r.calls.some((c) =>
-          c.includes(`--workflow promote-ok.yml --event pull_request --commit ${OLD}`)
-        )
-      ).toBe(true)
-    })
-
-    test('a canary run names what it built in its title; its own head is the branch tip', () => {
-      const r = run(
-        RECHECK,
-        [
-          ...rcAt(NEWER),
-          green(NEWER),
-          runs(OLD, [{ databaseId: 21, status: 'completed', conclusion: 'failure' }]),
-          rerunRoute,
-        ],
-        {
-          ...env,
-          TRIGGER_SHA: NEWER,
-          TRIGGER_EVENT: 'workflow_run',
-          TRIGGER_TITLE: `Canary ${OLD}`,
-        }
-      )
-      expect(writes(r)).toEqual(['run rerun 21 --repo o/r'])
-      const untitled = run(RECHECK, [...rcAt(NEWER), green(NEWER)], {
-        ...env,
-        TRIGGER_SHA: OLD,
-        TRIGGER_EVENT: 'workflow_run',
-        TRIGGER_TITLE: 'Canary',
-      })
-      expect(untitled.status).toBe(0)
-      expect(untitled.out).toContain('trigger: names no commit')
-      expect(untitled.calls.join('\n')).not.toContain(`--commit ${OLD}`)
-    })
-
-    test('leaves it when it is a PR head, already green, never a PR head, or not a commit', () => {
-      const head = run(RECHECK, [...rcAt(OLD), green(OLD)], {
-        ...env,
-        TRIGGER_SHA: OLD,
-        TRIGGER_EVENT: 'push',
-      })
-      expect(head.out).toContain(`trigger ${OLD}: is an open PR's head`)
-      expect(head.calls.filter((c) => c.includes(`--commit ${OLD}`))).toHaveLength(1)
-      const passed = run(RECHECK, [...rcAt(NEWER), green(NEWER), green(OLD)], {
-        ...env,
-        TRIGGER_SHA: OLD,
-        TRIGGER_EVENT: 'push',
-      })
-      expect(passed.out).toContain('earlier head ddddddd: promote-ok is already green')
-      expect(writes(passed)).toEqual([])
-      const never = run(RECHECK, [...rcAt(NEWER), green(NEWER), runs(OLD, [])], {
-        ...env,
-        TRIGGER_SHA: OLD,
-        TRIGGER_EVENT: 'push',
-      })
-      expect(never.out).toContain("earlier head ddddddd: was never a promotion PR's head")
-      expect(never.out).not.toContain('::warning')
-      for (const bad of ['abc123', `${OLD};x`, `--${OLD.slice(2)}`]) {
-        const r = run(RECHECK, [...rcAt(NEWER), green(NEWER)], {
-          ...env,
-          TRIGGER_SHA: bad,
-          TRIGGER_EVENT: 'push',
-        })
-        expect(r.status).toBe(0)
-        expect(r.calls.filter((c) => c.startsWith('run list'))).toHaveLength(1)
-      }
-      const manual = run(RECHECK, [...rcAt(NEWER), green(NEWER)], env)
-      expect(manual.out).not.toContain('trigger')
-    })
-
-    test('a still-running check of that commit gets the same wait and force-cancel', () => {
-      const r = run(
-        RECHECK,
-        [
-          ...rcAt(NEWER),
-          green(NEWER),
-          {
-            match: new RegExp(`^run list .*--commit ${OLD}`),
-            sequence: [
-              [{ databaseId: 11, status: 'queued', conclusion: '' }],
-              [{ databaseId: 11, status: 'queued', conclusion: '' }],
-              [{ databaseId: 11, status: 'queued', conclusion: '' }],
-              [{ databaseId: 11, status: 'completed', conclusion: 'cancelled' }],
-            ],
-          },
-          jobs('completed', 'failure'),
-          forceCancel,
-          rerunRoute,
-        ],
-        { ...env, TRIGGER_SHA: OLD, TRIGGER_EVENT: 'push' }
-      )
-      expect(writes(r)).toEqual([
-        'api -X POST repos/o/r/actions/runs/11/force-cancel',
-        'run rerun 11 --repo o/r',
-      ])
-    })
-
-    test('the workflow reads the trigger from the caller event and allows for the worst case', () => {
-      const workflow = readFileSync(
-        join(ROOT, '.github', 'workflows', 'gh-promote-ok-recheck.yml'),
-        'utf8'
-      )
-      expect(workflow).toContain('TRIGGER_SHA: ${{ github.event.workflow_run.head_sha }}')
-      expect(workflow).toContain('TRIGGER_EVENT: ${{ github.event.workflow_run.event }}')
-      expect(workflow).toContain('TRIGGER_TITLE: ${{ github.event.workflow_run.display_title }}')
-      const script = readFileSync(RECHECK, 'utf8')
-      const dflt = (name: string) =>
-        Number(new RegExp(`^${name}="\\$\\{${name}:-(\\d+)\\}"$`, 'm').exec(script)?.[1])
-      const pauses = dflt('WAIT_POLLS') + dflt('EVAL_POLLS') + dflt('CANCEL_POLLS')
-      expect(pauses).toBeGreaterThan(0)
-      // Three commits (two PR heads and the trigger), all sleeping at most:
-      // half as long again is left for the API calls (one per pause).
-      const sleeping = 3 * pauses * dflt('POLL_SECONDS')
-      const timeout = Number(/^ {4}timeout-minutes: (\d+)$/m.exec(workflow)?.[1])
-      expect(timeout * 60).toBeGreaterThanOrEqual(1.5 * sleeping)
-      // Each evaluate job is waited for past its own limit before giving up.
-      expect(dflt('EVAL_POLLS') * dflt('POLL_SECONDS')).toBeGreaterThan(5 * 60)
-    })
-  })
-
-  test('never fails: no run yet, or a refused re-run, is a warning', () => {
-    const noRun = run(RECHECK, [...prs([{ number: 5, headRefOid: HEAD }], []), runs(HEAD, [])], env)
-    expect(noRun.status).toBe(0)
-    expect(noRun.out).toContain('no promote-ok run for its head')
-    const refused = run(
+  test('dry run writes nothing; a write that fails fails the run', () => {
+    const dry = run(
       RECHECK,
       [
         ...prs([{ number: 5, headRefOid: HEAD }], []),
-        runs(HEAD, [{ databaseId: 11, status: 'completed', conclusion: 'cancelled' }]),
-        { match: /^run rerun /, exit: 1 },
+        ci(HEAD, 'completed', 'success'),
+        checks(HEAD, []),
+        post,
+      ],
+      { ...env, DRY_RUN: 'true' }
+    )
+    expect(dry.status).toBe(0)
+    expect(writes(dry)).toHaveLength(0)
+    expect(dry.out).toContain('would create the promote-ok check')
+    const broken = run(
+      RECHECK,
+      [
+        ...prs([{ number: 5, headRefOid: HEAD }], []),
+        ci(HEAD, 'completed', 'success'),
+        checks(HEAD, []),
+        { ...post, body: undefined, exit: 1 },
       ],
       env
     )
-    expect(refused.status).toBe(0)
-    expect(refused.out).toContain('could not re-run promote-ok run 11')
-    const unset = run(RECHECK, [], { REPO: '' })
-    expect(unset.status).toBe(0)
-    expect(unset.out).toContain('needs REPO and WORKFLOW')
+    expect(broken.status).toBe(1)
+    expect(broken.out).toContain('could not write the promote-ok check')
+  })
+
+  test('needs its configuration, and only warns without it', () => {
+    const r = run(RECHECK, [], { REPO: 'o/r' })
+    expect(r.status).toBe(0)
+    expect(r.out).toContain('needs REPO, REPO_KIND and CI_WORKFLOW')
+    expect(r.calls).toHaveLength(0)
+  })
+
+  test('the workflows grant checks: write and name no job promote-ok', () => {
+    for (const file of ['gh-promote-ok.yml', 'gh-promote-ok-recheck.yml']) {
+      const text = readFileSync(join(ROOT, '.github', 'workflows', file), 'utf8')
+      expect(text).toMatch(/^permissions:\n(?: {2}.+\n)* {2}checks: write\n/m)
+      expect(text).not.toMatch(/^ {4}name: promote-ok$/m)
+    }
+    const check = readFileSync(join(ROOT, '.github', 'workflows', 'gh-promote-ok.yml'), 'utf8')
+    // The dry run reports its verdict as the step result and writes no check.
+    expect(check).toMatch(
+      /if \[ -n "\$PR_NUMBER" \]; then\n\s+exit "\$rc"\n\s+fi\n\s+sh \.promote\/scripts\/promote\/promote-ok-report\.sh/
+    )
   })
 })
 

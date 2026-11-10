@@ -419,6 +419,10 @@ jobs:
         with:
           client-id: ${{ secrets.RELEASE_APP_ID }}
           private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          # Only what moving the tag needs: the ref (contents) and a commit
+          # that may change .github/workflows (workflows).
+          permission-contents: write
+          permission-workflows: write
 
       - name: Move the canary tag to this build's commit and refresh the notes
         if: steps.guard.outputs.proceed == 'true'
