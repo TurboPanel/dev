@@ -88,7 +88,10 @@ app (integration id 15368), squash-only on trunk and merge-commits-only on
 staging/live, `require_extra_approval_for_unattributed_changes` explicitly
 false. On `staging` and `live` the applied ruleset also requires
 `promote-ok` from the same app; this script does not set that check yet, so
-re-running it as it stands would drop it. Break-glass is flipping a
+re-running it as it stands would drop it. Only a pull request's current
+head needs a green `promote-ok`: an earlier trunk or staging commit whose
+check stays red blocks nothing (the recheck re-runs the commit its trigger
+was for, and goes back no further). Break-glass is flipping a
 ruleset's enforcement to Disabled in the repo settings, pushing, and
 re-enabling. The "TurboPanel Release" GitHub App
 (App ID 5089081, `RELEASE_APP_BYPASS`) is the only bypass: on `staging & live:

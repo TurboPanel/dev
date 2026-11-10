@@ -6,9 +6,12 @@
 # and this job re-runs the failed promote-ok run of the current head of the
 # open trunk -> staging and staging -> live PRs
 # (scripts/promote/promote-recheck.sh). promote-ok looks once and ends, so
-# this is how a "not yet" turns green: a run still waiting for a runner after
-# its evaluation may already have looked is force-cancelled and re-run, so
-# none is left red with no later recheck. A re-run reports on the same head
+# this is how a "not yet" turns green: a run whose evaluation failed and
+# whose promote-ok job still waits for a runner is force-cancelled and
+# re-run, so none is left red with no later recheck. It never cancels a run
+# before that job is queued (a force-cancel ends a never-queued job as
+# skipped, and a skipped promote-ok reads as passing); an evaluation still
+# running is waited for instead. A re-run reports on the same head
 # commit, under the same check name and app (GitHub Actions), so the ruleset
 # that requires `promote-ok` sees the new result. No Checks API, no commit
 # statuses: the PR's own run is the one source of the check.
@@ -23,8 +26,9 @@
 # its `run-name` ("Canary <commit>"); without it, only the PR heads are
 # re-checked.
 #
-# It never reports a check named promote-ok itself, and never fails its own
-# run (a warning says what it could not do). `dry-run: true` only reports.
+# It never reports a check named promote-ok itself. It fails its own run only
+# when a run it force-cancelled could not be re-run, so a person notices;
+# anything else it cannot do is a warning. `dry-run: true` only reports.
 
 # Permissions — the caller's job must grant at least:
 #
@@ -69,10 +73,9 @@ jobs:
   recheck:
     name: recheck
     runs-on: ubuntu-latest
-    # Worst case: three commits, each 21 pauses of 10 s (promote-recheck.sh)
-    # plus the API calls between them; the script never fails, so this only
-    # stops a hung call.
-    timeout-minutes: 25
+    # Worst case: three commits, each 42 pauses of 10 s (promote-recheck.sh),
+    # plus the API calls between them; this only stops a hung call.
+    timeout-minutes: 35
     steps:
       - name: Check out the promotion scripts (TurboPanel/dev)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

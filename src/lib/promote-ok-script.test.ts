@@ -356,6 +356,27 @@ describe('promote-ok.sh — Release PR (base live)', () => {
     expect(r.calls.join('\n')).not.toContain('contents/')
   })
 
+  test('red with an error line when staging cannot be compared with the rc', () => {
+    const broken = run(
+      CHECK,
+      [rcTags, published, { ...compare(0, 'tree-1'), body: undefined, exit: 1 }, headTree],
+      checkEnv('live')
+    )
+    expect(broken.status).toBe(1)
+    expect(broken.out).toContain(
+      '::error title=promote-ok::could not compare v0.1.4-rc.10 with staging (aaaaaaa)'
+    )
+    const noTree = run(
+      CHECK,
+      [rcTags, published, compare(0, 'tree-1'), { ...headTree, body: undefined, exit: 1 }],
+      checkEnv('live')
+    )
+    expect(noTree.status).toBe(1)
+    expect(noTree.out).toContain(
+      '::error title=promote-ok::could not read the tree of staging (aaaaaaa)'
+    )
+  })
+
   test('a started minor does not strand the patch rc staging already holds', () => {
     const r = run(
       CHECK,
@@ -520,15 +541,20 @@ describe('promote-recheck.sh', () => {
     expect(r.out).toContain('staging -> live: no open PR')
   })
 
-  /** `gh run view <id> --json jobs`: the caller's evaluate and fan-in jobs. */
-  const jobs = (status: string, conclusion: string): Route => ({
+  /**
+   * `gh run view <id> --json jobs`: the caller's evaluate job and its
+   * promote-ok fan-in job (`fanIn` null: not created yet, as while evaluate
+   * still runs).
+   */
+  const jobList = (status: string, conclusion: string, fanIn: string | null = 'queued') => ({
+    jobs: [
+      { name: 'evaluate / evaluate', status, conclusion },
+      ...(fanIn === null ? [] : [{ name: 'promote-ok', status: fanIn, conclusion: '' }]),
+    ],
+  })
+  const jobs = (status: string, conclusion: string, fanIn: string | null = 'queued'): Route => ({
     match: /^run view 11 --repo o\/r --json jobs/,
-    body: {
-      jobs: [
-        { name: 'evaluate / evaluate', status, conclusion },
-        { name: 'promote-ok', status: 'queued', conclusion: '' },
-      ],
-    },
+    body: jobList(status, conclusion, fanIn),
   })
   const forceCancel: Route = {
     match: /^api -X POST repos\/o\/r\/actions\/runs\/11\/force-cancel/,
@@ -571,7 +597,7 @@ describe('promote-recheck.sh', () => {
 
   test('leaves a check alone that has not evaluated yet, or already passed', () => {
     for (const [status, conclusion, said] of [
-      ['queued', '', 'has not evaluated yet (queued '],
+      ['queued', '', 'has not evaluated yet (queued)'],
       ['completed', 'success', 'has passed its evaluation'],
     ]) {
       const r = run(
@@ -601,7 +627,7 @@ describe('promote-recheck.sh', () => {
     expect(r.out).toContain('PR #5: promote-ok is already green')
   })
 
-  test('warns without failing when a cancelled check never stops, or its jobs cannot be read', () => {
+  test('fails red when a force-cancelled check never stops; warns when its jobs cannot be read', () => {
     const r = run(
       RECHECK,
       [
@@ -612,11 +638,13 @@ describe('promote-recheck.sh', () => {
       ],
       env
     )
-    expect(r.status).toBe(0)
+    expect(r.status).toBe(1)
     // Three looks before the cancel, three after it (WAIT_POLLS 2).
     expect(r.calls.filter((c) => c.startsWith('run list'))).toHaveLength(6)
     expect(r.calls.join('\n')).not.toContain('run rerun')
-    expect(r.out).toContain("still 'queued' after it was cancelled")
+    expect(r.out).toContain(
+      "::error title=promote-ok recheck::PR #5: promote-ok run 11 is still 'queued' after it was force-cancelled"
+    )
     const unread = run(RECHECK, [...prs([{ number: 5, headRefOid: HEAD }], []), stuck()], env)
     expect(unread.status).toBe(0)
     expect(unread.out).toContain('its jobs could not be read')
@@ -636,40 +664,49 @@ describe('promote-recheck.sh', () => {
     expect(r.calls.join('\n')).not.toMatch(/force-cancel|run rerun/)
   })
 
-  /** The evaluate job as successive looks see it. */
-  const jobsSeq = (...looks: [string, string][]): Route => ({
+  /** The jobs as successive looks see them: [evaluate status, conclusion, fan-in]. */
+  const jobsSeq = (...looks: [string, string, string | null][]): Route => ({
     match: /^run view 11 --repo o\/r --json jobs/,
-    sequence: looks.map(([status, conclusion]) => ({
-      jobs: [
-        { name: 'evaluate / evaluate', status, conclusion },
-        { name: 'promote-ok', status: 'queued', conclusion: '' },
-      ],
-    })),
+    sequence: looks.map(([status, conclusion, fanIn]) => jobList(status, conclusion, fanIn)),
   })
+  const changes = (r: Result) => r.calls.filter((c) => /force-cancel|^run rerun /.test(c))
 
-  // An evaluate job still running after the wait may have looked before the
-  // canary existed: only one that has not started is safe to leave.
-  test('waits for an evaluation still running, then force-cancels and re-runs it', () => {
+  // A force-cancel ends jobs that were never queued as skipped, and a skipped
+  // promote-ok fan-in reads as passing. While evaluate runs, the fan-in is not
+  // queued yet, so the run is waited for and never cancelled.
+  test('never cancels a run whose evaluation is still running; waits, then warns', () => {
     const r = run(
       RECHECK,
       [
         ...prs([{ number: 5, headRefOid: HEAD }], []),
-        stuck([{ databaseId: 11, status: 'completed', conclusion: 'cancelled' }]),
-        jobs('in_progress', ''),
+        stuck(),
+        jobs('in_progress', '', null),
         forceCancel,
-        rerunRoute,
       ],
       env
     )
     expect(r.status).toBe(0)
-    // One look, then EVAL_POLLS (2) more before giving up on it.
+    // One look, then EVAL_POLLS (2) more.
     expect(r.calls.filter((c) => c.startsWith('run view 11'))).toHaveLength(3)
-    const acted = r.calls.filter((c) => /force-cancel|^run rerun /.test(c))
-    expect(acted).toEqual([
-      'api -X POST repos/o/r/actions/runs/11/force-cancel',
-      'run rerun 11 --repo o/r',
-    ])
-    expect(r.out).toContain('is still evaluating after the wait; force-cancelling it')
+    expect(changes(r)).toEqual([])
+    expect(r.out).toContain('is still evaluating after the wait; it is not cancelled')
+  })
+
+  test('never cancels a failed evaluation whose promote-ok job is not queued yet', () => {
+    const r = run(
+      RECHECK,
+      [
+        ...prs([{ number: 5, headRefOid: HEAD }], []),
+        stuck(),
+        jobs('completed', 'failure', null),
+        forceCancel,
+      ],
+      env
+    )
+    expect(r.status).toBe(0)
+    expect(r.calls.filter((c) => c.startsWith('run view 11'))).toHaveLength(3)
+    expect(changes(r)).toEqual([])
+    expect(r.out).toContain('its promote-ok job is not queued yet (none)')
   })
 
   test('an evaluation that ends while waited for decides: failed is redone, passed is left', () => {
@@ -678,26 +715,88 @@ describe('promote-recheck.sh', () => {
       [
         ...prs([{ number: 5, headRefOid: HEAD }], []),
         stuck([{ databaseId: 11, status: 'completed', conclusion: 'cancelled' }]),
-        jobsSeq(['in_progress', ''], ['completed', 'failure']),
+        jobsSeq(
+          ['in_progress', '', null],
+          ['completed', 'failure', null],
+          ['completed', 'failure', 'queued']
+        ),
         forceCancel,
         rerunRoute,
       ],
       env
     )
-    expect(failed.calls.filter((c) => c.startsWith('run view 11'))).toHaveLength(2)
-    expect(failed.calls).toContain('run rerun 11 --repo o/r')
-    expect(failed.out).toContain("ended its evaluation 'failure'")
+    expect(failed.status).toBe(0)
+    // The cancel comes only after the look that sees the fan-in queued.
+    expect(failed.calls.filter((c) => c.startsWith('run view 11'))).toHaveLength(3)
+    expect(changes(failed)).toEqual([
+      'api -X POST repos/o/r/actions/runs/11/force-cancel',
+      'run rerun 11 --repo o/r',
+    ])
+    expect(failed.out).toContain("ended its evaluation 'failure' and its promote-ok job is queued")
     const passed = run(
       RECHECK,
       [
         ...prs([{ number: 5, headRefOid: HEAD }], []),
         stuck(),
-        jobsSeq(['in_progress', ''], ['completed', 'success']),
+        jobsSeq(['in_progress', '', null], ['completed', 'success', null]),
       ],
       env
     )
     expect(passed.out).toContain('has passed its evaluation')
-    expect(passed.calls.join('\n')).not.toMatch(/force-cancel|run rerun/)
+    expect(changes(passed)).toEqual([])
+  })
+
+  test('a run that ends while its fan-in is waited for is re-run without a cancel', () => {
+    const r = run(
+      RECHECK,
+      [
+        ...prs([{ number: 5, headRefOid: HEAD }], []),
+        stuck([{ databaseId: 11, status: 'completed', conclusion: 'failure' }]),
+        jobsSeq(['completed', 'failure', 'in_progress'], ['completed', 'failure', 'completed']),
+        forceCancel,
+        rerunRoute,
+      ],
+      env
+    )
+    expect(r.status).toBe(0)
+    expect(changes(r)).toEqual(['run rerun 11 --repo o/r'])
+  })
+
+  test('fails red when a force-cancelled run cannot be re-run', () => {
+    const r = run(
+      RECHECK,
+      [
+        ...prs([{ number: 5, headRefOid: HEAD }], []),
+        stuck([{ databaseId: 11, status: 'completed', conclusion: 'cancelled' }]),
+        jobs('completed', 'failure'),
+        forceCancel,
+        { match: /^run rerun /, exit: 1 },
+      ],
+      env
+    )
+    expect(r.status).toBe(1)
+    expect(r.out).toContain(
+      '::error title=promote-ok recheck::PR #5: force-cancelled promote-ok run 11 but could not re-run it'
+    )
+  })
+
+  test('a failed read of the PRs or their runs is a warning, never read as "nothing there"', () => {
+    const noPrs = run(RECHECK, [{ match: /^pr list /, exit: 1 }], env)
+    expect(noPrs.status).toBe(0)
+    expect(noPrs.out).toContain(
+      '::warning title=promote-ok recheck::trunk -> staging: could not list the open PRs'
+    )
+    expect(noPrs.out).not.toContain('no open PR')
+    const noRuns = run(
+      RECHECK,
+      [...prs([{ number: 5, headRefOid: HEAD }], []), { match: /^run list /, exit: 1 }],
+      { ...env, TRIGGER_SHA: OTHER, TRIGGER_EVENT: 'push' }
+    )
+    expect(noRuns.status).toBe(0)
+    expect(noRuns.out).toContain('PR #5: could not list the promote-ok runs of its head')
+    expect(noRuns.out).toContain('earlier head bbbbbbb: could not list the promote-ok runs')
+    expect(noRuns.out).not.toContain('no promote-ok run for its head')
+    expect(noRuns.out).not.toContain("was never a promotion PR's head")
   })
 
   test('leaves a run alone whose evaluate job does not exist yet', () => {
@@ -852,10 +951,12 @@ describe('promote-recheck.sh', () => {
       const pauses = dflt('WAIT_POLLS') + dflt('EVAL_POLLS') + dflt('CANCEL_POLLS')
       expect(pauses).toBeGreaterThan(0)
       // Three commits (two PR heads and the trigger), all sleeping at most:
-      // at least as long again is left for the API calls.
+      // half as long again is left for the API calls (one per pause).
       const sleeping = 3 * pauses * dflt('POLL_SECONDS')
       const timeout = Number(/^ {4}timeout-minutes: (\d+)$/m.exec(workflow)?.[1])
-      expect(timeout * 60).toBeGreaterThanOrEqual(2 * sleeping)
+      expect(timeout * 60).toBeGreaterThanOrEqual(1.5 * sleeping)
+      // Each evaluate job is waited for past its own limit before giving up.
+      expect(dflt('EVAL_POLLS') * dflt('POLL_SECONDS')).toBeGreaterThan(5 * 60)
     })
   })
 

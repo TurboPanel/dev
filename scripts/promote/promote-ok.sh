@@ -135,7 +135,7 @@ version_key() {
 }
 
 check_trunk_ci() {
-  _state="$(trunk_ci_state)" || fail "could not read the trunk $CI_WORKFLOW runs of $SHORT (GitHub API error); the next recheck tries again, or re-run this check."
+  _state="$(trunk_ci_state)" || fail "could not read the trunk $CI_WORKFLOW runs of $SHORT (GitHub API error). Re-run this check; it is also re-run when the trunk CI, the canary build or Publish Release Candidate next finishes."
   case "$_state" in
     success) echo "trunk $CI_WORKFLOW passed on $SHORT" ;;
     pending) fail "waiting for the trunk $CI_WORKFLOW run of $SHORT to finish; this re-checks automatically when it does." ;;
@@ -168,10 +168,12 @@ check_rc_release() {
   _msg="waiting for the $_rc GitHub release to be published; this re-checks automatically."
   _draft="$(gh api "repos/$REPO/releases/tags/$_rc" --jq .draft 2>/dev/null || echo missing)"
   [ "$_draft" = "false" ] || return 0
-  _cmp="$(gh api "repos/$REPO/compare/$_rc...$HEAD_SHA" --jq '"\(.behind_by) \(.base_commit.commit.tree.sha)"')"
+  _cmp="$(gh api "repos/$REPO/compare/$_rc...$HEAD_SHA" --jq '"\(.behind_by) \(.base_commit.commit.tree.sha)"')" ||
+    fail "could not compare $_rc with staging ($SHORT) (GitHub API error). Re-run this check."
   _behind="${_cmp%% *}"
   _rc_tree="${_cmp#* }"
-  _head_tree="$(gh api "repos/$REPO/git/commits/$HEAD_SHA" --jq .tree.sha)"
+  _head_tree="$(gh api "repos/$REPO/git/commits/$HEAD_SHA" --jq .tree.sha)" ||
+    fail "could not read the tree of staging ($SHORT) (GitHub API error). Re-run this check."
   if [ "$_behind" != "0" ]; then
     _msg="staging ($SHORT) does not contain $_rc (the newest rc), so merging would release bytes that are not on staging. Waiting for staging to be moved to $_rc; this re-checks automatically."
   elif [ "$_rc_tree" != "$_head_tree" ]; then
