@@ -16,8 +16,9 @@
 # next merge moved the PR on; its promote-ok check stays on that commit. It
 # turns green when its canary exists, and is otherwise closed as neutral
 # ("superseded"): no PR can merge it any more, so it must not stay pending
-# (or red) for good. Neutral is written only once both PR lists were read and
-# the commit is neither PR's head.
+# (or red) for good. Neutral is written only once every open PR into staging
+# and live was listed and the commit heads none of them, and a neutral one is
+# looked at again on the next trigger (its canary may come after its build).
 #
 # Nothing is re-run and nothing waits: each look takes seconds. The caller
 # queues rechecks one at a time; a look that finishes after a newer one never
@@ -45,14 +46,16 @@ LISTED=1
 HEADS=""
 
 warn() {
-  echo "::warning title=promote-ok recheck::$1" >&2
+  _msg="$1"
+  echo "::warning title=promote-ok recheck::$_msg" >&2
   return 0
 }
 
 # A verdict that could not be written: the check may now be stale, so fail
 # the run and let a person look.
 error() {
-  echo "::error title=promote-ok recheck::$1" >&2
+  _msg="$1"
+  echo "::error title=promote-ok recheck::$_msg" >&2
   FAILED=1
   return 0
 }
@@ -60,8 +63,20 @@ error() {
 # "<number> <head sha>" of the open PR base <- head, nothing when there is
 # none; fails when the PRs cannot be listed.
 open_pr() {
-  gh pr list --repo "$REPO" --base "$1" --head "$2" --state open \
+  _pr_base="$1"
+  _pr_head="$2"
+  gh pr list --repo "$REPO" --base "$_pr_base" --head "$_pr_head" --state open \
     --json number,headRefOid --jq '.[0] | select(. != null) | "\(.number) \(.headRefOid)"' 2>/dev/null || return 1
+  return 0
+}
+
+# Every open PR's head into $1 (one per line); fails when they cannot be
+# listed. A commit that heads any open PR into staging or live (the manual
+# promote/v... route too) is never closed as superseded.
+open_heads() {
+  _heads_base="$1"
+  gh pr list --repo "$REPO" --base "$_heads_base" --state open --limit 100 \
+    --json headRefOid --jq '.[].headRefOid' 2>/dev/null || return 1
   return 0
 }
 
@@ -72,8 +87,9 @@ judge() {
   _sha="$2"
   _instead="${3:-}"
   _file="$(mktemp)"
+  # Its lines (what it waits for, the canary run) stay in this run's log.
   BASE="$_base" HEAD_SHA="$_sha" VERDICT_FILE="$_file" GITHUB_STEP_SUMMARY="" \
-    sh "$HERE/promote-ok.sh" >/dev/null 2>&1
+    sh "$HERE/promote-ok.sh" 2>&1 || true
   _verdict=""
   if [ -n "$_instead" ] && ! grep -qx 'verdict=pass' "$_file"; then
     _verdict="$_instead"
@@ -133,6 +149,19 @@ recheck_superseded() {
       return 0
       ;;
   esac
+  for _b in staging live; do
+    if _more="$(open_heads "$_b")"; then
+      HEADS="$HEADS $(printf '%s' "$_more" | tr '\n' ' ')"
+    else
+      LISTED=0
+    fi
+  done
+  case " $HEADS " in
+    *" $_sha "*)
+      echo "trigger $_sha: heads another open PR into staging or live; not closed as superseded"
+      return 0
+      ;;
+  esac
   if [ "$LISTED" != 1 ]; then
     warn "trigger $_sha: the open PRs could not be listed, so it is not closed as superseded"
     return 0
@@ -153,12 +182,12 @@ EOF
       return 0
       ;;
   esac
-  case "$_status:$_conclusion" in
-    completed:success | completed:neutral)
-      echo "trigger $_sha: promote-ok is already $_conclusion"
-      return 0
-      ;;
-  esac
+  # Neutral is looked at again: a trunk build can finish (and close it) before
+  # the canary that would turn it green.
+  if [ "$_status:$_conclusion" = completed:success ]; then
+    echo "trigger $_sha: promote-ok is already green"
+    return 0
+  fi
   echo "trigger $_sha: no longer a promotion PR's head; promote-ok is $_status ($_conclusion)"
   judge "${_ext#promote-ok:}" "$_sha" superseded
   return 0

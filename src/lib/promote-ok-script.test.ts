@@ -641,6 +641,8 @@ describe('promote-recheck.sh', () => {
   const prs = (rc: unknown[], release: unknown[]): Route[] => [
     { match: /^pr list .*--base staging --head trunk/, body: rc },
     { match: /^pr list .*--base live --head staging/, body: release },
+    { match: /^pr list --repo o\/r --base staging --state open --limit 100/, body: rc },
+    { match: /^pr list --repo o\/r --base live --state open --limit 100/, body: release },
   ]
   const ci = (sha: string, status: string, conclusion: string): Route => ({
     match: new RegExp(`^api repos/o/r/actions/workflows/build\\.yml/runs\\?head_sha=${sha}`),
@@ -766,7 +768,7 @@ describe('promote-recheck.sh', () => {
     expect(writes(r)).toEqual([expect.stringMatching(/check-runs\/30 .*conclusion=success/)])
   })
 
-  test('leaves alone a commit with no check of its own, or one already green or neutral', () => {
+  test('leaves alone a commit with no check of its own, or one already green', () => {
     for (const runs of [
       [],
       [
@@ -779,7 +781,6 @@ describe('promote-recheck.sh', () => {
         },
       ],
       [ours(30, 'completed', 'success')],
-      [ours(30, 'completed', 'neutral')],
     ]) {
       const r = run(RECHECK, [...prs([], []), checks(OTHER, runs), post, patch], {
         ...env,
@@ -789,6 +790,40 @@ describe('promote-recheck.sh', () => {
       expect(r.status).toBe(0)
       expect(writes(r)).toHaveLength(0)
     }
+  })
+
+  test('a neutral earlier head is looked at again and turns green once its canary exists', () => {
+    const r = run(
+      RECHECK,
+      [
+        ...prs([], []),
+        ci(OTHER, 'completed', 'success'),
+        checks(OTHER, [ours(30, 'completed', 'neutral')]),
+        patch,
+      ],
+      { ...env, TRIGGER_SHA: OTHER, TRIGGER_EVENT: 'push' }
+    )
+    expect(writes(r)).toEqual([expect.stringMatching(/check-runs\/30 .*conclusion=success/)])
+  })
+
+  test('never closes a commit as superseded while it heads any other open PR into staging or live', () => {
+    const r = run(
+      RECHECK,
+      [
+        {
+          match: /^pr list --repo o\/r --base live --state open --limit 100/,
+          body: [{ headRefOid: OTHER }],
+        },
+        ...prs([], []),
+        ci(OTHER, 'completed', 'cancelled'),
+        checks(OTHER, [ours(30, 'in_progress', null)]),
+        patch,
+      ],
+      { ...env, TRIGGER_SHA: OTHER, TRIGGER_EVENT: 'push' }
+    )
+    expect(r.status).toBe(0)
+    expect(writes(r)).toHaveLength(0)
+    expect(r.out).toContain('heads another open PR into staging or live')
   })
 
   test('never closes a commit as superseded when the PRs could not be listed', () => {

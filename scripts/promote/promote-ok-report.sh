@@ -47,7 +47,8 @@ CHECK_NAME="promote-ok"
 APP_ID="${CHECK_APP_ID:-15368}"
 
 die() {
-  echo "::error title=promote-ok report::$1" >&2
+  _msg="$1"
+  echo "::error title=promote-ok report::$_msg" >&2
   exit 1
 }
 
