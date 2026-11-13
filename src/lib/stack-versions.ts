@@ -10,7 +10,7 @@ export const CADDY_VERSION = '2.11.4'
 export const WRANGLER_VERSION = '4.151.3'
 
 /** website/package.json dependencies.next */
-export const NEXT_VERSION = '16.4.1'
+export const NEXT_VERSION = '16.4.6'
 
 /** ui/package.json dependencies.expo */
 export const EXPO_SDK_VERSION = '58.0.25'
