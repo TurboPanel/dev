@@ -1,111 +1,111 @@
-import { DENO_VERSION, NODE_VERSION } from "./paths.ts";
+import { DENO_VERSION, NODE_VERSION } from './paths.ts'
 
 /** Same pin as daemon `node-runtime` `node_version`. Canonical value is `paths.ts`. */
-export { NODE_VERSION };
+export { NODE_VERSION }
 
 /** daemon orchestration/roles/caddy/defaults/main.yml */
-export const CADDY_VERSION = "2.11.4";
+export const CADDY_VERSION = '2.11.4'
 
 /** instance/package.json devDependencies.wrangler */
-export const WRANGLER_VERSION = "4.151.3";
+export const WRANGLER_VERSION = '4.151.3'
 
 /** website/package.json dependencies.next */
-export const NEXT_VERSION = "16.4.1";
+export const NEXT_VERSION = '16.4.1'
 
 /** ui/package.json dependencies.expo */
-export const EXPO_SDK_VERSION = "58.0.25";
+export const EXPO_SDK_VERSION = '58.0.25'
 
 /** daemon orchestration/roles/postgres/defaults/main.yml postgres_image */
-export const POSTGRES_VERSION = "18";
+export const POSTGRES_VERSION = '18'
 
 /** daemon orchestration/roles/redis/defaults/main.yml */
-export const REDIS_VERSION = "8.0.6";
+export const REDIS_VERSION = '8.0.6'
 
 /** daemon orchestration/roles/rabbitmq/defaults/main.yml rabbitmq_image */
-export const RABBITMQ_VERSION = "4";
+export const RABBITMQ_VERSION = '4'
 
 export type StackBadgeRuntime =
-  | "deno"
-  | "workers"
-  | "expo"
-  | "postgres"
-  | "caddy"
-  | "node"
-  | "next"
-  | "mailpit"
-  | "redis"
-  | "redisinsight"
-  | "rabbitmq";
+  | 'deno'
+  | 'workers'
+  | 'expo'
+  | 'postgres'
+  | 'caddy'
+  | 'node'
+  | 'next'
+  | 'mailpit'
+  | 'redis'
+  | 'redisinsight'
+  | 'rabbitmq'
 
 /** Cloud emoji + double space — terminals often swallow one space after ☁️. */
 function cloudLabel(text: string): string {
-  return `☁️  ${text}`;
+  return `☁️  ${text}`
 }
 
 function dockerLabel(text: string): string {
-  return `${text} on docker 🐳`;
+  return `${text} on docker 🐳`
 }
 
 export function stackBadgeLabel(
   runtime: StackBadgeRuntime,
   options?: {
-    serviceId?: string;
-    instanceRuntime?: "deno" | "workers";
-  },
+    serviceId?: string
+    instanceRuntime?: 'deno' | 'workers'
+  }
 ): string {
-  const instanceRuntime = options?.instanceRuntime ?? "deno";
+  const instanceRuntime = options?.instanceRuntime ?? 'deno'
 
   switch (runtime) {
-    case "postgres": {
-      const transport = instanceRuntime === "workers" ? "tcp" : "socket";
-      const postgresDocker = dockerLabel(`postgres ${POSTGRES_VERSION}`);
-      return `${postgresDocker} via ${transport}`;
+    case 'postgres': {
+      const transport = instanceRuntime === 'workers' ? 'tcp' : 'socket'
+      const postgresDocker = dockerLabel(`postgres ${POSTGRES_VERSION}`)
+      return `${postgresDocker} via ${transport}`
     }
-    case "mailpit":
-      return dockerLabel("Mailpit");
-    case "redis":
-      return `redis ${REDIS_VERSION}`;
-    case "redisinsight":
-      return dockerLabel("Redis Insight");
-    case "rabbitmq":
-      return dockerLabel(`rabbitmq ${RABBITMQ_VERSION}`);
-    case "expo":
-      return `Expo ${EXPO_SDK_VERSION}`;
-    case "caddy":
-      return `caddy ${CADDY_VERSION}`;
-    case "node":
-      return `node ${NODE_VERSION}`;
-    case "next":
-      if (options?.serviceId === "website") {
-        return cloudLabel(`next ${NEXT_VERSION}`);
+    case 'mailpit':
+      return dockerLabel('Mailpit')
+    case 'redis':
+      return `redis ${REDIS_VERSION}`
+    case 'redisinsight':
+      return dockerLabel('Redis Insight')
+    case 'rabbitmq':
+      return dockerLabel(`rabbitmq ${RABBITMQ_VERSION}`)
+    case 'expo':
+      return `Expo ${EXPO_SDK_VERSION}`
+    case 'caddy':
+      return `caddy ${CADDY_VERSION}`
+    case 'node':
+      return `node ${NODE_VERSION}`
+    case 'next':
+      if (options?.serviceId === 'website') {
+        return cloudLabel(`next ${NEXT_VERSION}`)
       }
-      return `next ${NEXT_VERSION}`;
-    case "workers":
-      return cloudLabel(`wrangler ${WRANGLER_VERSION}`);
-    case "deno":
-      return `🦕 deno ${DENO_VERSION}`;
+      return `next ${NEXT_VERSION}`
+    case 'workers':
+      return cloudLabel(`wrangler ${WRANGLER_VERSION}`)
+    case 'deno':
+      return `🦕 deno ${DENO_VERSION}`
   }
 }
 
 export function stackBadgeReserve(label: string): number {
-  return Math.max(24, label.length + 2);
+  return Math.max(24, label.length + 2)
 }
 
 export function stackBadgeReserveForRuntime(
   runtime: StackBadgeRuntime,
   options?: {
-    serviceId?: string;
-    instanceRuntime?: "deno" | "workers";
-  },
+    serviceId?: string
+    instanceRuntime?: 'deno' | 'workers'
+  }
 ): number {
-  return stackBadgeReserve(stackBadgeLabel(runtime, options));
+  return stackBadgeReserve(stackBadgeLabel(runtime, options))
 }
 
 export const INSTANCE_BADGE_RESERVE = Math.max(
-  stackBadgeReserveForRuntime("deno"),
-  stackBadgeReserveForRuntime("workers"),
-);
+  stackBadgeReserveForRuntime('deno'),
+  stackBadgeReserveForRuntime('workers')
+)
 
-export const POSTGRES_BADGE_RESERVE = stackBadgeReserveForRuntime("postgres", {
-  instanceRuntime: "workers",
-});
+export const POSTGRES_BADGE_RESERVE = stackBadgeReserveForRuntime('postgres', {
+  instanceRuntime: 'workers',
+})
