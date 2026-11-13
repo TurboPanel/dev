@@ -698,7 +698,7 @@ EOF
     # A symlink is not enough: Next.js Turbopack rejects node_modules that points
     # outside the project ("Symlink … is invalid, it points out of the filesystem
     # root"), and Node ESM/CJS realpath walks miss packages unless the physical
-    # path ends in /node_modules (drizzle-kit → drizzle-orm; Tamagui → typescript).
+    # path ends in /node_modules (drizzle-kit → drizzle-orm; other tools → typescript).
     # Ansible *-repo roles must probe a nested package (drizzle-kit / expo / next),
     # not the mount point — this directory starts empty.
     install -d -o root -g root -m 0750 /usr/local/sbin
