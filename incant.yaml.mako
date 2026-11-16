@@ -18,7 +18,7 @@
   me = pwd.getpwuid(os.getuid())
   user, uid, gid = me.pw_name, me.pw_uid, me.pw_gid
   guest_root = "/home/%s/turbopanel" % user
-  name = os.environ.get("TURBOPANEL_INCUS_NAME", "turbopanel-dev")
+  name = os.environ.get("TURBOPANEL_INCUS_NAME") or "turbopanel-dev"
   # 8 GiB like the Vagrantfile; Metro alone can peak above 5 GiB, so give more
   # when the host has room (devy uses TURBOPANEL_INCUS_MEMORY=10GiB).
   memory = os.environ.get("TURBOPANEL_INCUS_MEMORY", "8GiB")
@@ -126,9 +126,10 @@ instances:
 % if root_dir != guest_root:
         # Git worktrees record the host's absolute path in their .git file; the
         # same path inside the VM lets git (and the tests) work in worktrees.
-        if [ ! -e "${root_dir}" ]; then
-          install -d -o ${uid} -g ${gid} "$(dirname "${root_dir}")"
-          ln -s ${guest_root} "${root_dir}"
+        if [ ! -e ${shlex.quote(root_dir)} ] && [ ! -L ${shlex.quote(root_dir)} ]; then
+          # Root-owned parents: never re-own or re-mode a folder that exists.
+          mkdir -p ${shlex.quote(os.path.dirname(root_dir))}
+          ln -s ${guest_root} ${shlex.quote(root_dir)}
         fi
 % endif
       - |
