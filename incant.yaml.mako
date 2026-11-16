@@ -12,7 +12,7 @@
   host user's name and UID, so files on the shares keep their owner.
 </%doc>
 <%
-  import os, pwd, socket, sys
+  import os, pwd, shlex, socket, sys
   dev_dir = os.getcwd()
   root_dir = os.path.dirname(dev_dir)
   me = pwd.getpwuid(os.getuid())
