@@ -1,7 +1,7 @@
 #!/bin/sh
 # One setup script for every TurboPanel contributor, maintainer or not.
 #
-#   ./scripts/setup.sh [setup] [--dir PATH] [--mode direct|vagrant] [--as-contributor] [--fork-all] [--yes] [--dry-run]
+#   ./scripts/setup.sh [setup] [--dir PATH] [--mode direct|vagrant|incus] [--as-contributor] [--fork-all] [--yes] [--dry-run]
 #   ./scripts/setup.sh fork REPO... [--dir PATH]   fork repos and point their checkouts at your forks
 #   ./scripts/setup.sh doctor [--dir PATH]   read-only health report
 #   ./scripts/setup.sh status [--dir PATH]   read-only one-row-per-repo summary
@@ -70,7 +70,8 @@ Commands:
 Options:
   --dir PATH             folder that holds the repos (default: the turbopanel
                          folder around this checkout, else ./turbopanel)
-  --mode direct|vagrant  how you run the development environment
+  --mode direct|vagrant|incus
+                         how you run the development environment
   --as-contributor       act as if you had no push access: read-only clones,
                          as an outside contributor gets them (add --fork-all
                          to fork at setup instead; --fork is the old name)
@@ -210,6 +211,8 @@ DIRECT_OK=0
 DIRECT_WHY=
 VAGRANT_OK=0
 VAGRANT_WHY=
+INCUS_OK=0
+INCUS_WHY=
 PROVIDER=
 PROVIDER_PLUGIN=
 
@@ -256,6 +259,14 @@ tp_detect_host() {
       VAGRANT_WHY="the Vagrantfile supports Linux (libvirt) and macOS (UTM) hosts only"
       ;;
   esac
+
+  if [ "$HOST_KERNEL" = Linux ]; then
+    INCUS_OK=1
+  elif [ "$HOST_KERNEL" = Darwin ]; then
+    INCUS_WHY="Incus does not run on macOS; use Vagrant"
+  else
+    INCUS_WHY="Incus mode needs a Linux host (this host is ${HOST_KERNEL})"
+  fi
 
   if [ "$HOST_KERNEL" = Darwin ]; then
     DIRECT_WHY="this is macOS; direct mode needs a Debian 13 machine, so use Vagrant (the macOS guest runs Debian 12 today)"
@@ -976,6 +987,8 @@ tp_write_mode_file() {
     echo "# dev_root is the folder that holds the repos on the machine where you edit."
     if [ "$MODE" = vagrant ]; then
       echo "# In the Vagrant guest the same repos are mounted at ~/turbopanel/<repo>."
+    elif [ "$MODE" = incus ]; then
+      echo "# In the Incus VM the same repos are mounted at ~/turbopanel/<repo>."
     fi
     echo "TURBOPANEL_DEV_ENV=$(tp_sq "$MODE")"
     echo "dev_root=$(tp_sq "$DIR")"
@@ -996,26 +1009,37 @@ tp_write_mode_file() {
 tp_choose_mode() {
   [ -n "$MODE" ] || MODE=$(tp_mode_get TURBOPANEL_DEV_ENV)
   if [ -z "$MODE" ]; then
-    if [ "$DIRECT_OK" -eq 0 ] && [ "$VAGRANT_OK" -eq 1 ]; then
+    if [ "$DIRECT_OK" -eq 0 ] && [ "$INCUS_OK" -eq 0 ] && [ "$VAGRANT_OK" -eq 1 ]; then
       tp_info "Direct mode is not offered: ${DIRECT_WHY}."
       MODE=vagrant
     elif [ "$DRY_RUN" -eq 1 ]; then
       MODE=
     elif [ "$ASSUME_YES" -eq 1 ]; then
-      tp_die "--yes needs --mode direct or --mode vagrant on a first run."
+      tp_die "--yes needs --mode direct, vagrant or incus on a first run."
     elif ! tp_has_tty; then
-      tp_die "no terminal to ask on; pass --yes --mode direct|vagrant."
+      tp_die "no terminal to ask on; pass --yes --mode direct|vagrant|incus."
     else
       _cm_hint=
       if [ -n "$VIRT" ] && [ "$VIRT" != none ]; then
         _cm_hint=" (recommended: this machine is already a ${VIRT} VM)"
       fi
-      printf 'How do you want to run TurboPanel?\n  1) Vagrant: the repos stay in %s on this machine; '"'"'vagrant up'"'"' in %s/dev runs them in a Debian VM\n  2) Direct: this Debian 13 machine becomes the dev machine; setup gives your user passwordless sudo%s\nChoose 1 or 2: ' "$DIR" "$DIR" "$_cm_hint" >/dev/tty
+      _cm_pick="1 or 2"
+      [ "$INCUS_OK" -eq 0 ] || _cm_pick="1, 2 or 3"
+      {
+        printf 'How do you want to run TurboPanel?\n'
+        printf '  1) Vagrant: the repos stay in %s on this machine; '"'"'vagrant up'"'"' in %s/dev runs them in a Debian VM\n' "$DIR" "$DIR"
+        printf '  2) Direct: this Debian 13 machine becomes the dev machine; setup gives your user passwordless sudo%s\n' "$_cm_hint"
+        if [ "$INCUS_OK" -eq 1 ]; then
+          printf '  3) Incus: the repos stay in %s on this machine; '"'"'incant up'"'"' in %s/dev runs them in a Debian VM (Linux hosts)\n' "$DIR" "$DIR"
+        fi
+        printf 'Choose %s: ' "$_cm_pick"
+      } >/dev/tty
       IFS= read -r _cm_answer </dev/tty || _cm_answer=
       case "$(tp_trim_whitespace "$(tp_strip_terminal_replies "$_cm_answer")")" in
         1 | vagrant) MODE=vagrant ;;
         2 | direct) MODE=direct ;;
-        *) tp_die "no choice made; rerun and pick 1 or 2, or pass --mode." ;;
+        3 | incus) MODE=incus ;;
+        *) tp_die "no choice made; rerun and pick a number from the list, or pass --mode." ;;
       esac
     fi
   fi
@@ -1032,7 +1056,10 @@ tp_choose_mode() {
     vagrant)
       [ "$VAGRANT_OK" -eq 1 ] || tp_die "Vagrant mode is not available: ${VAGRANT_WHY}."
       ;;
-    *) tp_die "unknown mode ${MODE}; use direct or vagrant." ;;
+    incus)
+      [ "$INCUS_OK" -eq 1 ] || tp_die "Incus mode is not available: ${INCUS_WHY}."
+      ;;
+    *) tp_die "unknown mode ${MODE}; use direct, vagrant or incus." ;;
   esac
 }
 
@@ -1052,6 +1079,18 @@ tp_vagrant_hints() {
   fi
   if [ "$HOST_KERNEL" = Linux ] && [ ! -e /dev/kvm ]; then
     tp_warn "/dev/kvm is missing; the guest will be very slow without hardware virtualization."
+  fi
+}
+
+tp_incus_hints() {
+  if ! command -v incus >/dev/null 2>&1; then
+    tp_warn "Incus is not installed. Install it from your distribution's packages, then:"
+    echo "    sudo incus admin init"
+    echo "    sudo usermod -aG incus-admin $(id -un)   (then log out and back in)"
+  fi
+  if ! command -v incant >/dev/null 2>&1; then
+    tp_warn "incant is not installed. Install it before 'incant up' (the PyPI package is incus-incant; the PyPI package named incant is a different library):"
+    echo "    pipx install incus-incant"
   fi
 }
 
@@ -1150,6 +1189,13 @@ tp_next_steps() {
       echo "  Then, inside the guest: turbopanel/dev/console"
     fi
     echo "  Edit and commit on this machine; the guest only runs the stack. Hooks here run the secret scan."
+  elif [ "$MODE" = incus ]; then
+    echo "  cd $(tp_sq "$DIR/dev") && incant up"
+    echo "  incus exec -t turbopanel-dev -- passwd $(id -un)   (the panel installer checks this password through PAM)"
+    echo "  incus exec turbopanel-dev -- su -l $(id -un)"
+    echo "  Then, inside the VM: ~/turbopanel/dev/console"
+    echo "  The VM gets 8GiB of memory by default; for more: TURBOPANEL_INCUS_MEMORY=10GiB incant up"
+    echo "  Edit and commit on this machine; the VM only runs the stack. Hooks here run the secret scan."
   elif [ "$MODE" = direct ]; then
     echo "  Log out and back in if setup just added you to the sudo group, then:"
     # The console finds the folder from the mode file next to the repos.
@@ -1282,6 +1328,8 @@ tp_cmd_setup() {
     echo "  Direct mode:  sudo sh dev/scripts/vm-bootstrap.sh $(id -un) (base packages, sudo rule, profile file)"
   elif [ "$MODE" = vagrant ]; then
     tp_vagrant_hints
+  elif [ "$MODE" = incus ]; then
+    tp_incus_hints
   fi
 
   if [ "$DRY_RUN" -eq 1 ]; then
@@ -1462,6 +1510,17 @@ tp_cmd_doctor() {
     echo "  vagrant:      not installed"
   fi
   [ "$HOST_KERNEL" != Linux ] || echo "  /dev/kvm:     $([ -e /dev/kvm ] && echo present || echo missing)"
+  if command -v incus >/dev/null 2>&1; then
+    echo "  incus:        $(incus --version 2>/dev/null | head -n 1)"
+  else
+    echo "  incus:        not installed"
+  fi
+  if command -v incant >/dev/null 2>&1; then
+    echo "  incant:       installed"
+  else
+    echo "  incant:       not installed (pipx install incus-incant)"
+  fi
+  echo "  incus mode:   $([ "$INCUS_OK" -eq 1 ] && echo available || echo "not available, ${INCUS_WHY}")"
   echo "  direct mode:  $([ "$DIRECT_OK" -eq 1 ] && echo available || echo "not available, ${DIRECT_WHY}")"
 
   echo "Tools"
@@ -1504,6 +1563,9 @@ tp_cmd_doctor() {
       if [ "$HOST_KERNEL" = Darwin ]; then
         echo "  note:         the macOS guest runs Debian 12 (utm/bookworm); Linux guests and direct mode run Debian 13"
       fi
+      ;;
+    incus)
+      [ "$INCUS_OK" -eq 1 ] || tp_problem "mode is incus but ${INCUS_WHY}"
       ;;
     *) ;;
   esac
@@ -1548,7 +1610,7 @@ tp_cmd_doctor() {
     fi
   done
 
-  echo "Signing (where you commit: $([ "$_dr_mode" = vagrant ] && echo 'this host' || echo 'this machine'))"
+  echo "Signing (where you commit: $({ [ "$_dr_mode" = vagrant ] || [ "$_dr_mode" = incus ]; } && echo 'this host' || echo 'this machine'))"
   _dr_git="$DIR/dev"
   tp_is_checkout "$_dr_git" || _dr_git=.
   echo "  commit.gpgsign: $(git -C "$_dr_git" config --get commit.gpgsign 2>/dev/null || echo unset)"
@@ -1611,8 +1673,8 @@ while [ "$#" -gt 0 ]; do
 done
 
 case "$MODE" in
-  '' | direct | vagrant) ;;
-  *) tp_die "unknown mode ${MODE}; use direct or vagrant." ;;
+  '' | direct | vagrant | incus) ;;
+  *) tp_die "unknown mode ${MODE}; use direct, vagrant or incus." ;;
 esac
 
 tp_resolve_dir

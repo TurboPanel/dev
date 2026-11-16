@@ -54,7 +54,7 @@ SAN is refused when the install command is minted.
 
 ## Filesystem Layout
 
-The repos sit in `$TURBOPANEL_DEV_ROOT/<repo>`, always a folder named `turbopanel`, on a direct machine and in the Vagrant guest alike (see Repos Outside the Home Folder):
+The repos sit in `$TURBOPANEL_DEV_ROOT/<repo>`, always a folder named `turbopanel`, on a direct machine and in the Vagrant and Incus guests alike (see Repos Outside the Home Folder):
 
 ```
 ~/turbopanel/             # $TURBOPANEL_DEV_ROOT (any folder named turbopanel; the guest mounts the host repos here)
@@ -145,8 +145,8 @@ less dev/scripts/setup.sh        # read it before you run it
 - **What you can do.** At the end of `setup` and `status` the script prints one plain sentence about it: you push to TurboPanel directly (maintainer), your repos are read-only clones and `setup.sh fork <repo>` (with the full path) forks one when you are ready to push (contributor), you work from your own fork (after `fork`), or the repos are read-only because you are not signed in; repos that differ, such as `.github`, are listed after it.
 - **Push access decides the layout.** With push access to a repo, `origin` is the TurboPanel repo and you push feature branches there. Without it, you get a read-only clone of the TurboPanel repo (`origin` = TurboPanel, no fork yet): forks are made on first push, not up front. When you are ready to push in a repo, run `~/turbopanel/dev/scripts/setup.sh fork <repo>` (several names at once are fine): it forks the repo to your account (or finds your fork, also a renamed one), makes your fork `origin` and the TurboPanel repo `upstream`, sets `trunk` to track `upstream/trunk`, and runs `gh repo set-default TurboPanel/<repo>` so `gh pr create` opens pull requests into TurboPanel without asking. Your branches and commits stay as they are; only the remotes change, and running it again does nothing. Add `--dry-run` to see what it would do first. It needs `gh` and a GitHub login. `status` shows each repo as `maintainer`, `read-only` or `forked`, and `doctor` prints the `fork` command for each read-only clone. `--fork-all` keeps the older behaviour of forking every repo you cannot push to during setup. `--as-contributor` (old name `--fork`) makes a maintainer get the contributor's read-only clones (add `--fork-all` to fork at setup). Not logged in, you get read-only clones; run `gh auth login` and rerun the script. The `.github` repo is never forked for you, because a fork of it becomes your account's own community health repo; `setup.sh fork .github` forks it only when you name it.
 - **Clone method.** HTTPS through `gh` (`gh auth setup-git`), or SSH when `gh config get git_protocol` is `ssh` or a `url.<ssh>.insteadOf https://github.com/` rule is set.
-- **Vagrant or direct.** The script asks which to use. Direct mode is offered only on Debian 13 outside a container (see "Direct VM" below); macOS and other hosts get Vagrant only. In Vagrant mode you edit, commit and push on the host; the guest only runs the stack, and the host pre-commit hooks run the secret scan. Non-interactive: `--yes --mode vagrant` or `--yes --mode direct`. `--dry-run` prints the plan and stops.
-- **Mode file.** The answer and each repo's role are written to `turbopanel/.turbopanel-dev-mode` (shell-sourceable `key='value'` lines, `TURBOPANEL_DEV_ENV=direct|vagrant`). `ci-verify.sh` reads it.
+- **Vagrant, Incus or direct.** The script asks which to use. Direct mode is offered only on Debian 13 outside a container (see "Direct VM" below); Incus mode is offered on Linux only (see "Incus VM (Linux)" below); macOS gets Vagrant only. In Vagrant and Incus mode you edit, commit and push on the host; the guest only runs the stack, and the host pre-commit hooks run the secret scan. Non-interactive: `--yes --mode vagrant`, `--yes --mode incus` or `--yes --mode direct`. `--dry-run` prints the plan and stops.
+- **Mode file.** The answer and each repo's role are written to `turbopanel/.turbopanel-dev-mode` (shell-sourceable `key='value'` lines, `TURBOPANEL_DEV_ENV=direct|vagrant|incus`). `ci-verify.sh` reads it.
 - **Direct mode folder.** The script passes `TURBOPANEL_DEV_ROOT=<folder>` to `vm-bootstrap.sh` (which clones there with `--clone` and exports it for your login shell) and writes `dev_root` into the mode file, which `./console` reads when `TURBOPANEL_DEV_ROOT` is unset. Then run `<folder>/dev/console`. See Repos Outside the Home Folder below.
 - **Safe to rerun.** A rerun fetches every repo, fast-forwards `trunk` only when it is checked out and clean, and never resets, stashes or switches your work.
 - **GitHub login.** Setup offers to log you in with `gh auth login --hostname github.com --git-protocol https --web --scopes workflow` (run with gh's prompts turned off): gh prints a one-time code, you enter it at https://github.com/login/device in any browser, and gh finishes on its own. It asks no menu questions, so it works on a headless VM. The `workflow` scope lets you push changes to `.github/workflows/` over https. If the login fails, you skip it or press Ctrl-C during it (for example after `could not prompt: unexpected escape sequence from terminal`, which some web consoles and terminals cause), setup still finishes with read-only clones and prints the command. Run that command yourself in a plain SSH terminal, where it may ask a question or two, then rerun the script. Never paste a token into the script; gh handles the sign-in.
@@ -162,7 +162,7 @@ less dev/scripts/setup.sh        # read it before you run it
 
 ## Direct VM (Proxmox or Bare Metal)
 
-Vagrant stays fully supported. This path is for a plain Debian 13 machine you already run, such as a Proxmox VM or a spare computer, where Vagrant is not wanted. The Developer Console, the daemon install and the Ansible dev overlay all work under any user name you pick: they read it from the logged-in user (`tp_resolve_dev_identity()`) and keep the repos under `$HOME` (`TURBOPANEL_DEV_ROOT`). Nothing needs a `vagrant` account.
+Vagrant and Incus (see "Incus VM (Linux)") stay fully supported. This path is for a plain Debian 13 machine you already run, such as a Proxmox VM or a spare computer, where a VM from the host is not wanted. The Developer Console, the daemon install and the Ansible dev overlay all work under any user name you pick: they read it from the logged-in user (`tp_resolve_dev_identity()`) and keep the repos under `$HOME` (`TURBOPANEL_DEV_ROOT`). Nothing needs a `vagrant` account.
 
 ### Prerequisites
 
@@ -203,6 +203,81 @@ Run everything on the VM itself, with the vendored runtimes first on the path on
 ### Why Not LXC
 
 Docker needs nesting inside a container, and the setup writes a swap file, firewall rules and sysctl settings that a container usually restricts. Use a full VM.
+
+## Incus VM (Linux)
+
+Incus is a third option for Linux hosts, next to Direct and Vagrant. Like Vagrant, the repos stay on the host in the folder named `turbopanel`, you edit and commit on the host, and the VM only runs the stack. It does not run on macOS, which keeps Vagrant.
+
+### When to Use It
+
+- Your host is Linux and you want the stack in a VM that is separate from your computer, without Vagrant and libvirt.
+- You do not want to turn a whole Debian machine into the dev machine (that is Direct).
+
+### Prerequisites
+
+- A Linux host with KVM and the `turbopanel` folder set up by `dev/scripts/setup.sh --mode incus`. The mode is offered on Linux only. It writes `TURBOPANEL_DEV_ENV='incus'` in the mode file, prints install hints and installs nothing.
+- Incus from your distribution's packages, initialised with `incus admin init`, and your user in the `incus-admin` group (log out and back in after adding it).
+- incant, a small Vagrant-like front end for Incus: `pipx install incus-incant`. The PyPI package named `incant` is an unrelated library; do not install that one.
+- Free host ports: 80, 443, 8443, 8081, 8088, 19820, 4983, 8025, 5540 and 4213. Incus's own API on 8443 or another web server on 80 clashes. Move the Incus API with `incus config set core.https_address 127.0.0.1:<other port>`.
+- If Docker runs on the same host, its firewall rules can break Incus networking. See "Prevent connectivity issues with Incus and Docker" in the Incus docs.
+
+### Steps
+
+1. Run the starter one-liner, or `./dev/scripts/setup.sh --mode incus` in an existing clone (see "Contribute").
+2. From the host `dev` checkout run `incant up`. It creates the VM, starts it and provisions it. For more memory, set it first: `TURBOPANEL_INCUS_MEMORY=10GiB incant up`.
+3. Set a password for your guest user (see "Password Step").
+4. Open a shell in the VM and start the console: `incus exec turbopanel-dev -- su -l <you>`, then `~/turbopanel/dev/console`.
+
+`incant provision` re-runs provisioning. `incant destroy` removes the VM; the repos on the host are untouched.
+
+The config is [`incant.yaml.mako`](../incant.yaml.mako), a Mako template that incant renders. Defaults, all overridable by environment variable before `incant up`:
+
+| Setting | Default | Variable |
+| --- | --- | --- |
+| Name | `turbopanel-dev` | `TURBOPANEL_INCUS_NAME` |
+| Image | `images:debian/13` | |
+| CPUs | 8 | |
+| Memory | 8 GiB | `TURBOPANEL_INCUS_MEMORY` |
+| Disk | 64 GiB | |
+| Address | `.10` in the bridge subnet | `TURBOPANEL_INCUS_IPV4` |
+| Bridge | | `TURBOPANEL_INCUS_BRIDGE` |
+
+The VM is a KVM virtual machine, not a container: Docker, systemd, swap and firewall rules need a full VM (see "Why Not LXC"). Metro can peak above 5 GiB, so raise the memory if the 8 GiB default is tight.
+
+The guest user has the same name and UID as your host user, so files on the shared folders keep their owner. It has passwordless sudo and is in the `sudo` group.
+
+### Editing Model
+
+Same as Vagrant. Edit and commit on the host. Each sibling repo is an Incus disk device (virtiofs) at `~/turbopanel/<repo>` in the guest. The host has no Node or Deno tree, so host commit hooks run only the secret scan; format your changed files inside the VM before you commit.
+
+### Ports
+
+The same ten ports as the Vagrantfile: 80, 443, 8443, 8081, 8088, 19820, 4983, 8025, 5540 and 4213. Incus forwards into a VM only in NAT mode, to the guest's bridge address, so the guest redirects those ports to its own `127.0.0.1` (`turbopanel-incus-forward.service`, nftables plus `route_localnet` inside the guest).
+
+All ten listen on every host address. That includes 4983, 8025, 5540 and 4213, which Vagrant keeps on loopback. Those are unauthenticated dev tools (the database browser, the mail catcher and Redis Insight) and they are reachable from your LAN. Use this only on a network you trust.
+
+Use the host's LAN name or address, for example `https://<host>:8443`, not `localhost`: the host's loopback does not reach the VM.
+
+### Password Step
+
+No password is set for the guest user. Before the first panel install, run `incus exec -t turbopanel-dev -- passwd <you>`. The panel installer checks that password (on Vagrant it was `vagrant`/`vagrant`).
+
+### Running the Test Suites
+
+Tests run inside the VM, never on the host:
+
+```bash
+incus exec turbopanel-dev -- su -l <you> -c 'export PATH="/opt/turbopanel/vendor/node/current/bin:/opt/turbopanel/vendor/deno/current:$PATH"; cd ~/turbopanel/dev && pnpm test'
+```
+
+### What `incus-guest-setup.sh` Does
+
+Provisioning runs `scripts/vm-bootstrap.sh --upgrade --swap --lan-alias <host LAN IP>` (the Direct-mode script), then `scripts/incus-guest-setup.sh`, which adds what only shared folders need (the same as the Vagrant guest):
+
+- A guest-local pnpm store.
+- Guest-local `node_modules` bind mounts (systemd `turbopanel-virtfs-node-modules.service`).
+- A 2-second Metro poll interval: `TURBOPANEL_METRO_POLL_MS=2000` as a systemd drop-in for `turbopanel-ui`. The default 400 ms full-tree poll cost about 40% of a core.
+- The port redirects to the guest's `127.0.0.1` (`turbopanel-incus-forward.service`, see "Ports").
 
 ## Vagrantfile Responsibilities
 
