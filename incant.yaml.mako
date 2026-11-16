@@ -123,6 +123,14 @@ instances:
           [ -e "/home/${user}/$b" ] || install -o ${uid} -g ${gid} -m 0644 "$f" "/home/${user}/$b"
         done
         install -d -o ${uid} -g ${gid} -m 0755 ${guest_root}
+% if root_dir != guest_root:
+        # Git worktrees record the host's absolute path in their .git file; the
+        # same path inside the VM lets git (and the tests) work in worktrees.
+        if [ ! -e "${root_dir}" ]; then
+          install -d -o ${uid} -g ${gid} "$(dirname "${root_dir}")"
+          ln -s ${guest_root} "${root_dir}"
+        fi
+% endif
       - |
         #!/bin/sh
         set -eu
