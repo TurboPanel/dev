@@ -851,6 +851,13 @@ describe('setup.sh incus mode', () => {
     expect(out).toContain('Mode:         incus')
   })
 
+  test('--yes without --mode stops where incus and vagrant are both possible', () => {
+    osIs('debian', '12')
+    const { status, out } = run(['--dir', work, '--yes'])
+    expect(status).not.toBe(0)
+    expect(out).toContain('--yes needs --mode direct, vagrant or incus')
+  })
+
   test('a mode file saying incus is kept on a rerun and doctor accepts it', () => {
     incus()
     const again = run(['--dir', work, '--yes'])
