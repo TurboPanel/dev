@@ -798,6 +798,82 @@ describe('setup.sh host checks', () => {
   })
 })
 
+describe('setup.sh incus mode', () => {
+  const incusInstalled = ['/usr/bin', '/usr/local/bin', '/bin'].some(
+    (dir) => existsSync(join(dir, 'incus')) || existsSync(join(dir, 'incant'))
+  )
+  const incus = (extra: Env = {}, more: string[] = []) =>
+    run(['--dir', work, '--yes', '--mode', 'incus', ...more], extra)
+
+  test('writes the mode file and prints the next steps', () => {
+    stub('incus', 'echo incus 6.0')
+    stub('incant', 'echo incant')
+    const { status, out } = incus()
+    expect(status, out).toBe(0)
+    expect(modeFile()).toContain("TURBOPANEL_DEV_ENV='incus'")
+    expect(out).toContain(`cd '${work}/dev' && incant up`)
+    expect(out).toContain('incus exec -t turbopanel-dev -- passwd ')
+    expect(out).toContain('incus exec turbopanel-dev -- su -l ')
+    expect(out).toContain('~/turbopanel/dev/console')
+    expect(out).toContain('TURBOPANEL_INCUS_MEMORY=10GiB incant up')
+    expect(out).toContain('Edit and commit on this machine; the VM only runs the stack.')
+    expect(out).not.toContain('Incus is not installed')
+    expect(out).not.toContain('incant is not installed')
+  })
+
+  test.skipIf(incusInstalled)('prints install hints when incus and incant are missing', () => {
+    const { status, out } = incus()
+    expect(status, out).toBe(0)
+    expect(out).toContain('Incus is not installed')
+    expect(out).toContain('incus admin init')
+    expect(out).toContain('incus-admin')
+    expect(out).toContain('pipx install incus-incant')
+    expect(out).not.toContain('pipx install incant\n')
+    expect(modeFile()).toContain("TURBOPANEL_DEV_ENV='incus'")
+  })
+
+  test('is refused on macOS', () => {
+    const { status, out } = incus({ FAKE_UNAME_S: 'Darwin' })
+    expect(status).toBe(1)
+    expect(out).toContain('Incus mode is not available: Incus does not run on macOS')
+    expect(existsSync(work)).toBe(false)
+  })
+
+  test('macOS still picks Vagrant on its own', () => {
+    const { out } = run(['--dir', work, '--dry-run'], { FAKE_UNAME_S: 'Darwin' })
+    expect(out).toContain('Mode:         vagrant')
+  })
+
+  test('is offered on a Linux host that cannot run direct mode', () => {
+    osIs('debian', '12')
+    const { status, out } = incus({}, ['--dry-run'])
+    expect(status, out).toBe(0)
+    expect(out).toContain('Mode:         incus')
+  })
+
+  test('a mode file saying incus is kept on a rerun and doctor accepts it', () => {
+    incus()
+    const again = run(['--dir', work, '--yes'])
+    expect(again.status, again.out).toBe(0)
+    expect(modeFile()).toContain("TURBOPANEL_DEV_ENV='incus'")
+    const doctor = run(['doctor', '--dir', work])
+    expect(doctor.out).toContain('mode:         incus')
+    expect(doctor.out).toContain('incus mode:   available')
+  })
+
+  test('doctor flags an incus mode file on macOS', () => {
+    incus()
+    const { out } = run(['doctor', '--dir', work], { FAKE_UNAME_S: 'Darwin' })
+    expect(out).toContain('mode is incus but Incus does not run on macOS')
+  })
+
+  test('an unknown mode names all three', () => {
+    const { status, out } = run(['--dir', work, '--yes', '--mode', 'lxd'])
+    expect(status).toBe(1)
+    expect(out).toContain('use direct, vagrant or incus')
+  })
+})
+
 describe('setup.sh GitHub CLI', () => {
   test('--yes installs a missing gh from the official apt source but never logs in', () => {
     const { status, out } = setup({ ...withoutGh(), FAKE_GH_LOGIN: '' })

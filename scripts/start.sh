@@ -38,7 +38,7 @@ Options:
                already in place, setup.sh prints its own dry-run plan too
   -h, --help   show this help
 
-Everything else goes to setup.sh unchanged, for example --mode direct|vagrant,
+Everything else goes to setup.sh unchanged, for example --mode direct|vagrant|incus,
 --as-contributor, --yes, doctor or status. See setup.sh --help once the dev repo is here.
 USAGE
 }
@@ -176,6 +176,7 @@ tp_start_main() {
     echo "  (Direct mode needs a Debian 13 machine, so on macOS setup uses Vagrant.)"
   else
     echo "  Direct:  a Debian 13 machine becomes the dev machine itself; setup gives your user passwordless sudo."
+    echo "  Incus:   like Vagrant, but the VM runs on Incus ('incant up' in ${_sm_dev}); Linux hosts only."
   fi
 
   if [ "$_sm_have" -eq 0 ]; then
