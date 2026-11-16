@@ -47,6 +47,7 @@ EOF
 }
 
 # The mode file setup.sh writes next to the repos says how this checkout runs.
+INCUS_NAME=${TURBOPANEL_INCUS_NAME:-turbopanel-dev}
 DEV_ENV=$(sed -n "s/^TURBOPANEL_DEV_ENV='\(.*\)'\$/\1/p" "$REPO_ROOT/../.turbopanel-dev-mode" 2>/dev/null | tail -n 1)
 
 if ! tp_in_guest; then
@@ -58,7 +59,7 @@ if ! tp_in_guest; then
   if [ "$DEV_ENV" = incus ]; then
     if ! command -v incus >/dev/null 2>&1; then
       echo "ci-verify: run inside the Incus VM (or install incus on the host)." >&2
-      echo "  From the host: incus exec turbopanel-dev -- su -l \"\$USER\" -c '\$HOME/turbopanel/dev/scripts/ci-verify.sh'" >&2
+      echo "  From the host: incus exec ${INCUS_NAME} -- su -l \"\$USER\" -c '\$HOME/turbopanel/dev/scripts/ci-verify.sh'" >&2
       exit 1
     fi
     quoted=
@@ -66,7 +67,7 @@ if ! tp_in_guest; then
       quoted="$quoted $(tp_quote "$arg")"
     done
     echo "ci-verify: re-exec inside the Incus VM" >&2
-    exec incus exec turbopanel-dev -- su -l "$(id -un)" -c "export PATH=\"$GUEST_PATH_PREFIX:\$PATH\"; \$HOME/turbopanel/dev/scripts/ci-verify.sh$quoted"
+    exec incus exec "$INCUS_NAME" -- su -l "$(id -un)" -c "export PATH=\"$GUEST_PATH_PREFIX:\$PATH\"; \$HOME/turbopanel/dev/scripts/ci-verify.sh$quoted"
   fi
   if ! command -v vagrant >/dev/null 2>&1; then
     echo "ci-verify: run inside the Vagrant guest (or install vagrant on the host)." >&2

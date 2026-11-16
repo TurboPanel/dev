@@ -32,7 +32,7 @@
 #     compared before and after.
 #
 # Development guest only, and it refuses to run anywhere else. From the host
-# `dev` checkout it re-execs through `vagrant ssh`:
+# `dev` checkout it re-execs through `vagrant ssh` (or `incus exec` in Incus mode):
 #
 #   ./scripts/game-day.sh                      # postgres, crash phase
 #   ./scripts/game-day.sh queue                # rabbitmq
@@ -87,6 +87,21 @@ EOF
 }
 
 if ! tp_in_guest; then
+  DEV_ENV=$(sed -n "s/^TURBOPANEL_DEV_ENV='\(.*\)'\$/\1/p" "$REPO_ROOT/../.turbopanel-dev-mode" 2>/dev/null | tail -n 1)
+  if [ "$DEV_ENV" = incus ]; then
+    INCUS_NAME=${TURBOPANEL_INCUS_NAME:-turbopanel-dev}
+    if ! command -v incus >/dev/null 2>&1; then
+      echo "game-day: run inside the Incus VM (or install incus on the host)." >&2
+      echo "  From the host: incus exec ${INCUS_NAME} -- su -l \"\$USER\" -c '\$HOME/turbopanel/dev/scripts/game-day.sh'" >&2
+      exit 1
+    fi
+    quoted=
+    for arg in "$@"; do
+      quoted="$quoted $(tp_quote "$arg")"
+    done
+    echo "game-day: re-exec inside the Incus VM" >&2
+    exec incus exec "$INCUS_NAME" -- su -l "$(id -un)" -c "\$HOME/turbopanel/dev/scripts/game-day.sh$quoted"
+  fi
   if ! command -v vagrant >/dev/null 2>&1; then
     echo "game-day: run inside the Vagrant guest (or install vagrant on the host)." >&2
     echo "  From the host dev checkout: vagrant ssh -c '\$HOME/turbopanel/dev/scripts/game-day.sh'" >&2

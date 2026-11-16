@@ -43,6 +43,19 @@ esac
 DEV_HOME=$(getent passwd "$DEV_USER" | cut -d: -f6)
 [ -n "$DEV_HOME" ] || { echo "incus-guest-setup: no such user: $DEV_USER" >&2; exit 1; }
 DEV_GROUP=$(id -gn "$DEV_USER")
+case "$DEV_HOME" in
+  /*) ;;
+  *) echo "incus-guest-setup: home folder is not an absolute path: $DEV_HOME" >&2; exit 2 ;;
+esac
+case "$DEV_HOME" in
+  *[!A-Za-z0-9._/-]* | *//* | */../* | */.. | */./* | */.)
+    echo "incus-guest-setup: unsafe home folder: $DEV_HOME" >&2; exit 2 ;;
+  *) ;;
+esac
+case "$DEV_GROUP" in
+  '' | *[!A-Za-z0-9._-]* | -*) echo "incus-guest-setup: bad group name: $DEV_GROUP" >&2; exit 2 ;;
+  *) ;;
+esac
 DEV_ROOT="${DEV_HOME}/turbopanel"
 
 echo ">>> Guest-local pnpm store for ${DEV_USER}"
@@ -58,7 +71,9 @@ chmod 644 "${DEV_HOME}/.config/pnpm/config.yaml"
 echo ">>> Guest-local node_modules bind mounts"
 install -d -m 0755 /var/lib/turbopanel-dev
 install -d -o root -g root -m 0750 /usr/local/sbin
-# DEV_USER and DEV_ROOT were checked above, so they are safe to write unquoted.
+# DEV_USER, DEV_GROUP and DEV_HOME (so DEV_ROOT) were checked above: only
+# letters, digits, dot, underscore and dash (plus slashes in the path), so they
+# are safe to write unquoted into this root-run script.
 cat >/usr/local/sbin/tp-bind-node-modules <<BINDSCRIPT
 #!/bin/sh
 # Written by scripts/incus-guest-setup.sh for ${DEV_USER}.
@@ -135,8 +150,8 @@ systemctl restart turbopanel-virtfs-node-modules.service
 
 echo ">>> Metro polls the share every 2 s"
 # ui/metro.config.js polls a virtiofs share (host edits raise no inotify event)
-# every 400 ms by default; a full walk of the ui tree that often keeps about
-# half a core busy. 2 s costs a short delay before Fast Refresh instead.
+# every 400 ms by default; a full walk of the ui tree that often costs about
+# 40% of a core. 2 s costs a short delay before Fast Refresh instead.
 install -d -m 0755 /etc/systemd/system/turbopanel-ui.service.d
 cat >/etc/systemd/system/turbopanel-ui.service.d/poll-interval.conf <<'EOF'
 [Service]

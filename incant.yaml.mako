@@ -12,13 +12,13 @@
   host user's name and UID, so files on the shares keep their owner.
 </%doc>
 <%
-  import os, pwd, socket
+  import os, pwd, shlex, socket, sys
   dev_dir = os.getcwd()
   root_dir = os.path.dirname(dev_dir)
   me = pwd.getpwuid(os.getuid())
   user, uid, gid = me.pw_name, me.pw_uid, me.pw_gid
   guest_root = "/home/%s/turbopanel" % user
-  name = os.environ.get("TURBOPANEL_INCUS_NAME", "turbopanel-dev")
+  name = os.environ.get("TURBOPANEL_INCUS_NAME") or "turbopanel-dev"
   # 8 GiB like the Vagrantfile; Metro alone can peak above 5 GiB, so give more
   # when the host has room (devy uses TURBOPANEL_INCUS_MEMORY=10GiB).
   memory = os.environ.get("TURBOPANEL_INCUS_MEMORY", "8GiB")
@@ -50,6 +50,11 @@
       with open(path) as f:
           extra += [l.strip() for l in f if l.strip() and not l.strip().startswith("#")]
   for a in extra:
+      # Same rule as --lan-alias in scripts/vm-bootstrap.sh: letters, digits,
+      # dot, underscore and dash only, and no leading dash or dot.
+      if not a or a[0] in "-." or not all(c.isascii() and (c.isalnum() or c in "._-") for c in a):
+          sys.stderr.write("incant: skipping bad LAN alias %r (letters, digits, '.', '_' and '-' only; no leading '-' or '.')" % a + "\n")
+          continue
       if a not in aliases:
           aliases.append(a)
   alias_args = " ".join("--lan-alias %s" % a for a in aliases)
@@ -60,9 +65,14 @@
   bridge = os.environ.get("TURBOPANEL_INCUS_BRIDGE", "incusbr0")
   guest_ip = os.environ.get("TURBOPANEL_INCUS_IPV4")
   if not guest_ip:
-      net = subprocess.run(["incus", "network", "get", bridge, "ipv4.address"],
-                           capture_output=True, text=True, check=True).stdout.strip()
-      guest_ip = str(ipaddress.ip_interface(net).network.network_address + 10)
+      try:
+          net = subprocess.run(["incus", "network", "get", bridge, "ipv4.address"],
+                               capture_output=True, text=True, check=True).stdout.strip()
+          if net in ("", "none"):
+              raise ValueError(net or "empty")
+          guest_ip = str(ipaddress.ip_interface(net).network.network_address + 10)
+      except (OSError, subprocess.CalledProcessError, ValueError) as e:
+          raise SystemExit("incant: cannot get an IPv4 address for bridge %s (%s); set TURBOPANEL_INCUS_IPV4 to the VM's address, or TURBOPANEL_INCUS_BRIDGE to a bridge with IPv4" % (bridge, e))
 
   # Ports the host forwards, the same list as the Vagrantfile. All listen on
   # every host address: the Vagrantfile keeps 4983, 8025, 5540 and 4213 on
@@ -113,6 +123,15 @@ instances:
           [ -e "/home/${user}/$b" ] || install -o ${uid} -g ${gid} -m 0644 "$f" "/home/${user}/$b"
         done
         install -d -o ${uid} -g ${gid} -m 0755 ${guest_root}
+% if root_dir != guest_root:
+        # Git worktrees record the host's absolute path in their .git file; the
+        # same path inside the VM lets git (and the tests) work in worktrees.
+        if [ ! -e ${shlex.quote(root_dir)} ] && [ ! -L ${shlex.quote(root_dir)} ]; then
+          # Root-owned parents: never re-own or re-mode a folder that exists.
+          mkdir -p ${shlex.quote(os.path.dirname(root_dir))}
+          ln -s ${guest_root} ${shlex.quote(root_dir)}
+        fi
+% endif
       - |
         #!/bin/sh
         set -eu
