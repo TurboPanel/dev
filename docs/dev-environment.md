@@ -40,7 +40,7 @@ to the host on `0.0.0.0` (LAN-reachable, not localhost-only). Drizzle Studio
 `4983`, Mailpit `8025`, Redis Insight `5540`, and the DuckDB UI `4213` are loopback-only
 on both sides of the forward (`127.0.0.1` host and guest): those APIs are
 unauthenticated. The hosted HTTPS Studio UI must use `?host=localhost` rather
-than a private hostname such as `studio.lan`. All forwards target **guest
+than a private hostname such as `dev-workstation.example.lan`. All forwards target **guest
 loopback** so they still work when the libvirt DHCP address changes. The
 `dev-forward-hosts` provisioner (`run: always`) writes the host's LAN
 addresses, `Socket.gethostname` when it is a dotted FQDN, and any extra
