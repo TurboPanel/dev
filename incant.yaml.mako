@@ -20,7 +20,7 @@
   guest_root = "/home/%s/turbopanel" % user
   name = os.environ.get("TURBOPANEL_INCUS_NAME") or "turbopanel-dev"
   # 8 GiB like the Vagrantfile; Metro alone can peak above 5 GiB, so give more
-  # when the host has room (devy uses TURBOPANEL_INCUS_MEMORY=10GiB).
+  # when the host has room (for example TURBOPANEL_INCUS_MEMORY=10GiB).
   memory = os.environ.get("TURBOPANEL_INCUS_MEMORY", "8GiB")
 
   repos = []
