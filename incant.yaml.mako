@@ -32,17 +32,31 @@
   if not (cpus.isascii() and cpus.isdigit()) or int(cpus) < 1:
       raise SystemExit("incant: TURBOPANEL_INCUS_CPUS must be a positive whole number, not %r" % cpus)
   lan_bridge = os.environ.get("TURBOPANEL_INCUS_LAN_BRIDGE") or ""
-  if lan_bridge and (lan_bridge[0] in "-." or not all(c.isascii() and (c.isalnum() or c in "._-") for c in lan_bridge)):
-      raise SystemExit("incant: bad TURBOPANEL_INCUS_LAN_BRIDGE %r (letters, digits, '.', '_' and '-' only)" % lan_bridge)
+  bridge_chars_ok = all(c.isascii() and (c.isalnum() or c in "._-") for c in lan_bridge)
+  if lan_bridge and (lan_bridge[0] in "-." or not bridge_chars_ok):
+      raise SystemExit(
+          "incant: bad TURBOPANEL_INCUS_LAN_BRIDGE %r (letters, digits, '.', '_' and '-' only)"
+          % lan_bridge
+      )
   # Name the VM sends in DHCP. A dotted value is the FQDN: its first label is
   # the hostname, the whole name goes on the dev certificate.
   vm_host = os.environ.get("TURBOPANEL_INCUS_HOSTNAME") or name
   # Only bridged mode uses the name, so a bad value must not abort NAT mode.
   # Each label follows RFC 1123: ASCII letters, digits and '-', 1 to 63 characters,
   # not starting or ending with '-'.
-  if lan_bridge and (len(vm_host) > 253 or not all(re.fullmatch(r"[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?", label) for label in vm_host.split("."))):
-      raise SystemExit("incant: bad TURBOPANEL_INCUS_HOSTNAME %r (dot-separated labels of ASCII letters, digits and '-', at most 63 characters each, none starting or ending with '-')" % vm_host)
+  label_re = r"[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?"
+  bad_labels = len(vm_host) > 253 or not all(
+      re.fullmatch(label_re, label) for label in vm_host.split(".")
+  )
+  if lan_bridge and bad_labels:
+      raise SystemExit(
+          "incant: bad TURBOPANEL_INCUS_HOSTNAME %r (dot-separated labels of ASCII "
+          "letters, digits and '-', at most 63 characters each, none starting or "
+          "ending with '-')" % vm_host
+      )
   short_host = vm_host.split(".")[0]
+  # A known domain stays in /etc/hosts so hostname -f returns the FQDN.
+  hosts_line = "127.0.1.1 %s %s" % (vm_host, short_host) if "." in vm_host else "127.0.1.1 " + short_host
 
   repos = []
   with open(os.path.join(dev_dir, "repos.list")) as f:
@@ -182,14 +196,16 @@ instances:
         # Only when the hostname changes; a rerun with the same name keeps the lease.
         if [ "$(hostname)" != ${shlex.quote(short_host)} ]; then
           hostnamectl set-hostname ${shlex.quote(short_host)}
-          # Keep the 127.0.1.1 entry in step so sudo can resolve the new name.
-          if grep -q '^127\.0\.1\.1[[:space:]]' /etc/hosts; then
-            sed -i 's/^127\.0\.1\.1[[:space:]].*/127.0.1.1 '${shlex.quote(short_host)}'/' /etc/hosts
-          else
-            echo '127.0.1.1 '${shlex.quote(short_host)} >> /etc/hosts
-          fi
           iface=$(ip -o -4 route show default | awk '{print $5; exit}')
           [ -z "$iface" ] || networkctl reconfigure "$iface" || true
+        fi
+        # Keep the 127.0.1.1 entry in step so sudo resolves the name and
+        # hostname -f keeps the domain. Idempotent, so it runs on every pass.
+        hosts_line=${shlex.quote(hosts_line)}
+        if grep -q '^127\.0\.1\.1[[:space:]]' /etc/hosts; then
+          sed -i "s|^127\.0\.1\.1[[:space:]].*|$hosts_line|" /etc/hosts
+        else
+          echo "$hosts_line" >> /etc/hosts
         fi
 % endif
         sh ${guest_root}/dev/scripts/incus-guest-setup.sh ${user} ${guest_ports}
