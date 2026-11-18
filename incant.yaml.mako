@@ -18,7 +18,7 @@
   no host ports are forwarded. Unset, the NAT setup below is unchanged.
 </%doc>
 <%
-  import os, pwd, shlex, socket, sys
+  import os, pwd, re, shlex, socket, sys
   dev_dir = os.getcwd()
   root_dir = os.path.dirname(dev_dir)
   me = pwd.getpwuid(os.getuid())
@@ -29,7 +29,7 @@
   # when the host has room (for example TURBOPANEL_INCUS_MEMORY=10GiB).
   memory = os.environ.get("TURBOPANEL_INCUS_MEMORY", "6GiB")
   cpus = os.environ.get("TURBOPANEL_INCUS_CPUS") or "2"
-  if not cpus.isdigit() or int(cpus) < 1:
+  if not (cpus.isascii() and cpus.isdigit()) or int(cpus) < 1:
       raise SystemExit("incant: TURBOPANEL_INCUS_CPUS must be a positive whole number, not %r" % cpus)
   lan_bridge = os.environ.get("TURBOPANEL_INCUS_LAN_BRIDGE") or ""
   if lan_bridge and (lan_bridge[0] in "-." or not all(c.isascii() and (c.isalnum() or c in "._-") for c in lan_bridge)):
@@ -37,8 +37,11 @@
   # Name the VM sends in DHCP. A dotted value is the FQDN: its first label is
   # the hostname, the whole name goes on the dev certificate.
   vm_host = os.environ.get("TURBOPANEL_INCUS_HOSTNAME") or name
-  if vm_host[0] in "-." or not all(c.isascii() and (c.isalnum() or c in "._-") for c in vm_host):
-      raise SystemExit("incant: bad TURBOPANEL_INCUS_HOSTNAME %r (letters, digits, '.', '_' and '-' only)" % vm_host)
+  # Only bridged mode uses the name, so a bad value must not abort NAT mode.
+  # Each label follows RFC 1123: ASCII letters, digits and '-', 1 to 63 characters,
+  # not starting or ending with '-'.
+  if lan_bridge and (len(vm_host) > 253 or not all(re.fullmatch(r"[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?", label) for label in vm_host.split("."))):
+      raise SystemExit("incant: bad TURBOPANEL_INCUS_HOSTNAME %r (dot-separated labels of ASCII letters, digits and '-', at most 63 characters each, none starting or ending with '-')" % vm_host)
   short_host = vm_host.split(".")[0]
 
   repos = []
@@ -176,8 +179,15 @@ instances:
 % if lan_bridge:
         # DHCP sends the system hostname: make it the short name, then take a
         # fresh lease on the default-route card (its name is not always eth0).
+        # Only when the hostname changes; a rerun with the same name keeps the lease.
         if [ "$(hostname)" != ${shlex.quote(short_host)} ]; then
           hostnamectl set-hostname ${shlex.quote(short_host)}
+          # Keep the 127.0.1.1 entry in step so sudo can resolve the new name.
+          if grep -q '^127\.0\.1\.1[[:space:]]' /etc/hosts; then
+            sed -i 's/^127\.0\.1\.1[[:space:]].*/127.0.1.1 '${shlex.quote(short_host)}'/' /etc/hosts
+          else
+            echo '127.0.1.1 '${shlex.quote(short_host)} >> /etc/hosts
+          fi
           iface=$(ip -o -4 route show default | awk '{print $5; exit}')
           [ -z "$iface" ] || networkctl reconfigure "$iface" || true
         fi
