@@ -160,7 +160,7 @@ Environment=TURBOPANEL_METRO_POLL_MS=2000
 EOF
 systemctl daemon-reload
 
-echo ">>> Metro heap 3 GiB (fits a 6 GiB VM)"
+echo ">>> Metro heap 3 GiB (fits a 6 GiB VM; applies after: systemctl restart turbopanel-ui)"
 # The unit sets NODE_OPTIONS with a 4 GiB old-space heap. A later assignment of
 # the same variable wins, so a drop-in repeats the unit's options with 3072.
 # 3072 is the floor: with less, Metro died with "Ineffective mark-compacts near
