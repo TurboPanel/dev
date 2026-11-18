@@ -7,9 +7,15 @@
     incus shell turbopanel-dev, then: su - <you>, ~/turbopanel/dev/console
     incant destroy   delete the VM (the repos on the host are untouched)
 
-  Mirrors the Vagrantfile: Debian 13, 8 CPUs, 6 GiB, the sibling repos mounted
-  at ~/turbopanel/<repo>, and the same forwarded ports. The guest user has the
-  host user's name and UID, so files on the shares keep their owner.
+  Mirrors the Vagrantfile: Debian 13, 2 CPUs (TURBOPANEL_INCUS_CPUS), 6 GiB,
+  the sibling repos mounted at ~/turbopanel/<repo>, and the same forwarded
+  ports. The guest user has the host user's name and UID, so files on the
+  shares keep their owner.
+
+  Bridged LAN mode (opt in): set TURBOPANEL_INCUS_LAN_BRIDGE=<host bridge> and
+  the VM joins that bridge, gets its address by DHCP from the LAN, sends its
+  hostname (TURBOPANEL_INCUS_HOSTNAME, default the instance name) in DHCP, and
+  no host ports are forwarded. Unset, the NAT setup below is unchanged.
 </%doc>
 <%
   import os, pwd, shlex, socket, sys
@@ -22,6 +28,18 @@
   # 6 GiB; Metro is capped at a 3 GiB heap. Give more
   # when the host has room (for example TURBOPANEL_INCUS_MEMORY=10GiB).
   memory = os.environ.get("TURBOPANEL_INCUS_MEMORY", "6GiB")
+  cpus = os.environ.get("TURBOPANEL_INCUS_CPUS") or "2"
+  if not cpus.isdigit() or int(cpus) < 1:
+      raise SystemExit("incant: TURBOPANEL_INCUS_CPUS must be a positive whole number, not %r" % cpus)
+  lan_bridge = os.environ.get("TURBOPANEL_INCUS_LAN_BRIDGE") or ""
+  if lan_bridge and (lan_bridge[0] in "-." or not all(c.isascii() and (c.isalnum() or c in "._-") for c in lan_bridge)):
+      raise SystemExit("incant: bad TURBOPANEL_INCUS_LAN_BRIDGE %r (letters, digits, '.', '_' and '-' only)" % lan_bridge)
+  # Name the VM sends in DHCP. A dotted value is the FQDN: its first label is
+  # the hostname, the whole name goes on the dev certificate.
+  vm_host = os.environ.get("TURBOPANEL_INCUS_HOSTNAME") or name
+  if vm_host[0] in "-." or not all(c.isascii() and (c.isalnum() or c in "._-") for c in vm_host):
+      raise SystemExit("incant: bad TURBOPANEL_INCUS_HOSTNAME %r (letters, digits, '.', '_' and '-' only)" % vm_host)
+  short_host = vm_host.split(".")[0]
 
   repos = []
   with open(os.path.join(dev_dir, "repos.list")) as f:
@@ -36,14 +54,18 @@
   # Names a second machine uses to reach the forwarded ports; the guest mints
   # the Platform CA leaf for them (same idea as the Vagrantfile).
   aliases = []
-  s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-  try:
-      s.connect(("192.0.2.1", 9))
-      aliases.append(s.getsockname()[0])
-  except OSError:
-      pass
-  finally:
-      s.close()
+  if lan_bridge:
+      # The VM has its own LAN address; the host's address is not its address.
+      aliases.append(vm_host if "." in vm_host else vm_host + ".lan")
+  else:
+      s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+      try:
+          s.connect(("192.0.2.1", 9))
+          aliases.append(s.getsockname()[0])
+      except OSError:
+          pass
+      finally:
+          s.close()
   extra = os.environ.get("TURBOPANEL_DEV_LAN_ALIASES", "").replace(",", " ").split()
   path = os.path.join(dev_dir, "local", "lan-aliases")
   if os.path.isfile(path):
@@ -64,7 +86,7 @@
   import subprocess, ipaddress
   bridge = os.environ.get("TURBOPANEL_INCUS_BRIDGE", "incusbr0")
   guest_ip = os.environ.get("TURBOPANEL_INCUS_IPV4")
-  if not guest_ip:
+  if not guest_ip and not lan_bridge:
       try:
           net = subprocess.run(["incus", "network", "get", bridge, "ipv4.address"],
                                capture_output=True, text=True, check=True).stdout.strip()
@@ -80,6 +102,11 @@
   # route_localnet on the host. Those four are unauthenticated dev tools
   # (database browser, mail catcher, Redis Insight), now reachable on the LAN.
   ports = [(p, "0.0.0.0") for p in (80, 443, 8443, 8081, 8088, 19820, 4983, 8025, 5540, 4213)]
+  # Bridged LAN mode: the VM is on the LAN itself, so nothing is forwarded.
+  # The guest redirect still covers these ports on eth0 (loopback-only services).
+  guest_ports = " ".join(str(p) for p, _ in ports)
+  if lan_bridge:
+      ports = []
 %>
 instances:
   ${name}:
@@ -88,14 +115,21 @@ instances:
     wait: true
     shared_folder: false
     config:
-      limits.cpu: "8"
+      limits.cpu: "${cpus}"
       limits.memory: ${memory}
     devices:
       root:
         size: 64GiB
+% if not lan_bridge:
       eth0:
         ipv4.address: ${guest_ip}
+% endif
     pre-launch:
+% if lan_bridge:
+      # The default profile's eth0 names a managed network, which cannot be
+      # combined with nictype, so an instance-level eth0 replaces it whole.
+      - config device add ${name} eth0 nic nictype=bridged parent=${lan_bridge} name=eth0
+% endif
 % for repo in repos:
       - config device add ${name} repo-${repo.lstrip('.')} disk source=${root_dir}/${repo} path=${guest_root}/${repo}
 % endfor
@@ -139,5 +173,14 @@ instances:
       - |
         #!/bin/sh
         set -eu
-        sh ${guest_root}/dev/scripts/incus-guest-setup.sh ${user} ${" ".join(str(p) for p, _ in ports)}
+% if lan_bridge:
+        # DHCP sends the system hostname: make it the short name, then take a
+        # fresh lease on the default-route card (its name is not always eth0).
+        if [ "$(hostname)" != ${shlex.quote(short_host)} ]; then
+          hostnamectl set-hostname ${shlex.quote(short_host)}
+          iface=$(ip -o -4 route show default | awk '{print $5; exit}')
+          [ -z "$iface" ] || networkctl reconfigure "$iface" || true
+        fi
+% endif
+        sh ${guest_root}/dev/scripts/incus-guest-setup.sh ${user} ${guest_ports}
         sh ${guest_root}/dev/scripts/guest/install-motd.sh || true
