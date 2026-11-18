@@ -160,6 +160,47 @@ Environment=TURBOPANEL_METRO_POLL_MS=2000
 EOF
 systemctl daemon-reload
 
+echo ">>> Metro heap 3 GiB (fits a 6 GiB VM; applies after: systemctl restart turbopanel-ui)"
+# The unit sets NODE_OPTIONS with a 4 GiB old-space heap. A later assignment of
+# the same variable wins, so a drop-in repeats the unit's options with 3072.
+# 3072 is the floor: with less, Metro died with "Ineffective mark-compacts near
+# heap limit" while bundling the console. Keep the options in step with
+# turbopaneld's instance-launch turbopanel-ui.service.j2.
+cat >/etc/systemd/system/turbopanel-ui.service.d/heap.conf <<'EOF'
+[Service]
+# Written by scripts/incus-guest-setup.sh.
+Environment="NODE_OPTIONS=--dns-result-order=ipv4first --max-old-space-size=3072"
+EOF
+systemctl daemon-reload
+
+echo ">>> Optional services do not start at boot"
+# Each one stays startable by hand (see docs/dev-environment.md). Not stopped
+# here: only the boot-time start is removed. A converge enables the selected
+# optional units again; deselect them in Developer > Optional services, or
+# run this script after the converge.
+# Left on at boot: turbopanel-tunnel-instance (the daemon enables, disables and
+# supervises it, and the panel reaches the instance through it) and
+# turbopanel-mailpit (instance email, including login mail, goes to its SMTP
+# port).
+for unit in turbopanel-website turbopanel-dbstudio; do
+  if systemctl cat "$unit.service" >/dev/null 2>&1; then
+    systemctl disable "$unit.service" 2>&1
+  fi
+done
+
+echo ">>> Free page reporting returns 32 KiB blocks to the host"
+cat >/etc/tmpfiles.d/turbopanel-page-reporting.conf <<'EOF'
+# Written by scripts/incus-guest-setup.sh.
+# Order 5 (32 KiB) so the balloon reports smaller free blocks to the host.
+w- /sys/module/page_reporting/parameters/page_reporting_order - - - - 5
+EOF
+systemd-tmpfiles --create /etc/tmpfiles.d/turbopanel-page-reporting.conf || true
+
+echo ">>> /tmp on disk"
+# Debian mounts /tmp as tmpfs, so build and test copies would sit in RAM.
+# Masking tmp.mount leaves /tmp on the root disk from the next reboot.
+systemctl mask tmp.mount 2>&1
+
 if [ -n "$PORTS" ]; then
   echo ">>> Forwarded ports reach services on 127.0.0.1: ${PORTS}"
   command -v nft >/dev/null 2>&1 || apt-get install -y -qq nftables >/dev/null

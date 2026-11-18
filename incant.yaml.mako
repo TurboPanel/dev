@@ -7,7 +7,7 @@
     incus shell turbopanel-dev, then: su - <you>, ~/turbopanel/dev/console
     incant destroy   delete the VM (the repos on the host are untouched)
 
-  Mirrors the Vagrantfile: Debian 13, 8 CPUs, 8 GiB, the sibling repos mounted
+  Mirrors the Vagrantfile: Debian 13, 8 CPUs, 6 GiB, the sibling repos mounted
   at ~/turbopanel/<repo>, and the same forwarded ports. The guest user has the
   host user's name and UID, so files on the shares keep their owner.
 </%doc>
@@ -19,9 +19,9 @@
   user, uid, gid = me.pw_name, me.pw_uid, me.pw_gid
   guest_root = "/home/%s/turbopanel" % user
   name = os.environ.get("TURBOPANEL_INCUS_NAME") or "turbopanel-dev"
-  # 8 GiB like the Vagrantfile; Metro alone can peak above 5 GiB, so give more
+  # 6 GiB; Metro is capped at a 3 GiB heap. Give more
   # when the host has room (for example TURBOPANEL_INCUS_MEMORY=10GiB).
-  memory = os.environ.get("TURBOPANEL_INCUS_MEMORY", "8GiB")
+  memory = os.environ.get("TURBOPANEL_INCUS_MEMORY", "6GiB")
 
   repos = []
   with open(os.path.join(dev_dir, "repos.list")) as f:
