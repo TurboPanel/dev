@@ -224,7 +224,7 @@ Incus is a third option for Linux hosts, next to Direct and Vagrant. Like Vagran
 ### Steps
 
 1. Run the starter one-liner, or `./dev/scripts/setup.sh --mode incus` in an existing clone (see "Contribute").
-2. From the host `dev` checkout run `incant up`. It creates the VM, starts it and provisions it. For more memory, set it first: `TURBOPANEL_INCUS_MEMORY=10GiB incant up`.
+2. From the host `dev` checkout run `incant up`. It creates the VM, starts it and provisions it. For more memory, set it first: `TURBOPANEL_INCUS_MEMORY=10GiB incant up`. To fit 6 GiB, the guest setup lowers the Metro heap to 3 GiB, keeps `/tmp` on disk (a reboot after the first run applies it) and does not start the website and Drizzle Studio at boot. Start them by hand with `sudo systemctl start turbopanel-website` and `sudo systemctl start turbopanel-dbstudio`, or use Developer → Optional services in the console. A converge enables the selected ones again.
 3. Set a password for your guest user (see "Password Step").
 4. Open a shell in the VM and start the console: `incus exec turbopanel-dev -- su -l <you>`, then `~/turbopanel/dev/console`.
 
@@ -237,12 +237,12 @@ The config is [`incant.yaml.mako`](../incant.yaml.mako), a Mako template that in
 | Name | `turbopanel-dev` | `TURBOPANEL_INCUS_NAME` |
 | Image | `images:debian/13` | |
 | CPUs | 8 | |
-| Memory | 8 GiB | `TURBOPANEL_INCUS_MEMORY` |
+| Memory | 6 GiB | `TURBOPANEL_INCUS_MEMORY` |
 | Disk | 64 GiB | |
 | Address | `.10` in the bridge subnet | `TURBOPANEL_INCUS_IPV4` |
 | Bridge | | `TURBOPANEL_INCUS_BRIDGE` |
 
-The VM is a KVM virtual machine, not a container: Docker, systemd, swap and firewall rules need a full VM (see "Why Not LXC"). Metro can peak above 5 GiB, so raise the memory if the 8 GiB default is tight.
+The VM is a KVM virtual machine, not a container: Docker, systemd, swap and firewall rules need a full VM (see "Why Not LXC"). Metro is capped at a 3 GiB heap in the guest, so raise the memory if the 6 GiB default is tight.
 
 The guest user has the same name and UID as your host user, so files on the shared folders keep their owner. It has passwordless sudo and is in the `sudo` group.
 

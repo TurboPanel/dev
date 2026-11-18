@@ -1194,7 +1194,7 @@ tp_next_steps() {
     echo "  incus exec -t ${TURBOPANEL_INCUS_NAME:-turbopanel-dev} -- passwd $(id -un)   (the panel installer checks this password through PAM)"
     echo "  incus exec ${TURBOPANEL_INCUS_NAME:-turbopanel-dev} -- su -l $(id -un)"
     echo "  Then, inside the VM: ~/turbopanel/dev/console"
-    echo "  The VM gets 8GiB of memory by default; for more: TURBOPANEL_INCUS_MEMORY=10GiB incant up"
+    echo "  The VM gets 6GiB of memory by default; for more: TURBOPANEL_INCUS_MEMORY=10GiB incant up"
     echo "  Edit and commit on this machine; the VM only runs the stack. Hooks here run the secret scan."
   elif [ "$MODE" = direct ]; then
     echo "  Log out and back in if setup just added you to the sudo group, then:"
