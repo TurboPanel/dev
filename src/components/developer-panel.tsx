@@ -12,6 +12,7 @@ import {
 import type { ConsoleLogLine } from '../lib/service-restart.ts'
 import type { ServiceLogByteFloor } from '../lib/service-log.ts'
 import type { DaemonOperation } from '../lib/spinners.ts'
+import { useStartedNote } from '../hooks/use-started-note.ts'
 import { useLogScroll } from '../hooks/use-log-scroll.ts'
 import { useServiceLog } from '../hooks/use-service-log.ts'
 import { LIST_SELECT_BG, LIST_SELECT_FG, STATUS_RUNNING } from '../theme.ts'
@@ -102,9 +103,9 @@ function DeveloperMenuPanel({
   )
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [message, setMessage] = useState<string | null>(null)
-  /** A short success note, e.g. after a development host job was started. */
-  const [notice, setNotice] = useState<string | null>(null)
   const devHostJob = useDevHostJobLine()
+  /** A short success note after a development host job was started; clears when the job line takes over. */
+  const [notice, setNotice] = useStartedNote(devHostJob !== null)
 
   useEffect(() => {
     setSelectedIndex(0)
