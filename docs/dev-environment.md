@@ -224,7 +224,7 @@ Incus is a third option for Linux hosts, next to Direct and Vagrant. Like Vagran
 ### Steps
 
 1. Run the starter one-liner, or `./dev/scripts/setup.sh --mode incus` in an existing clone (see "Contribute").
-2. From the host `dev` checkout run `incant up`. It creates the VM, starts it and provisions it. For more memory, set it first: `TURBOPANEL_INCUS_MEMORY=10GiB incant up`. To fit 6 GiB, the guest setup lowers the Metro heap to 3 GiB (it takes effect after `sudo systemctl restart turbopanel-ui` or a reboot) and keeps `/tmp` on disk (a reboot after the first run applies it). It also disables the website and Drizzle Studio units at boot, but only if they exist: on a fresh VM `incant up` runs the guest setup before the console's first bootstrap, so the units are not there yet, and the first converge (whose picker defaults them on) enables and starts them. To keep the 6 GiB budget, untick Website and Drizzle Studio in the first picker (or later under Developer → Optional services), or re-run `incant provision` after the first converge. Start them by hand with `sudo systemctl start turbopanel-website` and `sudo systemctl start turbopanel-dbstudio`. Any converge enables the selected ones again.
+2. From the host `dev` checkout run `incant up`. It creates the VM, starts it and provisions it. For more memory, set it first: `TURBOPANEL_INCUS_MEMORY=10GiB incant up`. To fit 6 GiB, the guest setup lowers the Metro heap to 3 GiB (it takes effect after `sudo systemctl restart turbopanel-ui` or a reboot) and keeps `/tmp` on disk (a reboot after the first run applies it). It also disables the UI (Metro), website and Drizzle Studio units at boot, but only if they exist: on a fresh VM `incant up` runs the guest setup before the console's first bootstrap, so the units are not there yet, and the first converge (whose picker defaults them on) enables and starts them. To keep the 6 GiB budget, untick UI (Expo), Website and Drizzle Studio in the first picker (or later under Developer → Optional services), or re-run `incant provision` after the first converge. Start them by hand when you need them: `sudo systemctl start turbopanel-ui` (only for UI work), `sudo systemctl start turbopanel-website` and `sudo systemctl start turbopanel-dbstudio`. Any converge enables the selected ones again, so untick them in the picker each time. The UI unit is the Expo dev server behind Caddy: when the daemon runs the UI in dev mode (the default; `TURBOPANEL_UI_MODE=static` serves the built UI instead), the web panel on 8443 shows only the loading page until you start it. The platform converge itself does not need it.
 3. Set a password for your guest user (see "Password Step").
 4. Open a shell in the VM and start the console: `incus exec turbopanel-dev -- su -l <you>`, then `~/turbopanel/dev/console`.
 
@@ -236,11 +236,13 @@ The config is [`incant.yaml.mako`](../incant.yaml.mako), a Mako template that in
 | --- | --- | --- |
 | Name | `turbopanel-dev` | `TURBOPANEL_INCUS_NAME` |
 | Image | `images:debian/13` | |
-| CPUs | 8 | |
+| CPUs | 2 | `TURBOPANEL_INCUS_CPUS` |
 | Memory | 6 GiB | `TURBOPANEL_INCUS_MEMORY` |
 | Disk | 64 GiB | |
 | Address | `.10` in the bridge subnet | `TURBOPANEL_INCUS_IPV4` |
 | Bridge | | `TURBOPANEL_INCUS_BRIDGE` |
+| LAN bridge (bridged mode) | unset (NAT) | `TURBOPANEL_INCUS_LAN_BRIDGE` |
+| Hostname (bridged mode) | the instance name | `TURBOPANEL_INCUS_HOSTNAME` |
 
 The VM is a KVM virtual machine, not a container: Docker, systemd, swap and firewall rules need a full VM (see "Why Not LXC"). Metro is capped at a 3 GiB heap in the guest, so raise the memory if the 6 GiB default is tight.
 
@@ -257,6 +259,34 @@ The same ten ports as the Vagrantfile: 80, 443, 8443, 8081, 8088, 19820, 4983, 8
 All ten listen on every host address. That includes 4983, 8025, 5540 and 4213, which Vagrant keeps on loopback. Those are unauthenticated dev tools (the database browser, the mail catcher and Redis Insight) and they are reachable from your LAN. Use this only on a network you trust.
 
 Use the host's LAN name or address, for example `https://<host>:8443`, not `localhost`: the host's loopback does not reach the VM.
+
+### Bridged LAN Mode (Opt In)
+
+Set `TURBOPANEL_INCUS_LAN_BRIDGE=<host bridge>` (for example `br0`) before `incant up` to put the VM straight on your LAN instead of the Incus NAT bridge:
+
+```bash
+TURBOPANEL_INCUS_LAN_BRIDGE=br0 TURBOPANEL_INCUS_HOSTNAME=turbopanel-dev.example.lan incant up
+```
+
+- The network card is `nictype: bridged` on that host bridge (the host needs a Linux bridge with your LAN card in it). There is no fixed address: the VM takes one by DHCP from your LAN, and `TURBOPANEL_INCUS_IPV4` and `TURBOPANEL_INCUS_BRIDGE` are ignored.
+- No host ports are forwarded. Clients use the VM's own address or name, for example `https://turbopanel-dev.example.lan:8443`.
+- The VM sends its hostname in its DHCP request (systemd-networkd does this by default), so a LAN router that registers DHCP names resolves `<hostname>.<your LAN domain>`. `TURBOPANEL_INCUS_HOSTNAME` is the short hostname or a full name; with a dotted name the first label becomes the hostname and the whole name goes on the dev certificate. Without it the instance name is the hostname and `<name>.lan` goes on the certificate (add your real domain with `TURBOPANEL_DEV_LAN_ALIASES`). The host's own address is not added to the certificate in this mode.
+- The guest redirect (`turbopanel-incus-forward.service`) works the same: it matches traffic arriving on the guest's default-route card, which is `eth0` here.
+- Security: 4983 (Drizzle Studio), 8025 (Mailpit), 5540 (Redis Insight) and 4213 (DuckDB UI) are unauthenticated dev tools. In this mode they are reachable by every machine on the LAN at the VM's own address. Use it only on a network you trust.
+
+Switching an existing VM. Run on the host; replace `turbopanel-dev` and `br0`. These commands were checked on a live VM with an instance-level `eth0`:
+
+```bash
+incus stop turbopanel-dev
+for p in 80 443 8443 8081 8088 19820 4983 8025 5540 4213; do incus config device remove turbopanel-dev port-$p; done
+incus config device remove turbopanel-dev eth0    # only if eth0 is an instance-level device
+incus config device add turbopanel-dev eth0 nic nictype=bridged parent=br0 name=eth0
+incus start turbopanel-dev
+```
+
+Why remove and add: a profile's `eth0` usually names a managed network (`network: incusbr0`), and `network` cannot be combined with `nictype`. Removing an instance-level `eth0` (one that carries `network:` and `ipv4.address:`) makes the profile's card show through; the `add` then replaces it with an instance-level bridged card. When `eth0` comes only from the profile, skip the remove line. The guest's own interface name (for example `enp5s0`) does not change.
+
+The new card has a new MAC address, so the guest still holds its old lease and the router has no record of the new card. Inside the VM, take a fresh lease with `sudo networkctl reconfigure <interface>` (the default-route card, see `ip route`). `networkctl renew` keeps the old lease and is not enough. Then rerun the guest setup with the bridged-mode settings: `TURBOPANEL_INCUS_LAN_BRIDGE=br0 TURBOPANEL_INCUS_HOSTNAME=turbopanel-dev incant provision` (this renders the config without the ports, sets the hostname, takes a fresh lease and reruns the guest setup). The guest's forward rule matches the default-route card by name, so it works unchanged in bridged mode. To go back to NAT, remove the bridged `eth0`, add the proxy devices and the `eth0` device with `network` and `ipv4.address` again, or destroy and recreate the VM.
 
 ### Password Step
 

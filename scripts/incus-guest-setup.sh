@@ -4,10 +4,11 @@
 #
 #   sh scripts/incus-guest-setup.sh DEV_USER [PORT...]
 #
-# PORTs are the ports the host forwards into the VM. Incus forwards into a VM
-# only by NAT to the guest's own address, while several dev services listen on
-# 127.0.0.1 only; each PORT arriving on the guest's network card is redirected
-# to 127.0.0.1, which is what Vagrant's forwards did (guest_ip 127.0.0.1).
+# PORTs are the ports the VM serves. Incus forwards into a VM only by NAT to
+# the guest's own address (and in bridged LAN mode clients dial the guest's
+# own LAN address), while several dev services listen on 127.0.0.1 only; each
+# PORT arriving on the guest's default-route network card (eth0 in both modes)
+# is redirected to 127.0.0.1, which is what Vagrant's forwards did.
 #
 # Does the two parts of the Vagrant guest setup that only matter when the repos
 # sit on a virtiofs share, for any dev user rather than "vagrant":
@@ -178,11 +179,14 @@ echo ">>> Optional services do not start at boot"
 # here: only the boot-time start is removed. A converge enables the selected
 # optional units again; deselect them in Developer > Optional services, or
 # run this script after the converge.
+# turbopanel-ui (Metro) is off too: start it only for UI work, with
+# sudo systemctl start turbopanel-ui. While it is down the web panel behind
+# Caddy shows a loading page when the UI runs in dev mode.
 # Left on at boot: turbopanel-tunnel-instance (the daemon enables, disables and
 # supervises it, and the panel reaches the instance through it) and
 # turbopanel-mailpit (instance email, including login mail, goes to its SMTP
 # port).
-for unit in turbopanel-website turbopanel-dbstudio; do
+for unit in turbopanel-ui turbopanel-website turbopanel-dbstudio; do
   if systemctl cat "$unit.service" >/dev/null 2>&1; then
     systemctl disable "$unit.service" 2>&1
   fi
