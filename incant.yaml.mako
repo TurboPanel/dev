@@ -56,7 +56,10 @@
       )
   short_host = vm_host.split(".")[0]
   # A known domain stays in /etc/hosts so hostname -f returns the FQDN.
-  hosts_line = "127.0.1.1 %s %s" % (vm_host, short_host) if "." in vm_host else "127.0.1.1 " + short_host
+  if "." in vm_host:
+      hosts_line = "127.0.1.1 %s %s" % (vm_host, short_host)
+  else:
+      hosts_line = "127.0.1.1 " + short_host
 
   repos = []
   with open(os.path.join(dev_dir, "repos.list")) as f:
