@@ -1,7 +1,7 @@
 #!/bin/sh
 # One setup script for every TurboPanel contributor, maintainer or not.
 #
-#   ./scripts/setup.sh [setup] [--dir PATH] [--mode direct|vagrant|incus] [--as-contributor] [--fork-all] [--yes] [--dry-run]
+#   ./scripts/setup.sh [setup] [--dir PATH] [--mode direct|vagrant|incus|lima] [--as-contributor] [--fork-all] [--yes] [--dry-run]
 #   ./scripts/setup.sh fork REPO... [--dir PATH]   fork repos and point their checkouts at your forks
 #   ./scripts/setup.sh doctor [--dir PATH]   read-only health report
 #   ./scripts/setup.sh status [--dir PATH]   read-only one-row-per-repo summary
@@ -70,7 +70,7 @@ Commands:
 Options:
   --dir PATH             folder that holds the repos (default: the turbopanel
                          folder around this checkout, else ./turbopanel)
-  --mode direct|vagrant|incus
+  --mode direct|vagrant|incus|lima
                          how you run the development environment
   --as-contributor       act as if you had no push access: read-only clones,
                          as an outside contributor gets them (add --fork-all
@@ -213,6 +213,8 @@ VAGRANT_OK=0
 VAGRANT_WHY=
 INCUS_OK=0
 INCUS_WHY=
+LIMA_OK=0
+LIMA_WHY=
 PROVIDER=
 PROVIDER_PLUGIN=
 
@@ -263,9 +265,17 @@ tp_detect_host() {
   if [ "$HOST_KERNEL" = Linux ]; then
     INCUS_OK=1
   elif [ "$HOST_KERNEL" = Darwin ]; then
-    INCUS_WHY="Incus does not run on macOS; use Vagrant"
+    INCUS_WHY="Incus does not run on macOS; use Vagrant or Lima"
   else
     INCUS_WHY="Incus mode needs a Linux host (this host is ${HOST_KERNEL})"
+  fi
+
+  if [ "$HOST_KERNEL" = Darwin ]; then
+    LIMA_OK=1
+  elif [ "$HOST_KERNEL" = Linux ]; then
+    LIMA_WHY="Lima mode is for macOS hosts; on Linux use Incus or Vagrant"
+  else
+    LIMA_WHY="Lima mode needs a macOS host (this host is ${HOST_KERNEL})"
   fi
 
   if [ "$HOST_KERNEL" = Darwin ]; then
@@ -989,6 +999,8 @@ tp_write_mode_file() {
       echo "# In the Vagrant guest the same repos are mounted at ~/turbopanel/<repo>."
     elif [ "$MODE" = incus ]; then
       echo "# In the Incus VM the same repos are mounted at ~/turbopanel/<repo>."
+    elif [ "$MODE" = lima ]; then
+      echo "# In the Lima VM the same repos are mounted at ~/turbopanel/<repo>. Never run setup.sh in the VM."
     fi
     echo "TURBOPANEL_DEV_ENV=$(tp_sq "$MODE")"
     echo "dev_root=$(tp_sq "$DIR")"
@@ -1009,36 +1021,59 @@ tp_write_mode_file() {
 tp_choose_mode() {
   [ -n "$MODE" ] || MODE=$(tp_mode_get TURBOPANEL_DEV_ENV)
   if [ -z "$MODE" ]; then
-    if [ "$DIRECT_OK" -eq 0 ] && [ "$INCUS_OK" -eq 0 ] && [ "$VAGRANT_OK" -eq 1 ]; then
+    if [ "$DIRECT_OK" -eq 0 ] && [ "$INCUS_OK" -eq 0 ] && [ "$VAGRANT_OK" -eq 1 ] &&
+      { [ "$LIMA_OK" -eq 0 ] || [ "$DRY_RUN" -eq 1 ] || [ "$ASSUME_YES" -eq 1 ] || ! tp_has_tty; }; then
       tp_info "Direct mode is not offered: ${DIRECT_WHY}."
       MODE=vagrant
     elif [ "$DRY_RUN" -eq 1 ]; then
       MODE=
     elif [ "$ASSUME_YES" -eq 1 ]; then
-      tp_die "--yes needs --mode direct, vagrant or incus on a first run."
+      if [ "$INCUS_OK" -eq 1 ] && [ "$LIMA_OK" -eq 1 ]; then
+        _cm_list="direct, vagrant, incus or lima"
+      elif [ "$INCUS_OK" -eq 1 ]; then
+        _cm_list="direct, vagrant or incus"
+      elif [ "$LIMA_OK" -eq 1 ]; then
+        _cm_list="direct, vagrant or lima"
+      else
+        _cm_list="direct or vagrant"
+      fi
+      tp_die "--yes needs --mode ${_cm_list} on a first run."
     elif ! tp_has_tty; then
-      tp_die "no terminal to ask on; pass --yes --mode direct|vagrant|incus."
+      tp_die "no terminal to ask on; pass --yes --mode direct|vagrant|incus|lima."
     else
       _cm_hint=
       if [ -n "$VIRT" ] && [ "$VIRT" != none ]; then
         _cm_hint=" (recommended: this machine is already a ${VIRT} VM)"
       fi
       _cm_pick="1 or 2"
-      [ "$INCUS_OK" -eq 0 ] || _cm_pick="1, 2 or 3"
+      [ "$INCUS_OK" -eq 0 ] && [ "$LIMA_OK" -eq 0 ] || _cm_pick="1, 2 or 3"
       {
         printf 'How do you want to run TurboPanel?\n'
         printf '  1) Vagrant: the repos stay in %s on this machine; '"'"'vagrant up'"'"' in %s/dev runs them in a Debian VM\n' "$DIR" "$DIR"
-        printf '  2) Direct: this Debian 13 machine becomes the dev machine; setup gives your user passwordless sudo%s\n' "$_cm_hint"
+        if [ "$DIRECT_OK" -eq 0 ] && [ "$HOST_KERNEL" = Darwin ]; then
+          printf '  2) Direct: not available on macOS\n'
+        else
+          printf '  2) Direct: this Debian 13 machine becomes the dev machine; setup gives your user passwordless sudo%s\n' "$_cm_hint"
+        fi
         if [ "$INCUS_OK" -eq 1 ]; then
           printf '  3) Incus: the repos stay in %s on this machine; '"'"'incant up'"'"' in %s/dev runs them in a Debian VM (Linux hosts)\n' "$DIR" "$DIR"
+        fi
+        if [ "$LIMA_OK" -eq 1 ]; then
+          printf '  3) Lima: the repos stay in %s on this machine; '"'"'scripts/lima-up.sh'"'"' in %s/dev runs them in a Debian VM (macOS hosts)\n' "$DIR" "$DIR"
         fi
         printf 'Choose %s: ' "$_cm_pick"
       } >/dev/tty
       IFS= read -r _cm_answer </dev/tty || _cm_answer=
-      case "$(tp_trim_whitespace "$(tp_strip_terminal_replies "$_cm_answer")")" in
+      _cm_answer=$(tp_trim_whitespace "$(tp_strip_terminal_replies "$_cm_answer")")
+      case "$_cm_answer" in
         1 | vagrant) MODE=vagrant ;;
         2 | direct) MODE=direct ;;
-        3 | incus) MODE=incus ;;
+        incus) MODE=incus ;;
+        lima) MODE=lima ;;
+        3)
+          # Option 3 is Incus on a Linux host and Lima on a macOS host.
+          if [ "$LIMA_OK" -eq 1 ]; then MODE=lima; else MODE=incus; fi
+          ;;
         *) tp_die "no choice made; rerun and pick a number from the list, or pass --mode." ;;
       esac
     fi
@@ -1059,7 +1094,10 @@ tp_choose_mode() {
     incus)
       [ "$INCUS_OK" -eq 1 ] || tp_die "Incus mode is not available: ${INCUS_WHY}."
       ;;
-    *) tp_die "unknown mode ${MODE}; use direct, vagrant or incus." ;;
+    lima)
+      [ "$LIMA_OK" -eq 1 ] || tp_die "Lima mode is not available: ${LIMA_WHY}."
+      ;;
+    *) tp_die "unknown mode ${MODE}; use direct, vagrant, incus or lima." ;;
   esac
 }
 
@@ -1091,6 +1129,13 @@ tp_incus_hints() {
   if ! command -v incant >/dev/null 2>&1; then
     tp_warn "incant is not installed. Install it before 'incant up' (the PyPI package is incus-incant; the PyPI package named incant is a different library):"
     echo "    pipx install incus-incant"
+  fi
+}
+
+tp_lima_hints() {
+  if ! command -v limactl >/dev/null 2>&1; then
+    tp_warn "Lima is not installed. Install it before running scripts/lima-up.sh:"
+    echo "    brew install lima"
   fi
 }
 
@@ -1195,6 +1240,15 @@ tp_next_steps() {
     echo "  incus exec ${TURBOPANEL_INCUS_NAME:-turbopanel-dev} -- su -l $(id -un)"
     echo "  Then, inside the VM: ~/turbopanel/dev/console"
     echo "  The VM gets 6GiB of memory by default; for more: TURBOPANEL_INCUS_MEMORY=10GiB incant up"
+    echo "  Edit and commit on this machine; the VM only runs the stack. Hooks here run the secret scan."
+  elif [ "$MODE" = lima ]; then
+    _ns_lima=${TURBOPANEL_LIMA_NAME:-turbopanel-dev}
+    echo "  cd $(tp_sq "$DIR/dev") && ./scripts/lima-up.sh"
+    echo "  limactl shell ${_ns_lima} -- sudo passwd $(id -un)   (the panel installer checks this password through PAM)"
+    echo "  limactl shell ${_ns_lima}"
+    echo "  Then, inside the VM: ~/turbopanel/dev/console"
+    echo "  The VM gets 2 CPUs, 4GiB of memory and a 64GiB disk by default; for more: TURBOPANEL_LIMA_MEMORY=8GiB ./scripts/lima-up.sh (also TURBOPANEL_LIMA_CPUS, TURBOPANEL_LIMA_DISK; the size applies when the VM is created)"
+    echo "  Do not run setup.sh inside the VM; it would rewrite the mode file with the VM's paths."
     echo "  Edit and commit on this machine; the VM only runs the stack. Hooks here run the secret scan."
   elif [ "$MODE" = direct ]; then
     echo "  Log out and back in if setup just added you to the sudo group, then:"
@@ -1330,6 +1384,8 @@ tp_cmd_setup() {
     tp_vagrant_hints
   elif [ "$MODE" = incus ]; then
     tp_incus_hints
+  elif [ "$MODE" = lima ]; then
+    tp_lima_hints
   fi
 
   if [ "$DRY_RUN" -eq 1 ]; then
@@ -1521,6 +1577,12 @@ tp_cmd_doctor() {
     echo "  incant:       not installed (pipx install incus-incant)"
   fi
   echo "  incus mode:   $([ "$INCUS_OK" -eq 1 ] && echo available || echo "not available, ${INCUS_WHY}")"
+  if command -v limactl >/dev/null 2>&1; then
+    echo "  limactl:      $(limactl --version 2>/dev/null | head -n 1)"
+  else
+    echo "  limactl:      not installed (brew install lima)"
+  fi
+  echo "  lima mode:    $([ "$LIMA_OK" -eq 1 ] && echo available || echo "not available, ${LIMA_WHY}")"
   echo "  direct mode:  $([ "$DIRECT_OK" -eq 1 ] && echo available || echo "not available, ${DIRECT_WHY}")"
 
   echo "Tools"
@@ -1567,6 +1629,9 @@ tp_cmd_doctor() {
     incus)
       [ "$INCUS_OK" -eq 1 ] || tp_problem "mode is incus but ${INCUS_WHY}"
       ;;
+    lima)
+      [ "$LIMA_OK" -eq 1 ] || tp_problem "mode is lima but ${LIMA_WHY}"
+      ;;
     *) ;;
   esac
   if [ "$OS_ID" = debian ] && [ "$OS_VERSION_ID" = 12 ]; then
@@ -1610,7 +1675,7 @@ tp_cmd_doctor() {
     fi
   done
 
-  echo "Signing (where you commit: $({ [ "$_dr_mode" = vagrant ] || [ "$_dr_mode" = incus ]; } && echo 'this host' || echo 'this machine'))"
+  echo "Signing (where you commit: $({ [ "$_dr_mode" = vagrant ] || [ "$_dr_mode" = incus ] || [ "$_dr_mode" = lima ]; } && echo 'this host' || echo 'this machine'))"
   _dr_git="$DIR/dev"
   tp_is_checkout "$_dr_git" || _dr_git=.
   echo "  commit.gpgsign: $(git -C "$_dr_git" config --get commit.gpgsign 2>/dev/null || echo unset)"
@@ -1673,8 +1738,8 @@ while [ "$#" -gt 0 ]; do
 done
 
 case "$MODE" in
-  '' | direct | vagrant | incus) ;;
-  *) tp_die "unknown mode ${MODE}; use direct, vagrant or incus." ;;
+  '' | direct | vagrant | incus | lima) ;;
+  *) tp_die "unknown mode ${MODE}; use direct, vagrant, incus or lima." ;;
 esac
 
 tp_resolve_dir

@@ -35,7 +35,7 @@ model"). Deno is still installed for the **instance** stack (and mailer) via the
 **Target host:** Debian 13 (Trixie) inside the Vagrant guest. **Linux
 contributors** use **Vagrant + libvirt** with the `debian/trixie64` box; **macOS
 contributors** use **Vagrant + UTM** with guest box **`utm/bookworm`** (Debian
-12) until a Trixie UTM box is available.
+12) until a Trixie UTM box is available, or **Lima** (`--mode lima`), which runs Debian 13.
 
 Canonical docs: https://turbopanel.io/docs/getting-started/development
 
@@ -46,9 +46,10 @@ Canonical docs: https://turbopanel.io/docs/getting-started/development
 | Script | Purpose |
 |--------|---------|
 | `scripts/start.sh` | **New machine, no clone yet:** `curl -fsSL https://raw.githubusercontent.com/TurboPanel/dev/trunk/scripts/start.sh \| sh` (or download, read, `sh start.sh`). Clones `dev` into `~/turbopanel/dev` (or reuses it) and runs `setup.sh` with the other options. Details: [`scripts/AGENTS.md`](./scripts/AGENTS.md). |
-| `./scripts/setup.sh` | **Start here.** Clone or update all six repos into one `turbopanel` folder, pick each repo's layout from your GitHub push access (maintainer: `origin` = TurboPanel repo; contributor: a read-only clone of the TurboPanel repo until `setup.sh fork <repo>` makes your fork `origin` and TurboPanel `upstream`; read-only when not logged in), ask Vagrant, direct or Incus (Incus on Linux hosts only), set `core.hooksPath`, write `<folder>/.turbopanel-dev-mode`. Flags: `--dir`, `--mode direct\|vagrant\|incus`, `--as-contributor`, `--fork-all`, `--yes`, `--dry-run`. `setup.sh fork REPO...` forks on first push. Details: [`scripts/AGENTS.md`](./scripts/AGENTS.md). |
+| `./scripts/setup.sh` | **Start here.** Clone or update all six repos into one `turbopanel` folder, pick each repo's layout from your GitHub push access (maintainer: `origin` = TurboPanel repo; contributor: a read-only clone of the TurboPanel repo until `setup.sh fork <repo>` makes your fork `origin` and TurboPanel `upstream`; read-only when not logged in), ask Vagrant, direct, Incus or Lima (Incus on Linux hosts only, Lima on macOS hosts only), set `core.hooksPath`, write `<folder>/.turbopanel-dev-mode`. Flags: `--dir`, `--mode direct\|vagrant\|incus\|lima`, `--as-contributor`, `--fork-all`, `--yes`, `--dry-run`. `setup.sh fork REPO...` forks on first push. Details: [`scripts/AGENTS.md`](./scripts/AGENTS.md). |
 | `./scripts/setup.sh doctor` | Read-only report: host, Debian `VERSION_ID`, tools, GitHub login, remotes and role per repo, hooks path, signing, mode file agreement. |
 | `./scripts/setup.sh status` | Read-only table: role, branch, ahead/behind trunk, uncommitted files and open pull request per repo, plus a warning for same-named branches across repos. |
+| `./scripts/lima-up.sh` | **Lima mode (macOS):** create or start the Debian 13 Lima VM from `lima.yaml` (`TURBOPANEL_LIMA_NAME`, `_CPUS`, `_MEMORY`, `_DISK`); then `limactl shell <name>` and `~/turbopanel/dev/console`. Details: [`scripts/AGENTS.md`](./scripts/AGENTS.md). |
 | `vagrant up` / `vagrant ssh` | **Canonical:** boot guest from `dev/`, then SSH in and run `turbopanel/dev/console`. |
 | `./console` | Ensure pinned Node (sudo on first run), `pnpm install`, launch `src/tui.tsx` via `vite-node` (run **inside the guest**; that is `~/turbopanel/dev/console`). |
 | `./console --watch` | Same, but use `scripts/hot-reload.tsx` for live reload on `src/` changes. |

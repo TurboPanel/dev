@@ -877,7 +877,176 @@ describe('setup.sh incus mode', () => {
   test('an unknown mode names all three', () => {
     const { status, out } = run(['--dir', work, '--yes', '--mode', 'lxd'])
     expect(status).toBe(1)
-    expect(out).toContain('use direct, vagrant or incus')
+    expect(out).toContain('use direct, vagrant, incus or lima')
+  })
+})
+
+describe('setup.sh lima mode', () => {
+  const lima = (extra: Env = {}, more: string[] = []) =>
+    run(['--dir', work, '--yes', '--mode', 'lima', ...more], { FAKE_UNAME_S: 'Darwin', ...extra })
+
+  test('writes the mode file and prints the next steps', () => {
+    stub('limactl', 'echo limactl version 2.3.0')
+    const { status, out } = lima()
+    expect(status, out).toBe(0)
+    expect(modeFile()).toContain("TURBOPANEL_DEV_ENV='lima'")
+    expect(out).toContain(`cd '${work}/dev' && ./scripts/lima-up.sh`)
+    expect(out).toContain('limactl shell turbopanel-dev -- sudo passwd ')
+    expect(out).toContain('limactl shell turbopanel-dev\n')
+    expect(out).toContain('~/turbopanel/dev/console')
+    expect(out).toContain('TURBOPANEL_LIMA_MEMORY=8GiB ./scripts/lima-up.sh')
+    expect(out).toContain('Do not run setup.sh inside the VM')
+    expect(out).toContain('Edit and commit on this machine; the VM only runs the stack.')
+    expect(out).not.toContain('Lima is not installed')
+  })
+
+  test('next steps use the instance name from TURBOPANEL_LIMA_NAME', () => {
+    stub('limactl', 'echo limactl version 2.3.0')
+    const { status, out } = lima({ TURBOPANEL_LIMA_NAME: 'tp-two' })
+    expect(status, out).toBe(0)
+    expect(out).toContain('limactl shell tp-two -- sudo passwd ')
+    expect(out).not.toContain('limactl shell turbopanel-dev')
+  })
+
+  test.skipIf(
+    ['/usr/bin', '/usr/local/bin', '/bin'].some((dir) => existsSync(join(dir, 'limactl')))
+  )('prints an install hint when limactl is missing', () => {
+    const { status, out } = lima()
+    expect(status, out).toBe(0)
+    expect(out).toContain('Lima is not installed')
+    expect(out).toContain('brew install lima')
+    expect(modeFile()).toContain("TURBOPANEL_DEV_ENV='lima'")
+  })
+
+  test('is refused on Linux', () => {
+    const { status, out } = lima({ FAKE_UNAME_S: 'Linux' })
+    expect(status).toBe(1)
+    expect(out).toContain('Lima mode is not available: Lima mode is for macOS hosts')
+    expect(existsSync(work)).toBe(false)
+  })
+
+  test('--yes without --mode still picks Vagrant on macOS', () => {
+    const { status, out } = run(['--dir', work, '--yes', '--dry-run'], { FAKE_UNAME_S: 'Darwin' })
+    expect(status, out).toBe(0)
+    expect(out).toContain('Mode:         vagrant')
+  })
+
+  test('a mode file saying lima is kept on a rerun and doctor accepts it', () => {
+    lima()
+    const again = run(['--dir', work, '--yes'], { FAKE_UNAME_S: 'Darwin' })
+    expect(again.status, again.out).toBe(0)
+    expect(modeFile()).toContain("TURBOPANEL_DEV_ENV='lima'")
+    expect(modeFile()).toContain('Never run setup.sh in the VM')
+    const doctor = run(['doctor', '--dir', work], { FAKE_UNAME_S: 'Darwin' })
+    expect(doctor.out).toContain('mode:         lima')
+    expect(doctor.out).toContain('lima mode:    available')
+  })
+
+  test('doctor flags a lima mode file on Linux', () => {
+    lima()
+    const { out } = run(['doctor', '--dir', work])
+    expect(out).toContain('mode is lima but Lima mode is for macOS hosts')
+  })
+})
+
+describe('lima-up.sh and the guest scripts', () => {
+  let folder: string
+  let logFile: string
+
+  const limaUp = (extra: Env = {}, unameS = 'Darwin') => {
+    stub('uname', `echo ${unameS}`)
+    const r = spawnSync('sh', [join(folder, 'dev/scripts/lima-up.sh')], {
+      encoding: 'utf8',
+      env: baseEnv(extra),
+    })
+    return { status: r.status, out: `${r.stdout}${r.stderr}` }
+  }
+
+  beforeEach(() => {
+    folder = join(root, 'tp-lima', 'turbopanel')
+    mkdirSync(join(folder, 'dev/scripts'), { recursive: true })
+    for (const f of ['scripts/lima-up.sh', 'lima.yaml']) {
+      writeFileSync(join(folder, 'dev', f), readFileSync(join(REPO_ROOT, f)))
+    }
+    writeFileSync(join(folder, 'dev/package.json'), '{}')
+    logFile = join(root, 'limactl.log')
+    stub('limactl', `echo "limactl $*" >> "${logFile}"\n[ "$1" != list ] || echo "$FAKE_LIMA_LIST"`)
+  })
+
+  test('creates the VM with the defaults and the host folder as devRoot', () => {
+    const { status, out } = limaUp()
+    expect(status, out).toBe(0)
+    const log = readFileSync(logFile, 'utf8')
+    expect(log).toContain('--name=turbopanel-dev --cpus=2 --memory=4 --disk=64')
+    expect(log).toContain(`--param devRoot=${folder}`)
+    expect(out).toContain('limactl shell turbopanel-dev -- sudo passwd ')
+  })
+
+  test('honours the name and the sizes from the environment', () => {
+    const { status, out } = limaUp({
+      TURBOPANEL_LIMA_NAME: 'tp-two',
+      TURBOPANEL_LIMA_CPUS: '4',
+      TURBOPANEL_LIMA_MEMORY: '8GiB',
+      TURBOPANEL_LIMA_DISK: '100',
+    })
+    expect(status, out).toBe(0)
+    expect(readFileSync(logFile, 'utf8')).toContain('--name=tp-two --cpus=4 --memory=8 --disk=100')
+    expect(out).toContain('limactl shell tp-two')
+  })
+
+  test('starts an existing VM without creating a second one', () => {
+    const { status, out } = limaUp({ FAKE_LIMA_LIST: 'turbopanel-dev' })
+    expect(status, out).toBe(0)
+    const log = readFileSync(logFile, 'utf8')
+    expect(log).toContain('limactl start turbopanel-dev')
+    expect(log).not.toContain('--param')
+  })
+
+  test('refuses a bad name, a bad size and a Linux host', () => {
+    expect(limaUp({ TURBOPANEL_LIMA_NAME: '-x' }).out).toContain('TURBOPANEL_LIMA_NAME')
+    expect(limaUp({ TURBOPANEL_LIMA_MEMORY: 'lots' }).out).toContain('TURBOPANEL_LIMA_MEMORY')
+    expect(limaUp({ TURBOPANEL_LIMA_CPUS: '0' }).out).toContain('TURBOPANEL_LIMA_CPUS')
+    const linux = limaUp({}, 'Linux')
+    expect(linux.status).toBe(1)
+    expect(linux.out).toContain('macOS hosts')
+  })
+
+  test('lima.yaml mounts only the repo folder and runs the guest setup', () => {
+    const yaml = readFileSync(join(REPO_ROOT, 'lima.yaml'), 'utf8')
+    expect(yaml).toContain('base: template:_images/debian-13')
+    expect(yaml).toContain('location: "{{.Param.devRoot}}"')
+    expect(yaml).toContain('mountPoint: "{{.Home}}/turbopanel"')
+    expect(yaml).toContain('lima-guest-setup.sh')
+    expect(yaml).not.toContain('template:debian-13')
+  })
+
+  test('the guest setup script does the heavy steps once and can be forced', () => {
+    const script = readFileSync(join(REPO_ROOT, 'scripts/lima-guest-setup.sh'), 'utf8')
+    expect(script).toContain('/var/lib/turbopanel-dev')
+    expect(script).toContain('lima-guest-setup.done')
+    expect(script).toContain('--force')
+    expect(script).toContain('TURBOPANEL_LIMA_FORCE')
+    const guard = script.indexOf('[ -f "$MARKER" ]')
+    expect(guard).toBeGreaterThan(0)
+    // the network and root-level steps sit behind the marker; the symlink does not
+    expect(script.indexOf('apt-get')).toBeGreaterThan(guard)
+    expect(script.indexOf('vm-bootstrap.sh" --swap')).toBeGreaterThan(guard)
+    expect(script.indexOf('incus-guest-setup.sh" "$DEV_USER"')).toBeGreaterThan(guard)
+    expect(script.indexOf('ln -s')).toBeGreaterThan(script.indexOf('\nfi\n', guard))
+    expect(script.indexOf('date -u')).toBeGreaterThan(
+      script.indexOf('incus-guest-setup.sh" "$DEV_USER"')
+    )
+    const yaml = readFileSync(join(REPO_ROOT, 'lima.yaml'), 'utf8')
+    expect(yaml).not.toMatch(/runs once/i)
+  })
+
+  test('the guest setup script refuses a missing or root user', () => {
+    const script = join(REPO_ROOT, 'scripts/lima-guest-setup.sh')
+    for (const args of [[], ['root'], ['bad user']]) {
+      const r = spawnSync('sh', [script, ...args], { encoding: 'utf8' })
+      expect(r.status).toBe(2)
+      expect(r.stderr).toContain('lima-guest-setup:')
+    }
   })
 })
 

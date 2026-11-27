@@ -15,7 +15,7 @@ GitHub: [TurboPanel/dev](https://github.com/TurboPanel/dev)
 ## How contributor development works
 
 TurboPanel is **not a monorepo**. You clone (or fork) six sibling repositories
-under one parent directory, then run the stack inside a **Vagrant** guest. The
+under one parent directory, then run the stack inside a **Vagrant** guest (or a **Lima** VM on macOS, or an Incus VM on Linux). The
 guest mounts those checkouts so you edit on the host (VS Code / Cursor / etc.)
 while Node, Deno, Docker, and systemd live in the VM.
 
@@ -29,8 +29,8 @@ curl -fsSL https://raw.githubusercontent.com/TurboPanel/dev/trunk/scripts/start.
 ```
 
 It clones this repo into `~/turbopanel/dev` and runs `scripts/setup.sh`, which
-clones the other repos next to it and asks whether you use Vagrant or this
-Debian 13 machine directly. Reading a script before you run it is wise: you can
+clones the other repos next to it and asks whether you use Vagrant, Lima (macOS),
+Incus (Linux) or this Debian 13 machine directly. Reading a script before you run it is wise: you can
 download it, read it, then run `sh start.sh`. The URL always serves the current
 `trunk`. Details: [`docs/dev-environment.md`](./docs/dev-environment.md)
 (Contribute).
@@ -89,6 +89,11 @@ local tooling at the same time.
 That table is the currently documented pair — not a closed list. macOS and
 Linux will likely take several more providers over time. Pull requests that
 add a working provider (`Vagrantfile` + docs) are welcome.
+
+On macOS you can instead use [Lima](https://lima-vm.io/) (`brew install lima`, then
+`scripts/setup.sh --mode lima` and `scripts/lima-up.sh`): a Debian 13 VM on Apple's
+virtualization framework, with the repos mounted from the host. Ports are forwarded to
+`localhost` only. See [`docs/dev-environment.md`](./docs/dev-environment.md) (Lima VM).
 
 You also need Git + a GitHub SSH key on the **host** (agent-forwarded into the
 guest). You do **not** need Node, Deno, or Docker on the host — the guest
