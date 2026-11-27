@@ -338,7 +338,7 @@ test('applyOptionalDevServices reports missing unit-only services when wanted', 
 test('applyOptionalDevServices throws when systemctl enable fails', async () => {
   mockedRunCaptured.mockResolvedValue(1)
   await expect(
-    applyOptionalDevServices({
+    applyWithTempPrefs({
       dbstudio: true,
       smtp: true,
       ui: true,
@@ -356,9 +356,9 @@ test('applyOptionalDevServices throws when docker start/stop both fail', async (
     }
     return 0
   })
-  await expect(
-    applyOptionalDevServices({ ...defaultOptionalSelection(), smtp: false })
-  ).rejects.toThrow(`docker update --restart=no ${MAILPIT_CONTAINER_NAME} failed`)
+  await expect(applyWithTempPrefs({ ...defaultOptionalSelection(), smtp: false })).rejects.toThrow(
+    `docker update --restart=no ${MAILPIT_CONTAINER_NAME} failed`
+  )
 })
 
 test('applyOptionalDevServices falls back to sudo docker when the first docker call fails', async () => {
@@ -711,7 +711,7 @@ test('applyOptionalDevServices stops at the first failed container step', async 
     return argv.includes(`update --restart=unless-stopped ${REDIS_INSIGHT_CONTAINER_NAME}`) ? 1 : 0
   })
   await expect(
-    applyOptionalDevServices({
+    applyWithTempPrefs({
       dbstudio: false,
       smtp: false,
       ui: false,
@@ -735,7 +735,7 @@ test('applyOptionalDevServices does not touch later services once one fails', as
     return argv.includes('disable --now turbopanel-mailpit') ? 1 : 0
   })
   await expect(
-    applyOptionalDevServices({
+    applyWithTempPrefs({
       dbstudio: true,
       smtp: false,
       ui: true,
