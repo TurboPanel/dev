@@ -323,8 +323,7 @@ Lima is a third option for macOS hosts, next to Vagrant (UTM). Like Incus on Lin
 
 1. Run the starter one-liner, or `./dev/scripts/setup.sh --mode lima` in an existing clone (see "Contribute").
 2. From the host `dev` checkout run `./scripts/lima-up.sh`. The first run creates the VM from [`lima.yaml`](../lima.yaml), starts it and provisions it (a download of Debian 13 and a few minutes of apt). Later runs start the VM if it is stopped.
-3. Set a password for your guest user: `limactl shell turbopanel-dev -- sudo passwd <you>` (the panel installer checks it through PAM).
-4. Open a shell and start the console: `limactl shell turbopanel-dev`, then `~/turbopanel/dev/console`.
+3. Open a shell and start the console: `limactl shell turbopanel-dev`, then `~/turbopanel/dev/console`. The first interactive shell asks you to set a password for your guest user (named after your Mac user), because the panel's first-run sign-in checks it through PAM. Later shells do not ask once a password is set; change it any time with `sudo passwd <you>`. If you cancel, the shell still opens and the prompt returns at the next login. The VM's SSH server does not accept passwords (`PasswordAuthentication no`), so the password only matters for that sign-in and for `sudo` inside the VM.
 
 `limactl stop turbopanel-dev` stops the VM and `limactl delete -f turbopanel-dev` removes it; the repos on the host are untouched. Defaults, all overridable by environment variable before `lima-up.sh`:
 

@@ -9,7 +9,7 @@
 # and later runs skip them, so a start needs no network and keeps the optional
 # units the user picked. --force (or TURBOPANEL_LIMA_FORCE=1) removes that
 # check and runs everything again. The cheap offline steps (host-path symlink,
-# banner) run every time. Every step checks first, so a rerun is safe. Does what the Incus guest setup
+# first-login password prompt, banner) run every time. Every step checks first, so a rerun is safe. Does what the Incus guest setup
 # does (vm-bootstrap.sh, then scripts/incus-guest-setup.sh for the guest-local
 # pnpm store and node_modules, which a virtiofs share cannot host), without the
 # port redirect, since Lima forwards guest ports to the host's 127.0.0.1 itself.
@@ -93,5 +93,8 @@ case "$HOST_ROOT" in
     ;;
   *) ;;
 esac
+# Asks the dev user to set a password on the first interactive login (the panel's
+# first sign-in checks it through PAM); silent once one is set.
+install -m 0644 "${SCRIPTS}/guest/dev-password.sh" /etc/profile.d/turbopanel-dev-password.sh
 sh "${SCRIPTS}/guest/install-motd.sh" || true
 echo ">>> Done"

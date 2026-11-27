@@ -891,8 +891,10 @@ describe('setup.sh lima mode', () => {
     expect(status, out).toBe(0)
     expect(modeFile()).toContain("TURBOPANEL_DEV_ENV='lima'")
     expect(out).toContain(`cd '${work}/dev' && ./scripts/lima-up.sh`)
-    expect(out).toContain('limactl shell turbopanel-dev -- sudo passwd ')
-    expect(out).toContain('limactl shell turbopanel-dev\n')
+    expect(out).not.toContain('sudo passwd')
+    expect(out).toContain(
+      'limactl shell turbopanel-dev   (the first shell asks you to set your VM password'
+    )
     expect(out).toContain('~/turbopanel/dev/console')
     expect(out).toContain('TURBOPANEL_LIMA_MEMORY=8GiB ./scripts/lima-up.sh')
     expect(out).toContain('Do not run setup.sh inside the VM')
@@ -904,7 +906,7 @@ describe('setup.sh lima mode', () => {
     stub('limactl', 'echo limactl version 2.3.0')
     const { status, out } = lima({ TURBOPANEL_LIMA_NAME: 'tp-two' })
     expect(status, out).toBe(0)
-    expect(out).toContain('limactl shell tp-two -- sudo passwd ')
+    expect(out).toContain('limactl shell tp-two   (the first shell asks')
     expect(out).not.toContain('limactl shell turbopanel-dev')
   })
 
@@ -979,7 +981,8 @@ describe('lima-up.sh and the guest scripts', () => {
     const log = readFileSync(logFile, 'utf8')
     expect(log).toContain('--name=turbopanel-dev --cpus=2 --memory=4 --disk=64')
     expect(log).toContain(`--param devRoot=${folder}`)
-    expect(out).toContain('limactl shell turbopanel-dev -- sudo passwd ')
+    expect(out).not.toContain('sudo passwd')
+    expect(out).toContain('the first shell asks you to set your VM password')
   })
 
   test('honours the name and the sizes from the environment', () => {
@@ -1038,6 +1041,84 @@ describe('lima-up.sh and the guest scripts', () => {
     )
     const yaml = readFileSync(join(REPO_ROOT, 'lima.yaml'), 'utf8')
     expect(yaml).not.toMatch(/runs once/i)
+  })
+
+  describe('the first-login password prompt', () => {
+    const snippet = join(REPO_ROOT, 'scripts/guest/dev-password.sh')
+    const hasScript = spawnSync('script', ['--version']).status === 0
+
+    // Stubs: id (non-root, name dev-person), passwd -S (status from FAKE_PASSWD_STATUS)
+    // and sudo (logs its arguments, exit code FAKE_SUDO_STATUS).
+    const prep = () => {
+      const sudoLog = join(root, 'sudo.log')
+      stub('id', 'if [ "$1" = -u ]; then echo 1000; else echo dev-person; fi')
+      stub('passwd', 'echo "$2 $FAKE_PASSWD_STATUS 2026-01-01 0 99999 7 -1"')
+      stub('sudo', `echo "$*" >> "${sudoLog}"\nexit "\${FAKE_SUDO_STATUS:-0}"`)
+      return sudoLog
+    }
+    const seen = (log: string) => (existsSync(log) ? readFileSync(log, 'utf8') : '')
+    const env = (st: string, extra: Env = {}) => baseEnv({ FAKE_PASSWD_STATUS: st, ...extra })
+    // Interactive: a pseudo-terminal from util-linux script, bash or sh with -i.
+    const tty = (shell: string, st: string, extra: Env = {}) => {
+      const r = spawnSync(
+        'script',
+        ['-qec', `${shell} -i -c '. ${snippet}; echo reached-shell'`, '/dev/null'],
+        { encoding: 'utf8', env: env(st, extra) }
+      )
+      return { status: r.status, out: `${r.stdout}${r.stderr}` }
+    }
+
+    test.skipIf(!hasScript).each(['bash', 'sh'])('%s asks when the status is L or NP', (shell) => {
+      for (const st of ['L', 'NP']) {
+        const log = prep()
+        rmSync(log, { force: true })
+        const { out } = tty(shell, st)
+        expect(out).toContain('your account has no password yet')
+        expect(out).toContain('reached-shell')
+        expect(seen(log)).toBe('passwd dev-person\n')
+      }
+    })
+
+    test.skipIf(!hasScript)('stays silent when a password is set', () => {
+      const log = prep()
+      rmSync(log, { force: true })
+      const { out } = tty('bash', 'P')
+      expect(out).toContain('reached-shell')
+      expect(out).not.toContain('no password yet')
+      expect(seen(log)).toBe('')
+    })
+
+    test.skipIf(!hasScript)('a failed or cancelled passwd still reaches the shell', () => {
+      prep()
+      const { out } = tty('bash', 'L', { FAKE_SUDO_STATUS: '1' })
+      expect(out).toContain('Set it later with: sudo passwd dev-person')
+      expect(out).toContain('reached-shell')
+    })
+
+    test('stays silent without a terminal, even for a locked account', () => {
+      const log = prep()
+      rmSync(log, { force: true })
+      for (const shell of ['bash', 'sh']) {
+        const r = spawnSync(shell, ['-c', `. ${snippet}; echo reached-shell`], {
+          encoding: 'utf8',
+          env: env('L'),
+        })
+        expect(r.stdout).toBe('reached-shell\n')
+        expect(r.stderr).toBe('')
+      }
+      expect(seen(log)).toBe('')
+    })
+
+    test('is installed on every start and carries no password literal', () => {
+      const script = readFileSync(join(REPO_ROOT, 'scripts/lima-guest-setup.sh'), 'utf8')
+      const install = script.indexOf('/etc/profile.d/turbopanel-dev-password.sh')
+      expect(install).toBeGreaterThan(script.indexOf('\nfi\n', script.indexOf('[ -f "$MARKER" ]')))
+      expect(script).not.toContain('chpasswd')
+      const text = readFileSync(snippet, 'utf8')
+      expect(text).toContain('id -un')
+      expect(text).not.toMatch(/\bset -e\b|\bexit\b|chpasswd/)
+      expect(text.match(/sudo passwd "\$_tp_pw_user"/)).not.toBeNull()
+    })
   })
 
   test('the guest setup script refuses a missing or root user', () => {
