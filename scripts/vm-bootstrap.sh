@@ -23,7 +23,8 @@ tp_usage() {
 Usage: vm-bootstrap.sh [options] [DEV_USER]
 
   --upgrade           apt upgrade before anything else
-  --swap              create an 8 GiB /swapfile when the root disk has room
+  --swap              create an 8 GiB /swapfile when the root disk has room, and
+                      compressed RAM swap (zram, about half of RAM) ahead of it
   --lan-alias NAME    extra DNS name this VM answers to (repeatable); written to
                       /etc/turbopanel/dev-forward-hosts
   --clone             clone dev, turbopaneld, turbopanel, ui, website and .github
@@ -249,6 +250,59 @@ if [ "$DO_SWAP" -eq 1 ]; then
       grep -q "^${SWAPFILE}[[:space:]]" /etc/fstab ||
         printf '%s none swap sw 0 0\n' "$SWAPFILE" >>/etc/fstab
     fi
+  fi
+
+  echo ">>> Compressed RAM swap (zram) ahead of the swap file"
+  # Half of RAM as zstd-compressed swap at a higher priority than the swap file
+  # (which keeps its default priority and takes the overflow). With zram in
+  # front, swapping is cheap, so the kernel is told to prefer it to dropping
+  # the page cache (swappiness 150) and not to read ahead (page-cluster 0).
+  cat >/etc/sysctl.d/60-turbopanel-zram.conf <<'EOT'
+# Written by scripts/vm-bootstrap.sh --swap.
+vm.swappiness = 150
+vm.page-cluster = 0
+EOT
+  chmod 644 /etc/sysctl.d/60-turbopanel-zram.conf
+  sysctl -q -p /etc/sysctl.d/60-turbopanel-zram.conf || echo "Could not apply the swap sysctl settings now; they apply at the next boot." >&2
+  install -d -m 0755 /usr/local/sbin
+  cat >/usr/local/sbin/tp-zram-swap <<'EOT'
+#!/bin/sh
+# Written by scripts/vm-bootstrap.sh --swap. Sets up /dev/zram0 as swap, sized to
+# half of RAM, priority 100 (above the swap file). Safe to run again.
+set -eu
+grep -q '^/dev/zram0[[:space:]]' /proc/swaps 2>/dev/null && exit 0
+modprobe zram 2>/dev/null || true
+[ -e /sys/block/zram0 ] || { echo "tp-zram-swap: no zram device; skipped." >&2; exit 0; }
+mem_kib=$(awk '/^MemTotal:/ {print $2}' /proc/meminfo)
+size=$((mem_kib * 1024 / 2))
+echo 1 >/sys/block/zram0/reset 2>/dev/null || true
+echo zstd >/sys/block/zram0/comp_algorithm 2>/dev/null || true
+echo "$size" >/sys/block/zram0/disksize
+mkswap /dev/zram0 >/dev/null
+swapon -p 100 /dev/zram0
+EOT
+  chmod 0750 /usr/local/sbin/tp-zram-swap
+  cat >/etc/systemd/system/turbopanel-zram-swap.service <<'EOT'
+[Unit]
+Description=Compressed RAM swap (zram) for the development VM
+DefaultDependencies=no
+After=systemd-modules-load.service
+Before=swap.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/tp-zram-swap
+
+[Install]
+WantedBy=swap.target
+EOT
+  chmod 644 /etc/systemd/system/turbopanel-zram-swap.service
+  if command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
+    systemctl daemon-reload
+    systemctl enable turbopanel-zram-swap.service 2>&1
+    systemctl start turbopanel-zram-swap.service 2>&1 ||
+      echo "Could not start the zram swap now; it starts at the next boot." >&2
   fi
 fi
 

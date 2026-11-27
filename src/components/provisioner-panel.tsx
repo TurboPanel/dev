@@ -27,6 +27,7 @@ import {
 import { DEV_ENV_CONVERGE_STEP, installDevEnvironment } from '../lib/instance-install.ts'
 import { resetDevEnvironment } from '../lib/reset-dev-environment.ts'
 import { resetDevDatabase } from '../lib/reset-dev-database.ts'
+import { rebuildStaticUi } from '../lib/static-ui-export.ts'
 import { saveDevTierCatalogue } from '../lib/save-dev-tier-catalogue.ts'
 
 // Rows of output kept for the failure view (shown only when a step fails).
@@ -47,6 +48,7 @@ type ProvisionerPhase =
   | 'save-tier-catalogue'
   | 'sync-dev-build'
   | 'rebuild-daemon-upgrade'
+  | 'rebuild-static-ui'
 
 type EmitStep = (label: string, status: AnsibleTaskRow['status'], id?: string) => void
 
@@ -56,6 +58,8 @@ function provisionerTitle(phase: ProvisionerPhase): string {
       return 'Syncing source to attached checkouts…'
     case 'rebuild-daemon-upgrade':
       return 'Rebuilding daemon and upgrading connected servers…'
+    case 'rebuild-static-ui':
+      return 'Rebuilding the static UI…'
     case 'dev-env':
       return 'Starting development environment'
     case 'reset-dev-env':
@@ -75,6 +79,8 @@ function provisionerSuccessMessage(phase: ProvisionerPhase): string {
       return 'Source synced to attached checkouts'
     case 'rebuild-daemon-upgrade':
       return 'Connected servers upgraded to the new daemon build'
+    case 'rebuild-static-ui':
+      return 'Static UI rebuilt'
     case 'dev-env':
       return 'Development environment running'
     case 'reset-dev-env':
@@ -501,6 +507,27 @@ function useProvisionerPhaseEffects(opts: {
       cancelled = true
     }
   }, [appendSyncOutput, emitStep, phase, setDone, setError, setErrorLogPath])
+
+  useEffect(() => {
+    if (phase !== 'rebuild-static-ui') return
+
+    let cancelled = false
+
+    void runSingleStepPhase({
+      title: 'Rebuild static UI',
+      stepLabel: 'Rebuild Static UI',
+      run: () => rebuildStaticUi(appendSyncOutput),
+      isCancelled: () => cancelled,
+      emitStep,
+      setDone,
+      setError,
+      setErrorLogPath,
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [appendSyncOutput, emitStep, phase, setDone, setError, setErrorLogPath])
 }
 
 export function ProvisionerPanel({
@@ -533,7 +560,10 @@ export function ProvisionerPanel({
     setErrorLogPath,
   } = useAnsibleEvents()
 
-  const isSyncPhase = phase === 'sync-dev-build' || phase === 'rebuild-daemon-upgrade'
+  const isSyncPhase =
+    phase === 'sync-dev-build' ||
+    phase === 'rebuild-daemon-upgrade' ||
+    phase === 'rebuild-static-ui'
   const finished = done || error !== null
   const footerRows = footerRowCount(finished, error, errorLogPath, isSyncPhase)
   const showLiveSyncOutput = isSyncPhase && (!finished || outputLines.length > 0)
