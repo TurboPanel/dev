@@ -24,9 +24,11 @@ tp_die() {
 }
 
 tp_gib() {
-  _g=${1%GiB}
+  _value=$1
+  _label=$2
+  _g=${_value%GiB}
   case "$_g" in
-    '' | *[!0-9]* | 0*) tp_die "$2 must be a whole number of GiB such as 4GiB, not $1." ;;
+    '' | *[!0-9]* | 0*) tp_die "${_label} must be a whole number of GiB such as 4GiB, not ${_value}." ;;
     *) printf '%s' "$_g" ;;
   esac
 }
