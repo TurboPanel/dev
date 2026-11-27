@@ -10,7 +10,7 @@ test('rebuildStaticUi runs ui-export --force through the orchestration path', as
   const call = run.mock.calls[0] as unknown as unknown[]
   expect(call[0]).toEqual(['ui-export', '--force'])
   expect(call[2]).toBeTypeOf('function')
-  expect(lines.length).toBe(2)
+  expect(lines).toHaveLength(2)
 })
 
 test('rebuildStaticUi surfaces a failed export', async () => {
