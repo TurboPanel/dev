@@ -84,13 +84,13 @@ function tempPrefsPath(): string {
   return join(dir, 'optional-services.json')
 }
 
-test('defaults enable website, mailpit, and drizzle studio; expo dev server, redis insight and stripe off', () => {
+test('defaults enable website, mailpit, drizzle studio and redis insight; expo dev server and stripe off', () => {
   expect(DEFAULT_OPTIONAL_DEV_SERVICES).toEqual({
     dbstudio: true,
     smtp: true,
     ui: false,
     website: true,
-    redisinsight: false,
+    redisinsight: true,
     stripe: false,
   })
 })

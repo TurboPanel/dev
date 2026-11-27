@@ -100,9 +100,9 @@ export const OPTIONAL_DEV_SERVICE_DEFS: readonly OptionalDevServiceDef[] = [
 ] as const
 
 /**
- * Defaults: website, Mailpit, and Drizzle Studio on; the Expo dev server off
+ * Defaults: website, Mailpit, Drizzle Studio and Redis Insight on; the Expo dev server off
  * (the web interface is then served as a static development build, which keeps
- * a 4 GiB guest within memory); Redis Insight off; Stripe CLI off (it is
+ * a 4 GiB guest within memory; Redis Insight adds about 165 MiB); Stripe CLI off (it is
  * useless without a test-mode key in /etc/turbopanel/stripe-listen/stripe.env,
  * which nothing generates).
  */
@@ -111,7 +111,7 @@ export const DEFAULT_OPTIONAL_DEV_SERVICES: OptionalDevServiceSelection = {
   smtp: true,
   ui: false,
   website: true,
-  redisinsight: false,
+  redisinsight: true,
   stripe: false,
 }
 
