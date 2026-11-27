@@ -79,15 +79,15 @@
     # `-e {"turbopanel_optional_<stem>": …}` object parsed from the
     # TURBOPANEL_DEV_CONVERGE_OPTIONS payload (extra-vars win over these). Core stack
     # (instance, caddy, system-stack, redis) always starts.
-    # Defaults: website + Mailpit + Drizzle Studio on; the Expo dev server
-    # (`ui`, opt-in), Redis Insight and the Stripe CLI forwarder off (they stay
+    # Defaults: website + Mailpit + Drizzle Studio + Redis Insight on; the Expo dev server
+    # (`ui`, opt-in) and the Stripe CLI forwarder off (they stay
     # listed in the TUI, gray until enabled). Stripe listen also needs a test-mode key in
     # /etc/turbopanel/stripe-listen/stripe.env, supplied by hand.
     turbopanel_optional_dbstudio: true
     turbopanel_optional_ui: false
     turbopanel_optional_website: true
     turbopanel_optional_mailpit: true
-    turbopanel_optional_redis_insight: false
+    turbopanel_optional_redis_insight: true
     turbopanel_optional_stripe_listen: false
 
   pre_tasks:
