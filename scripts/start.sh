@@ -38,7 +38,7 @@ Options:
                already in place, setup.sh prints its own dry-run plan too
   -h, --help   show this help
 
-Everything else goes to setup.sh unchanged, for example --mode direct|vagrant|incus,
+Everything else goes to setup.sh unchanged, for example --mode direct|vagrant|incus|lima,
 --as-contributor, --yes, doctor or status. See setup.sh --help once the dev repo is here.
 USAGE
 }
@@ -173,7 +173,8 @@ tp_start_main() {
   echo "you want to run TurboPanel:"
   echo "  Vagrant: the repos stay in ${START_DIR} on this machine; 'vagrant up' in ${_sm_dev} runs them in a Debian VM."
   if [ "$(uname -s 2>/dev/null)" = Darwin ]; then
-    echo "  (Direct mode needs a Debian 13 machine, so on macOS setup uses Vagrant.)"
+    echo "  Lima:    like Vagrant, but the VM runs on Lima ('scripts/lima-up.sh' in ${_sm_dev}); macOS hosts only."
+    echo "  (Direct mode needs a Debian 13 machine, so on macOS pick Vagrant or Lima.)"
   else
     echo "  Direct:  a Debian 13 machine becomes the dev machine itself; setup gives your user passwordless sudo."
     echo "  Incus:   like Vagrant, but the VM runs on Incus ('incant up' in ${_sm_dev}); Linux hosts only."

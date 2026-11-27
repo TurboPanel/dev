@@ -54,7 +54,7 @@ SAN is refused when the install command is minted.
 
 ## Filesystem Layout
 
-The repos sit in `$TURBOPANEL_DEV_ROOT/<repo>`, always a folder named `turbopanel`, on a direct machine and in the Vagrant and Incus guests alike (see Repos Outside the Home Folder):
+The repos sit in `$TURBOPANEL_DEV_ROOT/<repo>`, always a folder named `turbopanel`, on a direct machine and in the Vagrant, Incus and Lima guests alike (see Repos Outside the Home Folder):
 
 ```
 ~/turbopanel/             # $TURBOPANEL_DEV_ROOT (any folder named turbopanel; the guest mounts the host repos here)
@@ -145,8 +145,8 @@ less dev/scripts/setup.sh        # read it before you run it
 - **What you can do.** At the end of `setup` and `status` the script prints one plain sentence about it: you push to TurboPanel directly (maintainer), your repos are read-only clones and `setup.sh fork <repo>` (with the full path) forks one when you are ready to push (contributor), you work from your own fork (after `fork`), or the repos are read-only because you are not signed in; repos that differ, such as `.github`, are listed after it.
 - **Push access decides the layout.** With push access to a repo, `origin` is the TurboPanel repo and you push feature branches there. Without it, you get a read-only clone of the TurboPanel repo (`origin` = TurboPanel, no fork yet): forks are made on first push, not up front. When you are ready to push in a repo, run `~/turbopanel/dev/scripts/setup.sh fork <repo>` (several names at once are fine): it forks the repo to your account (or finds your fork, also a renamed one), makes your fork `origin` and the TurboPanel repo `upstream`, sets `trunk` to track `upstream/trunk`, and runs `gh repo set-default TurboPanel/<repo>` so `gh pr create` opens pull requests into TurboPanel without asking. Your branches and commits stay as they are; only the remotes change, and running it again does nothing. Add `--dry-run` to see what it would do first. It needs `gh` and a GitHub login. `status` shows each repo as `maintainer`, `read-only` or `forked`, and `doctor` prints the `fork` command for each read-only clone. `--fork-all` keeps the older behaviour of forking every repo you cannot push to during setup. `--as-contributor` (old name `--fork`) makes a maintainer get the contributor's read-only clones (add `--fork-all` to fork at setup). Not logged in, you get read-only clones; run `gh auth login` and rerun the script. The `.github` repo is never forked for you, because a fork of it becomes your account's own community health repo; `setup.sh fork .github` forks it only when you name it.
 - **Clone method.** HTTPS through `gh` (`gh auth setup-git`), or SSH when `gh config get git_protocol` is `ssh` or a `url.<ssh>.insteadOf https://github.com/` rule is set.
-- **Vagrant, Incus or direct.** The script asks which to use. Direct mode is offered only on Debian 13 outside a container (see "Direct VM" below); Incus mode is offered on Linux only (see "Incus VM (Linux)" below); macOS gets Vagrant only. In Vagrant and Incus mode you edit, commit and push on the host; the guest only runs the stack, and the host pre-commit hooks run the secret scan. Non-interactive: `--yes --mode vagrant`, `--yes --mode incus` or `--yes --mode direct`. `--dry-run` prints the plan and stops.
-- **Mode file.** The answer and each repo's role are written to `turbopanel/.turbopanel-dev-mode` (shell-sourceable `key='value'` lines, `TURBOPANEL_DEV_ENV=direct|vagrant|incus`). `ci-verify.sh` reads it.
+- **Vagrant, Incus, Lima or direct.** The script asks which to use. Direct mode is offered only on Debian 13 outside a container (see "Direct VM" below); Incus mode is offered on Linux only (see "Incus VM (Linux)" below); Lima mode is offered on macOS only (see "Lima VM (macOS)" below), which otherwise gets Vagrant. In Vagrant, Incus and Lima mode you edit, commit and push on the host; the guest only runs the stack, and the host pre-commit hooks run the secret scan. Non-interactive: `--yes --mode vagrant`, `--yes --mode incus`, `--yes --mode lima` or `--yes --mode direct`; on macOS `--yes` alone still picks Vagrant. `--dry-run` prints the plan and stops.
+- **Mode file.** The answer and each repo's role are written to `turbopanel/.turbopanel-dev-mode` (shell-sourceable `key='value'` lines, `TURBOPANEL_DEV_ENV=direct|vagrant|incus|lima`). `ci-verify.sh` and `game-day.sh` read it.
 - **Direct mode folder.** The script passes `TURBOPANEL_DEV_ROOT=<folder>` to `vm-bootstrap.sh` (which clones there with `--clone` and exports it for your login shell) and writes `dev_root` into the mode file, which `./console` reads when `TURBOPANEL_DEV_ROOT` is unset. Then run `<folder>/dev/console`. See Repos Outside the Home Folder below.
 - **Safe to rerun.** A rerun fetches every repo, fast-forwards `trunk` only when it is checked out and clean, and never resets, stashes or switches your work.
 - **GitHub login.** Setup offers to log you in with `gh auth login --hostname github.com --git-protocol https --web --scopes workflow` (run with gh's prompts turned off): gh prints a one-time code, you enter it at https://github.com/login/device in any browser, and gh finishes on its own. It asks no menu questions, so it works on a headless VM. The `workflow` scope lets you push changes to `.github/workflows/` over https. If the login fails, you skip it or press Ctrl-C during it (for example after `could not prompt: unexpected escape sequence from terminal`, which some web consoles and terminals cause), setup still finishes with read-only clones and prints the command. Run that command yourself in a plain SSH terminal, where it may ask a question or two, then rerun the script. Never paste a token into the script; gh handles the sign-in.
@@ -162,7 +162,7 @@ less dev/scripts/setup.sh        # read it before you run it
 
 ## Direct VM (Proxmox or Bare Metal)
 
-Vagrant and Incus (see "Incus VM (Linux)") stay fully supported. This path is for a plain Debian 13 machine you already run, such as a Proxmox VM or a spare computer, where a VM from the host is not wanted. The Developer Console, the daemon install and the Ansible dev overlay all work under any user name you pick: they read it from the logged-in user (`tp_resolve_dev_identity()`) and keep the repos under `$HOME` (`TURBOPANEL_DEV_ROOT`). Nothing needs a `vagrant` account.
+Vagrant, Incus (see "Incus VM (Linux)") and Lima (see "Lima VM (macOS)") stay fully supported. This path is for a plain Debian 13 machine you already run, such as a Proxmox VM or a spare computer, where a VM from the host is not wanted. The Developer Console, the daemon install and the Ansible dev overlay all work under any user name you pick: they read it from the logged-in user (`tp_resolve_dev_identity()`) and keep the repos under `$HOME` (`TURBOPANEL_DEV_ROOT`). Nothing needs a `vagrant` account.
 
 ### Prerequisites
 
@@ -206,7 +206,7 @@ Docker needs nesting inside a container, and the setup writes a swap file, firew
 
 ## Incus VM (Linux)
 
-Incus is a third option for Linux hosts, next to Direct and Vagrant. Like Vagrant, the repos stay on the host in the folder named `turbopanel`, you edit and commit on the host, and the VM only runs the stack. It does not run on macOS, which keeps Vagrant.
+Incus is a third option for Linux hosts, next to Direct and Vagrant. Like Vagrant, the repos stay on the host in the folder named `turbopanel`, you edit and commit on the host, and the VM only runs the stack. It does not run on macOS, which has Vagrant and Lima.
 
 ### When to Use It
 
@@ -308,6 +308,61 @@ Provisioning runs `scripts/vm-bootstrap.sh --upgrade --swap --lan-alias <host LA
 - Guest-local `node_modules` bind mounts (systemd `turbopanel-virtfs-node-modules.service`).
 - A 2-second Metro poll interval: `TURBOPANEL_METRO_POLL_MS=2000` as a systemd drop-in for `turbopanel-ui`. The default 400 ms full-tree poll cost about 40% of a core.
 - The port redirects to the guest's `127.0.0.1` (`turbopanel-incus-forward.service`, see "Ports").
+
+## Lima VM (macOS)
+
+Lima is a third option for macOS hosts, next to Vagrant (UTM). Like Incus on Linux, the repos stay on the host in the folder named `turbopanel`, you edit and commit on the host, and the VM only runs the stack. The VM is Debian 13 on Apple's virtualization framework, so it matches the Linux guests (the UTM guest is still Debian 12).
+
+### Prerequisites
+
+- A Mac with Apple silicon or Intel and the `turbopanel` folder set up by `dev/scripts/setup.sh --mode lima`. The mode is offered on macOS only. It writes `TURBOPANEL_DEV_ENV='lima'` in the mode file, prints an install hint when Lima is missing and installs nothing.
+- Lima: `brew install lima`.
+- Free host ports for what the stack serves: 80, 443, 8443, 8081, 19820, 4983, 8025, 5540 and 4213.
+
+### Steps
+
+1. Run the starter one-liner, or `./dev/scripts/setup.sh --mode lima` in an existing clone (see "Contribute").
+2. From the host `dev` checkout run `./scripts/lima-up.sh`. The first run creates the VM from [`lima.yaml`](../lima.yaml), starts it and provisions it (a download of Debian 13 and a few minutes of apt). Later runs start the VM if it is stopped.
+3. Set a password for your guest user: `limactl shell turbopanel-dev -- sudo passwd <you>` (the panel installer checks it through PAM).
+4. Open a shell and start the console: `limactl shell turbopanel-dev`, then `~/turbopanel/dev/console`.
+
+`limactl stop turbopanel-dev` stops the VM and `limactl delete -f turbopanel-dev` removes it; the repos on the host are untouched. Defaults, all overridable by environment variable before `lima-up.sh`:
+
+| Setting | Default | Variable |
+| --- | --- | --- |
+| Name | `turbopanel-dev` | `TURBOPANEL_LIMA_NAME` |
+| CPUs | 2 | `TURBOPANEL_LIMA_CPUS` |
+| Memory | 4 GiB | `TURBOPANEL_LIMA_MEMORY` |
+| Disk | 64 GiB (sparse) | `TURBOPANEL_LIMA_DISK` |
+
+Sizes apply when the VM is created; to change them later run `limactl stop`, `limactl edit` and `limactl start`. Set `TURBOPANEL_LIMA_NAME` in your shell profile when you use another name: `ci-verify.sh`, `game-day.sh` and the printed next steps read it. Metro is capped at a 3 GiB heap in the guest and is off at boot, so raise the memory (for example `TURBOPANEL_LIMA_MEMORY=8GiB`) for UI work.
+
+The guest user has the same name and UID as your host user and passwordless sudo, but its home folder is `/home/<you>.guest`, not the host's `/Users/<you>`.
+
+### Mode File and the Guest
+
+The mode file sits in the shared folder, so the VM sees it too. Never run `setup.sh` inside the VM: it would rewrite the file with `direct` and the guest path. Provisioning calls `scripts/vm-bootstrap.sh` and `scripts/lima-guest-setup.sh` directly (the Incus way), and the console in the VM finds the folder that holds the mode file when `dev_root` names the host path (it warns and the folder wins).
+
+### Editing Model
+
+Same as Incus. Edit and commit on the host. The host folder is one writable virtiofs mount at `~/turbopanel` in the guest. Only that folder is shared: Lima's default read-only mount of your whole home folder is not used, so `lima.yaml` builds on the image-only base template. SSH agent forwarding is on, so the guest can use your GitHub key. The host has no Node or Deno tree, so host commit hooks run only the secret scan; format your changed files inside the VM before you commit.
+
+### Ports
+
+Lima forwards every TCP port a guest service listens on, including loopback-only ones, to `127.0.0.1` on the Mac. Open `https://localhost:8443` for the panel. Nothing is exposed on your LAN, and there is no port list to keep.
+
+### Running the Test Suites
+
+Tests run inside the VM, never on the host:
+
+```bash
+./scripts/ci-verify.sh   # re-execs through limactl shell when the mode file says lima
+limactl shell turbopanel-dev -- sh -c 'export PATH="/opt/turbopanel/vendor/node/current/bin:/opt/turbopanel/vendor/deno/current:$PATH"; cd ~/turbopanel/dev && pnpm test'
+```
+
+### What `lima-guest-setup.sh` Does
+
+`lima.yaml` runs it once, as root, on the first boot. It installs `libatomic1` and `jq`, runs `scripts/vm-bootstrap.sh --swap` (the Direct-mode script), then `scripts/incus-guest-setup.sh` without ports (the guest-local pnpm store, the `node_modules` bind mounts, the Metro poll interval and heap, optional units off at boot), links the host's `dev_root` path to `~/turbopanel` inside the VM so git worktrees work, and installs the login banner. Every step checks first, so rerun it after a failure: `limactl shell turbopanel-dev -- sudo sh ~/turbopanel/dev/scripts/lima-guest-setup.sh <you>`.
 
 ## Vagrantfile Responsibilities
 

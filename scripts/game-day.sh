@@ -102,6 +102,20 @@ if ! tp_in_guest; then
     echo "game-day: re-exec inside the Incus VM" >&2
     exec incus exec "$INCUS_NAME" -- su -l "$(id -un)" -c "\$HOME/turbopanel/dev/scripts/game-day.sh$quoted"
   fi
+  if [ "$DEV_ENV" = lima ]; then
+    LIMA_NAME=${TURBOPANEL_LIMA_NAME:-turbopanel-dev}
+    if ! command -v limactl >/dev/null 2>&1; then
+      echo "game-day: run inside the Lima VM (or install lima on the host)." >&2
+      echo "  From the host: limactl shell ${LIMA_NAME} -- sh -c '\$HOME/turbopanel/dev/scripts/game-day.sh'" >&2
+      exit 1
+    fi
+    quoted=
+    for arg in "$@"; do
+      quoted="$quoted $(tp_quote "$arg")"
+    done
+    echo "game-day: re-exec inside the Lima VM" >&2
+    exec limactl shell "$LIMA_NAME" -- sh -c "\$HOME/turbopanel/dev/scripts/game-day.sh$quoted"
+  fi
   if ! command -v vagrant >/dev/null 2>&1; then
     echo "game-day: run inside the Vagrant guest (or install vagrant on the host)." >&2
     echo "  From the host dev checkout: vagrant ssh -c '\$HOME/turbopanel/dev/scripts/game-day.sh'" >&2

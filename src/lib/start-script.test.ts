@@ -258,13 +258,14 @@ describe('start.sh hardening', () => {
     expect(gitLog()).not.toContain('clone')
   })
 
-  test('on macOS the plan offers Vagrant only', () => {
+  test('on macOS the plan offers Vagrant and Lima', () => {
     stub('uname', 'echo Darwin')
     const { status, out } = run(['--dry-run'])
     expect(status, out).toBe(0)
     expect(out).toContain('Vagrant: the repos stay in')
     expect(out).not.toContain('Direct:')
-    expect(out).toContain('on macOS setup uses Vagrant')
+    expect(out).toContain('Lima:    like Vagrant')
+    expect(out).toContain('on macOS pick Vagrant or Lima')
   })
 })
 

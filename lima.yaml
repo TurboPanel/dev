@@ -1,0 +1,41 @@
+# TurboPanel development VM on Lima, for macOS hosts (the Lima option next to
+# Vagrant). scripts/lima-up.sh creates and starts it from this file, passing
+# the host folder that holds the repos as the devRoot parameter and CPU, memory
+# and disk as flags; run it from the dev checkout rather than limactl by hand.
+#
+# Debian 13 on Apple's virtualization framework. The repos stay on the host and
+# are mounted writable at ~/turbopanel in the VM; the VM only runs the stack.
+# Lima forwards every TCP port a guest service listens on (including loopback
+# only ones) to 127.0.0.1 on the host, so https://localhost:8443 reaches the panel.
+
+# Images only: template:debian-13 would also pull _default/mounts, a read-only
+# mount of the whole home folder that overlaps the repos.
+base: template:_images/debian-13
+
+vmType: vz
+mountType: virtiofs
+mounts:
+  - location: "{{.Param.devRoot}}"
+    mountPoint: "{{.Home}}/turbopanel"
+    writable: true
+
+ssh:
+  forwardAgent: true
+
+# The stack installs its own Docker; skip Lima's bundled containerd.
+containerd:
+  system: false
+  user: false
+
+param:
+  devRoot: ""
+
+# Runs once, on the first boot, as root. The guest user is the host user's
+# name. Rerun it by hand after a failure or a change to the guest scripts:
+#   limactl shell NAME -- sudo sh ~/turbopanel/dev/scripts/lima-guest-setup.sh "$USER"
+provision:
+  - mode: system
+    script: |
+      #!/bin/sh
+      set -eu
+      sh "{{.Home}}/turbopanel/dev/scripts/lima-guest-setup.sh" "{{.User}}"

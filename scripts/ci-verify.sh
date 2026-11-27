@@ -6,9 +6,9 @@
 # for Sonar-way Coverage on New Code ≥ 80%. The Sonar scan itself stays in
 # GitHub Actions (`SONAR_TOKEN` + `sonar.qualitygate.wait=true`).
 #
-# Must run inside the Vagrant guest or Incus VM (host trees have no usable
+# Must run inside the Vagrant guest, Incus VM or Lima VM (host trees have no usable
 # node_modules). From the host `dev` checkout this script re-execs via
-# `vagrant ssh` (or `incus exec` in Incus mode). From the guest:
+# `vagrant ssh` (`incus exec` in Incus mode, `limactl shell` in Lima mode). From the guest:
 #
 #   ~/turbopanel/dev/scripts/ci-verify.sh
 #   ~/turbopanel/dev/scripts/ci-verify.sh ui website
@@ -48,6 +48,7 @@ EOF
 
 # The mode file setup.sh writes next to the repos says how this checkout runs.
 INCUS_NAME=${TURBOPANEL_INCUS_NAME:-turbopanel-dev}
+LIMA_NAME=${TURBOPANEL_LIMA_NAME:-turbopanel-dev}
 DEV_ENV=$(sed -n "s/^TURBOPANEL_DEV_ENV='\(.*\)'\$/\1/p" "$REPO_ROOT/../.turbopanel-dev-mode" 2>/dev/null | tail -n 1)
 
 if ! tp_in_guest; then
@@ -68,6 +69,19 @@ if ! tp_in_guest; then
     done
     echo "ci-verify: re-exec inside the Incus VM" >&2
     exec incus exec "$INCUS_NAME" -- su -l "$(id -un)" -c "export PATH=\"$GUEST_PATH_PREFIX:\$PATH\"; \$HOME/turbopanel/dev/scripts/ci-verify.sh$quoted"
+  fi
+  if [ "$DEV_ENV" = lima ]; then
+    if ! command -v limactl >/dev/null 2>&1; then
+      echo "ci-verify: run inside the Lima VM (or install lima on the host)." >&2
+      echo "  From the host: limactl shell ${LIMA_NAME} -- sh -c '\$HOME/turbopanel/dev/scripts/ci-verify.sh'" >&2
+      exit 1
+    fi
+    quoted=
+    for arg in "$@"; do
+      quoted="$quoted $(tp_quote "$arg")"
+    done
+    echo "ci-verify: re-exec inside the Lima VM" >&2
+    exec limactl shell "$LIMA_NAME" -- sh -c "export PATH=\"$GUEST_PATH_PREFIX:\$PATH\"; \$HOME/turbopanel/dev/scripts/ci-verify.sh$quoted"
   fi
   if ! command -v vagrant >/dev/null 2>&1; then
     echo "ci-verify: run inside the Vagrant guest (or install vagrant on the host)." >&2
