@@ -1028,11 +1028,11 @@ tp_choose_mode() {
     elif [ "$DRY_RUN" -eq 1 ]; then
       MODE=
     elif [ "$ASSUME_YES" -eq 1 ]; then
-      if [ "$INCUS_OK" -eq 0 ] && [ "$LIMA_OK" -eq 0 ]; then
+      if [ "$INCUS_OK" -eq 1 ] && [ "$LIMA_OK" -eq 1 ]; then
         _cm_list="direct, vagrant, incus or lima"
-      elif [ "$INCUS_OK" -eq 0 ]; then
+      elif [ "$INCUS_OK" -eq 1 ]; then
         _cm_list="direct, vagrant or incus"
-      elif [ "$LIMA_OK" -eq 0 ]; then
+      elif [ "$LIMA_OK" -eq 1 ]; then
         _cm_list="direct, vagrant or lima"
       else
         _cm_list="direct or vagrant"
