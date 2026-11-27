@@ -1,180 +1,176 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
-import { type InstallOutputHandler, runCaptured } from "./install-output.ts";
-import { CONSOLE_LOG_DIR } from "./paths.ts";
-import { spawnDocker } from "./docker-access.ts";
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { dirname } from 'node:path'
+import { type InstallOutputHandler, runCaptured } from './install-output.ts'
+import { CONSOLE_LOG_DIR } from './paths.ts'
+import { spawnDocker } from './docker-access.ts'
 import {
   MAILPIT_CONTAINER_NAME,
   REDIS_INSIGHT_BRIDGE_CONTAINER_NAME,
   REDIS_INSIGHT_CONTAINER_NAME,
-} from "./platform-docker-resources.ts";
-import { forEachSequential } from "./sequential.ts";
-import { spawnSyncTrustedText } from "./spawn-trusted.ts";
+} from './platform-docker-resources.ts'
+import { forEachSequential } from './sequential.ts'
+import { spawnSyncTrustedText } from './spawn-trusted.ts'
 
 /** Optional co-located tooling — not required for core control-plane work. */
 export const OPTIONAL_DEV_SERVICE_IDS = [
-  "dbstudio",
-  "smtp",
-  "ui",
-  "website",
-  "redisinsight",
-  "stripe",
-] as const;
+  'dbstudio',
+  'smtp',
+  'ui',
+  'website',
+  'redisinsight',
+  'stripe',
+] as const
 
-export type OptionalDevServiceId = (typeof OPTIONAL_DEV_SERVICE_IDS)[number];
+export type OptionalDevServiceId = (typeof OPTIONAL_DEV_SERVICE_IDS)[number]
 
-export type OptionalDevServiceSelection = Record<OptionalDevServiceId, boolean>;
+export type OptionalDevServiceSelection = Record<OptionalDevServiceId, boolean>
 
 export type OptionalDevServiceDef = {
-  id: OptionalDevServiceId;
+  id: OptionalDevServiceId
   /** Short row label in the picker. */
-  label: string;
+  label: string
   /** One-line hint under the label. */
-  hint: string;
+  hint: string
   /**
    * Ansible extra-var stem (`turbopanel_optional_<stem>`) — also the key the
    * daemon reads from the dev-converge options payload ({@link devConvergeOptionsPayload}).
    */
-  ansibleStem: string;
+  ansibleStem: string
   /** systemd unit when present. */
-  unit: string;
+  unit: string
   /** Docker container names when the service is container-backed. */
-  containers?: readonly string[];
-};
+  containers?: readonly string[]
+}
 
 /** Optional services that only apply to the Deno self-hosted dev stack. */
 export const OPTIONAL_DENO_ONLY_SERVICE_IDS = [
-  "redisinsight",
-] as const satisfies readonly OptionalDevServiceId[];
+  'redisinsight',
+] as const satisfies readonly OptionalDevServiceId[]
 
 /** Optional services that only apply to the Workers (hosted billing) stack. */
 export const OPTIONAL_WORKERS_ONLY_SERVICE_IDS = [
-  "stripe",
-] as const satisfies readonly OptionalDevServiceId[];
+  'stripe',
+] as const satisfies readonly OptionalDevServiceId[]
 
 export const OPTIONAL_DEV_SERVICE_DEFS: readonly OptionalDevServiceDef[] = [
   {
-    id: "dbstudio",
-    label: "Drizzle Studio",
-    hint: "DB browser on :4983 (loopback)",
-    ansibleStem: "dbstudio",
-    unit: "turbopanel-dbstudio",
+    id: 'dbstudio',
+    label: 'Drizzle Studio',
+    hint: 'DB browser on :4983 (loopback)',
+    ansibleStem: 'dbstudio',
+    unit: 'turbopanel-dbstudio',
   },
   {
-    id: "smtp",
-    label: "Mailpit",
-    hint: "SMTP catcher on :8025 (loopback)",
-    ansibleStem: "mailpit",
-    unit: "turbopanel-mailpit",
+    id: 'smtp',
+    label: 'Mailpit',
+    hint: 'SMTP catcher on :8025 (loopback)',
+    ansibleStem: 'mailpit',
+    unit: 'turbopanel-mailpit',
     containers: [MAILPIT_CONTAINER_NAME],
   },
   {
-    id: "ui",
-    label: "UI (Expo)",
-    hint: "Web console via Caddy; skip if testing native elsewhere",
-    ansibleStem: "ui",
-    unit: "turbopanel-ui",
+    id: 'ui',
+    label: 'Expo Dev Server',
+    hint: 'Needed for app development and live reload; uses a lot more memory. Without it the web interface is a static development build',
+    ansibleStem: 'ui',
+    unit: 'turbopanel-ui',
   },
   {
-    id: "website",
-    label: "Website",
-    hint: "Marketing + docs on :19820",
-    ansibleStem: "website",
-    unit: "turbopanel-website",
+    id: 'website',
+    label: 'Website',
+    hint: 'Marketing + docs on :19820',
+    ansibleStem: 'website',
+    unit: 'turbopanel-website',
   },
   {
-    id: "redisinsight",
-    label: "Redis Insight",
-    hint: "Cache GUI on :5540",
-    ansibleStem: "redis_insight",
-    unit: "turbopanel-redis-insight",
-    containers: [
-      REDIS_INSIGHT_CONTAINER_NAME,
-      REDIS_INSIGHT_BRIDGE_CONTAINER_NAME,
-    ],
+    id: 'redisinsight',
+    label: 'Redis Insight',
+    hint: 'Cache GUI on :5540',
+    ansibleStem: 'redis_insight',
+    unit: 'turbopanel-redis-insight',
+    containers: [REDIS_INSIGHT_CONTAINER_NAME, REDIS_INSIGHT_BRIDGE_CONTAINER_NAME],
   },
   {
-    id: "stripe",
-    label: "Stripe CLI (webhook forward)",
-    hint: "Forwards Stripe events to /webhook/stripe; needs a test key",
-    ansibleStem: "stripe_listen",
-    unit: "turbopanel-stripe-listen",
+    id: 'stripe',
+    label: 'Stripe CLI (webhook forward)',
+    hint: 'Forwards Stripe events to /webhook/stripe; needs a test key',
+    ansibleStem: 'stripe_listen',
+    unit: 'turbopanel-stripe-listen',
   },
-] as const;
+] as const
 
 /**
- * Defaults: UI, website, Mailpit, and Drizzle Studio on; Redis Insight off;
- * Stripe CLI off (it is useless without a test-mode key in
- * /etc/turbopanel/stripe-listen/stripe.env, which nothing generates).
+ * Defaults: website, Mailpit, and Drizzle Studio on; the Expo dev server off
+ * (the web interface is then served as a static development build, which keeps
+ * a 4 GiB guest within memory); Redis Insight off; Stripe CLI off (it is
+ * useless without a test-mode key in /etc/turbopanel/stripe-listen/stripe.env,
+ * which nothing generates).
  */
 export const DEFAULT_OPTIONAL_DEV_SERVICES: OptionalDevServiceSelection = {
   dbstudio: true,
   smtp: true,
-  ui: true,
+  ui: false,
   website: true,
   redisinsight: false,
   stripe: false,
-};
+}
 
-export const OPTIONAL_SERVICES_PREFS_PATH =
-  `${CONSOLE_LOG_DIR}/optional-services.json`;
+export const OPTIONAL_SERVICES_PREFS_PATH = `${CONSOLE_LOG_DIR}/optional-services.json`
 
 /** Seconds of idle time before a converge picker auto-confirms. */
-export const OPTIONAL_SERVICES_AUTO_CONFIRM_SECONDS = 5;
+export const OPTIONAL_SERVICES_AUTO_CONFIRM_SECONDS = 5
 
 function isOptionalDevServiceId(value: string): value is OptionalDevServiceId {
-  return (OPTIONAL_DEV_SERVICE_IDS as readonly string[]).includes(value);
+  return (OPTIONAL_DEV_SERVICE_IDS as readonly string[]).includes(value)
 }
 
 export function cloneOptionalSelection(
-  selection: OptionalDevServiceSelection,
+  selection: OptionalDevServiceSelection
 ): OptionalDevServiceSelection {
-  return { ...selection };
+  return { ...selection }
 }
 
 export function defaultOptionalSelection(): OptionalDevServiceSelection {
-  return cloneOptionalSelection(DEFAULT_OPTIONAL_DEV_SERVICES);
+  return cloneOptionalSelection(DEFAULT_OPTIONAL_DEV_SERVICES)
 }
 
 /**
  * Normalize a partial preference object onto the default selection.
  * Unknown keys are ignored; missing keys keep defaults.
  */
-export function normalizeOptionalSelection(
-  raw: unknown,
-): OptionalDevServiceSelection {
-  const next = defaultOptionalSelection();
-  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
-    return next;
+export function normalizeOptionalSelection(raw: unknown): OptionalDevServiceSelection {
+  const next = defaultOptionalSelection()
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+    return next
   }
-  const record = raw as Record<string, unknown>;
+  const record = raw as Record<string, unknown>
   for (const id of OPTIONAL_DEV_SERVICE_IDS) {
-    const value = record[id];
-    if (typeof value === "boolean") {
-      next[id] = value;
+    const value = record[id]
+    if (typeof value === 'boolean') {
+      next[id] = value
     }
   }
-  return next;
+  return next
 }
 
 export function readOptionalDevServices(
-  path: string = OPTIONAL_SERVICES_PREFS_PATH,
+  path: string = OPTIONAL_SERVICES_PREFS_PATH
 ): OptionalDevServiceSelection {
   try {
-    const text = readFileSync(path, "utf8");
-    return normalizeOptionalSelection(JSON.parse(text) as unknown);
+    const text = readFileSync(path, 'utf8')
+    return normalizeOptionalSelection(JSON.parse(text) as unknown)
   } catch {
-    return defaultOptionalSelection();
+    return defaultOptionalSelection()
   }
 }
 
 export function writeOptionalDevServices(
   selection: OptionalDevServiceSelection,
-  path: string = OPTIONAL_SERVICES_PREFS_PATH,
+  path: string = OPTIONAL_SERVICES_PREFS_PATH
 ): void {
-  const normalized = normalizeOptionalSelection(selection);
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, `${JSON.stringify(normalized, null, 2)}\n`);
+  const normalized = normalizeOptionalSelection(selection)
+  mkdirSync(dirname(path), { recursive: true })
+  writeFileSync(path, `${JSON.stringify(normalized, null, 2)}\n`)
 }
 
 /**
@@ -184,15 +180,15 @@ export function writeOptionalDevServices(
 export function persistOptionalServiceToggle(
   serviceId: string,
   enabled: boolean,
-  path: string = OPTIONAL_SERVICES_PREFS_PATH,
+  path: string = OPTIONAL_SERVICES_PREFS_PATH
 ): OptionalDevServiceSelection | null {
   if (!isOptionalDevServiceId(serviceId)) {
-    return null;
+    return null
   }
-  const next = readOptionalDevServices(path);
-  next[serviceId] = enabled;
-  writeOptionalDevServices(next, path);
-  return next;
+  const next = readOptionalDevServices(path)
+  next[serviceId] = enabled
+  writeOptionalDevServices(next, path)
+  return next
 }
 
 /**
@@ -200,37 +196,41 @@ export function persistOptionalServiceToggle(
  * Deno-only tools when the instance runs on Workers.
  */
 export function optionalDevServiceCatalogIdsForRuntime(
-  runtime: "deno" | "workers",
+  runtime: 'deno' | 'workers'
 ): readonly OptionalDevServiceId[] {
-  if (runtime === "workers") {
+  if (runtime === 'workers') {
     return OPTIONAL_DEV_SERVICE_IDS.filter(
-      (id) =>
-        !(OPTIONAL_DENO_ONLY_SERVICE_IDS as readonly string[]).includes(id),
-    );
+      (id) => !(OPTIONAL_DENO_ONLY_SERVICE_IDS as readonly string[]).includes(id)
+    )
   }
   return OPTIONAL_DEV_SERVICE_IDS.filter(
-    (id) =>
-      !(OPTIONAL_WORKERS_ONLY_SERVICE_IDS as readonly string[]).includes(id),
-  );
+    (id) => !(OPTIONAL_WORKERS_ONLY_SERVICE_IDS as readonly string[]).includes(id)
+  )
 }
 
-export function optionalDevServiceBackingContainers(
-  def: OptionalDevServiceDef,
-): readonly string[] {
-  return def.containers ?? [];
+export function optionalDevServiceBackingContainers(def: OptionalDevServiceDef): readonly string[] {
+  return def.containers ?? []
+}
+
+/** `daemon.env` key the daemon, Caddy and the converge read the UI mode from. */
+export const UI_MODE_ENV_KEY = 'TURBOPANEL_UI_MODE'
+
+/** The Expo dev server (`dev`) is opt-in; otherwise the static export is served. */
+export function uiModeForSelection(selection: OptionalDevServiceSelection): 'dev' | 'static' {
+  return normalizeOptionalSelection(selection).ui ? 'dev' : 'static'
 }
 
 /**
  * Env key carrying the structured dev-converge options payload to the daemon's
  * `scripts/run-orchestration-action.ts` (one JSON object, parsed once there).
  */
-export const DEV_CONVERGE_OPTIONS_ENV = "TURBOPANEL_DEV_CONVERGE_OPTIONS";
+export const DEV_CONVERGE_OPTIONS_ENV = 'TURBOPANEL_DEV_CONVERGE_OPTIONS'
 
 /** Structured dev-converge options — the single cross-repo contract. */
 export type DevConvergeOptionsPayload = {
   /** `ansibleStem` → enabled; the daemon emits `turbopanel_optional_<stem>`. */
-  optionalServices: Record<string, boolean>;
-};
+  optionalServices: Record<string, boolean>
+}
 
 /**
  * Build the dev-converge options payload from a picker selection. Keys are the
@@ -238,155 +238,137 @@ export type DevConvergeOptionsPayload = {
  * module is the only optional-service catalog.
  */
 export function devConvergeOptionsPayload(
-  selection: OptionalDevServiceSelection,
+  selection: OptionalDevServiceSelection
 ): DevConvergeOptionsPayload {
-  const normalized = normalizeOptionalSelection(selection);
-  const optionalServices: Record<string, boolean> = {};
+  const normalized = normalizeOptionalSelection(selection)
+  const optionalServices: Record<string, boolean> = {}
   for (const def of OPTIONAL_DEV_SERVICE_DEFS) {
-    optionalServices[def.ansibleStem] = normalized[def.id];
+    optionalServices[def.ansibleStem] = normalized[def.id]
   }
-  return { optionalServices };
+  return { optionalServices }
 }
 
 /** `KEY=json` pair for the orchestration child env. */
-export function devConvergeOptionsEnvEntry(
-  selection: OptionalDevServiceSelection,
-): string {
-  return `${DEV_CONVERGE_OPTIONS_ENV}=${
-    JSON.stringify(devConvergeOptionsPayload(selection))
-  }`;
+export function devConvergeOptionsEnvEntry(selection: OptionalDevServiceSelection): string {
+  return `${DEV_CONVERGE_OPTIONS_ENV}=${JSON.stringify(devConvergeOptionsPayload(selection))}`
 }
 
 function systemctlProperty(unit: string, property: string): string | null {
   const result = spawnSyncTrustedText(
-    "systemctl",
-    ["show", unit, `--property=${property}`, "--value"],
-    { stdio: ["ignore", "pipe", "ignore"] },
-  );
+    'systemctl',
+    ['show', unit, `--property=${property}`, '--value'],
+    { stdio: ['ignore', 'pipe', 'ignore'] }
+  )
   if (result.status !== 0) {
-    return null;
+    return null
   }
-  const value = (result.stdout ?? "").trim();
-  return value.length > 0 ? value : null;
+  const value = (result.stdout ?? '').trim()
+  return value.length > 0 ? value : null
 }
 
 function isSystemdUnitInstalled(unit: string): boolean {
-  const loadState = systemctlProperty(unit, "LoadState");
-  return loadState === "loaded" || loadState === "masked";
+  const loadState = systemctlProperty(unit, 'LoadState')
+  return loadState === 'loaded' || loadState === 'masked'
 }
 
 function dockerContainerExists(name: string): boolean {
-  const result = spawnDocker(["inspect", name]);
-  return result?.status === 0;
+  const result = spawnDocker(['inspect', name])
+  return result?.status === 0
 }
 
-async function runSystemctl(
-  args: string[],
-  onOutput?: InstallOutputHandler,
-): Promise<void> {
-  const code = await runCaptured(["sudo", "-n", "systemctl", ...args], onOutput);
+async function runSystemctl(args: string[], onOutput?: InstallOutputHandler): Promise<void> {
+  const code = await runCaptured(['sudo', '-n', 'systemctl', ...args], onOutput)
   if (code !== 0) {
-    throw new Error(`systemctl ${args.join(" ")} failed`);
+    throw new Error(`systemctl ${args.join(' ')} failed`)
   }
 }
 
-async function runDocker(
-  args: string[],
-  onOutput?: InstallOutputHandler,
-): Promise<void> {
+async function runDocker(args: string[], onOutput?: InstallOutputHandler): Promise<void> {
   const attempts: string[][] = [
-    ["docker", ...args],
-    ["sudo", "-n", "docker", ...args],
-  ];
+    ['docker', ...args],
+    ['sudo', '-n', 'docker', ...args],
+  ]
   for (const cmd of attempts) {
-    const code = await runCaptured(cmd, onOutput);
+    const code = await runCaptured(cmd, onOutput)
     if (code === 0) {
-      return;
+      return
     }
   }
-  throw new Error(`docker ${args.join(" ")} failed`);
+  throw new Error(`docker ${args.join(' ')} failed`)
 }
 
 async function startOptionalContainers(
   def: OptionalDevServiceDef,
-  onOutput?: InstallOutputHandler,
+  onOutput?: InstallOutputHandler
 ): Promise<void> {
-  await forEachSequential(
-    optionalDevServiceBackingContainers(def),
-    async (container) => {
-      if (!dockerContainerExists(container)) {
-        return;
-      }
-      onOutput?.(`Starting optional container ${container}`);
-      await runDocker(["update", "--restart=unless-stopped", container], onOutput);
-      await runDocker(["start", container], onOutput);
-    },
-  );
+  await forEachSequential(optionalDevServiceBackingContainers(def), async (container) => {
+    if (!dockerContainerExists(container)) {
+      return
+    }
+    onOutput?.(`Starting optional container ${container}`)
+    await runDocker(['update', '--restart=unless-stopped', container], onOutput)
+    await runDocker(['start', container], onOutput)
+  })
 }
 
 async function stopOptionalContainers(
   def: OptionalDevServiceDef,
-  onOutput?: InstallOutputHandler,
+  onOutput?: InstallOutputHandler
 ): Promise<void> {
-  await forEachSequential(
-    optionalDevServiceBackingContainers(def),
-    async (container) => {
-      if (!dockerContainerExists(container)) {
-        return;
-      }
-      onOutput?.(`Stopping optional container ${container}`);
-      await runDocker(["update", "--restart=no", container], onOutput);
-      await runDocker(["stop", container], onOutput);
-    },
-  );
+  await forEachSequential(optionalDevServiceBackingContainers(def), async (container) => {
+    if (!dockerContainerExists(container)) {
+      return
+    }
+    onOutput?.(`Stopping optional container ${container}`)
+    await runDocker(['update', '--restart=no', container], onOutput)
+    await runDocker(['stop', container], onOutput)
+  })
 }
 
 function hasInstalledOptionalContainers(def: OptionalDevServiceDef): boolean {
   return optionalDevServiceBackingContainers(def).some((container) =>
     dockerContainerExists(container)
-  );
+  )
 }
 
 async function applyInstalledOptionalUnit(
   def: OptionalDevServiceDef,
   want: boolean,
-  onOutput?: InstallOutputHandler,
+  onOutput?: InstallOutputHandler
 ): Promise<void> {
   if (want) {
-    onOutput?.(`Enabling optional service ${def.label} (${def.unit})`);
-    await runSystemctl(["enable", "--now", def.unit], onOutput);
-    return;
+    onOutput?.(`Enabling optional service ${def.label} (${def.unit})`)
+    await runSystemctl(['enable', '--now', def.unit], onOutput)
+    return
   }
 
-  onOutput?.(`Disabling optional service ${def.label} (${def.unit})`);
-  await runSystemctl(["disable", "--now", def.unit], onOutput);
+  onOutput?.(`Disabling optional service ${def.label} (${def.unit})`)
+  await runSystemctl(['disable', '--now', def.unit], onOutput)
   if (optionalDevServiceBackingContainers(def).length > 0) {
-    await stopOptionalContainers(def, onOutput);
+    await stopOptionalContainers(def, onOutput)
   }
 }
 
 async function applyContainerOnlyOptional(
   def: OptionalDevServiceDef,
   want: boolean,
-  onOutput?: InstallOutputHandler,
+  onOutput?: InstallOutputHandler
 ): Promise<void> {
   if (!hasInstalledOptionalContainers(def)) {
     if (want) {
-      onOutput?.(
-        `${def.label} is not installed yet — run Converge to provision it`,
-      );
+      onOutput?.(`${def.label} is not installed yet — run Converge to provision it`)
     }
-    return;
+    return
   }
 
   if (want) {
-    onOutput?.(`Starting optional container ${def.label}`);
-    await startOptionalContainers(def, onOutput);
-    return;
+    onOutput?.(`Starting optional container ${def.label}`)
+    await startOptionalContainers(def, onOutput)
+    return
   }
 
-  onOutput?.(`Stopping optional container ${def.label}`);
-  await stopOptionalContainers(def, onOutput);
+  onOutput?.(`Stopping optional container ${def.label}`)
+  await stopOptionalContainers(def, onOutput)
 }
 
 /**
@@ -395,35 +377,33 @@ async function applyContainerOnlyOptional(
  */
 export async function applyOptionalDevServices(
   selection: OptionalDevServiceSelection,
-  onOutput?: InstallOutputHandler,
+  onOutput?: InstallOutputHandler
 ): Promise<void> {
-  const normalized = normalizeOptionalSelection(selection);
-  writeOptionalDevServices(normalized);
+  const normalized = normalizeOptionalSelection(selection)
+  writeOptionalDevServices(normalized)
 
   await forEachSequential(OPTIONAL_DEV_SERVICE_DEFS, async (def) => {
-    const want = normalized[def.id];
+    const want = normalized[def.id]
     if (isSystemdUnitInstalled(def.unit)) {
-      await applyInstalledOptionalUnit(def, want, onOutput);
-      return;
+      await applyInstalledOptionalUnit(def, want, onOutput)
+      return
     }
 
     if (optionalDevServiceBackingContainers(def).length === 0) {
       if (want) {
-        onOutput?.(
-          `${def.label} is not installed yet — run Converge to provision it`,
-        );
+        onOutput?.(`${def.label} is not installed yet — run Converge to provision it`)
       }
-      return;
+      return
     }
 
-    await applyContainerOnlyOptional(def, want, onOutput);
-  });
+    await applyContainerOnlyOptional(def, want, onOutput)
+  })
 }
 
 /** Test helper — keep the id guard reachable for shape assertions. */
 export function assertOptionalDevServiceId(value: string): OptionalDevServiceId {
   if (!isOptionalDevServiceId(value)) {
-    throw new TypeError(`unknown optional dev service: ${value}`);
+    throw new TypeError(`unknown optional dev service: ${value}`)
   }
-  return value;
+  return value
 }

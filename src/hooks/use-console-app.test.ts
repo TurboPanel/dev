@@ -99,6 +99,7 @@ vi.mock('../lib/service-restart.ts', () => ({
 vi.mock('../lib/daemon-env.ts', () => ({
   readInstanceRuntime: vi.fn(),
   isDeveloperSurfaceInstance: vi.fn(() => true),
+  readInstanceUiMode: vi.fn(() => 'dev'),
 }))
 
 vi.mock('../lib/instance-trace-env.ts', () => ({
@@ -122,6 +123,7 @@ vi.mock('../lib/optional-dev-services.ts', () => ({
   applyOptionalDevServices: vi.fn(),
   persistOptionalServiceToggle: vi.fn(),
   readOptionalDevServices: vi.fn(),
+  uiModeForSelection: vi.fn((selection: { ui: boolean }) => (selection.ui ? 'dev' : 'static')),
 }))
 
 vi.mock('../lib/dev-host-store.ts', () => ({
@@ -138,7 +140,7 @@ vi.mock('../lib/duckdb-ui.ts', () => ({
 import { resolveDevEnvStartupPlan } from '../lib/dev-env-readiness.ts'
 import { canRunServiceAction, runServiceAction } from '../lib/service-actions.ts'
 import { watchServiceRestart } from '../lib/service-restart.ts'
-import { readInstanceRuntime } from '../lib/daemon-env.ts'
+import { readInstanceRuntime, readInstanceUiMode } from '../lib/daemon-env.ts'
 import { readCellTraceEnabled, setCellTraceEnabled } from '../lib/instance-trace-env.ts'
 import { readDaemonLogFileStat } from '../lib/daemon-log.ts'
 import { watchInstanceRuntimeSwitch } from '../lib/instance-runtime.ts'
@@ -427,6 +429,17 @@ describe('useConsoleApp', () => {
       expect(applyOptionalDevServices).toHaveBeenCalledWith(harness.optional)
     })
     expect(harness.refreshServices).toHaveBeenCalled()
+  })
+
+  it('runs a converge instead of unit toggles when the optional-services picker changes the UI mode', async () => {
+    vi.mocked(readInstanceUiMode).mockReturnValueOnce('static')
+    const app = await mountApp()
+    await app.handleDaemonAction('optional-services')
+    ;(await settle()).confirmOptionalServices(harness.optional)
+    await vi.waitFor(() => {
+      expect(harness.startDevEnvConverge).toHaveBeenCalledWith('if-needed', harness.optional)
+    })
+    expect(applyOptionalDevServices).not.toHaveBeenCalled()
   })
 
   it('starts a force converge from the optional-services picker', async () => {

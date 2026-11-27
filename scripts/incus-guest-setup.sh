@@ -174,23 +174,22 @@ Environment="NODE_OPTIONS=--dns-result-order=ipv4first --max-old-space-size=3072
 EOF
 systemctl daemon-reload
 
-echo ">>> Optional services do not start at boot"
-# Each one stays startable by hand (see docs/dev-environment.md). Not stopped
-# here: only the boot-time start is removed. A converge enables the selected
-# optional units again; deselect them in Developer > Optional services, or
-# run this script after the converge.
-# turbopanel-ui (Metro) is off too: start it only for UI work, with
-# sudo systemctl start turbopanel-ui. While it is down the web panel behind
-# Caddy shows a loading page when the UI runs in dev mode.
-# Left on at boot: turbopanel-tunnel-instance (the daemon enables, disables and
-# supervises it, and the panel reaches the instance through it) and
+echo ">>> The Expo dev server does not start at boot unless chosen"
+# The UI is served as a static development build by default (Caddy serves the
+# export; see docs/dev-environment.md), so turbopanel-ui (Metro) stays off at
+# boot to keep a 4 GiB VM within memory. It stays startable by hand with
+# sudo systemctl start turbopanel-ui, and the converge enables it again when the
+# Expo Dev Server is chosen: TURBOPANEL_UI_MODE=dev in /etc/turbopanel/daemon.env
+# (written by the console from the picker). That choice is kept here.
+# Website and Drizzle Studio are on by default now and are left as the converge
+# set them. Left on at boot too: turbopanel-tunnel-instance (the daemon enables,
+# disables and supervises it, and the panel reaches the instance through it) and
 # turbopanel-mailpit (instance email, including login mail, goes to its SMTP
 # port).
-for unit in turbopanel-ui turbopanel-website turbopanel-dbstudio; do
-  if systemctl cat "$unit.service" >/dev/null 2>&1; then
-    systemctl disable "$unit.service" 2>&1
-  fi
-done
+UI_MODE=$(sed -n 's/^TURBOPANEL_UI_MODE=//p' /etc/turbopanel/daemon.env 2>/dev/null | tail -n 1)
+if [ "$UI_MODE" != dev ] && systemctl cat turbopanel-ui.service >/dev/null 2>&1; then
+  systemctl disable turbopanel-ui.service 2>&1
+fi
 
 echo ">>> Free page reporting returns 32 KiB blocks to the host"
 cat >/etc/tmpfiles.d/turbopanel-page-reporting.conf <<'EOF'

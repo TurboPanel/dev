@@ -11,6 +11,11 @@ import { resolveDevIdentity } from './dev-identity.ts'
 import { devHomeEnvEntry, resolveCheckedDevRoot } from './dev-root.ts'
 import { mergeEnvFile, parseEnvEntries, readEnvFile, readEnvFileAsync } from './env-file.ts'
 import { caddyBrowserUrl } from './service-urls.ts'
+import {
+  readOptionalDevServices,
+  UI_MODE_ENV_KEY,
+  uiModeForSelection,
+} from './optional-dev-services.ts'
 
 const INSTANCE_OPT_IN_KEY = 'TURBOPANEL_DEV_INSTANCE'
 const RUNTIME_KEY = 'TURBOPANEL_INSTANCE_RUNTIME'
@@ -32,8 +37,21 @@ export function buildDaemonBaseEnvEntries(extra?: Record<string, string>): Recor
     // HOME for git, ssh and pnpm in the repo roles; differs from the root when
     // the repos sit in a sub-folder such as ~/work/turbopanel.
     ...devHomeEnvEntry(dev.user, devRoot),
+    // The Expo dev server is opt-in: anything but the saved Expo choice is the
+    // static export. Written on every write so switching later works both ways.
+    [UI_MODE_ENV_KEY]: uiModeForSelection(readOptionalDevServices()),
     ...extra,
   }
+}
+
+/**
+ * Record the UI serving mode in `daemon.env` (idempotent). Run before a
+ * converge: the orchestration runner hoists the key from this file into the
+ * playbook (`turbopanel_ui_mode`, the Caddy and instance unit environments),
+ * and the daemon reads it at its next restart, which the converge requests.
+ */
+export function writeDaemonUiMode(mode: 'dev' | 'static'): void {
+  mergeDaemonEnv({ [UI_MODE_ENV_KEY]: mode })
 }
 
 function buildDaemonBaseEntries(extra?: Record<string, string>): Record<string, string> {
@@ -163,15 +181,15 @@ export function readInstanceRunMode(): 'source' | 'compiled' {
  * The instance itself keys off `TURBOPANEL_DEV_SURFACE=1` alone
  * (`../turbopanel/src/dev-mode.ts`); this predicts whether the daemon's unit
  * template (turbopanel-instance.service.j2, the sole managed writer of that
- * flag) emitted it — Deno runtime, `source` run mode, and `dev` UI mode.
- * Workers, compiled binaries (`deno task compile` targets `src/deno.ts`), and
- * static-UI builds execute the non-developer entry without the flag, so
- * developer-surface actions must stay hidden.
+ * flag) emitted it — Deno runtime and `source` run mode, in either UI mode (the
+ * static export keeps the developer surface). Workers and compiled binaries
+ * (`deno task compile` targets `src/deno.ts`) execute the non-developer entry
+ * without the flag, so developer-surface actions must stay hidden.
  */
 export function isDeveloperSurfaceInstance(
   snapshot: DaemonEnvSnapshot = readDaemonEnvSnapshot()
 ): boolean {
-  return snapshot.runtime === 'deno' && snapshot.runMode === 'source' && snapshot.uiMode === 'dev'
+  return snapshot.runtime === 'deno' && snapshot.runMode === 'source'
 }
 
 export function isDevInstanceEnabled(): boolean {

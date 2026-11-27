@@ -9,7 +9,8 @@
 # and later runs skip them, so a start needs no network and keeps the optional
 # units the user picked. --force (or TURBOPANEL_LIMA_FORCE=1) removes that
 # check and runs everything again. The cheap offline steps (host-path symlink,
-# first-login password prompt, banner) run every time. Every step checks first, so a rerun is safe. Does what the Incus guest setup
+# first-login password prompt, banner) run every time, and so does the one-time
+# compressed RAM swap step for a guest set up without it. Every step checks first, so a rerun is safe. Does what the Incus guest setup
 # does (vm-bootstrap.sh, then scripts/incus-guest-setup.sh for the guest-local
 # pnpm store and node_modules, which a virtiofs share cannot host), without the
 # port redirect, since Lima forwards guest ports to the host's 127.0.0.1 itself.
@@ -54,6 +55,12 @@ MARKER_DIR=/var/lib/turbopanel-dev
 MARKER="${MARKER_DIR}/lima-guest-setup.done"
 if [ "$FORCE" != 1 ] && [ -f "$MARKER" ]; then
   echo ">>> Base setup already done (${MARKER}); pass --force to run it again"
+  # A guest set up before the compressed RAM swap existed gets it once, from the
+  # swap step alone (offline, idempotent), without the heavy steps above.
+  if [ ! -x /usr/local/sbin/tp-zram-swap ]; then
+    echo ">>> Compressed RAM swap (zram) for an existing guest"
+    TURBOPANEL_DEV_ROOT="$DEV_ROOT" sh "${SCRIPTS}/vm-bootstrap.sh" --swap "$DEV_USER"
+  fi
 else
   export DEBIAN_FRONTEND=noninteractive
   echo ">>> Packages the vendored Node and the dev tests need"

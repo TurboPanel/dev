@@ -4,6 +4,7 @@ import { daemonRepoPath, DAEMON_SYSTEMD_UNIT, RUNTIMES_DIR, TURBOPANEL_ROOT } fr
 import {
   isDeveloperSurfaceInstance,
   readInstanceRuntime,
+  readInstanceUiMode,
   type DaemonEnvSnapshot,
 } from './daemon-env.ts'
 import { spawnSyncTrustedText } from './spawn-trusted.ts'
@@ -34,6 +35,7 @@ export type DaemonActionId =
   | 'run-tests'
   | 'sync-dev-build'
   | 'rebuild-daemon-upgrade'
+  | 'rebuild-static-ui'
   | 'open-duckdb-ui'
   | 'update-restart'
   | 'restart-only'
@@ -57,6 +59,7 @@ export const DAEMON_ACTION_LABELS: Record<DaemonActionId, string> = {
   'run-tests': 'Run tests…',
   'sync-dev-build': 'Sync source to attached checkouts',
   'rebuild-daemon-upgrade': 'Rebuild daemon and upgrade connected servers',
+  'rebuild-static-ui': 'Rebuild Static UI',
   'open-duckdb-ui': 'Open DuckDB UI (metrics)',
   'update-restart': 'Update and Restart',
   'restart-only': 'Restart Only',
@@ -102,7 +105,8 @@ export function developerMenuActions(
 
   // Open DuckDB UI and the development host actions need developer-API routes
   // that only the developer-surface build (src/deno-dev.ts) mounts — compiled
-  // and static Deno builds run src/deno.ts and must not offer them.
+  // Deno builds run src/deno.ts and must not offer them. The static UI does
+  // not change the instance entry, so those actions stay in static mode.
   const onDeveloperSurface = env ? isDeveloperSurfaceInstance(env) : isDeveloperSurfaceInstance()
   const developerSurfaceActions: DaemonActionId[] = onDeveloperSurface ? ['open-duckdb-ui'] : []
   const devHostActions: DaemonActionId[] = onDeveloperSurface
@@ -111,6 +115,10 @@ export function developerMenuActions(
 
   const denoActions: DaemonActionId[] =
     runtime === 'deno' ? ['sync-dev-build', 'rebuild-daemon-upgrade'] : []
+
+  // The static export exists only when Caddy serves it (Expo not chosen).
+  const uiMode = env ? env.uiMode : readInstanceUiMode()
+  const staticUiActions: DaemonActionId[] = uiMode === 'static' ? ['rebuild-static-ui'] : []
 
   // Tiers exist only where billing does (the Workers build). The saved copy is
   // restored by the dev overlay role on converge; this is the write side.
@@ -128,6 +136,7 @@ export function developerMenuActions(
     'view-cell-trace',
     ...developerSurfaceActions,
     ...denoActions,
+    ...staticUiActions,
     // Last before Purge, so the default cursor never sits on a restart.
     ...devHostActions,
     'purge',

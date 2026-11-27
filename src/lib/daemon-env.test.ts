@@ -11,7 +11,9 @@ import {
   stalePlatformRepoKeys,
   writeDaemonBaseEnv,
   writeDaemonInstanceEnv,
+  writeDaemonUiMode,
 } from './daemon-env.ts'
+import { DEFAULT_OPTIONAL_DEV_SERVICES, readOptionalDevServices } from './optional-dev-services.ts'
 import { daemonRepoPath, platformCaCertPath } from './paths.ts'
 
 vi.mock('./env-file.ts', async (importOriginal) => {
@@ -21,6 +23,14 @@ vi.mock('./env-file.ts', async (importOriginal) => {
     mergeEnvFile: vi.fn(),
     readEnvFile: vi.fn(() => ''),
     readEnvFileAsync: vi.fn(async () => ''),
+  }
+})
+
+vi.mock('./optional-dev-services.ts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./optional-dev-services.ts')>()
+  return {
+    ...actual,
+    readOptionalDevServices: vi.fn(() => ({ ...actual.DEFAULT_OPTIONAL_DEV_SERVICES })),
   }
 })
 
@@ -35,7 +45,7 @@ test('managed daemon.env must not place TURBOPANEL_DAEMON_STATE_DIR under the da
   ).toBe(true)
 })
 
-test('isDeveloperSurfaceInstance is true only for source-run-mode dev-UI Deno instances', () => {
+test('isDeveloperSurfaceInstance is true for source-run Deno instances in either UI mode', () => {
   const mockedReadEnvFile = vi.mocked(readEnvFile)
 
   // Converge defaults (deno / source / dev UI) run src/deno-dev.ts.
@@ -49,9 +59,11 @@ test('isDeveloperSurfaceInstance is true only for source-run-mode dev-UI Deno in
   mockedReadEnvFile.mockReturnValue('TURBOPANEL_INSTANCE_RUN_MODE=compiled\n')
   expect(isDeveloperSurfaceInstance()).toBe(false)
 
-  // Static UI mode drops TURBOPANEL_DEV_SURFACE and runs src/deno.ts.
+  // The developer surface is independent of the UI mode.
   mockedReadEnvFile.mockReturnValue('TURBOPANEL_UI_MODE=static\n')
-  expect(isDeveloperSurfaceInstance()).toBe(false)
+  expect(isDeveloperSurfaceInstance()).toBe(true)
+  mockedReadEnvFile.mockReturnValue('TURBOPANEL_UI_MODE=dev\n')
+  expect(isDeveloperSurfaceInstance()).toBe(true)
 
   mockedReadEnvFile.mockReturnValue('')
 })
@@ -228,4 +240,20 @@ test('readDaemonEnvSnapshotAsync parses the same flags as the sync snapshot', as
     runMode: 'source',
     devInstanceEnabled: false,
   })
+})
+
+test('base entries carry TURBOPANEL_UI_MODE static unless the Expo Dev Server is chosen', () => {
+  const selection = { ...DEFAULT_OPTIONAL_DEV_SERVICES }
+  vi.mocked(readOptionalDevServices).mockReturnValue(selection)
+  expect(buildDaemonBaseEnvEntries().TURBOPANEL_UI_MODE).toBe('static')
+  vi.mocked(readOptionalDevServices).mockReturnValue({ ...selection, ui: true })
+  expect(buildDaemonBaseEnvEntries().TURBOPANEL_UI_MODE).toBe('dev')
+})
+
+test('writeDaemonUiMode merges only TURBOPANEL_UI_MODE', () => {
+  vi.mocked(mergeEnvFile).mockClear()
+  writeDaemonUiMode('dev')
+  expect(vi.mocked(mergeEnvFile).mock.calls.at(-1)?.[1]).toEqual({ TURBOPANEL_UI_MODE: 'dev' })
+  writeDaemonUiMode('static')
+  expect(vi.mocked(mergeEnvFile).mock.calls.at(-1)?.[1]).toEqual({ TURBOPANEL_UI_MODE: 'static' })
 })

@@ -1,7 +1,7 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import {
   DEFAULT_OPTIONAL_DEV_SERVICES,
   OPTIONAL_DEV_SERVICE_DEFS,
@@ -17,83 +17,85 @@ import {
   type OptionalDevServiceSelection,
   persistOptionalServiceToggle,
   readOptionalDevServices,
+  UI_MODE_ENV_KEY,
+  uiModeForSelection,
   writeOptionalDevServices,
-} from "./optional-dev-services.ts";
+} from './optional-dev-services.ts'
 import {
   MAILPIT_CONTAINER_NAME,
   REDIS_INSIGHT_BRIDGE_CONTAINER_NAME,
   REDIS_INSIGHT_CONTAINER_NAME,
-} from "./platform-docker-resources.ts";
+} from './platform-docker-resources.ts'
 
-const tempDirs: string[] = [];
+const tempDirs: string[] = []
 
-vi.mock("./install-output.ts", () => ({
+vi.mock('./install-output.ts', () => ({
   runCaptured: vi.fn(async () => 0),
-}));
+}))
 
-vi.mock("./spawn-trusted.ts", () => ({
-  spawnSyncTrustedText: vi.fn(() => ({ status: 0, stdout: "loaded" })),
-}));
+vi.mock('./spawn-trusted.ts', () => ({
+  spawnSyncTrustedText: vi.fn(() => ({ status: 0, stdout: 'loaded' })),
+}))
 
-vi.mock("./docker-access.ts", () => ({
-  spawnDocker: vi.fn(() => ({ status: 0, stdout: "true" })),
-}));
+vi.mock('./docker-access.ts', () => ({
+  spawnDocker: vi.fn(() => ({ status: 0, stdout: 'true' })),
+}))
 
-import { runCaptured } from "./install-output.ts";
-import { spawnDocker } from "./docker-access.ts";
-import { spawnSyncTrustedText } from "./spawn-trusted.ts";
+import { runCaptured } from './install-output.ts'
+import { spawnDocker } from './docker-access.ts'
+import { spawnSyncTrustedText } from './spawn-trusted.ts'
 
-const mockedRunCaptured = vi.mocked(runCaptured);
-const mockedSpawnDocker = vi.mocked(spawnDocker);
-const mockedSpawnSyncTrustedText = vi.mocked(spawnSyncTrustedText);
+const mockedRunCaptured = vi.mocked(runCaptured)
+const mockedSpawnDocker = vi.mocked(spawnDocker)
+const mockedSpawnSyncTrustedText = vi.mocked(spawnSyncTrustedText)
 
 beforeEach(() => {
-  mockedRunCaptured.mockClear();
-  mockedSpawnDocker.mockClear();
-  mockedSpawnSyncTrustedText.mockClear();
-  mockedRunCaptured.mockResolvedValue(0);
+  mockedRunCaptured.mockClear()
+  mockedSpawnDocker.mockClear()
+  mockedSpawnSyncTrustedText.mockClear()
+  mockedRunCaptured.mockResolvedValue(0)
   mockedSpawnDocker.mockReturnValue({
     status: 0,
-    stdout: "true",
-    stderr: "",
+    stdout: 'true',
+    stderr: '',
     pid: 0,
-    output: ["", "true", ""],
+    output: ['', 'true', ''],
     signal: null,
-  });
+  })
   mockedSpawnSyncTrustedText.mockReturnValue({
     status: 0,
-    stdout: "loaded",
-    stderr: "",
+    stdout: 'loaded',
+    stderr: '',
     pid: 0,
-    output: ["", "loaded", ""],
+    output: ['', 'loaded', ''],
     signal: null,
-  });
-});
+  })
+})
 
 afterEach(() => {
   for (const dir of tempDirs.splice(0)) {
-    rmSync(dir, { recursive: true, force: true });
+    rmSync(dir, { recursive: true, force: true })
   }
-});
+})
 
 function tempPrefsPath(): string {
-  const dir = mkdtempSync(join(tmpdir(), "tp-optional-"));
-  tempDirs.push(dir);
-  return join(dir, "optional-services.json");
+  const dir = mkdtempSync(join(tmpdir(), 'tp-optional-'))
+  tempDirs.push(dir)
+  return join(dir, 'optional-services.json')
 }
 
-test("defaults enable ui, website, mailpit, and drizzle studio; redis insight and stripe off", () => {
+test('defaults enable website, mailpit, and drizzle studio; expo dev server, redis insight and stripe off', () => {
   expect(DEFAULT_OPTIONAL_DEV_SERVICES).toEqual({
     dbstudio: true,
     smtp: true,
-    ui: true,
+    ui: false,
     website: true,
     redisinsight: false,
     stripe: false,
-  });
-});
+  })
+})
 
-test("normalizeOptionalSelection fills missing keys from defaults", () => {
+test('normalizeOptionalSelection fills missing keys from defaults', () => {
   expect(normalizeOptionalSelection({ ui: false, redisinsight: true })).toEqual({
     dbstudio: true,
     smtp: true,
@@ -101,38 +103,34 @@ test("normalizeOptionalSelection fills missing keys from defaults", () => {
     website: true,
     redisinsight: true,
     stripe: false,
-  });
-});
+  })
+})
 
-test("normalizeOptionalSelection ignores invalid payloads", () => {
-  expect(normalizeOptionalSelection(null)).toEqual(defaultOptionalSelection());
-  expect(normalizeOptionalSelection("nope")).toEqual(defaultOptionalSelection());
-  expect(normalizeOptionalSelection({ ui: "yes" })).toEqual(
-    defaultOptionalSelection(),
-  );
-});
+test('normalizeOptionalSelection ignores invalid payloads', () => {
+  expect(normalizeOptionalSelection(null)).toEqual(defaultOptionalSelection())
+  expect(normalizeOptionalSelection('nope')).toEqual(defaultOptionalSelection())
+  expect(normalizeOptionalSelection({ ui: 'yes' })).toEqual(defaultOptionalSelection())
+})
 
-test("read/write round-trips preferences", () => {
-  const path = tempPrefsPath();
+test('read/write round-trips preferences', () => {
+  const path = tempPrefsPath()
   const selection = {
     ...defaultOptionalSelection(),
     website: false,
     redisinsight: true,
-  };
-  writeOptionalDevServices(selection, path);
-  expect(JSON.parse(readFileSync(path, "utf8"))).toEqual(selection);
-  expect(readOptionalDevServices(path)).toEqual(selection);
-});
+  }
+  writeOptionalDevServices(selection, path)
+  expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual(selection)
+  expect(readOptionalDevServices(path)).toEqual(selection)
+})
 
-test("readOptionalDevServices returns defaults when file missing", () => {
-  const dir = mkdtempSync(join(tmpdir(), "tp-optional-miss-"));
-  tempDirs.push(dir);
-  expect(readOptionalDevServices(join(dir, "missing.json"))).toEqual(
-    defaultOptionalSelection(),
-  );
-});
+test('readOptionalDevServices returns defaults when file missing', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'tp-optional-miss-'))
+  tempDirs.push(dir)
+  expect(readOptionalDevServices(join(dir, 'missing.json'))).toEqual(defaultOptionalSelection())
+})
 
-test("devConvergeOptionsPayload keys the selection by Ansible stem", () => {
+test('devConvergeOptionsPayload keys the selection by Ansible stem', () => {
   expect(
     devConvergeOptionsPayload({
       dbstudio: true,
@@ -141,7 +139,7 @@ test("devConvergeOptionsPayload keys the selection by Ansible stem", () => {
       website: true,
       redisinsight: true,
       stripe: true,
-    }),
+    })
   ).toEqual({
     optionalServices: {
       dbstudio: true,
@@ -151,204 +149,176 @@ test("devConvergeOptionsPayload keys the selection by Ansible stem", () => {
       redis_insight: true,
       stripe_listen: true,
     },
-  });
-});
+  })
+})
 
-test("devConvergeOptionsPayload normalizes partial selections onto defaults", () => {
-  const payload = devConvergeOptionsPayload(
-    { redisinsight: true } as unknown as OptionalDevServiceSelection,
-  );
+test('devConvergeOptionsPayload normalizes partial selections onto defaults', () => {
+  const payload = devConvergeOptionsPayload({
+    redisinsight: true,
+  } as unknown as OptionalDevServiceSelection)
   expect(payload.optionalServices).toEqual({
     dbstudio: true,
     mailpit: true,
-    ui: true,
+    ui: false,
     website: true,
     redis_insight: true,
     stripe_listen: false,
-  });
-});
+  })
+})
 
-test("devConvergeOptionsEnvEntry emits one TURBOPANEL_DEV_CONVERGE_OPTIONS JSON pair", () => {
-  const entry = devConvergeOptionsEnvEntry(defaultOptionalSelection());
-  expect(DEV_CONVERGE_OPTIONS_ENV).toBe("TURBOPANEL_DEV_CONVERGE_OPTIONS");
-  expect(entry.startsWith("TURBOPANEL_DEV_CONVERGE_OPTIONS=")).toBe(true);
-  const json = entry.slice("TURBOPANEL_DEV_CONVERGE_OPTIONS=".length);
-  expect(JSON.parse(json)).toEqual(
-    devConvergeOptionsPayload(defaultOptionalSelection()),
-  );
+test('devConvergeOptionsEnvEntry emits one TURBOPANEL_DEV_CONVERGE_OPTIONS JSON pair', () => {
+  const entry = devConvergeOptionsEnvEntry(defaultOptionalSelection())
+  expect(DEV_CONVERGE_OPTIONS_ENV).toBe('TURBOPANEL_DEV_CONVERGE_OPTIONS')
+  expect(entry.startsWith('TURBOPANEL_DEV_CONVERGE_OPTIONS=')).toBe(true)
+  const json = entry.slice('TURBOPANEL_DEV_CONVERGE_OPTIONS='.length)
+  expect(JSON.parse(json)).toEqual(devConvergeOptionsPayload(defaultOptionalSelection()))
   // No per-service env flags — the daemon parses the payload once.
-  expect(entry).not.toContain("TURBOPANEL_OPTIONAL_");
-});
+  expect(entry).not.toContain('TURBOPANEL_OPTIONAL_')
+})
 
-test("assertOptionalDevServiceId rejects unknown ids", () => {
-  expect(assertOptionalDevServiceId("ui")).toBe("ui");
-  expect(assertOptionalDevServiceId("smtp")).toBe("smtp");
-  expect(assertOptionalDevServiceId("stripe")).toBe("stripe");
-  expect(() => assertOptionalDevServiceId("daemon")).toThrow(TypeError);
-});
+test('assertOptionalDevServiceId rejects unknown ids', () => {
+  expect(assertOptionalDevServiceId('ui')).toBe('ui')
+  expect(assertOptionalDevServiceId('smtp')).toBe('smtp')
+  expect(assertOptionalDevServiceId('stripe')).toBe('stripe')
+  expect(() => assertOptionalDevServiceId('daemon')).toThrow(TypeError)
+})
 
-test("persistOptionalServiceToggle writes E/X into prefs", () => {
-  const path = tempPrefsPath();
-  expect(persistOptionalServiceToggle("dbstudio", false, path)).toEqual({
+test('persistOptionalServiceToggle writes E/X into prefs', () => {
+  const path = tempPrefsPath()
+  expect(persistOptionalServiceToggle('dbstudio', false, path)).toEqual({
     ...defaultOptionalSelection(),
     dbstudio: false,
-  });
-  expect(readOptionalDevServices(path).dbstudio).toBe(false);
-  expect(persistOptionalServiceToggle("smtp", false, path)?.smtp).toBe(false);
-  expect(persistOptionalServiceToggle("daemon", true, path)).toBeNull();
-});
+  })
+  expect(readOptionalDevServices(path).dbstudio).toBe(false)
+  expect(persistOptionalServiceToggle('smtp', false, path)?.smtp).toBe(false)
+  expect(persistOptionalServiceToggle('daemon', true, path)).toBeNull()
+})
 
-test("optionalDevServiceCatalogIdsForRuntime omits Deno-only tools on Workers", () => {
-  expect(optionalDevServiceCatalogIdsForRuntime("deno")).toContain(
-    "redisinsight",
-  );
-  expect(optionalDevServiceCatalogIdsForRuntime("deno")).not.toContain(
-    "stripe",
-  );
-  expect(optionalDevServiceCatalogIdsForRuntime("workers")).not.toContain(
-    "redisinsight",
-  );
-  expect(optionalDevServiceCatalogIdsForRuntime("workers")).toContain("stripe");
-});
+test('optionalDevServiceCatalogIdsForRuntime omits Deno-only tools on Workers', () => {
+  expect(optionalDevServiceCatalogIdsForRuntime('deno')).toContain('redisinsight')
+  expect(optionalDevServiceCatalogIdsForRuntime('deno')).not.toContain('stripe')
+  expect(optionalDevServiceCatalogIdsForRuntime('workers')).not.toContain('redisinsight')
+  expect(optionalDevServiceCatalogIdsForRuntime('workers')).toContain('stripe')
+})
 
-test("applyOptionalDevServices stops docker-backed containers when unit is disabled", async () => {
-  await applyOptionalDevServices({ ...defaultOptionalSelection(), smtp: false });
+test('applyOptionalDevServices stops docker-backed containers when unit is disabled', async () => {
+  await applyOptionalDevServices({ ...defaultOptionalSelection(), smtp: false })
 
   const dockerCalls = mockedRunCaptured.mock.calls
     .map(([cmd]) => cmd)
-    .filter((cmd): cmd is string[] => Array.isArray(cmd) && cmd.includes("docker"));
+    .filter((cmd): cmd is string[] => Array.isArray(cmd) && cmd.includes('docker'))
 
   expect(
     dockerCalls.some(
       (cmd) =>
-        cmd.includes("update") &&
-        cmd.includes("--restart=no") &&
-        cmd.includes(MAILPIT_CONTAINER_NAME),
-    ),
-  ).toBe(true);
+        cmd.includes('update') &&
+        cmd.includes('--restart=no') &&
+        cmd.includes(MAILPIT_CONTAINER_NAME)
+    )
+  ).toBe(true)
   expect(
-    dockerCalls.some(
-      (cmd) => cmd.includes("stop") && cmd.includes(MAILPIT_CONTAINER_NAME),
-    ),
-  ).toBe(true);
-});
+    dockerCalls.some((cmd) => cmd.includes('stop') && cmd.includes(MAILPIT_CONTAINER_NAME))
+  ).toBe(true)
+})
 
-test("applyOptionalDevServices stops Redis Insight bridge when unit is disabled", async () => {
+test('applyOptionalDevServices stops Redis Insight bridge when unit is disabled', async () => {
   await applyOptionalDevServices({
     ...defaultOptionalSelection(),
     redisinsight: false,
-  });
+  })
 
   const dockerCalls = mockedRunCaptured.mock.calls
     .map(([cmd]) => cmd)
-    .filter((cmd): cmd is string[] => Array.isArray(cmd) && cmd.includes("docker"));
+    .filter((cmd): cmd is string[] => Array.isArray(cmd) && cmd.includes('docker'))
 
-  for (const container of [
-    REDIS_INSIGHT_CONTAINER_NAME,
-    REDIS_INSIGHT_BRIDGE_CONTAINER_NAME,
-  ]) {
+  for (const container of [REDIS_INSIGHT_CONTAINER_NAME, REDIS_INSIGHT_BRIDGE_CONTAINER_NAME]) {
     expect(
       dockerCalls.some(
-        (cmd) =>
-          cmd.includes("update") &&
-          cmd.includes("--restart=no") &&
-          cmd.includes(container),
-      ),
-    ).toBe(true);
-    expect(
-      dockerCalls.some((cmd) => cmd.includes("stop") && cmd.includes(container)),
-    ).toBe(true);
+        (cmd) => cmd.includes('update') && cmd.includes('--restart=no') && cmd.includes(container)
+      )
+    ).toBe(true)
+    expect(dockerCalls.some((cmd) => cmd.includes('stop') && cmd.includes(container))).toBe(true)
   }
-});
+})
 
-test("optionalDevServiceBackingContainers returns empty when unset", () => {
-  const ui = OPTIONAL_DEV_SERVICE_DEFS.find((def) => def.id === "ui");
+test('optionalDevServiceBackingContainers returns empty when unset', () => {
+  const ui = OPTIONAL_DEV_SERVICE_DEFS.find((def) => def.id === 'ui')
   if (!ui) {
-    throw new TypeError("expected ui optional service def");
+    throw new TypeError('expected ui optional service def')
   }
-  expect(optionalDevServiceBackingContainers(ui)).toEqual([]);
-  const smtp = OPTIONAL_DEV_SERVICE_DEFS.find((def) => def.id === "smtp");
+  expect(optionalDevServiceBackingContainers(ui)).toEqual([])
+  const smtp = OPTIONAL_DEV_SERVICE_DEFS.find((def) => def.id === 'smtp')
   if (!smtp) {
-    throw new TypeError("expected smtp optional service def");
+    throw new TypeError('expected smtp optional service def')
   }
-  expect(optionalDevServiceBackingContainers(smtp)).toEqual([
-    MAILPIT_CONTAINER_NAME,
-  ]);
-});
+  expect(optionalDevServiceBackingContainers(smtp)).toEqual([MAILPIT_CONTAINER_NAME])
+})
 
-test("applyOptionalDevServices treats a masked unit as installed", async () => {
+test('applyOptionalDevServices treats a masked unit as installed', async () => {
   mockedSpawnSyncTrustedText.mockReturnValue({
     status: 0,
-    stdout: "masked",
-    stderr: "",
+    stdout: 'masked',
+    stderr: '',
     pid: 0,
-    output: ["", "masked", ""],
+    output: ['', 'masked', ''],
     signal: null,
-  });
-  await applyOptionalDevServices({ ...defaultOptionalSelection(), ui: true });
+  })
+  await applyOptionalDevServices({ ...defaultOptionalSelection(), ui: true })
   expect(
     mockedRunCaptured.mock.calls.some(
       ([cmd]) =>
         Array.isArray(cmd) &&
-        cmd.includes("systemctl") &&
-        cmd.includes("enable") &&
-        cmd.includes("turbopanel-ui"),
-    ),
-  ).toBe(true);
-});
+        cmd.includes('systemctl') &&
+        cmd.includes('enable') &&
+        cmd.includes('turbopanel-ui')
+    )
+  ).toBe(true)
+})
 
-test("applyOptionalDevServices enables installed units with --now", async () => {
-  const lines: string[] = [];
-  await applyOptionalDevServices(
-    { ...defaultOptionalSelection(), ui: true },
-    (line) => lines.push(line),
-  );
+test('applyOptionalDevServices enables installed units with --now', async () => {
+  const lines: string[] = []
+  await applyOptionalDevServices({ ...defaultOptionalSelection(), ui: true }, (line) =>
+    lines.push(line)
+  )
   expect(
     mockedRunCaptured.mock.calls.some(
       ([cmd]) =>
         Array.isArray(cmd) &&
-        cmd.includes("systemctl") &&
-        cmd.includes("enable") &&
-        cmd.includes("turbopanel-ui"),
-    ),
-  ).toBe(true);
-  expect(lines.some((line) => line.includes("Enabling optional service"))).toBe(
-    true,
-  );
-});
+        cmd.includes('systemctl') &&
+        cmd.includes('enable') &&
+        cmd.includes('turbopanel-ui')
+    )
+  ).toBe(true)
+  expect(lines.some((line) => line.includes('Enabling optional service'))).toBe(true)
+})
 
-test("applyOptionalDevServices reports missing unit-only services when wanted", async () => {
+test('applyOptionalDevServices reports missing unit-only services when wanted', async () => {
   mockedSpawnSyncTrustedText.mockReturnValue({
     status: 0,
-    stdout: "not-found",
-    stderr: "",
+    stdout: 'not-found',
+    stderr: '',
     pid: 0,
-    output: ["", "not-found", ""],
+    output: ['', 'not-found', ''],
     signal: null,
-  });
+  })
   mockedSpawnDocker.mockReturnValue({
     status: 1,
-    stdout: "",
-    stderr: "",
+    stdout: '',
+    stderr: '',
     pid: 0,
-    output: ["", "", ""],
+    output: ['', '', ''],
     signal: null,
-  });
-  const lines: string[] = [];
-  await applyOptionalDevServices(
-    { ...defaultOptionalSelection(), ui: true, smtp: true },
-    (line) => lines.push(line),
-  );
-  expect(
-    lines.some((line) => line.includes("UI (Expo) is not installed yet")),
-  ).toBe(true);
-  expect(
-    lines.some((line) => line.includes("Mailpit is not installed yet")),
-  ).toBe(true);
-});
+  })
+  const lines: string[] = []
+  await applyOptionalDevServices({ ...defaultOptionalSelection(), ui: true, smtp: true }, (line) =>
+    lines.push(line)
+  )
+  expect(lines.some((line) => line.includes('Expo Dev Server is not installed yet'))).toBe(true)
+  expect(lines.some((line) => line.includes('Mailpit is not installed yet'))).toBe(true)
+})
 
-test("applyOptionalDevServices throws when systemctl enable fails", async () => {
-  mockedRunCaptured.mockResolvedValue(1);
+test('applyOptionalDevServices throws when systemctl enable fails', async () => {
+  mockedRunCaptured.mockResolvedValue(1)
   await expect(
     applyOptionalDevServices({
       dbstudio: true,
@@ -357,131 +327,120 @@ test("applyOptionalDevServices throws when systemctl enable fails", async () => 
       website: true,
       redisinsight: true,
       stripe: true,
-    }),
-  ).rejects.toThrow("systemctl enable --now turbopanel-dbstudio failed");
-});
+    })
+  ).rejects.toThrow('systemctl enable --now turbopanel-dbstudio failed')
+})
 
-test("applyOptionalDevServices throws when docker start/stop both fail", async () => {
+test('applyOptionalDevServices throws when docker start/stop both fail', async () => {
   mockedRunCaptured.mockImplementation(async (cmd) => {
-    if (Array.isArray(cmd) && cmd.includes("docker")) {
-      return 1;
+    if (Array.isArray(cmd) && cmd.includes('docker')) {
+      return 1
     }
-    return 0;
-  });
+    return 0
+  })
   await expect(
-    applyOptionalDevServices({ ...defaultOptionalSelection(), smtp: false }),
-  ).rejects.toThrow(`docker update --restart=no ${MAILPIT_CONTAINER_NAME} failed`);
-});
+    applyOptionalDevServices({ ...defaultOptionalSelection(), smtp: false })
+  ).rejects.toThrow(`docker update --restart=no ${MAILPIT_CONTAINER_NAME} failed`)
+})
 
-test("applyOptionalDevServices falls back to sudo docker when the first docker call fails", async () => {
+test('applyOptionalDevServices falls back to sudo docker when the first docker call fails', async () => {
   mockedRunCaptured.mockImplementation(async (cmd) => {
-    if (!Array.isArray(cmd) || !cmd.includes("docker")) {
-      return 0;
+    if (!Array.isArray(cmd) || !cmd.includes('docker')) {
+      return 0
     }
-    if (cmd[0] === "docker") {
-      return 1;
+    if (cmd[0] === 'docker') {
+      return 1
     }
-    return 0;
-  });
+    return 0
+  })
   await applyOptionalDevServices({
     ...defaultOptionalSelection(),
     smtp: false,
-  });
+  })
   const dockerCalls = mockedRunCaptured.mock.calls
     .map(([cmd]) => cmd)
-    .filter((cmd): cmd is string[] => Array.isArray(cmd) && cmd.includes("docker"));
+    .filter((cmd): cmd is string[] => Array.isArray(cmd) && cmd.includes('docker'))
+  expect(
+    dockerCalls.some(
+      (cmd) => cmd[0] === 'docker' && cmd.includes('update') && cmd.includes(MAILPIT_CONTAINER_NAME)
+    )
+  ).toBe(true)
   expect(
     dockerCalls.some(
       (cmd) =>
-        cmd[0] === "docker" &&
-        cmd.includes("update") &&
-        cmd.includes(MAILPIT_CONTAINER_NAME),
-    ),
-  ).toBe(true);
-  expect(
-    dockerCalls.some(
-      (cmd) =>
-        cmd[0] === "sudo" &&
-        cmd.includes("docker") &&
-        cmd.includes("update") &&
-        cmd.includes(MAILPIT_CONTAINER_NAME),
-    ),
-  ).toBe(true);
-});
+        cmd[0] === 'sudo' &&
+        cmd.includes('docker') &&
+        cmd.includes('update') &&
+        cmd.includes(MAILPIT_CONTAINER_NAME)
+    )
+  ).toBe(true)
+})
 
-test("applyOptionalDevServices treats a failed systemctl show as not installed", async () => {
+test('applyOptionalDevServices treats a failed systemctl show as not installed', async () => {
   mockedSpawnSyncTrustedText.mockReturnValue({
     status: 1,
-    stdout: "loaded",
-    stderr: "",
+    stdout: 'loaded',
+    stderr: '',
     pid: 0,
-    output: ["", "loaded", ""],
+    output: ['', 'loaded', ''],
     signal: null,
-  });
-  const lines: string[] = [];
-  await applyOptionalDevServices(
-    { ...defaultOptionalSelection(), ui: true, smtp: false },
-    (line) => lines.push(line),
-  );
+  })
+  const lines: string[] = []
+  await applyOptionalDevServices({ ...defaultOptionalSelection(), ui: true, smtp: false }, (line) =>
+    lines.push(line)
+  )
   expect(
-    mockedRunCaptured.mock.calls.some(
-      ([cmd]) => Array.isArray(cmd) && cmd.includes("systemctl"),
-    ),
-  ).toBe(false);
-  expect(lines.some((line) => line.includes("UI (Expo) is not installed yet"))).toBe(
-    true,
-  );
-});
+    mockedRunCaptured.mock.calls.some(([cmd]) => Array.isArray(cmd) && cmd.includes('systemctl'))
+  ).toBe(false)
+  expect(lines.some((line) => line.includes('Expo Dev Server is not installed yet'))).toBe(true)
+})
 
-test("applyOptionalDevServices treats blank systemctl output as not installed", async () => {
+test('applyOptionalDevServices treats blank systemctl output as not installed', async () => {
   mockedSpawnSyncTrustedText.mockReturnValue({
     status: 0,
-    stdout: "   ",
-    stderr: "",
+    stdout: '   ',
+    stderr: '',
     pid: 0,
-    output: ["", "   ", ""],
+    output: ['', '   ', ''],
     signal: null,
-  });
-  const lines: string[] = [];
-  await applyOptionalDevServices(
-    { ...defaultOptionalSelection(), ui: true },
-    (line) => lines.push(line),
-  );
-  expect(lines.some((line) => line.includes("UI (Expo) is not installed yet"))).toBe(
-    true,
-  );
-});
+  })
+  const lines: string[] = []
+  await applyOptionalDevServices({ ...defaultOptionalSelection(), ui: true }, (line) =>
+    lines.push(line)
+  )
+  expect(lines.some((line) => line.includes('Expo Dev Server is not installed yet'))).toBe(true)
+})
 
-test("applyOptionalDevServices skips missing containers when starting or stopping", async () => {
+test('applyOptionalDevServices skips missing containers when starting or stopping', async () => {
   mockedSpawnSyncTrustedText.mockReturnValue({
     status: 0,
-    stdout: "not-found",
-    stderr: "",
+    stdout: 'not-found',
+    stderr: '',
     pid: 0,
-    output: ["", "not-found", ""],
+    output: ['', 'not-found', ''],
     signal: null,
-  });
+  })
   mockedSpawnDocker.mockImplementation((_args) => {
-    const name = String(_args[1] ?? "");
+    const name = String(_args[1] ?? '')
     if (name === REDIS_INSIGHT_CONTAINER_NAME) {
       return {
         status: 0,
-        stdout: "true",
-        stderr: "",
+        stdout: 'true',
+        stderr: '',
         pid: 0,
-        output: ["", "true", ""],
+        output: ['', 'true', ''],
         signal: null,
-      };
+      }
     }
     return {
       status: 1,
-      stdout: "",
-      stderr: "",
+      stdout: '',
+      stderr: '',
       pid: 0,
-      output: ["", "", ""],
+      output: ['', '', ''],
       signal: null,
-    };
-  });
+    }
+  })
 
   await applyOptionalDevServices({
     ...defaultOptionalSelection(),
@@ -490,18 +449,14 @@ test("applyOptionalDevServices skips missing containers when starting or stoppin
     ui: false,
     website: false,
     dbstudio: false,
-  });
+  })
   let dockerCalls = mockedRunCaptured.mock.calls
     .map(([cmd]) => cmd)
-    .filter((cmd): cmd is string[] => Array.isArray(cmd) && cmd.includes("docker"));
-  expect(
-    dockerCalls.some((cmd) => cmd.includes(REDIS_INSIGHT_CONTAINER_NAME)),
-  ).toBe(true);
-  expect(
-    dockerCalls.some((cmd) => cmd.includes(REDIS_INSIGHT_BRIDGE_CONTAINER_NAME)),
-  ).toBe(false);
+    .filter((cmd): cmd is string[] => Array.isArray(cmd) && cmd.includes('docker'))
+  expect(dockerCalls.some((cmd) => cmd.includes(REDIS_INSIGHT_CONTAINER_NAME))).toBe(true)
+  expect(dockerCalls.some((cmd) => cmd.includes(REDIS_INSIGHT_BRIDGE_CONTAINER_NAME))).toBe(false)
 
-  mockedRunCaptured.mockClear();
+  mockedRunCaptured.mockClear()
   await applyOptionalDevServices({
     ...defaultOptionalSelection(),
     redisinsight: false,
@@ -509,23 +464,18 @@ test("applyOptionalDevServices skips missing containers when starting or stoppin
     ui: false,
     website: false,
     dbstudio: false,
-  });
+  })
   dockerCalls = mockedRunCaptured.mock.calls
     .map(([cmd]) => cmd)
-    .filter((cmd): cmd is string[] => Array.isArray(cmd) && cmd.includes("docker"));
+    .filter((cmd): cmd is string[] => Array.isArray(cmd) && cmd.includes('docker'))
   expect(
-    dockerCalls.some(
-      (cmd) =>
-        cmd.includes("stop") && cmd.includes(REDIS_INSIGHT_CONTAINER_NAME),
-    ),
-  ).toBe(true);
-  expect(
-    dockerCalls.some((cmd) => cmd.includes(REDIS_INSIGHT_BRIDGE_CONTAINER_NAME)),
-  ).toBe(false);
-});
+    dockerCalls.some((cmd) => cmd.includes('stop') && cmd.includes(REDIS_INSIGHT_CONTAINER_NAME))
+  ).toBe(true)
+  expect(dockerCalls.some((cmd) => cmd.includes(REDIS_INSIGHT_BRIDGE_CONTAINER_NAME))).toBe(false)
+})
 
-test("applyOptionalDevServices disables a unit-only service without docker", async () => {
-  const lines: string[] = [];
+test('applyOptionalDevServices disables a unit-only service without docker', async () => {
+  const lines: string[] = []
   await applyOptionalDevServices(
     {
       dbstudio: true,
@@ -535,153 +485,143 @@ test("applyOptionalDevServices disables a unit-only service without docker", asy
       redisinsight: true,
       stripe: false,
     },
-    (line) => lines.push(line),
-  );
+    (line) => lines.push(line)
+  )
   expect(
     mockedRunCaptured.mock.calls.some(
       ([cmd]) =>
         Array.isArray(cmd) &&
-        cmd.includes("systemctl") &&
-        cmd.includes("disable") &&
-        cmd.includes("turbopanel-ui"),
-    ),
-  ).toBe(true);
+        cmd.includes('systemctl') &&
+        cmd.includes('disable') &&
+        cmd.includes('turbopanel-ui')
+    )
+  ).toBe(true)
   expect(
-    mockedRunCaptured.mock.calls.some(
-      ([cmd]) => Array.isArray(cmd) && cmd.includes("docker"),
-    ),
-  ).toBe(false);
-  expect(lines.some((line) => line.includes("Disabling optional service"))).toBe(
-    true,
-  );
-});
+    mockedRunCaptured.mock.calls.some(([cmd]) => Array.isArray(cmd) && cmd.includes('docker'))
+  ).toBe(false)
+  expect(lines.some((line) => line.includes('Disabling optional service'))).toBe(true)
+})
 
-test("applyOptionalDevServices treats missing systemctl stdout as not installed", async () => {
+test('applyOptionalDevServices treats missing systemctl stdout as not installed', async () => {
   mockedSpawnSyncTrustedText.mockReturnValue({
     status: 0,
     stdout: undefined as unknown as string,
-    stderr: "",
+    stderr: '',
     pid: 0,
-    output: ["", "", ""],
+    output: ['', '', ''],
     signal: null,
-  });
-  const lines: string[] = [];
-  await applyOptionalDevServices(
-    { ...defaultOptionalSelection(), ui: true },
-    (line) => lines.push(line),
-  );
-  expect(lines.some((line) => line.includes("UI (Expo) is not installed yet"))).toBe(
-    true,
-  );
-});
+  })
+  const lines: string[] = []
+  await applyOptionalDevServices({ ...defaultOptionalSelection(), ui: true }, (line) =>
+    lines.push(line)
+  )
+  expect(lines.some((line) => line.includes('Expo Dev Server is not installed yet'))).toBe(true)
+})
 
-test("stripe is a unit-only optional service with the stripe_listen ansible stem", () => {
-  const stripe = OPTIONAL_DEV_SERVICE_DEFS.find((def) => def.id === "stripe");
+test('stripe is a unit-only optional service with the stripe_listen ansible stem', () => {
+  const stripe = OPTIONAL_DEV_SERVICE_DEFS.find((def) => def.id === 'stripe')
   if (!stripe) {
-    throw new TypeError("expected stripe optional service def");
+    throw new TypeError('expected stripe optional service def')
   }
-  expect(stripe.unit).toBe("turbopanel-stripe-listen");
-  expect(stripe.ansibleStem).toBe("stripe_listen");
-  expect(optionalDevServiceBackingContainers(stripe)).toEqual([]);
-  expect(optionalDevServiceCatalogIdsForRuntime("deno")).not.toContain("stripe");
-  expect(optionalDevServiceCatalogIdsForRuntime("workers")).toContain("stripe");
-});
+  expect(stripe.unit).toBe('turbopanel-stripe-listen')
+  expect(stripe.ansibleStem).toBe('stripe_listen')
+  expect(optionalDevServiceBackingContainers(stripe)).toEqual([])
+  expect(optionalDevServiceCatalogIdsForRuntime('deno')).not.toContain('stripe')
+  expect(optionalDevServiceCatalogIdsForRuntime('workers')).toContain('stripe')
+})
 
-test("applyOptionalDevServices reports a missing stripe unit when wanted", async () => {
+test('applyOptionalDevServices reports a missing stripe unit when wanted', async () => {
   mockedSpawnSyncTrustedText.mockReturnValue({
     status: 0,
-    stdout: "not-found",
-    stderr: "",
+    stdout: 'not-found',
+    stderr: '',
     pid: 0,
-    output: ["", "not-found", ""],
+    output: ['', 'not-found', ''],
     signal: null,
-  });
-  const lines: string[] = [];
-  await applyOptionalDevServices(
-    { ...defaultOptionalSelection(), stripe: true },
-    (line) => lines.push(line),
-  );
+  })
+  const lines: string[] = []
+  await applyOptionalDevServices({ ...defaultOptionalSelection(), stripe: true }, (line) =>
+    lines.push(line)
+  )
   expect(
-    lines.some((line) => line.includes("Stripe CLI (webhook forward) is not installed yet")),
-  ).toBe(true);
-});
+    lines.some((line) => line.includes('Stripe CLI (webhook forward) is not installed yet'))
+  ).toBe(true)
+})
 
-test("applyOptionalDevServices starts container-only services when unit is missing", async () => {
+test('applyOptionalDevServices starts container-only services when unit is missing', async () => {
   mockedSpawnSyncTrustedText.mockReturnValue({
     status: 0,
-    stdout: "not-found",
-    stderr: "",
+    stdout: 'not-found',
+    stderr: '',
     pid: 0,
-    output: ["", "not-found", ""],
+    output: ['', 'not-found', ''],
     signal: null,
-  });
+  })
   mockedSpawnDocker.mockReturnValue({
     status: 0,
-    stdout: "true",
-    stderr: "",
+    stdout: 'true',
+    stderr: '',
     pid: 0,
-    output: ["", "true", ""],
+    output: ['', 'true', ''],
     signal: null,
-  });
+  })
   await applyOptionalDevServices({
     ...defaultOptionalSelection(),
     smtp: true,
     ui: false,
     website: false,
-  });
+  })
   const dockerCalls = mockedRunCaptured.mock.calls
     .map(([cmd]) => cmd)
-    .filter((cmd): cmd is string[] => Array.isArray(cmd) && cmd.includes("docker"));
+    .filter((cmd): cmd is string[] => Array.isArray(cmd) && cmd.includes('docker'))
   expect(
     dockerCalls.some(
       (cmd) =>
-        cmd.includes("update") &&
-        cmd.includes("--restart=unless-stopped") &&
-        cmd.includes(MAILPIT_CONTAINER_NAME),
-    ),
-  ).toBe(true);
+        cmd.includes('update') &&
+        cmd.includes('--restart=unless-stopped') &&
+        cmd.includes(MAILPIT_CONTAINER_NAME)
+    )
+  ).toBe(true)
   expect(
-    dockerCalls.some(
-      (cmd) => cmd.includes("start") && cmd.includes(MAILPIT_CONTAINER_NAME),
-    ),
-  ).toBe(true);
-});
+    dockerCalls.some((cmd) => cmd.includes('start') && cmd.includes(MAILPIT_CONTAINER_NAME))
+  ).toBe(true)
+})
 
 /** Commands as `argv` minus the `sudo -n` prefix, in the order `runCaptured` received them. */
 function recordCommandsOneAtATime(): { commands: string[]; maxActive: () => number } {
-  const commands: string[] = [];
-  let active = 0;
-  let maxActive = 0;
+  const commands: string[] = []
+  let active = 0
+  let maxActive = 0
   mockedRunCaptured.mockImplementation(async (cmd) => {
-    const argv = (cmd as string[]).filter((part) => part !== "sudo" && part !== "-n");
-    commands.push(argv.join(" "));
-    active += 1;
-    maxActive = Math.max(maxActive, active);
-    await new Promise((resolve) => setTimeout(resolve, commands.length === 1 ? 10 : 1));
-    active -= 1;
-    return 0;
-  });
-  return { commands, maxActive: () => maxActive };
+    const argv = (cmd as string[]).filter((part) => part !== 'sudo' && part !== '-n')
+    commands.push(argv.join(' '))
+    active += 1
+    maxActive = Math.max(maxActive, active)
+    await new Promise((resolve) => setTimeout(resolve, commands.length === 1 ? 10 : 1))
+    active -= 1
+    return 0
+  })
+  return { commands, maxActive: () => maxActive }
 }
 
 /** Only the Redis Insight containers exist; every other container is missing. */
 function onlyRedisInsightContainersExist(): void {
   mockedSpawnDocker.mockImplementation((args) => {
-    const name = String(args[1] ?? "");
-    const exists = name.startsWith("turbopanel-dev-redis-insight");
+    const name = String(args[1] ?? '')
+    const exists = name.startsWith('turbopanel-dev-redis-insight')
     return {
       status: exists ? 0 : 1,
-      stdout: exists ? "true" : "",
-      stderr: "",
+      stdout: exists ? 'true' : '',
+      stderr: '',
       pid: 0,
-      output: ["", "", ""],
+      output: ['', '', ''],
       signal: null,
-    };
-  });
+    }
+  })
 }
 
-test("applyOptionalDevServices applies services one at a time in catalog order", async () => {
-  const recorded = recordCommandsOneAtATime();
+test('applyOptionalDevServices applies services one at a time in catalog order', async () => {
+  const recorded = recordCommandsOneAtATime()
   await applyOptionalDevServices({
     dbstudio: true,
     smtp: false,
@@ -689,32 +629,32 @@ test("applyOptionalDevServices applies services one at a time in catalog order",
     website: false,
     redisinsight: true,
     stripe: false,
-  });
+  })
   expect(recorded.commands).toEqual([
-    "systemctl enable --now turbopanel-dbstudio",
-    "systemctl disable --now turbopanel-mailpit",
+    'systemctl enable --now turbopanel-dbstudio',
+    'systemctl disable --now turbopanel-mailpit',
     `docker update --restart=no ${MAILPIT_CONTAINER_NAME}`,
     `docker stop ${MAILPIT_CONTAINER_NAME}`,
-    "systemctl enable --now turbopanel-ui",
-    "systemctl disable --now turbopanel-website",
-    "systemctl enable --now turbopanel-redis-insight",
-    "systemctl disable --now turbopanel-stripe-listen",
-  ]);
-  expect(recorded.maxActive()).toBe(1);
-});
+    'systemctl enable --now turbopanel-ui',
+    'systemctl disable --now turbopanel-website',
+    'systemctl enable --now turbopanel-redis-insight',
+    'systemctl disable --now turbopanel-stripe-listen',
+  ])
+  expect(recorded.maxActive()).toBe(1)
+})
 
-test("applyOptionalDevServices starts each backing container update-then-start, one at a time", async () => {
+test('applyOptionalDevServices starts each backing container update-then-start, one at a time', async () => {
   mockedSpawnSyncTrustedText.mockReturnValue({
     status: 0,
-    stdout: "not-found",
-    stderr: "",
+    stdout: 'not-found',
+    stderr: '',
     pid: 0,
-    output: ["", "not-found", ""],
+    output: ['', 'not-found', ''],
     signal: null,
-  });
-  onlyRedisInsightContainersExist();
-  const recorded = recordCommandsOneAtATime();
-  const lines: string[] = [];
+  })
+  onlyRedisInsightContainersExist()
+  const recorded = recordCommandsOneAtATime()
+  const lines: string[] = []
   await applyOptionalDevServices(
     {
       dbstudio: false,
@@ -724,40 +664,38 @@ test("applyOptionalDevServices starts each backing container update-then-start, 
       redisinsight: true,
       stripe: false,
     },
-    (line) => lines.push(line),
-  );
+    (line) => lines.push(line)
+  )
   expect(recorded.commands).toEqual([
     `docker update --restart=unless-stopped ${REDIS_INSIGHT_CONTAINER_NAME}`,
     `docker start ${REDIS_INSIGHT_CONTAINER_NAME}`,
     `docker update --restart=unless-stopped ${REDIS_INSIGHT_BRIDGE_CONTAINER_NAME}`,
     `docker start ${REDIS_INSIGHT_BRIDGE_CONTAINER_NAME}`,
-  ]);
-  expect(recorded.maxActive()).toBe(1);
+  ])
+  expect(recorded.maxActive()).toBe(1)
   expect(lines).toEqual([
-    "Starting optional container Redis Insight",
+    'Starting optional container Redis Insight',
     `Starting optional container ${REDIS_INSIGHT_CONTAINER_NAME}`,
     `Starting optional container ${REDIS_INSIGHT_BRIDGE_CONTAINER_NAME}`,
-  ]);
-});
+  ])
+})
 
-test("applyOptionalDevServices stops at the first failed container step", async () => {
+test('applyOptionalDevServices stops at the first failed container step', async () => {
   mockedSpawnSyncTrustedText.mockReturnValue({
     status: 0,
-    stdout: "not-found",
-    stderr: "",
+    stdout: 'not-found',
+    stderr: '',
     pid: 0,
-    output: ["", "not-found", ""],
+    output: ['', 'not-found', ''],
     signal: null,
-  });
-  onlyRedisInsightContainersExist();
-  const seen: string[] = [];
+  })
+  onlyRedisInsightContainersExist()
+  const seen: string[] = []
   mockedRunCaptured.mockImplementation(async (cmd) => {
-    const argv = (cmd as string[]).join(" ");
-    seen.push(argv);
-    return argv.includes(`update --restart=unless-stopped ${REDIS_INSIGHT_CONTAINER_NAME}`)
-      ? 1
-      : 0;
-  });
+    const argv = (cmd as string[]).join(' ')
+    seen.push(argv)
+    return argv.includes(`update --restart=unless-stopped ${REDIS_INSIGHT_CONTAINER_NAME}`) ? 1 : 0
+  })
   await expect(
     applyOptionalDevServices({
       dbstudio: false,
@@ -766,24 +704,22 @@ test("applyOptionalDevServices stops at the first failed container step", async 
       website: false,
       redisinsight: true,
       stripe: false,
-    }),
-  ).rejects.toThrow(
-    `docker update --restart=unless-stopped ${REDIS_INSIGHT_CONTAINER_NAME} failed`,
-  );
+    })
+  ).rejects.toThrow(`docker update --restart=unless-stopped ${REDIS_INSIGHT_CONTAINER_NAME} failed`)
   // Both attempts (plain, then sudo) of the failing step ran; nothing after it did.
   expect(seen).toEqual([
     `docker update --restart=unless-stopped ${REDIS_INSIGHT_CONTAINER_NAME}`,
     `sudo -n docker update --restart=unless-stopped ${REDIS_INSIGHT_CONTAINER_NAME}`,
-  ]);
-});
+  ])
+})
 
-test("applyOptionalDevServices does not touch later services once one fails", async () => {
-  const seen: string[] = [];
+test('applyOptionalDevServices does not touch later services once one fails', async () => {
+  const seen: string[] = []
   mockedRunCaptured.mockImplementation(async (cmd) => {
-    const argv = (cmd as string[]).join(" ");
-    seen.push(argv);
-    return argv.includes("disable --now turbopanel-mailpit") ? 1 : 0;
-  });
+    const argv = (cmd as string[]).join(' ')
+    seen.push(argv)
+    return argv.includes('disable --now turbopanel-mailpit') ? 1 : 0
+  })
   await expect(
     applyOptionalDevServices({
       dbstudio: true,
@@ -792,10 +728,23 @@ test("applyOptionalDevServices does not touch later services once one fails", as
       website: true,
       redisinsight: true,
       stripe: true,
-    }),
-  ).rejects.toThrow("systemctl disable --now turbopanel-mailpit failed");
+    })
+  ).rejects.toThrow('systemctl disable --now turbopanel-mailpit failed')
   expect(seen).toEqual([
-    "sudo -n systemctl enable --now turbopanel-dbstudio",
-    "sudo -n systemctl disable --now turbopanel-mailpit",
-  ]);
-});
+    'sudo -n systemctl enable --now turbopanel-dbstudio',
+    'sudo -n systemctl disable --now turbopanel-mailpit',
+  ])
+})
+
+test('the ui option is labelled Expo Dev Server and defaults to the static choice', () => {
+  const ui = OPTIONAL_DEV_SERVICE_DEFS.find((def) => def.id === 'ui')
+  expect(ui?.label).toBe('Expo Dev Server')
+  expect(ui?.hint).toMatch(/^[A-Z]/)
+  expect(uiModeForSelection(defaultOptionalSelection())).toBe('static')
+})
+
+test('uiModeForSelection maps the Expo choice to dev and everything else to static', () => {
+  expect(uiModeForSelection({ ...defaultOptionalSelection(), ui: true })).toBe('dev')
+  expect(uiModeForSelection({ ...defaultOptionalSelection(), ui: false })).toBe('static')
+  expect(UI_MODE_ENV_KEY).toBe('TURBOPANEL_UI_MODE')
+})

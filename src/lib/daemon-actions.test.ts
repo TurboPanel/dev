@@ -11,6 +11,7 @@ vi.mock('../dev-services.ts', () => ({
 vi.mock('./daemon-env.ts', () => ({
   readInstanceRuntime: vi.fn(() => 'deno'),
   isDeveloperSurfaceInstance: vi.fn(() => true),
+  readInstanceUiMode: vi.fn(() => 'dev'),
 }))
 
 vi.mock('./spawn-trusted.ts', () => ({
@@ -43,7 +44,11 @@ vi.mock('./run-repo-tests.ts', () => ({
 }))
 
 import { isDaemonSystemdInstalled } from '../dev-services.ts'
-import { isDeveloperSurfaceInstance, readInstanceRuntime } from './daemon-env.ts'
+import {
+  isDeveloperSurfaceInstance,
+  readInstanceRuntime,
+  readInstanceUiMode,
+} from './daemon-env.ts'
 import { spawnSyncTrustedText } from './spawn-trusted.ts'
 import { runCaptured } from './install-output.ts'
 import {
@@ -75,6 +80,7 @@ import {
 const mockedIsDaemonSystemdInstalled = vi.mocked(isDaemonSystemdInstalled)
 const mockedReadInstanceRuntime = vi.mocked(readInstanceRuntime)
 const mockedIsDeveloperSurfaceInstance = vi.mocked(isDeveloperSurfaceInstance)
+const mockedReadInstanceUiMode = vi.mocked(readInstanceUiMode)
 const mockedSpawnSyncTrustedText = vi.mocked(spawnSyncTrustedText)
 const mockedRunCaptured = vi.mocked(runCaptured)
 const mockedSyncDev = vi.mocked(syncDevToAllDaemons)
@@ -154,6 +160,29 @@ describe('daemon menus', () => {
     ])
   })
 
+  it('offers Rebuild Static UI in static mode only, right after the Deno actions', () => {
+    mockedReadInstanceRuntime.mockReturnValue('deno')
+    mockedReadInstanceUiMode.mockReturnValue('dev')
+    expect(developerMenuActions('running')).not.toContain('rebuild-static-ui')
+
+    mockedReadInstanceUiMode.mockReturnValue('static')
+    const actions = developerMenuActions('running')
+    expect(actions).toContain('rebuild-static-ui')
+    expect(actions.indexOf('rebuild-static-ui')).toBe(actions.indexOf('rebuild-daemon-upgrade') + 1)
+    expect(DAEMON_ACTION_LABELS['rebuild-static-ui']).toBe('Rebuild Static UI')
+    mockedReadInstanceUiMode.mockReturnValue('dev')
+  })
+
+  it('keeps the developer-surface actions in static mode', () => {
+    mockedReadInstanceRuntime.mockReturnValue('deno')
+    mockedReadInstanceUiMode.mockReturnValue('static')
+    mockedIsDeveloperSurfaceInstance.mockReturnValue(true)
+    const actions = developerMenuActions('running')
+    expect(actions).toContain('open-duckdb-ui')
+    expect(actions).toContain('update-restart')
+    mockedReadInstanceUiMode.mockReturnValue('dev')
+  })
+
   it('omits Deno-only actions on the Workers runtime', () => {
     mockedReadInstanceRuntime.mockReturnValue('workers')
     mockedIsDeveloperSurfaceInstance.mockReturnValue(false)
@@ -188,6 +217,7 @@ describe('daemon menus', () => {
     mockedIsDeveloperSurfaceInstance.mockReturnValue(true)
     mockedReadInstanceRuntime.mockClear()
     mockedIsDeveloperSurfaceInstance.mockClear()
+    mockedReadInstanceUiMode.mockClear()
     const env = {
       runtime: 'workers' as const,
       uiMode: 'static' as const,
@@ -196,6 +226,7 @@ describe('daemon menus', () => {
     }
     const actions = developerMenuActions('running', env)
     expect(mockedReadInstanceRuntime).not.toHaveBeenCalled()
+    expect(mockedReadInstanceUiMode).not.toHaveBeenCalled()
     expect(mockedIsDeveloperSurfaceInstance).toHaveBeenCalledWith(env)
     expect(actions).toContain('save-tier-catalogue')
     expect(actions).not.toContain('sync-dev-build')

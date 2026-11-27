@@ -13,7 +13,7 @@ import {
   type ServiceActionId,
 } from '../lib/service-actions.ts'
 import { type ConsoleLogLine, consoleLogLine, watchServiceRestart } from '../lib/service-restart.ts'
-import { readInstanceRuntime } from '../lib/daemon-env.ts'
+import { readInstanceRuntime, readInstanceUiMode } from '../lib/daemon-env.ts'
 import { openDuckDbUi } from '../lib/duckdb-ui.ts'
 import { resolveDevEnvStartupPlan, type DevEnvStartupPlan } from '../lib/dev-env-readiness.ts'
 import { readCellTraceEnabled, setCellTraceEnabled } from '../lib/instance-trace-env.ts'
@@ -29,6 +29,7 @@ import {
   applyOptionalDevServices,
   persistOptionalServiceToggle,
   readOptionalDevServices,
+  uiModeForSelection,
   type OptionalDevServiceSelection,
 } from '../lib/optional-dev-services.ts'
 import type { OptionalServicesModalMode } from '../components/optional-services-modal.tsx'
@@ -314,6 +315,9 @@ export function useConsoleApp() {
         case 'rebuild-daemon-upgrade':
           beginBootstrapOperation('rebuild-daemon-upgrade')
           return
+        case 'rebuild-static-ui':
+          beginBootstrapOperation('rebuild-static-ui')
+          return
         case 'toggle-cell-trace':
           setActiveArea('developer')
           setCellTraceEnabled(!readCellTraceEnabled())
@@ -452,6 +456,15 @@ export function useConsoleApp() {
 
       if (pending.mode === 'converge') {
         beginConverge(resolveConvergeMode(pending.convergeMode), selection)
+        return
+      }
+
+      // Switching between the Expo Dev Server and the static UI changes the
+      // unit and Caddy environment, which only a converge renders (it also
+      // exports the static UI and restarts Caddy and the daemon). Starting or
+      // stopping units alone cannot do that.
+      if (uiModeForSelection(selection) !== readInstanceUiMode()) {
+        beginConverge('if-needed', selection)
         return
       }
 
