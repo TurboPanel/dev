@@ -1020,6 +1020,26 @@ describe('lima-up.sh and the guest scripts', () => {
     expect(yaml).not.toContain('template:debian-13')
   })
 
+  test('the guest setup script does the heavy steps once and can be forced', () => {
+    const script = readFileSync(join(REPO_ROOT, 'scripts/lima-guest-setup.sh'), 'utf8')
+    expect(script).toContain('/var/lib/turbopanel-dev')
+    expect(script).toContain('lima-guest-setup.done')
+    expect(script).toContain('--force')
+    expect(script).toContain('TURBOPANEL_LIMA_FORCE')
+    const guard = script.indexOf('[ -f "$MARKER" ]')
+    expect(guard).toBeGreaterThan(0)
+    // the network and root-level steps sit behind the marker; the symlink does not
+    expect(script.indexOf('apt-get')).toBeGreaterThan(guard)
+    expect(script.indexOf('vm-bootstrap.sh" --swap')).toBeGreaterThan(guard)
+    expect(script.indexOf('incus-guest-setup.sh" "$DEV_USER"')).toBeGreaterThan(guard)
+    expect(script.indexOf('ln -s')).toBeGreaterThan(script.indexOf('\nfi\n', guard))
+    expect(script.indexOf('date -u')).toBeGreaterThan(
+      script.indexOf('incus-guest-setup.sh" "$DEV_USER"')
+    )
+    const yaml = readFileSync(join(REPO_ROOT, 'lima.yaml'), 'utf8')
+    expect(yaml).not.toMatch(/runs once/i)
+  })
+
   test('the guest setup script refuses a missing or root user', () => {
     const script = join(REPO_ROOT, 'scripts/lima-guest-setup.sh')
     for (const args of [[], ['root'], ['bad user']]) {

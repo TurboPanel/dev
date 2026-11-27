@@ -30,9 +30,11 @@ containerd:
 param:
   devRoot: ""
 
-# Runs once, on the first boot, as root. The guest user is the host user's
-# name. Rerun it by hand after a failure or a change to the guest scripts:
-#   limactl shell NAME -- sudo sh ~/turbopanel/dev/scripts/lima-guest-setup.sh "$USER"
+# Lima runs this on every start, as root. The guest user is the host user's
+# name. The script does the heavy steps once (it leaves a done-marker in
+# /var/lib/turbopanel-dev) and only the cheap offline ones on later starts. Force
+# a full rerun after a failure or a change to the guest scripts:
+#   limactl shell NAME -- sudo sh ~/turbopanel/dev/scripts/lima-guest-setup.sh --force "$USER"
 provision:
   - mode: system
     script: |

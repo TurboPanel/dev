@@ -362,7 +362,7 @@ limactl shell turbopanel-dev -- sh -c 'export PATH="/opt/turbopanel/vendor/node/
 
 ### What `lima-guest-setup.sh` Does
 
-`lima.yaml` runs it once, as root, on the first boot. It installs `libatomic1` and `jq`, runs `scripts/vm-bootstrap.sh --swap` (the Direct-mode script), then `scripts/incus-guest-setup.sh` without ports (the guest-local pnpm store, the `node_modules` bind mounts, the Metro poll interval and heap, optional units off at boot), links the host's `dev_root` path to `~/turbopanel` inside the VM so git worktrees work, and installs the login banner. Every step checks first, so rerun it after a failure: `limactl shell turbopanel-dev -- sudo sh ~/turbopanel/dev/scripts/lima-guest-setup.sh <you>`.
+Lima runs the script from `lima.yaml` as root on every start, but the heavy steps run once: after they succeed it writes `/var/lib/turbopanel-dev/lima-guest-setup.done` and later starts skip them, so a start needs no network and the optional units you picked stay as they are. The first run installs `libatomic1` and `jq`, runs `scripts/vm-bootstrap.sh --swap` (the Direct-mode script), then `scripts/incus-guest-setup.sh` without ports (the guest-local pnpm store, the `node_modules` bind mounts, the Metro poll interval and heap, optional units off at boot), links the host's `dev_root` path to `~/turbopanel` inside the VM so git worktrees work, and installs the login banner. The link and the banner are cheap and offline-safe, so they run on every start. Every step checks first. To run everything again after a failure or a change to the guest scripts, pass `--force` (or set `TURBOPANEL_LIMA_FORCE=1`): `limactl shell turbopanel-dev -- sudo sh ~/turbopanel/dev/scripts/lima-guest-setup.sh --force <you>`.
 
 ## Vagrantfile Responsibilities
 

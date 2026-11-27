@@ -1050,7 +1050,11 @@ tp_choose_mode() {
       {
         printf 'How do you want to run TurboPanel?\n'
         printf '  1) Vagrant: the repos stay in %s on this machine; '"'"'vagrant up'"'"' in %s/dev runs them in a Debian VM\n' "$DIR" "$DIR"
-        printf '  2) Direct: this Debian 13 machine becomes the dev machine; setup gives your user passwordless sudo%s\n' "$_cm_hint"
+        if [ "$DIRECT_OK" -eq 0 ] && [ "$HOST_KERNEL" = Darwin ]; then
+          printf '  2) Direct: not available on macOS\n'
+        else
+          printf '  2) Direct: this Debian 13 machine becomes the dev machine; setup gives your user passwordless sudo%s\n' "$_cm_hint"
+        fi
         if [ "$INCUS_OK" -eq 1 ]; then
           printf '  3) Incus: the repos stay in %s on this machine; '"'"'incant up'"'"' in %s/dev runs them in a Debian VM (Linux hosts)\n' "$DIR" "$DIR"
         fi
