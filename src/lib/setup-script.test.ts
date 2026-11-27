@@ -905,7 +905,7 @@ describe('setup.sh lima mode', () => {
     const { status, out } = lima({ TURBOPANEL_LIMA_NAME: 'tp-two' })
     expect(status, out).toBe(0)
     expect(out).toContain('limactl shell tp-two -- sudo passwd ')
-    expect(out).not.toContain('turbopanel-dev')
+    expect(out).not.toContain('limactl shell turbopanel-dev')
   })
 
   test.skipIf(

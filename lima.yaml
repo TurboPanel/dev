@@ -8,7 +8,7 @@
 # Lima forwards every TCP port a guest service listens on (including loopback
 # only ones) to 127.0.0.1 on the host, so https://localhost:8443 reaches the panel.
 
-# Images only: template:debian-13 would also pull _default/mounts, a read-only
+# Images only: the plain debian-13 template would also pull _default/mounts, a read-only
 # mount of the whole home folder that overlaps the repos.
 base: template:_images/debian-13
 

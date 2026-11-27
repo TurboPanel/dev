@@ -1028,7 +1028,16 @@ tp_choose_mode() {
     elif [ "$DRY_RUN" -eq 1 ]; then
       MODE=
     elif [ "$ASSUME_YES" -eq 1 ]; then
-      tp_die "--yes needs --mode direct, vagrant, incus or lima on a first run."
+      if [ "$INCUS_OK" -eq 0 ] && [ "$LIMA_OK" -eq 0 ]; then
+        _cm_list="direct, vagrant, incus or lima"
+      elif [ "$INCUS_OK" -eq 0 ]; then
+        _cm_list="direct, vagrant or incus"
+      elif [ "$LIMA_OK" -eq 0 ]; then
+        _cm_list="direct, vagrant or lima"
+      else
+        _cm_list="direct or vagrant"
+      fi
+      tp_die "--yes needs --mode ${_cm_list} on a first run."
     elif ! tp_has_tty; then
       tp_die "no terminal to ask on; pass --yes --mode direct|vagrant|incus|lima."
     else
