@@ -1244,8 +1244,7 @@ tp_next_steps() {
   elif [ "$MODE" = lima ]; then
     _ns_lima=${TURBOPANEL_LIMA_NAME:-turbopanel-dev}
     echo "  cd $(tp_sq "$DIR/dev") && ./scripts/lima-up.sh"
-    echo "  limactl shell ${_ns_lima} -- sudo passwd $(id -un)   (the panel installer checks this password through PAM)"
-    echo "  limactl shell ${_ns_lima}"
+    echo "  limactl shell ${_ns_lima}   (the first shell asks you to set your VM password; the panel sign-in uses it)"
     echo "  Then, inside the VM: ~/turbopanel/dev/console"
     echo "  The VM gets 2 CPUs, 4GiB of memory and a 64GiB disk by default; for more: TURBOPANEL_LIMA_MEMORY=8GiB ./scripts/lima-up.sh (also TURBOPANEL_LIMA_CPUS, TURBOPANEL_LIMA_DISK; the size applies when the VM is created)"
     echo "  Do not run setup.sh inside the VM; it would rewrite the mode file with the VM's paths."

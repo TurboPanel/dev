@@ -66,7 +66,6 @@ fi
 cat <<NEXT
 
 Next:
-  limactl shell ${NAME} -- sudo passwd $(id -un)   (the panel installer checks this password through PAM)
-  limactl shell ${NAME}
+  limactl shell ${NAME}   (the first shell asks you to set your VM password; the panel sign-in uses it)
   Then, inside the VM: ~/turbopanel/dev/console
 NEXT
