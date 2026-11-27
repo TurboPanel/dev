@@ -1,7 +1,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { type InstallOutputHandler, runCaptured } from './install-output.ts'
-import { CONSOLE_LOG_DIR } from './paths.ts'
+import { CONSOLE_STATE_DIR } from './paths.ts'
 import { spawnDocker } from './docker-access.ts'
 import {
   MAILPIT_CONTAINER_NAME,
@@ -115,7 +115,14 @@ export const DEFAULT_OPTIONAL_DEV_SERVICES: OptionalDevServiceSelection = {
   stripe: false,
 }
 
-export const OPTIONAL_SERVICES_PREFS_PATH = `${CONSOLE_LOG_DIR}/optional-services.json`
+/**
+ * The saved picker choice lives in the guest (`/var/lib/turbopanel/console`),
+ * never under the dev root: that folder is mounted from the host and survives
+ * a deleted guest, which would carry a stale choice into a fresh install. A
+ * file from an older console at `<dev root>/.local/console/optional-services.json`
+ * is neither read nor written.
+ */
+export const OPTIONAL_SERVICES_PREFS_PATH = `${CONSOLE_STATE_DIR}/optional-services.json`
 
 /** Seconds of idle time before a converge picker auto-confirms. */
 export const OPTIONAL_SERVICES_AUTO_CONFIRM_SECONDS = 5
@@ -377,10 +384,11 @@ async function applyContainerOnlyOptional(
  */
 export async function applyOptionalDevServices(
   selection: OptionalDevServiceSelection,
-  onOutput?: InstallOutputHandler
+  onOutput?: InstallOutputHandler,
+  prefsPath: string = OPTIONAL_SERVICES_PREFS_PATH
 ): Promise<void> {
   const normalized = normalizeOptionalSelection(selection)
-  writeOptionalDevServices(normalized)
+  writeOptionalDevServices(normalized, prefsPath)
 
   await forEachSequential(OPTIONAL_DEV_SERVICE_DEFS, async (def) => {
     const want = normalized[def.id]

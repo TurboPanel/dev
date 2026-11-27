@@ -274,6 +274,13 @@ describe('FHS and checkout helpers', () => {
     expect(mod.CONSOLE_LAST_TEST_RUN_LOG).toBe('/stubbed/home/.local/console/last-test-run.log')
   })
 
+  it('console state stays in the guest and ignores TURBOPANEL_DEV_ROOT', async () => {
+    vi.stubEnv('TURBOPANEL_DEV_ROOT', '/stubbed/home')
+    vi.resetModules()
+    const mod = await import('./paths.ts')
+    expect(mod.CONSOLE_STATE_DIR).toBe('/var/lib/turbopanel/console')
+  })
+
   it('testRunLogPath replaces colons in the stamp and suite id', () => {
     const at = new Date('2026-08-25T12:34:56.789Z')
     expect(testRunLogPath('turbopanel', 'test:do', at)).toBe(
