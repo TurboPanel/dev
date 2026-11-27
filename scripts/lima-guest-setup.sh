@@ -95,6 +95,9 @@ case "$HOST_ROOT" in
 esac
 # Asks the dev user to set a password on the first interactive login (the panel's
 # first sign-in checks it through PAM); silent once one is set.
-install -m 0644 "${SCRIPTS}/guest/dev-password.sh" /etc/profile.d/turbopanel-dev-password.sh
+# Only for the dev user: DEV_USER was checked above, so it is safe to write into the file.
+sed "s/@DEV_USER@/${DEV_USER}/g" "${SCRIPTS}/guest/dev-password.sh" >/etc/profile.d/turbopanel-dev-password.sh.tmp
+chmod 0644 /etc/profile.d/turbopanel-dev-password.sh.tmp
+mv -f /etc/profile.d/turbopanel-dev-password.sh.tmp /etc/profile.d/turbopanel-dev-password.sh
 sh "${SCRIPTS}/guest/install-motd.sh" || true
 echo ">>> Done"

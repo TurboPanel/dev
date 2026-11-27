@@ -1044,60 +1044,102 @@ describe('lima-up.sh and the guest scripts', () => {
   })
 
   describe('the first-login password prompt', () => {
-    const snippet = join(REPO_ROOT, 'scripts/guest/dev-password.sh')
     const hasScript = spawnSync('script', ['--version']).status === 0
+    let snippet: string
+    let sudoLog: string
+    let ready: string
 
-    // Stubs: id (non-root, name dev-person), passwd -S (status from FAKE_PASSWD_STATUS)
-    // and sudo (logs its arguments, exit code FAKE_SUDO_STATUS).
-    const prep = () => {
-      const sudoLog = join(root, 'sudo.log')
-      stub('id', 'if [ "$1" = -u ]; then echo 1000; else echo dev-person; fi')
-      stub('passwd', 'echo "$2 $FAKE_PASSWD_STATUS 2026-01-01 0 99999 7 -1"')
-      stub('sudo', `echo "$*" >> "${sudoLog}"\nexit "\${FAKE_SUDO_STATUS:-0}"`)
-      return sudoLog
+    // The installed file is the source with the dev user's name written in.
+    const render = (user: string) => {
+      const text = readFileSync(join(REPO_ROOT, 'scripts/guest/dev-password.sh'), 'utf8')
+      expect(text).toContain('@DEV_USER@')
+      return text.replaceAll('@DEV_USER@', user)
     }
-    const seen = (log: string) => (existsSync(log) ? readFileSync(log, 'utf8') : '')
+
+    // Stubs: id (name from FAKE_ID_USER), passwd -S (status from FAKE_PASSWD_STATUS) and
+    // sudo (logs its arguments, exit code FAKE_SUDO_STATUS, or waits when FAKE_SUDO_WAIT is set).
+    beforeEach(() => {
+      snippet = join(root, 'dev-password-rendered.sh')
+      sudoLog = join(root, 'sudo.log')
+      ready = join(root, 'sudo.ready')
+      writeFileSync(snippet, render('dev-person'))
+      stub('id', 'echo "${FAKE_ID_USER:-dev-person}"')
+      stub('passwd', 'echo "$2 $FAKE_PASSWD_STATUS 2026-01-01 0 99999 7 -1"')
+      stub(
+        'sudo',
+        `echo "$*" >> "${sudoLog}"\n[ -z "$FAKE_SUDO_WAIT" ] || { : > "${ready}"; sleep 30; }\nexit "\${FAKE_SUDO_STATUS:-0}"`
+      )
+    })
+    const seen = () => (existsSync(sudoLog) ? readFileSync(sudoLog, 'utf8') : '')
     const env = (st: string, extra: Env = {}) => baseEnv({ FAKE_PASSWD_STATUS: st, ...extra })
-    // Interactive: a pseudo-terminal from util-linux script, bash or sh with -i.
-    const tty = (shell: string, st: string, extra: Env = {}) => {
+    // Interactive: a pseudo-terminal from util-linux script, running the shell with -i.
+    const tty = (shell: string, st: string, extra: Env = {}, redirect = '') => {
       const r = spawnSync(
         'script',
-        ['-qec', `${shell} -i -c '. ${snippet}; echo reached-shell'`, '/dev/null'],
-        { encoding: 'utf8', env: env(st, extra) }
+        ['-qec', `${shell} -i -c '. ${snippet}; echo reached-shell' ${redirect}`, '/dev/null'],
+        { encoding: 'utf8', env: env(st, extra), input: '' }
       )
-      return { status: r.status, out: `${r.stdout}${r.stderr}` }
+      return `${r.stdout}${r.stderr}`
     }
 
     test.skipIf(!hasScript).each(['bash', 'sh'])('%s asks when the status is L or NP', (shell) => {
       for (const st of ['L', 'NP']) {
-        const log = prep()
-        rmSync(log, { force: true })
-        const { out } = tty(shell, st)
+        rmSync(sudoLog, { force: true })
+        const out = tty(shell, st)
         expect(out).toContain('your account has no password yet')
         expect(out).toContain('reached-shell')
-        expect(seen(log)).toBe('passwd dev-person\n')
+        expect(seen()).toBe('passwd dev-person\n')
       }
     })
 
     test.skipIf(!hasScript)('stays silent when a password is set', () => {
-      const log = prep()
-      rmSync(log, { force: true })
-      const { out } = tty('bash', 'P')
+      const out = tty('bash', 'P')
       expect(out).toContain('reached-shell')
       expect(out).not.toContain('no password yet')
-      expect(seen(log)).toBe('')
+      expect(seen()).toBe('')
     })
 
-    test.skipIf(!hasScript)('a failed or cancelled passwd still reaches the shell', () => {
-      prep()
-      const { out } = tty('bash', 'L', { FAKE_SUDO_STATUS: '1' })
+    test.skipIf(!hasScript)('stays silent for a user other than the dev user', () => {
+      const out = tty('bash', 'L', { FAKE_ID_USER: 'other-person' })
+      expect(out).toContain('reached-shell')
+      expect(out).not.toContain('no password yet')
+      expect(seen()).toBe('')
+    })
+
+    test.skipIf(!hasScript)('stays silent when stdin is not a terminal', () => {
+      const out = tty('bash', 'L', {}, '</dev/null')
+      expect(out).toContain('reached-shell')
+      expect(out).not.toContain('no password yet')
+      expect(seen()).toBe('')
+    })
+
+    test.skipIf(!hasScript)('a failed passwd still reaches the shell', () => {
+      const out = tty('bash', 'L', { FAKE_SUDO_STATUS: '1' })
       expect(out).toContain('Set it later with: sudo passwd dev-person')
       expect(out).toContain('reached-shell')
     })
 
+    test.skipIf(!hasScript).each(['bash', 'sh'])(
+      '%s: Ctrl-C during passwd prints the hint and the startup goes on',
+      (shell) => {
+        rmSync(ready, { force: true })
+        // Send a real ^C through the terminal once the stubbed sudo is running.
+        const feeder = `i=0; while [ ! -e "${ready}" ] && [ $i -lt 200 ]; do sleep 0.1; i=$((i+1)); done; printf '\\003'; sleep 2`
+        const r = spawnSync(
+          'sh',
+          [
+            '-c',
+            `( ${feeder} ) | script -qec "${shell} -i -c '. ${snippet}; echo reached-shell'" /dev/null`,
+          ],
+          { encoding: 'utf8', env: env('L', { FAKE_SUDO_WAIT: '1' }) }
+        )
+        const out = `${r.stdout}${r.stderr}`
+        expect(out).toContain('Set it later with: sudo passwd dev-person')
+        expect(out).toContain('reached-shell')
+      }
+    )
+
     test('stays silent without a terminal, even for a locked account', () => {
-      const log = prep()
-      rmSync(log, { force: true })
       for (const shell of ['bash', 'sh']) {
         const r = spawnSync(shell, ['-c', `. ${snippet}; echo reached-shell`], {
           encoding: 'utf8',
@@ -1106,18 +1148,16 @@ describe('lima-up.sh and the guest scripts', () => {
         expect(r.stdout).toBe('reached-shell\n')
         expect(r.stderr).toBe('')
       }
-      expect(seen(log)).toBe('')
+      expect(seen()).toBe('')
     })
 
-    test('is installed on every start and carries no password literal', () => {
+    test('is installed on every start for the dev user, with no password set by the script', () => {
       const script = readFileSync(join(REPO_ROOT, 'scripts/lima-guest-setup.sh'), 'utf8')
       const install = script.indexOf('/etc/profile.d/turbopanel-dev-password.sh')
       expect(install).toBeGreaterThan(script.indexOf('\nfi\n', script.indexOf('[ -f "$MARKER" ]')))
+      expect(script).toContain('s/@DEV_USER@/${DEV_USER}/g')
       expect(script).not.toContain('chpasswd')
-      const text = readFileSync(snippet, 'utf8')
-      expect(text).toContain('id -un')
-      expect(text).not.toMatch(/\bset -e\b|\bexit\b|chpasswd/)
-      expect(text.match(/sudo passwd "\$_tp_pw_user"/)).not.toBeNull()
+      expect(render('dev-person')).not.toContain('@DEV_USER@')
     })
   })
 
