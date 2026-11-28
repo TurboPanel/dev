@@ -126,6 +126,10 @@ vi.mock('../lib/optional-dev-services.ts', () => ({
   uiModeForSelection: vi.fn((selection: { ui: boolean }) => (selection.ui ? 'dev' : 'static')),
 }))
 
+vi.mock('../lib/task-error-log.ts', () => ({
+  writeTaskErrorLog: vi.fn(async () => true),
+}))
+
 vi.mock('../lib/dev-host-store.ts', () => ({
   devHostStatusStore: {
     getSnapshot: vi.fn(() => null),
@@ -154,6 +158,7 @@ import {
 } from '../lib/optional-dev-services.ts'
 import { refreshDevPermissionsQuietly } from '../lib/turbopanel-permissions.ts'
 import { openDuckDbUi } from '../lib/duckdb-ui.ts'
+import { writeTaskErrorLog } from '../lib/task-error-log.ts'
 
 function svc(id: string, status: DevService['status'] = 'running'): DevService {
   return { id, label: id, status }
@@ -426,9 +431,21 @@ describe('useConsoleApp', () => {
     await (await settle()).handleDaemonAction('optional-services')
     ;(await settle()).confirmOptionalServices(harness.optional)
     await vi.waitFor(() => {
-      expect(applyOptionalDevServices).toHaveBeenCalledWith(harness.optional)
+      expect(applyOptionalDevServices).toHaveBeenCalledWith(harness.optional, expect.any(Function))
     })
     expect(harness.refreshServices).toHaveBeenCalled()
+  })
+
+  it('reports a failing optional-services apply without throwing', async () => {
+    vi.mocked(applyOptionalDevServices).mockRejectedValueOnce(new Error('EACCES: state folder'))
+    const app = await mountApp()
+    await app.handleDaemonAction('optional-services')
+    ;(await settle()).confirmOptionalServices(harness.optional)
+    await vi.waitFor(() => {
+      expect(writeTaskErrorLog).toHaveBeenCalledWith(
+        expect.objectContaining({ title: 'Optional services', message: 'EACCES: state folder' })
+      )
+    })
   })
 
   it('runs a converge instead of unit toggles when the optional-services picker changes the UI mode', async () => {

@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
@@ -18,6 +18,7 @@ import {
   type OptionalDevServiceSelection,
   persistOptionalServiceToggle,
   readOptionalDevServices,
+  trySaveOptionalDevServices,
   UI_MODE_ENV_KEY,
   uiModeForSelection,
   writeOptionalDevServices,
@@ -148,6 +149,41 @@ test('readOptionalDevServices returns defaults when file missing', () => {
   const dir = mkdtempSync(join(tmpdir(), 'tp-optional-miss-'))
   tempDirs.push(dir)
   expect(readOptionalDevServices(join(dir, 'missing.json'))).toEqual(defaultOptionalSelection())
+})
+
+/** A prefs path whose parent is a regular file, so every write fails. */
+function unwritablePrefsPath(): string {
+  const dir = mkdtempSync(join(tmpdir(), 'tp-optional-ro-'))
+  tempDirs.push(dir)
+  const blocker = join(dir, 'blocker')
+  writeFileSync(blocker, 'x')
+  return join(blocker, 'optional-services.json')
+}
+
+test('trySaveOptionalDevServices reports a failed save instead of throwing', () => {
+  const path = unwritablePrefsPath()
+  expect(trySaveOptionalDevServices(defaultOptionalSelection(), path)).toMatch(
+    /^Could not save the optional services choice \(.+\); using it for this run only\.$/
+  )
+  expect(trySaveOptionalDevServices(defaultOptionalSelection(), tempPrefsPath())).toBeNull()
+})
+
+test('applyOptionalDevServices carries on and reports when the choice cannot be saved', async () => {
+  const lines: string[] = []
+  await applyOptionalDevServices(
+    { ...defaultOptionalSelection(), ui: true },
+    (line) => lines.push(line),
+    unwritablePrefsPath()
+  )
+  expect(lines.some((line) => line.startsWith('Could not save the optional services choice'))).toBe(
+    true
+  )
+  expect(mockedRunCaptured).toHaveBeenCalled()
+})
+
+test('persistOptionalServiceToggle still returns the selection when the save fails', () => {
+  const path = unwritablePrefsPath()
+  expect(persistOptionalServiceToggle('ui', true, path)?.ui).toBe(true)
 })
 
 test('devConvergeOptionsPayload keys the selection by Ansible stem', () => {

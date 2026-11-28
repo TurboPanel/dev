@@ -181,6 +181,24 @@ export function writeOptionalDevServices(
 }
 
 /**
+ * Save the choice without throwing: the guest state folder may not be writable
+ * yet (or any more). Returns a developer-facing message on failure, `null` on
+ * success; callers carry on with the values they hold for this run.
+ */
+export function trySaveOptionalDevServices(
+  selection: OptionalDevServiceSelection,
+  path: string = OPTIONAL_SERVICES_PREFS_PATH
+): string | null {
+  try {
+    writeOptionalDevServices(selection, path)
+    return null
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error)
+    return `Could not save the optional services choice (${reason}); using it for this run only.`
+  }
+}
+
+/**
  * Persist an E/X toggle from the Services list so the next converge does not
  * revert it. Unknown service ids are ignored.
  */
@@ -194,7 +212,9 @@ export function persistOptionalServiceToggle(
   }
   const next = readOptionalDevServices(path)
   next[serviceId] = enabled
-  writeOptionalDevServices(next, path)
+  // The unit already changed state; a failed save only means the next converge
+  // starts from the previous saved value.
+  trySaveOptionalDevServices(next, path)
   return next
 }
 
@@ -388,7 +408,10 @@ export async function applyOptionalDevServices(
   prefsPath: string = OPTIONAL_SERVICES_PREFS_PATH
 ): Promise<void> {
   const normalized = normalizeOptionalSelection(selection)
-  writeOptionalDevServices(normalized, prefsPath)
+  const saveError = trySaveOptionalDevServices(normalized, prefsPath)
+  if (saveError) {
+    onOutput?.(saveError)
+  }
 
   await forEachSequential(OPTIONAL_DEV_SERVICE_DEFS, async (def) => {
     const want = normalized[def.id]

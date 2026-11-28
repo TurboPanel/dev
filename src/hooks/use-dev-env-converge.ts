@@ -15,7 +15,7 @@ import {
   applyOptionalDevServices,
   type OptionalDevServiceSelection,
   readOptionalDevServices,
-  writeOptionalDevServices,
+  trySaveOptionalDevServices,
 } from "../lib/optional-dev-services.ts";
 import { writeTaskErrorLog } from "../lib/task-error-log.ts";
 import { useAnsibleEvents } from "./use-ansible-events.ts";
@@ -243,7 +243,12 @@ export function useDevEnvConverge(onFinished: (success: boolean) => void) {
     resetConverge();
 
     const selection = optionalServices ?? readOptionalDevServices();
-    writeOptionalDevServices(selection);
+    // A save failure must not abort the run: carry on with the chosen values
+    // and tell the developer.
+    const saveError = trySaveOptionalDevServices(selection);
+    if (saveError) {
+      setError(saveError);
+    }
 
     void (async () => {
       const currentStep = DEV_ENV_CONVERGE_STEP;

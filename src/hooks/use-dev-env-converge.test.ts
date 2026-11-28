@@ -23,7 +23,7 @@ vi.mock("../lib/instance-install.ts", () => ({
 vi.mock("../lib/optional-dev-services.ts", () => ({
   applyOptionalDevServices: vi.fn(),
   readOptionalDevServices: vi.fn(),
-  writeOptionalDevServices: vi.fn(),
+  trySaveOptionalDevServices: vi.fn(),
 }));
 
 vi.mock("../lib/task-error-log.ts", () => ({
@@ -34,7 +34,7 @@ import { installDevEnvironment } from "../lib/instance-install.ts";
 import {
   applyOptionalDevServices,
   readOptionalDevServices,
-  writeOptionalDevServices,
+  trySaveOptionalDevServices,
 } from "../lib/optional-dev-services.ts";
 import { writeTaskErrorLog } from "../lib/task-error-log.ts";
 
@@ -321,7 +321,8 @@ describe("useDevEnvConverge", () => {
     vi.mocked(installDevEnvironment).mockReset();
     vi.mocked(applyOptionalDevServices).mockReset();
     vi.mocked(readOptionalDevServices).mockReset();
-    vi.mocked(writeOptionalDevServices).mockReset();
+    vi.mocked(trySaveOptionalDevServices).mockReset();
+    vi.mocked(trySaveOptionalDevServices).mockReturnValue(null);
     vi.mocked(writeTaskErrorLog).mockReset();
     vi.mocked(installDevEnvironment).mockResolvedValue(undefined);
     vi.mocked(applyOptionalDevServices).mockResolvedValue(undefined);
@@ -349,7 +350,7 @@ describe("useDevEnvConverge", () => {
     mounted.rerender();
     await mounted.flush();
     expect(installDevEnvironment).toHaveBeenCalledTimes(1);
-    expect(writeOptionalDevServices).toHaveBeenCalledWith(OPTIONAL_SELECTION);
+    expect(trySaveOptionalDevServices).toHaveBeenCalledWith(OPTIONAL_SELECTION);
     expect(mounted.get().state.active).toBe(true);
 
     release();
@@ -360,6 +361,32 @@ describe("useDevEnvConverge", () => {
     await mounted.flush();
     expect(applyOptionalDevServices).toHaveBeenCalledWith(OPTIONAL_SELECTION);
     expect(mounted.get().state.active).toBe(false);
+  });
+
+  it("carries on with the chosen values when the choice cannot be saved", async () => {
+    vi.mocked(trySaveOptionalDevServices).mockReturnValue("Could not save the choice");
+    mounted = mountHook(() => useDevEnvConverge(onFinished));
+    await mounted.flush();
+    mounted.get().start("force", OPTIONAL_SELECTION);
+    await vi.waitFor(() => {
+      expect(onFinished).toHaveBeenCalledWith(true);
+    });
+    mounted.rerender();
+    await mounted.flush();
+    expect(installDevEnvironment).toHaveBeenCalledWith(
+      expect.any(Function),
+      undefined,
+      expect.any(Function),
+      undefined,
+      "force",
+      OPTIONAL_SELECTION,
+    );
+    expect(mounted.get().state.error).toBe("Could not save the choice");
+    // The run finished, so a later start is not blocked.
+    mounted.get().start("force", OPTIONAL_SELECTION);
+    await vi.waitFor(() => {
+      expect(installDevEnvironment).toHaveBeenCalledTimes(2);
+    });
   });
 
   it("reads stored optional services when start is called without a selection", async () => {
