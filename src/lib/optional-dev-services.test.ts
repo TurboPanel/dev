@@ -1,10 +1,11 @@
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import {
   DEFAULT_OPTIONAL_DEV_SERVICES,
   OPTIONAL_DEV_SERVICE_DEFS,
+  OPTIONAL_SERVICES_PREFS_PATH,
   applyOptionalDevServices,
   assertOptionalDevServiceId,
   defaultOptionalSelection,
@@ -17,6 +18,7 @@ import {
   type OptionalDevServiceSelection,
   persistOptionalServiceToggle,
   readOptionalDevServices,
+  trySaveOptionalDevServices,
   UI_MODE_ENV_KEY,
   uiModeForSelection,
   writeOptionalDevServices,
@@ -84,6 +86,25 @@ function tempPrefsPath(): string {
   return join(dir, 'optional-services.json')
 }
 
+/** Never let a test write the real saved choice: every apply goes to a temp file. */
+function applyWithTempPrefs(
+  selection: OptionalDevServiceSelection,
+  onOutput?: (line: string) => void
+): Promise<void> {
+  return applyOptionalDevServices(selection, onOutput, tempPrefsPath())
+}
+
+test('saved choice lives in guest-local state, not under the dev root', () => {
+  expect(OPTIONAL_SERVICES_PREFS_PATH).toBe('/var/lib/turbopanel/console/optional-services.json')
+  expect(OPTIONAL_SERVICES_PREFS_PATH).not.toContain('.local/console')
+})
+
+test('applyOptionalDevServices saves the choice to the given path', async () => {
+  const path = tempPrefsPath()
+  await applyOptionalDevServices({ ...defaultOptionalSelection(), ui: true }, undefined, path)
+  expect(readOptionalDevServices(path).ui).toBe(true)
+})
+
 test('defaults enable website, mailpit, drizzle studio and redis insight; expo dev server and stripe off', () => {
   expect(DEFAULT_OPTIONAL_DEV_SERVICES).toEqual({
     dbstudio: true,
@@ -128,6 +149,41 @@ test('readOptionalDevServices returns defaults when file missing', () => {
   const dir = mkdtempSync(join(tmpdir(), 'tp-optional-miss-'))
   tempDirs.push(dir)
   expect(readOptionalDevServices(join(dir, 'missing.json'))).toEqual(defaultOptionalSelection())
+})
+
+/** A prefs path whose parent is a regular file, so every write fails. */
+function unwritablePrefsPath(): string {
+  const dir = mkdtempSync(join(tmpdir(), 'tp-optional-ro-'))
+  tempDirs.push(dir)
+  const blocker = join(dir, 'blocker')
+  writeFileSync(blocker, 'x')
+  return join(blocker, 'optional-services.json')
+}
+
+test('trySaveOptionalDevServices reports a failed save instead of throwing', () => {
+  const path = unwritablePrefsPath()
+  expect(trySaveOptionalDevServices(defaultOptionalSelection(), path)).toMatch(
+    /^Could not save the optional services choice \(.+\); using it for this run only\.$/
+  )
+  expect(trySaveOptionalDevServices(defaultOptionalSelection(), tempPrefsPath())).toBeNull()
+})
+
+test('applyOptionalDevServices carries on and reports when the choice cannot be saved', async () => {
+  const lines: string[] = []
+  await applyOptionalDevServices(
+    { ...defaultOptionalSelection(), ui: true },
+    (line) => lines.push(line),
+    unwritablePrefsPath()
+  )
+  expect(lines.some((line) => line.startsWith('Could not save the optional services choice'))).toBe(
+    true
+  )
+  expect(mockedRunCaptured).toHaveBeenCalled()
+})
+
+test('persistOptionalServiceToggle still returns the selection when the save fails', () => {
+  const path = unwritablePrefsPath()
+  expect(persistOptionalServiceToggle('ui', true, path)?.ui).toBe(true)
 })
 
 test('devConvergeOptionsPayload keys the selection by Ansible stem', () => {
@@ -202,7 +258,7 @@ test('optionalDevServiceCatalogIdsForRuntime omits Deno-only tools on Workers', 
 })
 
 test('applyOptionalDevServices stops docker-backed containers when unit is disabled', async () => {
-  await applyOptionalDevServices({ ...defaultOptionalSelection(), smtp: false })
+  await applyWithTempPrefs({ ...defaultOptionalSelection(), smtp: false })
 
   const dockerCalls = mockedRunCaptured.mock.calls
     .map(([cmd]) => cmd)
@@ -222,7 +278,7 @@ test('applyOptionalDevServices stops docker-backed containers when unit is disab
 })
 
 test('applyOptionalDevServices stops Redis Insight bridge when unit is disabled', async () => {
-  await applyOptionalDevServices({
+  await applyWithTempPrefs({
     ...defaultOptionalSelection(),
     redisinsight: false,
   })
@@ -263,7 +319,7 @@ test('applyOptionalDevServices treats a masked unit as installed', async () => {
     output: ['', 'masked', ''],
     signal: null,
   })
-  await applyOptionalDevServices({ ...defaultOptionalSelection(), ui: true })
+  await applyWithTempPrefs({ ...defaultOptionalSelection(), ui: true })
   expect(
     mockedRunCaptured.mock.calls.some(
       ([cmd]) =>
@@ -277,9 +333,7 @@ test('applyOptionalDevServices treats a masked unit as installed', async () => {
 
 test('applyOptionalDevServices enables installed units with --now', async () => {
   const lines: string[] = []
-  await applyOptionalDevServices({ ...defaultOptionalSelection(), ui: true }, (line) =>
-    lines.push(line)
-  )
+  await applyWithTempPrefs({ ...defaultOptionalSelection(), ui: true }, (line) => lines.push(line))
   expect(
     mockedRunCaptured.mock.calls.some(
       ([cmd]) =>
@@ -310,7 +364,7 @@ test('applyOptionalDevServices reports missing unit-only services when wanted', 
     signal: null,
   })
   const lines: string[] = []
-  await applyOptionalDevServices({ ...defaultOptionalSelection(), ui: true, smtp: true }, (line) =>
+  await applyWithTempPrefs({ ...defaultOptionalSelection(), ui: true, smtp: true }, (line) =>
     lines.push(line)
   )
   expect(lines.some((line) => line.includes('Expo Dev Server is not installed yet'))).toBe(true)
@@ -320,7 +374,7 @@ test('applyOptionalDevServices reports missing unit-only services when wanted', 
 test('applyOptionalDevServices throws when systemctl enable fails', async () => {
   mockedRunCaptured.mockResolvedValue(1)
   await expect(
-    applyOptionalDevServices({
+    applyWithTempPrefs({
       dbstudio: true,
       smtp: true,
       ui: true,
@@ -338,9 +392,9 @@ test('applyOptionalDevServices throws when docker start/stop both fail', async (
     }
     return 0
   })
-  await expect(
-    applyOptionalDevServices({ ...defaultOptionalSelection(), smtp: false })
-  ).rejects.toThrow(`docker update --restart=no ${MAILPIT_CONTAINER_NAME} failed`)
+  await expect(applyWithTempPrefs({ ...defaultOptionalSelection(), smtp: false })).rejects.toThrow(
+    `docker update --restart=no ${MAILPIT_CONTAINER_NAME} failed`
+  )
 })
 
 test('applyOptionalDevServices falls back to sudo docker when the first docker call fails', async () => {
@@ -353,7 +407,7 @@ test('applyOptionalDevServices falls back to sudo docker when the first docker c
     }
     return 0
   })
-  await applyOptionalDevServices({
+  await applyWithTempPrefs({
     ...defaultOptionalSelection(),
     smtp: false,
   })
@@ -386,7 +440,7 @@ test('applyOptionalDevServices treats a failed systemctl show as not installed',
     signal: null,
   })
   const lines: string[] = []
-  await applyOptionalDevServices({ ...defaultOptionalSelection(), ui: true, smtp: false }, (line) =>
+  await applyWithTempPrefs({ ...defaultOptionalSelection(), ui: true, smtp: false }, (line) =>
     lines.push(line)
   )
   expect(
@@ -405,9 +459,7 @@ test('applyOptionalDevServices treats blank systemctl output as not installed', 
     signal: null,
   })
   const lines: string[] = []
-  await applyOptionalDevServices({ ...defaultOptionalSelection(), ui: true }, (line) =>
-    lines.push(line)
-  )
+  await applyWithTempPrefs({ ...defaultOptionalSelection(), ui: true }, (line) => lines.push(line))
   expect(lines.some((line) => line.includes('Expo Dev Server is not installed yet'))).toBe(true)
 })
 
@@ -442,7 +494,7 @@ test('applyOptionalDevServices skips missing containers when starting or stoppin
     }
   })
 
-  await applyOptionalDevServices({
+  await applyWithTempPrefs({
     ...defaultOptionalSelection(),
     redisinsight: true,
     smtp: false,
@@ -457,7 +509,7 @@ test('applyOptionalDevServices skips missing containers when starting or stoppin
   expect(dockerCalls.some((cmd) => cmd.includes(REDIS_INSIGHT_BRIDGE_CONTAINER_NAME))).toBe(false)
 
   mockedRunCaptured.mockClear()
-  await applyOptionalDevServices({
+  await applyWithTempPrefs({
     ...defaultOptionalSelection(),
     redisinsight: false,
     smtp: false,
@@ -476,7 +528,7 @@ test('applyOptionalDevServices skips missing containers when starting or stoppin
 
 test('applyOptionalDevServices disables a unit-only service without docker', async () => {
   const lines: string[] = []
-  await applyOptionalDevServices(
+  await applyWithTempPrefs(
     {
       dbstudio: true,
       smtp: true,
@@ -512,9 +564,7 @@ test('applyOptionalDevServices treats missing systemctl stdout as not installed'
     signal: null,
   })
   const lines: string[] = []
-  await applyOptionalDevServices({ ...defaultOptionalSelection(), ui: true }, (line) =>
-    lines.push(line)
-  )
+  await applyWithTempPrefs({ ...defaultOptionalSelection(), ui: true }, (line) => lines.push(line))
   expect(lines.some((line) => line.includes('Expo Dev Server is not installed yet'))).toBe(true)
 })
 
@@ -540,7 +590,7 @@ test('applyOptionalDevServices reports a missing stripe unit when wanted', async
     signal: null,
   })
   const lines: string[] = []
-  await applyOptionalDevServices({ ...defaultOptionalSelection(), stripe: true }, (line) =>
+  await applyWithTempPrefs({ ...defaultOptionalSelection(), stripe: true }, (line) =>
     lines.push(line)
   )
   expect(
@@ -565,7 +615,7 @@ test('applyOptionalDevServices starts container-only services when unit is missi
     output: ['', 'true', ''],
     signal: null,
   })
-  await applyOptionalDevServices({
+  await applyWithTempPrefs({
     ...defaultOptionalSelection(),
     smtp: true,
     ui: false,
@@ -622,7 +672,7 @@ function onlyRedisInsightContainersExist(): void {
 
 test('applyOptionalDevServices applies services one at a time in catalog order', async () => {
   const recorded = recordCommandsOneAtATime()
-  await applyOptionalDevServices({
+  await applyWithTempPrefs({
     dbstudio: true,
     smtp: false,
     ui: true,
@@ -655,7 +705,7 @@ test('applyOptionalDevServices starts each backing container update-then-start, 
   onlyRedisInsightContainersExist()
   const recorded = recordCommandsOneAtATime()
   const lines: string[] = []
-  await applyOptionalDevServices(
+  await applyWithTempPrefs(
     {
       dbstudio: false,
       smtp: false,
@@ -697,7 +747,7 @@ test('applyOptionalDevServices stops at the first failed container step', async 
     return argv.includes(`update --restart=unless-stopped ${REDIS_INSIGHT_CONTAINER_NAME}`) ? 1 : 0
   })
   await expect(
-    applyOptionalDevServices({
+    applyWithTempPrefs({
       dbstudio: false,
       smtp: false,
       ui: false,
@@ -721,7 +771,7 @@ test('applyOptionalDevServices does not touch later services once one fails', as
     return argv.includes('disable --now turbopanel-mailpit') ? 1 : 0
   })
   await expect(
-    applyOptionalDevServices({
+    applyWithTempPrefs({
       dbstudio: true,
       smtp: false,
       ui: true,

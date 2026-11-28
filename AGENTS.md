@@ -121,7 +121,7 @@ Test details (pin tests, secret scan, command table, pre-commit hook, gate matri
 - Contributors get the six sibling repos with `scripts/setup.sh` on the machine where they edit (the host in Vagrant mode); Vagrant mounts them into the guest at `~/turbopanel/<repo>`. The repo list lives in `repos.list` (`.github` is optional for `vagrant-up.sh` and the Vagrantfile).
 - **`TURBOPANEL_MODE=development`** during dev converge. Source repos live under `TURBOPANEL_DEV_ROOT` (default `$HOME/turbopanel`, in the Vagrant guest too); every consumer derives `<dev_root>/<repo>` itself. Per-repo `TURBOPANEL_<DIR>_REPO` keys are **optional overrides only** — `buildPlatformRepoEntries()` writes one into `daemon.env` only when it is set and differs from the derived default, and `writeDaemonBaseEnv` / `writeDaemonInstanceEnv` remove any stale per-repo key on every write.
 - Daemon bootstrap, systemd units, and Docker containers run as the **current dev user** — no `tp` / `tpctrl` / `tpcache` service accounts are created in dev.
-- Purge/reset stops and removes the daemon systemd unit **`turbopaneld.service`**, dev FHS state under `/etc/turbopanel`, `/var/lib/turbopanel`, `/var/log/turbopanel`, `/run/turbopanel`, and runtimes under `/opt/turbopanel/vendor`.
+- Purge stops and removes the daemon systemd unit **`turbopaneld.service`**, the daemon checkout, runtimes under `/opt/turbopanel/vendor`, `/opt/turbopanel/.cache`, `.ansible` and `.local`, and the console state folder `/var/lib/turbopanel/console` (the saved optional services choice). It leaves `/etc/turbopanel`, the rest of `/var/lib/turbopanel`, `/var/log/turbopanel` and `/run/turbopanel` alone.
 - Do not commit secrets or environment-specific config.
 
 ## What agents must NOT do

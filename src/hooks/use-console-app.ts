@@ -33,6 +33,7 @@ import {
   type OptionalDevServiceSelection,
 } from '../lib/optional-dev-services.ts'
 import type { OptionalServicesModalMode } from '../components/optional-services-modal.tsx'
+import { writeTaskErrorLog } from '../lib/task-error-log.ts'
 import { useDevEnvConverge } from './use-dev-env-converge.ts'
 import { useVisibleServices } from './use-visible-services.ts'
 
@@ -470,9 +471,20 @@ export function useConsoleApp() {
 
       setRestartInProgress('optional services')
       void (async () => {
+        const appendLog = (line: string) => {
+          setRestartLogOverlay((current) => [...current, consoleLogLine(`[console] ${line}`)])
+        }
         try {
-          await applyOptionalDevServices(selection)
+          await applyOptionalDevServices(selection, appendLog)
           refreshServices()
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          appendLog(`Optional services failed: ${message}`)
+          await writeTaskErrorLog({
+            title: 'Optional services',
+            message,
+            timestamp: new Date().toISOString(),
+          })
         } finally {
           setRestartInProgress(null)
         }

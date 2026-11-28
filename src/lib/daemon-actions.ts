@@ -1,6 +1,12 @@
 import type { DevServiceStatus } from '../dev-services.ts'
 import { isDaemonSystemdInstalled } from '../dev-services.ts'
-import { daemonRepoPath, DAEMON_SYSTEMD_UNIT, RUNTIMES_DIR, TURBOPANEL_ROOT } from './paths.ts'
+import {
+  CONSOLE_STATE_DIR,
+  daemonRepoPath,
+  DAEMON_SYSTEMD_UNIT,
+  RUNTIMES_DIR,
+  TURBOPANEL_ROOT,
+} from './paths.ts'
 import {
   isDeveloperSurfaceInstance,
   readInstanceRuntime,
@@ -225,6 +231,8 @@ export async function purgeDaemon(onOutput?: InstallOutputHandler): Promise<void
     `${TURBOPANEL_ROOT}/.cache`,
     `${TURBOPANEL_ROOT}/.ansible`,
     `${TURBOPANEL_ROOT}/.local`,
+    // Guest-local console state (the saved optional services choice).
+    CONSOLE_STATE_DIR,
   ].map(shellQuote)
 
   // Stop/remove the daemon systemd unit.

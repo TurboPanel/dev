@@ -1,6 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DevServiceStatus } from '../dev-services.ts'
-import { daemonRepoPath, DAEMON_SYSTEMD_UNIT, RUNTIMES_DIR, TURBOPANEL_ROOT } from './paths.ts'
+import {
+  CONSOLE_STATE_DIR,
+  daemonRepoPath,
+  DAEMON_SYSTEMD_UNIT,
+  RUNTIMES_DIR,
+  TURBOPANEL_ROOT,
+} from './paths.ts'
 import { shellQuote } from './shell-quote.ts'
 import type { DaemonSyncResult, SyncDevResponse } from './developer-client.ts'
 
@@ -413,6 +419,8 @@ describe('enableAndStartDaemon / requestDaemonRestart / purgeDaemon', () => {
     expect(script).toContain(`rm -rf ${shellQuote(daemonRepoPath())}`)
     expect(script).toContain(`rm -rf ${shellQuote(RUNTIMES_DIR)}`)
     expect(script).toContain(`rm -rf ${shellQuote(`${TURBOPANEL_ROOT}/.cache`)}`)
+    expect(script).toContain(`rm -rf ${shellQuote(CONSOLE_STATE_DIR)}`)
+    expect(script).not.toContain('rm -rf /var/lib/turbopanel ')
   })
 
   it('purgeDaemon throws when the script fails', async () => {

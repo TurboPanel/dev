@@ -216,6 +216,11 @@ export function consoleLogDir(): string {
 }
 
 export const CONSOLE_LOG_DIR = consoleLogDir()
+/**
+ * Guest-local console state (dev-user-owned, outside the shared dev root).
+ * Holds what must not outlive the guest, such as the optional services choice.
+ */
+export const CONSOLE_STATE_DIR = `${STATE_DIR}/console`
 export const CONVERGE_SERVICE_LOG_DIR = `${CONSOLE_LOG_DIR}/converge`
 export const CONSOLE_LAST_TASK_ERROR_LOG = `${CONSOLE_LOG_DIR}/last-task-error.log`
 /** Full output of the last orchestration bootstrap (overwritten each run). */
